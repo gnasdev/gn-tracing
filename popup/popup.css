@@ -1,0 +1,228 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  width: 280px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 13px;
+  color: #e0e0e0;
+  background: #1a1a2e;
+}
+
+#app {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+#header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+h1 {
+  font-size: 15px;
+  font-weight: 600;
+  color: #fff;
+}
+
+#status-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+#recording-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ff4444;
+  animation: pulse 1s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+#timer {
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+  color: #ff6b6b;
+  font-weight: 500;
+}
+
+.btn {
+  width: 100%;
+  padding: 10px;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-start {
+  background: #4361ee;
+  color: #fff;
+}
+
+.btn-start:hover:not(:disabled) {
+  background: #3a56d4;
+}
+
+.btn-stop {
+  background: #ef233c;
+  color: #fff;
+}
+
+.btn-stop:hover:not(:disabled) {
+  background: #d90429;
+}
+
+.btn-download {
+  background: #2ec4b6;
+  color: #fff;
+}
+
+.btn-download:hover:not(:disabled) {
+  background: #25a99d;
+}
+
+#stats {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  background: #16213e;
+  border-radius: 8px;
+}
+
+.stat-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.stat-label {
+  color: #8d99ae;
+  font-size: 12px;
+}
+
+.stat-value {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: #fff;
+}
+
+#download-section {
+  border-top: 1px solid #16213e;
+  padding-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.btn-upload {
+  background: #7209b7;
+  color: #fff;
+}
+
+.btn-upload:hover:not(:disabled) {
+  background: #560bad;
+}
+
+#link-container {
+  display: flex;
+  gap: 6px;
+}
+
+#recording-link {
+  flex: 1;
+  padding: 6px 8px;
+  background: #16213e;
+  border: 1px solid #2a3a5c;
+  border-radius: 6px;
+  color: #e0e0e0;
+  font-size: 11px;
+  outline: none;
+}
+
+#copy-link-btn,
+#open-link-btn {
+  padding: 6px 10px;
+  background: #4361ee;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+#copy-link-btn:hover,
+#open-link-btn:hover {
+  background: #3a56d4;
+}
+
+#open-link-btn {
+  background: #2ec4b6;
+}
+
+#open-link-btn:hover {
+  background: #25a99d;
+}
+
+#copy-feedback {
+  color: #2ec4b6;
+  font-size: 11px;
+}
+
+#settings-section {
+  border-top: 1px solid #16213e;
+  padding-top: 10px;
+}
+
+.setting-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.setting-row label {
+  font-size: 11px;
+  color: #8d99ae;
+}
+
+#server-url {
+  padding: 6px 8px;
+  background: #16213e;
+  border: 1px solid #2a3a5c;
+  border-radius: 6px;
+  color: #e0e0e0;
+  font-size: 12px;
+  outline: none;
+}
+
+#error-msg {
+  padding: 8px;
+  background: #3d1c22;
+  border-radius: 6px;
+  color: #ff6b6b;
+  font-size: 12px;
+}
+
+.hidden {
+  display: none !important;
+}

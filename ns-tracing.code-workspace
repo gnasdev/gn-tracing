@@ -1,0 +1,11 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../ns-tracing-server"
+		}
+	],
+	"settings": {}
+}

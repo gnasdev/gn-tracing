@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div id="app">
+    <div id="header">
+      <h1>ns-tracing</h1>
+      <div id="status-bar" class="hidden">
+        <span id="recording-indicator"></span>
+        <span id="timer">00:00</span>
+      </div>
+    </div>
+
+    <button id="toggle-btn" class="btn btn-start">Start Recording</button>
+
+    <div id="stats" class="hidden">
+      <div class="stat-row">
+        <span class="stat-label">Console</span>
+        <span id="console-count" class="stat-value">0</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">Network</span>
+        <span id="network-count" class="stat-value">0</span>
+      </div>
+    </div>
+
+    <div id="download-section" class="hidden">
+      <button id="upload-btn" class="btn btn-upload">Upload to Server</button>
+      <button id="download-btn" class="btn btn-download">Download (.zip)</button>
+    </div>
+
+    <div id="upload-result" class="hidden">
+      <div id="link-container">
+        <input type="text" id="recording-link" readonly>
+        <button id="copy-link-btn">Copy</button>
+        <button id="open-link-btn">Open</button>
+      </div>
+      <span id="copy-feedback" class="hidden">Copied!</span>
+    </div>
+
+    <div id="settings-section">
+      <div class="setting-row">
+        <label for="server-url">Server URL</label>
+        <input type="text" id="server-url" placeholder="http://localhost:3000">
+      </div>
+    </div>
+
+    <div id="error-msg" class="hidden"></div>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>
