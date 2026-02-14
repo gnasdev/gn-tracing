@@ -1,10 +1,12 @@
+import type { SourceMapRaw, ResolvedLocation } from "../types/recording";
+
 const BASE64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 const charToInt = new Uint8Array(128);
 for (let i = 0; i < BASE64.length; i++) {
   charToInt[BASE64.charCodeAt(i)] = i;
 }
 
-function decodeVLQ(str, offset) {
+function decodeVLQ(str: string, offset: number): { value: number; next: number } {
   let value = 0;
   let shift = 0;
   let i = offset;
@@ -17,46 +19,41 @@ function decodeVLQ(str, offset) {
   return { value: (value & 1) ? -(value >> 1) : (value >> 1), next: i };
 }
 
-function decodeMappings(mappingsStr) {
-  const lines = [];
+function decodeMappings(mappingsStr: string): number[][][] {
+  const lines: number[][][] = [];
   let srcFile = 0, srcLine = 0, srcCol = 0, nameIdx = 0;
 
   for (const lineStr of mappingsStr.split(";")) {
-    const segments = [];
+    const segments: number[][] = [];
     let genCol = 0;
     let i = 0;
 
     while (i < lineStr.length) {
       if (lineStr[i] === ",") { i++; continue; }
 
-      const seg = [];
+      const seg: number[] = [];
 
-      // Generated column
       let d = decodeVLQ(lineStr, i);
       genCol += d.value;
       seg.push(genCol);
       i = d.next;
 
       if (i < lineStr.length && lineStr[i] !== "," && lineStr[i] !== ";") {
-        // Source file index
         d = decodeVLQ(lineStr, i);
         srcFile += d.value;
         seg.push(srcFile);
         i = d.next;
 
-        // Original line
         d = decodeVLQ(lineStr, i);
         srcLine += d.value;
         seg.push(srcLine);
         i = d.next;
 
-        // Original column
         d = decodeVLQ(lineStr, i);
         srcCol += d.value;
         seg.push(srcCol);
         i = d.next;
 
-        // Name index (optional)
         if (i < lineStr.length && lineStr[i] !== "," && lineStr[i] !== ";") {
           d = decodeVLQ(lineStr, i);
           nameIdx += d.value;
@@ -74,10 +71,16 @@ function decodeMappings(mappingsStr) {
   return lines;
 }
 
-export class SourceMapResolver {
-  #maps = new Map();
+interface ParsedMap {
+  sources: string[];
+  names: string[];
+  mappings: number[][][];
+}
 
-  addMap(scriptUrl, raw) {
+export class SourceMapResolver {
+  #maps = new Map<string, ParsedMap>();
+
+  addMap(scriptUrl: string, raw: SourceMapRaw): void {
     if (!raw || raw.version !== 3 || !raw.mappings) return;
     const sourceRoot = raw.sourceRoot || "";
     const sources = (raw.sources || []).map((s) => sourceRoot + s);
@@ -86,7 +89,7 @@ export class SourceMapResolver {
     this.#maps.set(scriptUrl, { sources, names, mappings });
   }
 
-  resolve(url, line, column) {
+  resolve(url: string, line: number, column: number): ResolvedLocation | null {
     const map = this.#maps.get(url);
     if (!map) return null;
     if (line < 0 || line >= map.mappings.length) return null;
@@ -94,7 +97,6 @@ export class SourceMapResolver {
     const segments = map.mappings[line];
     if (!segments || segments.length === 0) return null;
 
-    // Binary search for largest generated column <= target column
     let lo = 0, hi = segments.length - 1, best = -1;
     while (lo <= hi) {
       const mid = (lo + hi) >> 1;
@@ -118,11 +120,11 @@ export class SourceMapResolver {
     };
   }
 
-  get size() {
+  get size(): number {
     return this.#maps.size;
   }
 
-  clear() {
+  clear(): void {
     this.#maps.clear();
   }
 }

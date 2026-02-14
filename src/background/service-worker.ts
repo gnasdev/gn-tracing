@@ -1,46 +1,52 @@
-import { RecorderManager } from "./recorder-manager.js";
-import { CdpManager } from "./cdp-manager.js";
-import { StorageManager } from "./storage-manager.js";
+import { RecorderManager } from "./recorder-manager";
+import { CdpManager } from "./cdp-manager";
+import { StorageManager } from "./storage-manager";
+import type { ServiceWorkerMessage, MessageResponse, RecordingStatus } from "../types/messages";
 
 const storage = new StorageManager();
 const recorder = new RecorderManager();
 const cdp = new CdpManager(storage);
 
-const state = {
+interface RecordingState {
+  isRecording: boolean;
+  tabId: number | null;
+  startTime: number | null;
+  stopTime: number | null;
+  tabUrl: string | null;
+}
+
+const state: RecordingState = {
   isRecording: false,
   tabId: null,
   startTime: null,
+  stopTime: null,
   tabUrl: null,
 };
 
 // Keep service worker alive during recording
-let keepAliveAlarm = null;
-
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === "ns-tracing-keepalive" && state.isRecording) {
     // Just waking up the service worker
   }
 });
 
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  // Filter messages meant for offscreen document
+chrome.runtime.onMessage.addListener((message: ServiceWorkerMessage, sender, sendResponse) => {
   if (message.target === "offscreen") return false;
 
   handleMessage(message, sender).then(sendResponse);
   return true;
 });
 
-// Handle tab close
 chrome.tabs.onRemoved.addListener((tabId) => {
   if (state.isRecording && tabId === state.tabId) {
     stopRecording();
   }
 });
 
-async function handleMessage(message, sender) {
+async function handleMessage(message: ServiceWorkerMessage, _sender: chrome.runtime.MessageSender): Promise<MessageResponse | RecordingStatus> {
   switch (message.action) {
     case "START_RECORDING":
-      return await startRecording(message.tabId);
+      return await startRecording(message.tabId!);
     case "STOP_RECORDING":
       return await stopRecording();
     case "GET_STATUS":
@@ -60,13 +66,13 @@ async function handleMessage(message, sender) {
       recorder.onRecordingComplete();
       return { ok: true };
     case "ZIP_READY":
-      return await handleZipReady(message.data);
+      return await handleZipReady(message.data as { url: string; filename: string });
     default:
       return { ok: false, error: "Unknown action" };
   }
 }
 
-async function startRecording(tabId) {
+async function startRecording(tabId: number): Promise<MessageResponse> {
   if (state.isRecording) {
     return { ok: false, error: "Already recording" };
   }
@@ -74,74 +80,66 @@ async function startRecording(tabId) {
   try {
     state.tabId = tabId;
 
-    // Get tab info
     const tab = await chrome.tabs.get(tabId);
-    state.tabUrl = tab.url;
+    state.tabUrl = tab.url ?? null;
 
-    // Clear previous data
     storage.clear();
 
-    // Start CDP capture and video recording in parallel
+    state.stopTime = null;
+    state.startTime = Date.now();
+
     await Promise.all([
       cdp.attach(tabId),
       recorder.startCapture(tabId),
     ]);
 
     state.isRecording = true;
-    state.startTime = Date.now();
 
-    // Set badge
     chrome.action.setBadgeText({ text: "REC" });
     chrome.action.setBadgeBackgroundColor({ color: "#ef233c" });
 
-    // Start keepalive alarm
     chrome.alarms.create("ns-tracing-keepalive", { periodInMinutes: 0.4 });
 
     return { ok: true };
   } catch (e) {
-    // Cleanup on failure
     try { await cdp.detach(); } catch {}
     try { await recorder.cleanup(); } catch {}
     state.isRecording = false;
     state.tabId = null;
     state.startTime = null;
-    return { ok: false, error: e.message };
+    state.stopTime = null;
+    return { ok: false, error: (e as Error).message };
   }
 }
 
-async function stopRecording() {
+async function stopRecording(): Promise<MessageResponse> {
   if (!state.isRecording) {
     return { ok: false, error: "Not recording" };
   }
 
   try {
     state.isRecording = false;
+    state.stopTime = Date.now();
 
-    // Flush pending sourcemap fetches while debugger is still attached
     await cdp.flushSourceMaps();
 
-    // Stop all capture systems
     await Promise.allSettled([
       recorder.stopCapture(),
       cdp.detach(),
     ]);
 
-    // Resolve sourcemaps in stored entries
     storage.resolveSourceMaps(cdp.sourceMapResolver);
 
-    // Clear badge
     chrome.action.setBadgeText({ text: "" });
-
-    // Stop keepalive
     chrome.alarms.clear("ns-tracing-keepalive");
 
     return { ok: true };
   } catch (e) {
-    return { ok: false, error: e.message };
+    return { ok: false, error: (e as Error).message };
   }
 }
 
-function getStatus() {
+function getStatus(): RecordingStatus {
   return {
     isRecording: state.isRecording,
     tabId: state.tabId,
@@ -152,12 +150,12 @@ function getStatus() {
   };
 }
 
-async function downloadResults() {
+async function downloadResults(): Promise<MessageResponse> {
   try {
     const consoleLogs = storage.exportConsoleJSON();
     const networkRequests = storage.exportNetworkJSON();
     const webSocketLogs = storage.exportWebSocketJSON();
-    const duration = state.startTime ? Date.now() - state.startTime : 0;
+    const duration = state.startTime ? (state.stopTime || Date.now()) - state.startTime : 0;
 
     await recorder.createZip({
       consoleLogs,
@@ -170,16 +168,16 @@ async function downloadResults() {
 
     return { ok: true };
   } catch (e) {
-    return { ok: false, error: e.message };
+    return { ok: false, error: (e as Error).message };
   }
 }
 
-async function uploadRecording() {
+async function uploadRecording(): Promise<MessageResponse> {
   try {
     const consoleLogs = storage.exportConsoleJSON();
     const networkRequests = storage.exportNetworkJSON();
     const webSocketLogs = storage.exportWebSocketJSON();
-    const duration = state.startTime ? Date.now() - state.startTime : 0;
+    const duration = state.startTime ? (state.stopTime || Date.now()) - state.startTime : 0;
     const { serverUrl } = await chrome.storage.local.get({ serverUrl: "http://localhost:3000" });
 
     const result = await chrome.runtime.sendMessage({
@@ -194,18 +192,18 @@ async function uploadRecording() {
         startTime: state.startTime,
         serverUrl,
       },
-    });
+    }) as MessageResponse;
 
     if (result && result.ok) {
       return { ok: true, recordingUrl: result.recordingUrl };
     }
     return { ok: false, error: (result && result.error) || "Upload failed" };
   } catch (e) {
-    return { ok: false, error: e.message };
+    return { ok: false, error: (e as Error).message };
   }
 }
 
-async function handleZipReady(data) {
+async function handleZipReady(data: { url: string; filename: string }): Promise<MessageResponse> {
   try {
     await chrome.downloads.download({
       url: data.url,
@@ -213,13 +211,13 @@ async function handleZipReady(data) {
       saveAs: true,
     });
 
-    // Cleanup after download
     await recorder.cleanup();
     state.tabId = null;
     state.startTime = null;
+    state.stopTime = null;
 
     return { ok: true };
   } catch (e) {
-    return { ok: false, error: e.message };
+    return { ok: false, error: (e as Error).message };
   }
 }

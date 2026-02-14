@@ -1,15 +1,23 @@
-let recorder = null;
-let chunks = [];
-let recordedBlob = null;
+import JSZip from "jszip";
 
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+let recorder: MediaRecorder | null = null;
+let chunks: Blob[] = [];
+let recordedBlob: Blob | null = null;
+
+interface OffscreenIncomingMessage {
+  target: string;
+  type: string;
+  data?: Record<string, unknown>;
+}
+
+chrome.runtime.onMessage.addListener((message: OffscreenIncomingMessage, _sender, sendResponse) => {
   if (message.target !== "offscreen") return false;
 
   switch (message.type) {
     case "START_CAPTURE":
-      startCapture(message.data.streamId)
+      startCapture((message.data as { streamId: string }).streamId)
         .then(() => sendResponse({ ok: true }))
-        .catch((e) => sendResponse({ ok: false, error: e.message }));
+        .catch((e: Error) => sendResponse({ ok: false, error: e.message }));
       return true;
 
     case "STOP_CAPTURE":
@@ -18,27 +26,40 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return false;
 
     case "CREATE_ZIP":
-      createZip(message.data)
+      createZip(message.data as unknown as ZipData)
         .then(() => sendResponse({ ok: true }))
-        .catch((e) => sendResponse({ ok: false, error: e.message }));
+        .catch((e: Error) => sendResponse({ ok: false, error: e.message }));
       return true;
 
     case "UPLOAD_TO_SERVER":
-      uploadToServer(message.data)
+      uploadToServer(message.data as unknown as UploadData)
         .then((result) => sendResponse(result))
-        .catch((e) => sendResponse({ ok: false, error: e.message }));
+        .catch((e: Error) => sendResponse({ ok: false, error: e.message }));
       return true;
   }
 });
 
-async function startCapture(streamId) {
+interface ZipData {
+  consoleLogs?: string;
+  networkRequests?: string;
+  webSocketLogs?: string;
+  duration: number;
+  url: string;
+  startTime: number | null;
+}
+
+interface UploadData extends ZipData {
+  serverUrl: string;
+}
+
+async function startCapture(streamId: string): Promise<void> {
   const stream = await navigator.mediaDevices.getUserMedia({
     audio: {
       mandatory: {
         chromeMediaSource: "tab",
         chromeMediaSourceId: streamId,
       },
-    },
+    } as MediaTrackConstraints,
     video: {
       mandatory: {
         chromeMediaSource: "tab",
@@ -47,7 +68,7 @@ async function startCapture(streamId) {
         maxHeight: 1080,
         maxFrameRate: 30,
       },
-    },
+    } as MediaTrackConstraints,
   });
 
   // Pass audio through so the user can still hear the tab
@@ -55,7 +76,6 @@ async function startCapture(streamId) {
   const source = audioCtx.createMediaStreamSource(stream);
   source.connect(audioCtx.destination);
 
-  // Choose best available codec
   const mimeType = MediaRecorder.isTypeSupported("video/webm;codecs=vp9,opus")
     ? "video/webm;codecs=vp9,opus"
     : "video/webm;codecs=vp8,opus";
@@ -64,41 +84,40 @@ async function startCapture(streamId) {
   chunks = [];
   recordedBlob = null;
 
-  recorder.ondataavailable = (e) => {
+  recorder.ondataavailable = (e: BlobEvent) => {
     if (e.data.size > 0) chunks.push(e.data);
   };
 
   recorder.onstop = () => {
-    recordedBlob = new Blob(chunks, { type: recorder.mimeType });
+    recordedBlob = new Blob(chunks, { type: recorder!.mimeType });
     chunks = [];
 
-    // Stop all tracks
     stream.getTracks().forEach((t) => t.stop());
 
     chrome.runtime.sendMessage({
       action: "RECORDING_COMPLETE",
-      data: { mimeType: recorder.mimeType, size: recordedBlob.size },
+      data: { mimeType: recorder!.mimeType, size: recordedBlob!.size },
     });
   };
 
   recorder.start(1000);
 }
 
-function stopCapture() {
+function stopCapture(): void {
   if (recorder && recorder.state !== "inactive") {
     recorder.stop();
   }
 }
 
-async function uploadToServer(data) {
+async function uploadToServer(data: UploadData): Promise<{ ok: boolean; recordingUrl?: string; error?: string }> {
   const formData = new FormData();
 
   if (recordedBlob) {
     formData.append("video", recordedBlob, "recording.webm");
   }
 
-  formData.append("consoleLogs", data.consoleLogs);
-  formData.append("networkRequests", data.networkRequests);
+  formData.append("consoleLogs", data.consoleLogs || "[]");
+  formData.append("networkRequests", data.networkRequests || "{}");
   if (data.webSocketLogs) {
     formData.append("webSocketLogs", data.webSocketLogs);
   }
@@ -128,30 +147,25 @@ async function uploadToServer(data) {
   return { ok: true, recordingUrl: result.url };
 }
 
-async function createZip(data) {
+async function createZip(data: ZipData): Promise<void> {
   const zip = new JSZip();
 
-  // Add video
   if (recordedBlob) {
     zip.file("recording.webm", recordedBlob);
   }
 
-  // Add console logs
   if (data.consoleLogs) {
     zip.file("console-logs.json", data.consoleLogs);
   }
 
-  // Add network requests
   if (data.networkRequests) {
     zip.file("network-requests.json", data.networkRequests);
   }
 
-  // Add WebSocket logs
   if (data.webSocketLogs) {
     zip.file("websocket-logs.json", data.webSocketLogs);
   }
 
-  // Add metadata
   zip.file(
     "metadata.json",
     JSON.stringify(

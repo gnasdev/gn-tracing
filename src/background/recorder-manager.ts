@@ -2,25 +2,24 @@ export class RecorderManager {
   #offscreenCreated = false;
   #recordingComplete = false;
 
-  get hasRecording() {
+  get hasRecording(): boolean {
     return this.#recordingComplete;
   }
 
-  async startCapture(tabId) {
-    // Check if offscreen document already exists
+  async startCapture(tabId: number): Promise<void> {
     const contexts = await chrome.runtime.getContexts({
-      contextTypes: ["OFFSCREEN_DOCUMENT"],
+      contextTypes: [chrome.runtime.ContextType.OFFSCREEN_DOCUMENT],
     });
     if (contexts.length === 0) {
       await chrome.offscreen.createDocument({
         url: "offscreen/offscreen.html",
-        reasons: ["USER_MEDIA"],
+        reasons: [chrome.offscreen.Reason.USER_MEDIA],
         justification: "Tab video recording with MediaRecorder",
       });
       this.#offscreenCreated = true;
     }
 
-    const streamId = await new Promise((resolve, reject) => {
+    const streamId = await new Promise<string>((resolve, reject) => {
       chrome.tabCapture.getMediaStreamId({ targetTabId: tabId }, (id) => {
         if (chrome.runtime.lastError) {
           reject(new Error(chrome.runtime.lastError.message));
@@ -39,7 +38,7 @@ export class RecorderManager {
     this.#recordingComplete = false;
   }
 
-  async stopCapture() {
+  async stopCapture(): Promise<void> {
     try {
       await chrome.runtime.sendMessage({
         target: "offscreen",
@@ -50,11 +49,11 @@ export class RecorderManager {
     }
   }
 
-  onRecordingComplete() {
+  onRecordingComplete(): void {
     this.#recordingComplete = true;
   }
 
-  async createZip(data) {
+  async createZip(data: Record<string, unknown>): Promise<void> {
     await chrome.runtime.sendMessage({
       target: "offscreen",
       type: "CREATE_ZIP",
@@ -62,7 +61,7 @@ export class RecorderManager {
     });
   }
 
-  async cleanup() {
+  async cleanup(): Promise<void> {
     if (this.#offscreenCreated) {
       try {
         await chrome.offscreen.closeDocument();

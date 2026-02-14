@@ -1,11 +1,20 @@
+import type {
+  ConsoleEntry,
+  NetworkEntry,
+  WebSocketEntry,
+  StackFrame,
+  CdpStackTrace,
+} from "../types/recording";
+import type { SourceMapResolver } from "./sourcemap-resolver";
+
 const MAX_CONSOLE_ENTRY_SIZE = 32768; // 32KB per entry
 
 export class StorageManager {
-  #consoleLogs = [];
-  #networkEntries = [];
-  #webSocketEntries = [];
+  #consoleLogs: ConsoleEntry[] = [];
+  #networkEntries: NetworkEntry[] = [];
+  #webSocketEntries: WebSocketEntry[] = [];
 
-  addConsoleEntry(entry) {
+  addConsoleEntry(entry: ConsoleEntry): void {
     const serialized = JSON.stringify(entry.args || entry.message);
     if (serialized && serialized.length > MAX_CONSOLE_ENTRY_SIZE) {
       if (entry.args) {
@@ -17,47 +26,46 @@ export class StorageManager {
     this.#consoleLogs.push(entry);
   }
 
-  addNetworkEntry(entry) {
+  addNetworkEntry(entry: NetworkEntry): void {
     this.#networkEntries.push(entry);
   }
 
-  addWebSocketEntry(entry) {
+  addWebSocketEntry(entry: WebSocketEntry): void {
     this.#webSocketEntries.push(entry);
   }
 
-  getConsoleLogCount() {
+  getConsoleLogCount(): number {
     return this.#consoleLogs.length;
   }
 
-  getNetworkEntryCount() {
+  getNetworkEntryCount(): number {
     return this.#networkEntries.length;
   }
 
-  getConsoleLogs() {
+  getConsoleLogs(): ConsoleEntry[] {
     return this.#consoleLogs;
   }
 
-  getNetworkEntries() {
+  getNetworkEntries(): NetworkEntry[] {
     return this.#networkEntries;
   }
 
-  getWebSocketEntries() {
+  getWebSocketEntries(): WebSocketEntry[] {
     return this.#webSocketEntries;
   }
 
-  clear() {
+  clear(): void {
     this.#consoleLogs = [];
     this.#networkEntries = [];
     this.#webSocketEntries = [];
   }
 
-  resolveSourceMaps(resolver) {
-    // Resolve console log stack traces and source locations
+  resolveSourceMaps(resolver: SourceMapResolver): void {
     for (const entry of this.#consoleLogs) {
       if (entry.url && entry.lineNumber != null) {
         const resolved = resolver.resolve(entry.url, entry.lineNumber, entry.columnNumber || 0);
         if (resolved) {
-          entry.originalSource = resolved.source;
+          entry.originalSource = resolved.source ?? undefined;
           entry.originalLine = resolved.line;
           entry.originalColumn = resolved.column;
         }
@@ -66,13 +74,12 @@ export class StorageManager {
         this.#resolveFrames(resolver, entry.stackTrace);
       }
     }
-    // Resolve network initiator stack traces
     for (const entry of this.#networkEntries) {
       if (entry.initiator) {
         if (entry.initiator.url && entry.initiator.lineNumber != null) {
           const resolved = resolver.resolve(entry.initiator.url, entry.initiator.lineNumber, entry.initiator.columnNumber || 0);
           if (resolved) {
-            entry.initiator.originalSource = resolved.source;
+            entry.initiator.originalSource = resolved.source ?? undefined;
             entry.initiator.originalLine = resolved.line;
             entry.initiator.originalColumn = resolved.column;
           }
@@ -84,12 +91,12 @@ export class StorageManager {
     }
   }
 
-  #resolveFrames(resolver, frames) {
+  #resolveFrames(resolver: SourceMapResolver, frames: StackFrame[]): void {
     for (const frame of frames) {
       if (frame.asyncBoundary || !frame.url) continue;
       const resolved = resolver.resolve(frame.url, frame.lineNumber, frame.columnNumber || 0);
       if (resolved) {
-        frame.originalSource = resolved.source;
+        frame.originalSource = resolved.source ?? undefined;
         frame.originalLine = resolved.line;
         frame.originalColumn = resolved.column;
         if (resolved.name) frame.originalName = resolved.name;
@@ -97,13 +104,13 @@ export class StorageManager {
     }
   }
 
-  #resolveCdpStack(resolver, stack) {
+  #resolveCdpStack(resolver: SourceMapResolver, stack: CdpStackTrace): void {
     if (stack.callFrames) {
       for (const frame of stack.callFrames) {
         if (!frame.url) continue;
         const resolved = resolver.resolve(frame.url, frame.lineNumber || 0, frame.columnNumber || 0);
         if (resolved) {
-          frame.originalSource = resolved.source;
+          frame.originalSource = resolved.source ?? undefined;
           frame.originalLine = resolved.line;
           frame.originalColumn = resolved.column;
           if (resolved.name) frame.originalName = resolved.name;
@@ -115,11 +122,11 @@ export class StorageManager {
     }
   }
 
-  exportConsoleJSON() {
+  exportConsoleJSON(): string {
     return JSON.stringify(this.#consoleLogs, null, 2);
   }
 
-  exportNetworkJSON() {
+  exportNetworkJSON(): string {
     return JSON.stringify({
       log: {
         version: "1.0",
@@ -167,7 +174,7 @@ export class StorageManager {
     }, null, 2);
   }
 
-  exportWebSocketJSON() {
+  exportWebSocketJSON(): string {
     return JSON.stringify(this.#webSocketEntries, null, 2);
   }
 }
