@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**ns-tracing** is a two-repo project: a Chrome extension (`ns-tracing-extension`) that records tab video, console logs, and network requests, and a companion Node.js server (`ns-tracing-server` at `../ns-tracing-server`) that stores and replays recordings. The VSCode workspace (`ns-tracing.code-workspace`) links both repos.
+**GN Web Tracing** is a two-repo project: a Chrome extension (`gn-web-tracing-extension`) that records tab video, console logs, and network requests, and a companion Node.js server (`gn-web-tracing-server` at `../gn-web-tracing-server`) that stores and replays recordings. The VSCode workspace (`ns-tracing.code-workspace`) links both repos.
 
 Both repos use **TypeScript** with **esbuild** for bundling.
 
@@ -17,7 +17,7 @@ Both repos use **TypeScript** with **esbuild** for bundling.
 - `npm run typecheck` — run `tsc --noEmit` for type checking only
 - Load as unpacked extension: Chrome → `chrome://extensions` → "Load unpacked" → select this directory (after building)
 
-### Server (`../ns-tracing-server`)
+### Server (`../gn-web-tracing-server`)
 - `npm install` — install dependencies
 - `npm run dev` — start backend with `tsx --watch` (auto-reload on TS changes, port 3000)
 - `npm run dev:frontend` — watch mode for frontend (esbuild + Tailwind CSS in parallel via `concurrently`)

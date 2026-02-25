@@ -1,9 +1,9 @@
-# ns-tracing (Chrome Extension)
+# GN Web Tracing (Chrome Extension)
 
 A Chrome Manifest V3 extension that records tab video, console logs, and network requests for debugging and session replay.
 
 <p align="center">
-  <img src="icons/icon128.png" alt="ns-tracing logo" width="128" height="128">
+  <img src="icons/icon128.png" alt="GN Web Tracing logo" width="128" height="128">
 </p>
 
 ## Features
@@ -14,7 +14,7 @@ A Chrome Manifest V3 extension that records tab video, console logs, and network
 - **WebSocket Support** — Tracks WebSocket connections, sent/received frames, opcodes, and payloads
 - **Source Map Resolution** — Automatically fetches and decodes source maps (VLQ) to resolve minified stack traces back to original source locations
 - **ZIP Download** — Package recording (video + JSON logs + metadata) as a ZIP file
-- **Server Upload** — Upload recordings to the companion [ns-tracing-server](https://github.com/user/ns-tracing-server) for viewing and sharing
+- **Server Upload** — Upload recordings to the companion [gn-web-tracing-server](https://github.com/user/gn-web-tracing-server) for viewing and sharing
 
 ## Architecture
 
@@ -100,12 +100,12 @@ npm run typecheck # Type checking only (no emit)
 
 ## Usage
 
-1. Click the ns-tracing extension icon in Chrome toolbar
+1. Click the GN Web Tracing extension icon in Chrome toolbar
 2. Click **Start Recording** — the extension captures video, console logs, and network requests from the active tab
 3. Click **Stop Recording** when done
 4. Choose one of:
    - **Download ZIP** — saves a ZIP file with video (`.webm`), console logs, network requests, and metadata as JSON
-   - **Upload to Server** — sends the recording to a configured ns-tracing-server instance for viewing in a web UI
+   - **Upload to Server** — sends the recording to a configured gn-web-tracing-server instance for viewing in a web UI
 
 ### Server Configuration
 
@@ -143,7 +143,7 @@ Click the gear icon in the popup to set the server URL (e.g., `http://localhost:
 
 ## Related
 
-- **[ns-tracing-server](../ns-tracing-server)** — Companion server for storing and viewing recordings
+- **[gn-web-tracing-server](../gn-web-tracing-server)** — Companion server for storing and viewing recordings
 
 ## License
 

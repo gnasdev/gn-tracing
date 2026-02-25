@@ -4,7 +4,7 @@
 			"path": "."
 		},
 		{
-			"path": "../ns-tracing-server"
+			"path": "../gn-web-tracing-server"
 		}
 	],
 	"settings": {}
