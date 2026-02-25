@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**GN Web Tracing** is a two-repo project: a Chrome extension (`gn-web-tracing-extension`) that records tab video, console logs, and network requests, and a companion Node.js server (`gn-web-tracing-server` at `../gn-web-tracing-server`) that stores and replays recordings. The VSCode workspace (`ns-tracing.code-workspace`) links both repos.
+**GN Web Tracing** is a two-repo project: a Chrome extension (`gn-web-tracing-extension`) that records tab video, console logs, and network requests, and a companion Node.js server (`gn-web-tracing-server` at `../gn-web-tracing-server`) that stores and replays recordings. The VSCode workspace (`gn-web-tracing.code-workspace`) links both repos.
 
 Both repos use **TypeScript** with **esbuild** for bundling.
 

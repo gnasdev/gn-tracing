@@ -128,7 +128,7 @@ async function uploadToServer(data: UploadData): Promise<{ ok: boolean; recordin
       duration: data.duration,
       url: data.url,
       startTime: data.startTime,
-      extension: "ns-tracing",
+      extension: "gn-web-tracing",
       version: "1.0.0",
     })
   );
@@ -174,7 +174,7 @@ async function createZip(data: ZipData): Promise<void> {
         duration: data.duration,
         url: data.url,
         startTime: data.startTime,
-        extension: "ns-tracing",
+        extension: "gn-web-tracing",
         version: "1.0.0",
       },
       null,
@@ -187,7 +187,7 @@ async function createZip(data: ZipData): Promise<void> {
 
   const now = new Date();
   const dateStr = now.toISOString().replace(/[:.]/g, "-").slice(0, 19);
-  const filename = `ns-tracing-${dateStr}.zip`;
+  const filename = `gn-web-tracing-${dateStr}.zip`;
 
   chrome.runtime.sendMessage({
     action: "ZIP_READY",

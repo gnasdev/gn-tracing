@@ -1,5 +1,5 @@
 {
-  "name": "ns-tracing-extension",
+  "name": "gn-web-tracing-extension",
   "version": "1.0.0",
   "private": true,
   "scripts": {
