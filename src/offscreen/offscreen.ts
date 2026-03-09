@@ -10,34 +10,36 @@ interface OffscreenIncomingMessage {
   data?: Record<string, unknown>;
 }
 
-chrome.runtime.onMessage.addListener((message: OffscreenIncomingMessage, _sender, sendResponse) => {
-  if (message.target !== "offscreen") return false;
+chrome.runtime.onMessage.addListener(
+  (message: OffscreenIncomingMessage, _sender, sendResponse) => {
+    if (message.target !== "offscreen") return false;
 
-  switch (message.type) {
-    case "START_CAPTURE":
-      startCapture((message.data as { streamId: string }).streamId)
-        .then(() => sendResponse({ ok: true }))
-        .catch((e: Error) => sendResponse({ ok: false, error: e.message }));
-      return true;
+    switch (message.type) {
+      case "START_CAPTURE":
+        startCapture((message.data as { streamId: string }).streamId)
+          .then(() => sendResponse({ ok: true }))
+          .catch((e: Error) => sendResponse({ ok: false, error: e.message }));
+        return true;
 
-    case "STOP_CAPTURE":
-      stopCapture();
-      sendResponse({ ok: true });
-      return false;
+      case "STOP_CAPTURE":
+        stopCapture();
+        sendResponse({ ok: true });
+        return false;
 
-    case "CREATE_ZIP":
-      createZip(message.data as unknown as ZipData)
-        .then(() => sendResponse({ ok: true }))
-        .catch((e: Error) => sendResponse({ ok: false, error: e.message }));
-      return true;
+      case "CREATE_ZIP":
+        createZip(message.data as unknown as ZipData)
+          .then(() => sendResponse({ ok: true }))
+          .catch((e: Error) => sendResponse({ ok: false, error: e.message }));
+        return true;
 
-    case "UPLOAD_TO_SERVER":
-      uploadToServer(message.data as unknown as UploadData)
-        .then((result) => sendResponse(result))
-        .catch((e: Error) => sendResponse({ ok: false, error: e.message }));
-      return true;
-  }
-});
+      case "UPLOAD_TO_SERVER":
+        uploadToServer(message.data as unknown as UploadData)
+          .then((result) => sendResponse(result))
+          .catch((e: Error) => sendResponse({ ok: false, error: e.message }));
+        return true;
+    }
+  },
+);
 
 interface ZipData {
   consoleLogs?: string;
@@ -109,7 +111,9 @@ function stopCapture(): void {
   }
 }
 
-async function uploadToServer(data: UploadData): Promise<{ ok: boolean; recordingUrl?: string; error?: string }> {
+async function uploadToServer(
+  data: UploadData,
+): Promise<{ ok: boolean; recordingUrl?: string; error?: string }> {
   const formData = new FormData();
 
   if (recordedBlob) {
@@ -130,10 +134,10 @@ async function uploadToServer(data: UploadData): Promise<{ ok: boolean; recordin
       startTime: data.startTime,
       extension: "gn-web-tracing",
       version: "1.0.0",
-    })
+    }),
   );
 
-  const response = await fetch(`${data.serverUrl}/api/recordings`, {
+  const response = await fetch(`${data.serverUrl}/recordings`, {
     method: "POST",
     body: formData,
   });
@@ -178,8 +182,8 @@ async function createZip(data: ZipData): Promise<void> {
         version: "1.0.0",
       },
       null,
-      2
-    )
+      2,
+    ),
   );
 
   const blob = await zip.generateAsync({ type: "blob" });
