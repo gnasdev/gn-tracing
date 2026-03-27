@@ -8,7 +8,7 @@ A Chrome Manifest V3 extension that records tab video, console logs, and network
 
 ## Features
 
-- **Tab Video Recording** — Captures tab video (VP9/VP8) and audio (Opus) at up to 1920x1080 @ 30fps using `chrome.tabCapture`
+- **Tab Video Recording** — Captures tab video (VP9/VP8) and audio (Opus) at up to 1920x1080 @ 30fps using `chrome.tabCapture`. The recording process produces properly-cued WebM files allowing accurate seeking.
 - **Console Logging** — Captures all console API calls (`log`, `debug`, `info`, `warn`, `error`), uncaught exceptions with stack traces, and browser logs via Chrome DevTools Protocol
 - **Network Requests** — Records HTTP/HTTPS requests and responses including headers, POST data, response bodies (text-based MIME types < 1MB), timing data (DNS, SSL, connect, wait), redirects, and errors
 - **WebSocket Support** — Tracks WebSocket connections, sent/received frames, opcodes, and payloads
@@ -130,7 +130,7 @@ Click the gear icon in the popup to set the server URL (e.g., `http://localhost:
 - Service worker kept alive via `chrome.alarms` (24-second interval) to prevent dormancy during long recordings
 - CDP domains enabled: `Network`, `Runtime`, `Log`, `Debugger` (for async stack traces and source maps)
 - Response bodies limited to text-based MIME types under 1MB
-- Video codec preference: VP9 → VP8 fallback, with Opus audio
+- Video codec preference: VP9 → VP8 fallback, with Opus audio. MediaRecorder is configured without `timeslice` to ensure WebM files contain complete Cues for accurate timeline seeking, and features synchronized `stopCapture` logic to prevent race conditions during file finalization.
 - Source map VLQ decoding implemented from scratch (no external library)
 - Build: esbuild with ESM format for service worker, IIFE for popup/offscreen
 
