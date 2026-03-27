@@ -38,12 +38,20 @@ export class RecorderManager {
     this.#recordingComplete = false;
   }
 
+  #stopPromiseResolve: (() => void) | null = null;
+  
   async stopCapture(): Promise<void> {
     try {
+      const p = new Promise<void>((resolve) => {
+        this.#stopPromiseResolve = resolve;
+        // safety timeout in case the recording drops
+        setTimeout(() => resolve(), 3000);
+      });
       await chrome.runtime.sendMessage({
         target: "offscreen",
         type: "STOP_CAPTURE",
       });
+      await p;
     } catch {
       // Offscreen document may already be closed
     }
@@ -51,6 +59,10 @@ export class RecorderManager {
 
   onRecordingComplete(): void {
     this.#recordingComplete = true;
+    if (this.#stopPromiseResolve) {
+      this.#stopPromiseResolve();
+      this.#stopPromiseResolve = null;
+    }
   }
 
   async createZip(data: Record<string, unknown>): Promise<void> {

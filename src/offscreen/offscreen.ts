@@ -22,6 +22,8 @@ chrome.runtime.onMessage.addListener(
         return true;
 
       case "STOP_CAPTURE":
+        // Don't sendResponse immediately, let onstop do it?
+        // Wait, onMessage handlers returning true allows async sendResponse.
         stopCapture();
         sendResponse({ ok: true });
         return false;
@@ -102,7 +104,7 @@ async function startCapture(streamId: string): Promise<void> {
     });
   };
 
-  recorder.start(1000);
+  recorder.start();
 }
 
 function stopCapture(): void {
