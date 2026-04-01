@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>GN Web Tracing Player</title>
+  <link rel="stylesheet" href="icons/phosphor-icons.css">
   <link rel="stylesheet" href="player.css">
 </head>
 <body>
@@ -26,7 +27,6 @@
       <header class="header">
         <h1>GN Web Tracing</h1>
         <div class="header-info">
-          <span id="recording-url"></span>
           <span id="recording-duration"></span>
         </div>
       </header>
@@ -43,8 +43,8 @@
           <div class="video-controls">
             <!-- Play/Pause -->
             <button id="play-pause-btn" class="control-btn" title="Play/Pause (Space)">
-              <span id="play-icon">&#9658;</span>
-              <span id="pause-icon" class="hidden">&#9612;</span>
+              <i id="play-icon" class="ph ph-play"></i>
+              <i id="pause-icon" class="ph ph-pause hidden"></i>
             </button>
 
             <!-- Current time -->
@@ -80,8 +80,8 @@
             <!-- Volume -->
             <div class="volume-control">
               <button id="mute-btn" class="control-btn" title="Mute">
-                <span id="volume-on">&#128266;</span>
-                <span id="volume-off" class="hidden">&#128268;</span>
+                <i id="volume-on" class="ph ph-speaker-high"></i>
+                <i id="volume-off" class="ph ph-speaker-x hidden"></i>
               </button>
               <input type="range" id="volume-slider" class="volume-slider" min="0" max="1" step="0.05" value="1">
             </div>

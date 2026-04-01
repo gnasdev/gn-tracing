@@ -127,7 +127,7 @@ async function uploadToGoogleDrive(
   const baseName = `gn-web-tracing-${dateStr}`;
 
   try {
-    // Upload video
+    // Upload video first (largest file, separate progress)
     let videoFileId: string | undefined;
     if (recordedBlob) {
       sendProgress(1, 5, "Uploading video...");
@@ -174,139 +174,169 @@ async function uploadToGoogleDrive(
       );
     }
 
-    // Upload console logs
-    let consoleFileId: string | undefined;
+    // Upload console, network, and websocket logs in parallel
+    sendProgress(2, 5, "Uploading logs...");
+
+    const uploadPromises: Promise<{ type: string; fileId?: string }>[] = [];
+
+    // Console logs
     if (data.consoleLogs) {
-      sendProgress(2, 5, "Uploading console logs...");
-      const consoleFormData = new FormData();
-      consoleFormData.append(
-        "metadata",
-        new Blob([JSON.stringify({ name: `${baseName}-console.json` })], { type: "application/json" })
-      );
-      consoleFormData.append("file", new Blob([data.consoleLogs], { type: "application/json" }), `${baseName}-console.json`);
+      uploadPromises.push(
+        (async () => {
+          const consoleFormData = new FormData();
+          consoleFormData.append(
+            "metadata",
+            new Blob([JSON.stringify({ name: `${baseName}-console.json` })], { type: "application/json" })
+          );
+          consoleFormData.append("file", new Blob([data.consoleLogs], { type: "application/json" }), `${baseName}-console.json`);
 
-      const consoleResponse = await fetch(
-        "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id&supportsAllDrives=true",
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${data.authToken}`,
-          },
-          body: consoleFormData,
-        }
-      );
+          const consoleResponse = await fetch(
+            "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id&supportsAllDrives=true",
+            {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${data.authToken}`,
+              },
+              body: consoleFormData,
+            }
+          );
 
-      if (consoleResponse.ok) {
-        const consoleResult = await consoleResponse.json();
-        consoleFileId = consoleResult.id;
+          if (consoleResponse.ok) {
+            const consoleResult = await consoleResponse.json();
+            const consoleFileId = consoleResult.id;
 
-        // Make shareable
-        await fetch(
-          `https://www.googleapis.com/drive/v3/files/${consoleFileId}/permissions`,
-          {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${data.authToken}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              type: "anyone",
-              role: "reader",
-            }),
+            // Make shareable
+            await fetch(
+              `https://www.googleapis.com/drive/v3/files/${consoleFileId}/permissions`,
+              {
+                method: "POST",
+                headers: {
+                  Authorization: `Bearer ${data.authToken}`,
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                  type: "anyone",
+                  role: "reader",
+                }),
+              }
+            );
+            return { type: "console", fileId: consoleFileId };
           }
-        );
-      }
+          return { type: "console" };
+        })()
+      );
     }
 
-    // Upload network logs
-    let networkFileId: string | undefined;
+    // Network logs
     if (data.networkRequests) {
-      sendProgress(3, 5, "Uploading network logs...");
-      const networkFormData = new FormData();
-      networkFormData.append(
-        "metadata",
-        new Blob([JSON.stringify({ name: `${baseName}-network.json` })], { type: "application/json" })
-      );
-      networkFormData.append("file", new Blob([data.networkRequests], { type: "application/json" }), `${baseName}-network.json`);
+      uploadPromises.push(
+        (async () => {
+          const networkFormData = new FormData();
+          networkFormData.append(
+            "metadata",
+            new Blob([JSON.stringify({ name: `${baseName}-network.json` })], { type: "application/json" })
+          );
+          networkFormData.append("file", new Blob([data.networkRequests], { type: "application/json" }), `${baseName}-network.json`);
 
-      const networkResponse = await fetch(
-        "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id&supportsAllDrives=true",
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${data.authToken}`,
-          },
-          body: networkFormData,
-        }
-      );
+          const networkResponse = await fetch(
+            "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id&supportsAllDrives=true",
+            {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${data.authToken}`,
+              },
+              body: networkFormData,
+            }
+          );
 
-      if (networkResponse.ok) {
-        const networkResult = await networkResponse.json();
-        networkFileId = networkResult.id;
+          if (networkResponse.ok) {
+            const networkResult = await networkResponse.json();
+            const networkFileId = networkResult.id;
 
-        // Make shareable
-        await fetch(
-          `https://www.googleapis.com/drive/v3/files/${networkFileId}/permissions`,
-          {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${data.authToken}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              type: "anyone",
-              role: "reader",
-            }),
+            // Make shareable
+            await fetch(
+              `https://www.googleapis.com/drive/v3/files/${networkFileId}/permissions`,
+              {
+                method: "POST",
+                headers: {
+                  Authorization: `Bearer ${data.authToken}`,
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                  type: "anyone",
+                  role: "reader",
+                }),
+              }
+            );
+            return { type: "network", fileId: networkFileId };
           }
-        );
-      }
+          return { type: "network" };
+        })()
+      );
     }
 
-    // Upload WebSocket logs
-    let websocketFileId: string | undefined;
+    // WebSocket logs
     if (data.webSocketLogs) {
-      sendProgress(4, 5, "Uploading WebSocket logs...");
-      const wsFormData = new FormData();
-      wsFormData.append(
-        "metadata",
-        new Blob([JSON.stringify({ name: `${baseName}-websocket.json` })], { type: "application/json" })
-      );
-      wsFormData.append("file", new Blob([data.webSocketLogs], { type: "application/json" }), `${baseName}-websocket.json`);
+      uploadPromises.push(
+        (async () => {
+          const wsFormData = new FormData();
+          wsFormData.append(
+            "metadata",
+            new Blob([JSON.stringify({ name: `${baseName}-websocket.json` })], { type: "application/json" })
+          );
+          wsFormData.append("file", new Blob([data.webSocketLogs], { type: "application/json" }), `${baseName}-websocket.json`);
 
-      const wsResponse = await fetch(
-        "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id&supportsAllDrives=true",
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${data.authToken}`,
-          },
-          body: wsFormData,
-        }
-      );
+          const wsResponse = await fetch(
+            "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id&supportsAllDrives=true",
+            {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${data.authToken}`,
+              },
+              body: wsFormData,
+            }
+          );
 
-      if (wsResponse.ok) {
-        const wsResult = await wsResponse.json();
-        websocketFileId = wsResult.id;
+          if (wsResponse.ok) {
+            const wsResult = await wsResponse.json();
+            const websocketFileId = wsResult.id;
 
-        // Make shareable
-        await fetch(
-          `https://www.googleapis.com/drive/v3/files/${websocketFileId}/permissions`,
-          {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${data.authToken}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              type: "anyone",
-              role: "reader",
-            }),
+            // Make shareable
+            await fetch(
+              `https://www.googleapis.com/drive/v3/files/${websocketFileId}/permissions`,
+              {
+                method: "POST",
+                headers: {
+                  Authorization: `Bearer ${data.authToken}`,
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                  type: "anyone",
+                  role: "reader",
+                }),
+              }
+            );
+            return { type: "websocket", fileId: websocketFileId };
           }
-        );
-      }
+          return { type: "websocket" };
+        })()
+      );
     }
 
-    // Upload metadata
+    // Wait for all log uploads to complete
+    const uploadResults = await Promise.all(uploadPromises);
+
+    let consoleFileId: string | undefined;
+    let networkFileId: string | undefined;
+    let websocketFileId: string | undefined;
+
+    for (const result of uploadResults) {
+      if (result.type === "console") consoleFileId = result.fileId;
+      if (result.type === "network") networkFileId = result.fileId;
+      if (result.type === "websocket") websocketFileId = result.fileId;
+    }
+
+    // Upload metadata (needs file IDs from above uploads)
     let metadataFileId: string | undefined;
     sendProgress(5, 5, "Uploading metadata...");
     const metadata = {

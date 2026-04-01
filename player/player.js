@@ -6,12 +6,7 @@
 (function() {
   'use strict';
 
-  // Google Drive configuration
-  const DRIVE_API = 'https://www.googleapis.com/drive/v3';
-  const DRIVE_FILES_API = 'https://www.googleapis.com/upload/drive/v3';
-
   // State
-  let authToken = null;
   let videoBlob = null;
   let videoUrl = null;
   let consoleLogs = [];
@@ -74,7 +69,6 @@
     elements.volumeSlider = document.getElementById('volume-slider');
 
     // Header info
-    elements.recordingUrl = document.getElementById('recording-url');
     elements.recordingDuration = document.getElementById('recording-duration');
     elements.errorMessage = document.getElementById('error-message');
 
@@ -332,27 +326,10 @@
   }
 
   // Google Drive API functions
-  async function getAuthToken() {
-    return new Promise((resolve) => {
-      chrome.runtime.sendMessage({ action: 'GOOGLE_DRIVE_STATUS' }, (response) => {
-        if (response && response.ok && response.isConnected) {
-          chrome.runtime.sendMessage({ action: 'GET_GOOGLE_DRIVE_TOKEN' }, (tokenResponse) => {
-            resolve(tokenResponse && tokenResponse.ok ? tokenResponse.token : null);
-          });
-        } else {
-          resolve(null);
-        }
-      });
-    });
-  }
-
   async function downloadFile(fileId) {
-    const url = `${DRIVE_API}/files/${fileId}?alt=media`;
-    const response = await fetch(url, {
-      headers: {
-        'Authorization': `Bearer ${authToken}`
-      }
-    });
+    // Use direct download URL for public files instead of Drive API
+    const url = `https://drive.google.com/uc?export=download&id=${fileId}`;
+    const response = await fetch(url);
 
     if (!response.ok) {
       throw new Error(`Failed to download file ${fileId}`);
@@ -373,13 +350,6 @@
 
   async function loadRecordingFromFiles() {
     try {
-      // Get auth token from extension
-      authToken = await getAuthToken();
-      if (!authToken) {
-        // Try to load without auth - files may be publicly shared
-        console.warn('No auth token available, attempting to load publicly shared files');
-      }
-
       await loadRecordingData();
     } catch (err) {
       console.error('Failed to load recording:', err);
@@ -390,111 +360,104 @@
 
   async function loadRecordingData() {
     try {
-      // Load metadata
+      // Load metadata first (needed for processing other data)
       const metadataJson = await downloadFileAsJson(recordingFiles.metadata.id);
       metadata = metadataJson.metadata || metadataJson;
       startTime = metadata.startTime || new Date(metadata.timestamp || '').getTime();
       duration = metadata.duration || 0;
 
-      // Load video
-      if (recordingFiles.video) {
-        videoBlob = await downloadFileAsBlob(recordingFiles.video.id);
-        videoUrl = URL.createObjectURL(videoBlob);
-        elements.video.src = videoUrl;
-      }
+      // Load video, console, network, websocket in parallel
+      await Promise.all([
+        // Load video
+        recordingFiles.video ? downloadFileAsBlob(recordingFiles.video.id).then(blob => {
+          videoBlob = blob;
+          videoUrl = URL.createObjectURL(blob);
+          elements.video.src = videoUrl;
+        }) : Promise.resolve(),
 
-      // Load console logs
-      if (recordingFiles.console) {
-        const consoleJson = await downloadFileAsJson(recordingFiles.console.id);
-        const rawEntries = Array.isArray(consoleJson)
-          ? consoleJson
-          : (consoleJson.logs || consoleJson.data || []);
+        // Load console logs
+        recordingFiles.console ? downloadFileAsJson(recordingFiles.console.id).then(consoleJson => {
+          const rawEntries = Array.isArray(consoleJson)
+            ? consoleJson
+            : (consoleJson.logs || consoleJson.data || []);
+          consoleLogs = rawEntries.map(entry => ({
+            ...entry,
+            relativeMs: (entry.timestamp || 0) - startTime
+          })).sort((a, b) => a.relativeMs - b.relativeMs);
+        }) : Promise.resolve(),
 
-        consoleLogs = rawEntries.map(entry => ({
-          ...entry,
-          relativeMs: (entry.timestamp || 0) - startTime
-        })).sort((a, b) => a.relativeMs - b.relativeMs);
-      }
+        // Load network logs
+        recordingFiles.network ? downloadFileAsJson(recordingFiles.network.id).then(networkJson => {
+          const rawEntries = Array.isArray(networkJson)
+            ? networkJson
+            : (networkJson.log?.entries || networkJson.entries || networkJson.data || []);
 
-      // Load network logs
-      if (recordingFiles.network) {
-        const networkJson = await downloadFileAsJson(recordingFiles.network.id);
-        const rawEntries = Array.isArray(networkJson)
-          ? networkJson
-          : (networkJson.log?.entries || networkJson.entries || networkJson.data || []);
+          networkLogs = rawEntries.map(entry => {
+            if (entry.method && entry.url && entry.requestId) {
+              return {
+                ...entry,
+                relativeMs: (entry.wallTime ? entry.wallTime * 1000 : entry.timestamp * 1000) - startTime
+              };
+            }
+            const request = entry.request || {};
+            const response = entry.response || {};
+            const content = response.content || {};
+            const timings = entry.timings || {};
 
-        // Map from HAR format to player format
-        networkLogs = rawEntries.map(entry => {
-          // If already in flat format (has method at top level), use as-is
-          if (entry.method && entry.url && entry.requestId) {
-            return {
-              ...entry,
-              relativeMs: (entry.wallTime ? entry.wallTime * 1000 : entry.timestamp * 1000) - startTime
+            const reqHeadersArray = request.headers || [];
+            const resHeadersArray = response.headers || [];
+            const reqHeaders = Array.isArray(reqHeadersArray)
+              ? Object.fromEntries(reqHeadersArray.map(h => [h.name, h.value]))
+              : reqHeadersArray;
+            const resHeaders = Array.isArray(resHeadersArray)
+              ? Object.fromEntries(resHeadersArray.map(h => [h.name, h.value]))
+              : resHeadersArray;
+
+            const timing = {
+              dnsStart: 0,
+              dnsEnd: timings.dns || 0,
+              connectStart: 0,
+              connectEnd: timings.connect || 0,
+              sslStart: 0,
+              sslEnd: timings.ssl || 0,
+              sendStart: 0,
+              sendEnd: timings.send || 0,
+              receiveHeadersEnd: timings.wait || 0,
             };
-          }
-          // HAR format - need to flatten
-          const request = entry.request || {};
-          const response = entry.response || {};
-          const content = response.content || {};
-          const timings = entry.timings || {};
 
-          // Convert headers array to object
-          const reqHeadersArray = request.headers || [];
-          const resHeadersArray = response.headers || [];
-          const reqHeaders = Array.isArray(reqHeadersArray)
-            ? Object.fromEntries(reqHeadersArray.map(h => [h.name, h.value]))
-            : reqHeadersArray;
-          const resHeaders = Array.isArray(resHeadersArray)
-            ? Object.fromEntries(resHeadersArray.map(h => [h.name, h.value]))
-            : resHeadersArray;
+            return {
+              requestId: entry._requestId || '',
+              method: request.method || 'GET',
+              url: request.url || '',
+              requestHeaders: reqHeaders || null,
+              postData: request.postData?.text || null,
+              timestamp: entry.wallTime ? entry.wallTime * 1000 : (entry.timestamp || 0),
+              wallTime: entry.wallTime || null,
+              initiator: entry.initiator || null,
+              resourceType: entry.resourceType || '',
+              status: response.status || 0,
+              statusText: response.statusText || null,
+              responseHeaders: resHeaders || null,
+              mimeType: content.mimeType || null,
+              timing,
+              protocol: null,
+              remoteIPAddress: entry.serverIPAddress || null,
+              encodedDataLength: content.size || 0,
+              error: entry.error || null,
+              responseBody: content.text ? { body: content.text, base64Encoded: !!content.encoding } : null,
+              redirectChain: entry.redirectChain || null,
+              relativeMs: (entry.wallTime ? entry.wallTime * 1000 : (entry.timestamp || 0)) - startTime,
+            };
+          }).sort((a, b) => a.relativeMs - b.relativeMs);
+        }) : Promise.resolve(),
 
-          // Calculate timing from HAR timings
-          const timing = {
-            dnsStart: 0,
-            dnsEnd: timings.dns || 0,
-            connectStart: 0,
-            connectEnd: timings.connect || 0,
-            sslStart: 0,
-            sslEnd: timings.ssl || 0,
-            sendStart: 0,
-            sendEnd: timings.send || 0,
-            receiveHeadersEnd: timings.wait || 0,
-          };
-
-          return {
-            requestId: entry._requestId || '',
-            method: request.method || 'GET',
-            url: request.url || '',
-            requestHeaders: reqHeaders || null,
-            postData: request.postData?.text || null,
-            timestamp: entry.wallTime ? entry.wallTime * 1000 : (entry.timestamp || 0),
-            wallTime: entry.wallTime || null,
-            initiator: entry.initiator || null,
-            resourceType: entry.resourceType || '',
-            status: response.status || 0,
-            statusText: response.statusText || null,
-            responseHeaders: resHeaders || null,
-            mimeType: content.mimeType || null,
-            timing,
-            protocol: null,
-            remoteIPAddress: entry.serverIPAddress || null,
-            encodedDataLength: content.size || 0,
-            error: entry.error || null,
-            responseBody: content.text ? { body: content.text, base64Encoded: !!content.encoding } : null,
-            redirectChain: entry.redirectChain || null,
-            relativeMs: (entry.wallTime ? entry.wallTime * 1000 : (entry.timestamp || 0)) - startTime,
-          };
-        }).sort((a, b) => a.relativeMs - b.relativeMs);
-      }
-
-      // Load WebSocket logs
-      if (recordingFiles.websocket) {
-        const wsJson = await downloadFileAsJson(recordingFiles.websocket.id);
-        webSocketLogs = Array.isArray(wsJson) ? wsJson : (wsJson.data || wsJson.logs || []);
-      }
+        // Load WebSocket logs
+        recordingFiles.websocket ? downloadFileAsJson(recordingFiles.websocket.id).then(wsJson => {
+          webSocketLogs = Array.isArray(wsJson) ? wsJson : (wsJson.data || wsJson.logs || []);
+        }) : Promise.resolve(),
+      ]);
 
       // Update UI
-      elements.recordingUrl.textContent = metadata.url || 'Recording';
       elements.recordingDuration.textContent = formatTime(duration);
 
       showPlayer();
@@ -596,7 +559,7 @@
 
       return `
         <div class="${rowClass}" data-index="${index}" ref="${isLast ? 'last' : ''}">
-          <button class="toggle-expand" aria-label="Toggle details">${isExpanded ? '▼' : '▶'}</button>
+          <button class="toggle-expand" aria-label="Toggle details"><i class="ph ${isExpanded ? 'ph-caret-down' : 'ph-caret-right'}"></i></button>
           <span class="console-time">${timeStr}</span>
           <span class="console-level console-level-${level}">${levelLabel}</span>
           <span class="console-message">
@@ -772,7 +735,7 @@
 
       return `
         <div class="${rowClass}" data-index="${index}" ref="${isLast ? 'last' : ''}">
-          <button class="toggle-expand" aria-label="Toggle details">${isExpanded ? '▼' : '▶'}</button>
+          <button class="toggle-expand" aria-label="Toggle details"><i class="ph ${isExpanded ? 'ph-caret-down' : 'ph-caret-right'}"></i></button>
           <span class="col-method">${request.method || entry.method || 'GET'}</span>
           <span class="col-url" title="${escapeHtml(request.url || entry.url || '')}">${truncateUrl(request.url || entry.url || '')}</span>
           <span class="col-status ${statusClass}">${statusCode || (entry.error ? 'ERR' : '-')}</span>
@@ -809,7 +772,7 @@
         const isExpanded = expandedWsIndex === i;
         return `
           <div class="ws-row ${isExpanded ? 'expanded' : ''}" data-index="${i}">
-            <button class="toggle-expand" aria-label="Toggle details">${isExpanded ? '▼' : '▶'}</button>
+            <button class="toggle-expand" aria-label="Toggle details"><i class="ph ${isExpanded ? 'ph-caret-down' : 'ph-caret-right'}"></i></button>
             <span class="ws-url" title="${escapeHtml(ws.url || '')}">${escapeHtml(ws.url || '')}</span>
             <span class="ws-frames">${(ws.frames || []).length} frames</span>
             <span class="ws-status ${ws.closed ? 'closed' : 'open'}">${ws.closed ? 'Closed' : 'Open'}</span>
@@ -1134,7 +1097,8 @@
 
       // Tooltip on hover
       const rect = elements.progressWrapper.getBoundingClientRect();
-      if (e.clientX >= rect.left && e.clientX <= rect.right) {
+      if (e.clientX >= rect.left && e.clientX <= rect.right &&
+          e.clientY >= rect.top && e.clientY <= rect.bottom) {
         const ratio = (e.clientX - rect.left) / rect.width;
         const time = ratio * duration;
         elements.tooltip.textContent = formatTime(time);
