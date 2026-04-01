@@ -624,6 +624,13 @@
         renderConsoleEntries();
       });
     });
+
+    // Prevent clicks on detail section from toggling expand
+    elements.consoleEntries.querySelectorAll('.console-detail').forEach(el => {
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
+      });
+    });
   }
 
   function renderConsoleDetail(entry) {
@@ -797,6 +804,13 @@
       });
     });
 
+    // Prevent clicks on detail section from toggling expand
+    elements.networkRows.querySelectorAll('.network-detail').forEach(el => {
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
+      });
+    });
+
     // WebSocket entries
     if (webSocketLogs.length > 0) {
       elements.websocketSection.classList.remove('hidden');
@@ -817,6 +831,13 @@
           const index = parseInt(el.dataset.index);
           expandedWsIndex = expandedWsIndex === index ? null : index;
           renderNetworkEntries();
+        });
+      });
+
+      // Prevent clicks on detail section from toggling expand
+      elements.websocketRows.querySelectorAll('.ws-detail').forEach(el => {
+        el.addEventListener('click', (e) => {
+          e.stopPropagation();
         });
       });
     } else {
