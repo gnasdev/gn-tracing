@@ -596,6 +596,7 @@
 
       return `
         <div class="${rowClass}" data-index="${index}" ref="${isLast ? 'last' : ''}">
+          <button class="toggle-expand" aria-label="Toggle details">${isExpanded ? '▼' : '▶'}</button>
           <span class="console-time">${timeStr}</span>
           <span class="console-level console-level-${level}">${levelLabel}</span>
           <span class="console-message">
@@ -616,21 +617,16 @@
       }
     }
 
-    // Add click listeners
-    elements.consoleEntries.querySelectorAll('.console-entry').forEach(el => {
-      el.addEventListener('click', () => {
-        const index = parseInt(el.dataset.index);
+    // Add click listeners for toggle buttons
+    elements.consoleEntries.querySelectorAll('.toggle-expand').forEach(el => {
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const index = parseInt(el.closest('.console-entry').dataset.index);
         expandedConsoleIndex = expandedConsoleIndex === index ? null : index;
         renderConsoleEntries();
       });
     });
 
-    // Prevent clicks on detail section from toggling expand
-    elements.consoleEntries.querySelectorAll('.console-detail').forEach(el => {
-      el.addEventListener('click', (e) => {
-        e.stopPropagation();
-      });
-    });
   }
 
   function renderConsoleDetail(entry) {
@@ -776,6 +772,7 @@
 
       return `
         <div class="${rowClass}" data-index="${index}" ref="${isLast ? 'last' : ''}">
+          <button class="toggle-expand" aria-label="Toggle details">${isExpanded ? '▼' : '▶'}</button>
           <span class="col-method">${request.method || entry.method || 'GET'}</span>
           <span class="col-url" title="${escapeHtml(request.url || entry.url || '')}">${truncateUrl(request.url || entry.url || '')}</span>
           <span class="col-status ${statusClass}">${statusCode || (entry.error ? 'ERR' : '-')}</span>
@@ -795,19 +792,13 @@
       }
     }
 
-    // Add click listeners
-    elements.networkRows.querySelectorAll('.network-row').forEach(el => {
-      el.addEventListener('click', () => {
-        const index = parseInt(el.dataset.index);
-        expandedNetworkIndex = expandedNetworkIndex === index ? null : index;
-        renderNetworkEntries();
-      });
-    });
-
-    // Prevent clicks on detail section from toggling expand
-    elements.networkRows.querySelectorAll('.network-detail').forEach(el => {
+    // Add click listeners for toggle buttons
+    elements.networkRows.querySelectorAll('.toggle-expand').forEach(el => {
       el.addEventListener('click', (e) => {
         e.stopPropagation();
+        const index = parseInt(el.closest('.network-row').dataset.index);
+        expandedNetworkIndex = expandedNetworkIndex === index ? null : index;
+        renderNetworkEntries();
       });
     });
 
@@ -818,6 +809,7 @@
         const isExpanded = expandedWsIndex === i;
         return `
           <div class="ws-row ${isExpanded ? 'expanded' : ''}" data-index="${i}">
+            <button class="toggle-expand" aria-label="Toggle details">${isExpanded ? '▼' : '▶'}</button>
             <span class="ws-url" title="${escapeHtml(ws.url || '')}">${escapeHtml(ws.url || '')}</span>
             <span class="ws-frames">${(ws.frames || []).length} frames</span>
             <span class="ws-status ${ws.closed ? 'closed' : 'open'}">${ws.closed ? 'Closed' : 'Open'}</span>
@@ -826,18 +818,12 @@
         `;
       }).join('');
 
-      elements.websocketRows.querySelectorAll('.ws-row').forEach(el => {
-        el.addEventListener('click', () => {
-          const index = parseInt(el.dataset.index);
-          expandedWsIndex = expandedWsIndex === index ? null : index;
-          renderNetworkEntries();
-        });
-      });
-
-      // Prevent clicks on detail section from toggling expand
-      elements.websocketRows.querySelectorAll('.ws-detail').forEach(el => {
+      elements.websocketRows.querySelectorAll('.toggle-expand').forEach(el => {
         el.addEventListener('click', (e) => {
           e.stopPropagation();
+          const index = parseInt(el.closest('.ws-row').dataset.index);
+          expandedWsIndex = expandedWsIndex === index ? null : index;
+          renderNetworkEntries();
         });
       });
     } else {

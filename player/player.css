@@ -566,6 +566,27 @@ body {
   font-family: "SF Mono", "Fira Code", monospace;
   font-size: 12px;
   line-height: 1.5;
+  align-items: flex-start;
+}
+
+.console-entry .toggle-expand {
+  background: none;
+  border: none;
+  color: var(--gh-muted);
+  font-size: 10px;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.console-entry .toggle-expand:hover {
+  color: var(--gh-text);
 }
 
 .console-entry:hover {
@@ -716,12 +737,31 @@ body {
 
 .network-row {
   display: grid;
-  grid-template-columns: 52px 1fr 48px 70px 65px;
+  grid-template-columns: 20px 52px 1fr 48px 70px 65px;
   gap: 8px;
   padding: 5px 12px;
   border-bottom: 1px solid var(--gh-hover);
   font-size: 12px;
   align-items: center;
+}
+
+.network-row .toggle-expand {
+  background: none;
+  border: none;
+  color: var(--gh-muted);
+  font-size: 10px;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.network-row .toggle-expand:hover {
+  color: var(--gh-text);
 }
 
 .network-row:hover {
@@ -928,12 +968,31 @@ body {
 
 .ws-row {
   display: grid;
-  grid-template-columns: 1fr 80px 60px;
+  grid-template-columns: 20px 1fr 80px 60px;
   gap: 8px;
   padding: 5px 12px;
   border-bottom: 1px solid var(--gh-hover);
   font-size: 12px;
   align-items: center;
+}
+
+.ws-row .toggle-expand {
+  background: none;
+  border: none;
+  color: var(--gh-muted);
+  font-size: 10px;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ws-row .toggle-expand:hover {
+  color: var(--gh-text);
 }
 
 .ws-row:hover {
