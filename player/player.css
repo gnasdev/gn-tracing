@@ -940,7 +940,6 @@ body {
   border-radius: 4px;
   color: var(--gh-text);
   font-size: 11px;
-  cursor: pointer;
 }
 
 .copy-btn:hover {
@@ -1059,7 +1058,6 @@ body {
   border-radius: 6px;
   font-size: 13px;
   font-weight: 600;
-  cursor: pointer;
 }
 
 .btn-retry {
