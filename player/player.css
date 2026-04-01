@@ -648,7 +648,7 @@ body {
   border-top: 1px solid var(--gh-border);
   font-size: 11px;
   line-height: 1.6;
-  cursor: default;
+  cursor: text;
 }
 
 .console-detail .detail-section {
@@ -781,7 +781,7 @@ body {
   border-top: 1px solid var(--gh-border);
   font-size: 11px;
   line-height: 1.6;
-  cursor: default;
+  cursor: text;
 }
 
 .network-detail .detail-section {
@@ -968,7 +968,7 @@ body {
   grid-column: 1 / -1;
   padding: 10px 0;
   border-top: 1px solid var(--gh-border);
-  cursor: default;
+  cursor: text;
 }
 
 .ws-frames-table {
