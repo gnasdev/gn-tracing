@@ -14,7 +14,7 @@ A Chrome Manifest V3 extension that records tab video, console logs, and network
 - **WebSocket Support** — Tracks WebSocket connections, sent/received frames, opcodes, and payloads
 - **Source Map Resolution** — Automatically fetches and decodes source maps (VLQ) to resolve minified stack traces back to original source locations
 - **ZIP Download** — Package recording (video + JSON logs + metadata) as a ZIP file
-- **Google Drive Upload** — Upload recordings directly to Google Drive with shareable links (no server required)
+- **Google Drive Upload** — Upload recordings directly to Google Drive with shareable links via a dedicated authentication page (no server required)
 - **Server Upload** — Upload recordings to the companion [gn-web-tracing-server](https://github.com/user/gn-web-tracing-server) for viewing and sharing (optional)
 
 ## Architecture
@@ -41,6 +41,9 @@ A Chrome Manifest V3 extension that records tab video, console logs, and network
 │                             │  ┌──────────────────┐  │  │
 │                             │  │SourceMap Resolver│  │  │
 │                             │  └──────────────────┘  │  │
+│                             │  ┌──────────────────┐  │  │
+│                             │  │ Google Drive Auth│  │  │
+│                             │  └──────────────────┘  │  │
 │                             └────────────────────────┘  │
 │                                        │                 │
 │                                        ▼                 │
@@ -48,6 +51,11 @@ A Chrome Manifest V3 extension that records tab video, console logs, and network
 │                             │  Offscreen Document    │  │
 │                             │  (MediaRecorder + ZIP  │  │
 │                             │   + server upload)     │  │
+│                             └────────────────────────┘  │
+│                                        │                 │
+│                             ┌────────────────────────┐  │
+│                             │  Drive Auth Page       │  │
+│                             │  (Google OAuth flow)   │  │
 │                             └────────────────────────┘  │
 └─────────────────────────────────────────────────────────┘
 ```
@@ -64,11 +72,15 @@ src/
 │   ├── cdp-manager.ts           # Chrome DevTools Protocol: console + network capture
 │   ├── recorder-manager.ts      # Tab media capture via offscreen document
 │   ├── storage-manager.ts       # In-memory data storage, JSON export
-│   └── sourcemap-resolver.ts    # VLQ decoder, minified → original source mapping
+│   ├── sourcemap-resolver.ts    # VLQ decoder, minified → original source mapping
+│   ├── google-drive-auth.ts     # Google Drive OAuth2 authentication flow
+│   └── google-drive-uploader.ts # Google Drive file upload and sharing
 ├── popup/
 │   └── popup.ts                 # UI: start/stop, download ZIP, upload to server
-└── offscreen/
-    └── offscreen.ts             # MediaRecorder, ZIP creation (JSZip), server upload
+├── offscreen/
+│   └── offscreen.ts             # MediaRecorder, ZIP creation (JSZip), server upload
+└── drive-auth/
+    └── drive-auth.ts            # Dedicated Google Drive auth page logic
 ```
 
 ## Getting Started
@@ -130,8 +142,11 @@ To enable Google Drive upload:
 
 3. **Connect Google Drive:**
    - Click the **Connect** button in the extension popup
-   - Authorize the extension to access your Google Drive
+   - A dedicated authentication page will open in a new tab
+   - Click **Continue with Google** and authorize the extension
    - Once connected, you can upload recordings directly to Drive
+
+> **Note:** The OAuth flow happens in a dedicated page instead of the popup to prevent authentication interruptions when the popup closes.
 
 ### Server Configuration
 
