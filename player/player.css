@@ -563,7 +563,6 @@ body {
   gap: 8px;
   padding: 4px 12px;
   border-bottom: 1px solid var(--gh-hover);
-  cursor: pointer;
   font-family: "SF Mono", "Fira Code", monospace;
   font-size: 12px;
   line-height: 1.5;
@@ -721,7 +720,6 @@ body {
   gap: 8px;
   padding: 5px 12px;
   border-bottom: 1px solid var(--gh-hover);
-  cursor: pointer;
   font-size: 12px;
   align-items: center;
 }
@@ -934,7 +932,6 @@ body {
   gap: 8px;
   padding: 5px 12px;
   border-bottom: 1px solid var(--gh-hover);
-  cursor: pointer;
   font-size: 12px;
   align-items: center;
 }
