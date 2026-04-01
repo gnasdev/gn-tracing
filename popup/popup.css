@@ -134,6 +134,34 @@ h1 {
   gap: 8px;
 }
 
+#upload-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 0;
+}
+
+.progress-bar-container {
+  width: 100%;
+  height: 8px;
+  background: #16213e;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #4361ee, #3a56d4);
+  width: 0%;
+  transition: width 0.3s ease;
+}
+
+.progress-text {
+  font-size: 11px;
+  color: #8d99ae;
+  text-align: center;
+}
+
 .btn-upload {
   background: #7209b7;
   color: #fff;
@@ -189,30 +217,29 @@ h1 {
   font-size: 11px;
 }
 
-#settings-section {
+#google-drive-section {
   border-top: 1px solid #16213e;
   padding-top: 10px;
 }
 
 .setting-row {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 
-.setting-row label {
-  font-size: 11px;
-  color: #8d99ae;
-}
-
-#server-url {
-  padding: 6px 8px;
-  background: #16213e;
-  border: 1px solid #2a3a5c;
-  border-radius: 6px;
-  color: #e0e0e0;
+#google-drive-status {
   font-size: 12px;
-  outline: none;
+  color: #8d99ae;
+  flex: 1;
+}
+
+.btn-small {
+  padding: 4px 8px;
+  font-size: 11px;
+  width: auto;
 }
 
 #error-msg {

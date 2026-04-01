@@ -1,11 +1,16 @@
 import { RecorderManager } from "./recorder-manager";
 import { CdpManager } from "./cdp-manager";
 import { StorageManager } from "./storage-manager";
+import { GoogleDriveAuth } from "./google-drive-auth";
 import type { ServiceWorkerMessage, MessageResponse, RecordingStatus } from "../types/messages";
 
 const storage = new StorageManager();
 const recorder = new RecorderManager();
 const cdp = new CdpManager(storage);
+const googleAuth = new GoogleDriveAuth();
+
+// Initialize Google Auth
+googleAuth.initialize();
 
 interface RecordingState {
   isRecording: boolean;
@@ -37,6 +42,17 @@ chrome.runtime.onMessage.addListener((message: ServiceWorkerMessage, sender, sen
   return true;
 });
 
+// Forward progress messages from offscreen to popup
+chrome.runtime.onMessage.addListener((message: any, sender, sendResponse) => {
+  if (message.target === "offscreen" && message.type === "UPLOAD_PROGRESS") {
+    // Forward to popup
+    chrome.runtime.sendMessage(message);
+    sendResponse({ ok: true });
+    return true;
+  }
+  return false;
+});
+
 chrome.tabs.onRemoved.addListener((tabId) => {
   if (state.isRecording && tabId === state.tabId) {
     stopRecording();
@@ -51,17 +67,26 @@ async function handleMessage(message: ServiceWorkerMessage, _sender: chrome.runt
       return await stopRecording();
     case "GET_STATUS":
       return getStatus();
-    case "DOWNLOAD_RESULTS":
-      return await downloadResults();
-    case "UPLOAD_RECORDING":
-      return await uploadRecording();
-    case "SET_SERVER_URL":
-      await chrome.storage.local.set({ serverUrl: message.url });
+    case "UPLOAD_TO_GOOGLE_DRIVE":
+      return await uploadToGoogleDrive();
+    case "GOOGLE_DRIVE_CONNECT":
+      return await googleAuth.launchOAuthFlow();
+    case "GOOGLE_DRIVE_DISCONNECT":
+      return await googleAuth.disconnect();
+    case "GOOGLE_DRIVE_STATUS":
+      const status = await googleAuth.getStatus();
+      return { ok: true, ...status };
+    case "GET_GOOGLE_DRIVE_TOKEN":
+      const token = await googleAuth.getAuthToken();
+      return { ok: true, token };
+    case "OPEN_POPUP":
+      chrome.windows.create({
+        type: "popup",
+        url: chrome.runtime.getURL("popup/popup.html"),
+        width: 320,
+        height: 500,
+      });
       return { ok: true };
-    case "GET_SERVER_URL": {
-      const stored = await chrome.storage.local.get({ serverUrl: "http://localhost:3000" });
-      return { ok: true, url: stored.serverUrl };
-    }
     case "RECORDING_COMPLETE":
       recorder.onRecordingComplete();
       return { ok: true };
@@ -82,6 +107,11 @@ async function startRecording(tabId: number): Promise<MessageResponse> {
 
     const tab = await chrome.tabs.get(tabId);
     state.tabUrl = tab.url ?? null;
+
+    // Block recording on chrome:// URLs
+    if (tab.url && tab.url.startsWith("chrome://")) {
+      return { ok: false, error: "Cannot record chrome:// pages. Please open a regular webpage." };
+    }
 
     storage.clear();
 
@@ -150,39 +180,22 @@ function getStatus(): RecordingStatus {
   };
 }
 
-async function downloadResults(): Promise<MessageResponse> {
+async function uploadToGoogleDrive(): Promise<MessageResponse> {
   try {
+    // Get auth token
+    const authToken = await googleAuth.getAuthToken();
+    if (!authToken) {
+      return { ok: false, error: "Not connected to Google Drive. Please connect first." };
+    }
+
     const consoleLogs = storage.exportConsoleJSON();
     const networkRequests = storage.exportNetworkJSON();
     const webSocketLogs = storage.exportWebSocketJSON();
     const duration = state.startTime ? (state.stopTime || Date.now()) - state.startTime : 0;
-
-    await recorder.createZip({
-      consoleLogs,
-      networkRequests,
-      webSocketLogs,
-      duration,
-      url: state.tabUrl || "",
-      startTime: state.startTime,
-    });
-
-    return { ok: true };
-  } catch (e) {
-    return { ok: false, error: (e as Error).message };
-  }
-}
-
-async function uploadRecording(): Promise<MessageResponse> {
-  try {
-    const consoleLogs = storage.exportConsoleJSON();
-    const networkRequests = storage.exportNetworkJSON();
-    const webSocketLogs = storage.exportWebSocketJSON();
-    const duration = state.startTime ? (state.stopTime || Date.now()) - state.startTime : 0;
-    const { serverUrl } = await chrome.storage.local.get({ serverUrl: "http://localhost:3000" });
 
     const result = await chrome.runtime.sendMessage({
       target: "offscreen",
-      type: "UPLOAD_TO_SERVER",
+      type: "UPLOAD_TO_GOOGLE_DRIVE",
       data: {
         consoleLogs,
         networkRequests,
@@ -190,7 +203,7 @@ async function uploadRecording(): Promise<MessageResponse> {
         duration,
         url: state.tabUrl || "",
         startTime: state.startTime,
-        serverUrl,
+        authToken,
       },
     }) as MessageResponse;
 

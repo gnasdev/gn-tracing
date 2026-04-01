@@ -14,7 +14,8 @@ A Chrome Manifest V3 extension that records tab video, console logs, and network
 - **WebSocket Support** — Tracks WebSocket connections, sent/received frames, opcodes, and payloads
 - **Source Map Resolution** — Automatically fetches and decodes source maps (VLQ) to resolve minified stack traces back to original source locations
 - **ZIP Download** — Package recording (video + JSON logs + metadata) as a ZIP file
-- **Server Upload** — Upload recordings to the companion [gn-web-tracing-server](https://github.com/user/gn-web-tracing-server) for viewing and sharing
+- **Google Drive Upload** — Upload recordings directly to Google Drive with shareable links (no server required)
+- **Server Upload** — Upload recordings to the companion [gn-web-tracing-server](https://github.com/user/gn-web-tracing-server) for viewing and sharing (optional)
 
 ## Architecture
 
@@ -105,7 +106,32 @@ npm run typecheck # Type checking only (no emit)
 3. Click **Stop Recording** when done
 4. Choose one of:
    - **Download ZIP** — saves a ZIP file with video (`.webm`), console logs, network requests, and metadata as JSON
+   - **Upload to Google Drive** — uploads directly to your Google Drive with shareable link
    - **Upload to Server** — sends the recording to a configured gn-web-tracing-server instance for viewing in a web UI
+
+### Google Drive Setup
+
+To enable Google Drive upload:
+
+1. **Get Google OAuth Client ID:**
+   - Go to [Google Cloud Console](https://console.cloud.google.com/apis/credentials)
+   - Create a new project or select existing
+   - Click **Create Credentials** → **OAuth client ID**
+   - Application type: **Chrome app**
+   - Copy the Client ID
+
+2. **Configure extension:**
+   - Set environment variable before building:
+     ```bash
+     export GOOGLE_CLIENT_ID="your-client-id.apps.googleusercontent.com"
+     npm run build
+     ```
+   - Or update `manifest.json` with your Client ID in the `oauth2` section
+
+3. **Connect Google Drive:**
+   - Click the **Connect** button in the extension popup
+   - Authorize the extension to access your Google Drive
+   - Once connected, you can upload recordings directly to Drive
 
 ### Server Configuration
 
@@ -122,6 +148,7 @@ Click the gear icon in the popup to set the server URL (e.g., `http://localhost:
 | `downloads` | Download ZIP files |
 | `storage` | Persist server URL preference |
 | `alarms` | Keep service worker alive during recording (24s interval) |
+| `identity` | OAuth 2.0 authentication for Google Drive upload |
 | `<all_urls>` | Host permission required for CDP access to any page |
 
 ## Technical Details

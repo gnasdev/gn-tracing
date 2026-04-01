@@ -7,15 +7,21 @@ const stats = document.getElementById("stats")!;
 const consoleCount = document.getElementById("console-count")!;
 const networkCount = document.getElementById("network-count")!;
 const downloadSection = document.getElementById("download-section")!;
-const downloadBtn = document.getElementById("download-btn") as HTMLButtonElement;
-const uploadBtn = document.getElementById("upload-btn") as HTMLButtonElement;
+const uploadDriveBtn = document.getElementById("upload-drive-btn") as HTMLButtonElement;
+const uploadProgress = document.getElementById("upload-progress")!;
+const progressFill = document.getElementById("progress-fill") as HTMLDivElement;
+const progressText = document.getElementById("progress-text") as HTMLDivElement;
 const uploadResult = document.getElementById("upload-result")!;
 const recordingLink = document.getElementById("recording-link") as HTMLInputElement;
 const copyLinkBtn = document.getElementById("copy-link-btn")!;
 const openLinkBtn = document.getElementById("open-link-btn")!;
 const copyFeedback = document.getElementById("copy-feedback")!;
-const serverUrlInput = document.getElementById("server-url") as HTMLInputElement;
 const errorMsg = document.getElementById("error-msg")!;
+
+// Google Drive elements
+const googleDriveStatus = document.getElementById("google-drive-status")!;
+const googleDriveConnectBtn = document.getElementById("google-drive-connect-btn") as HTMLButtonElement;
+const googleDriveDisconnectBtn = document.getElementById("google-drive-disconnect-btn") as HTMLButtonElement;
 
 let pollInterval: ReturnType<typeof setInterval> | null = null;
 
@@ -70,6 +76,25 @@ async function queryStatus(): Promise<void> {
   }
 }
 
+async function updateGoogleDriveStatus(): Promise<void> {
+  try {
+    const result = await chrome.runtime.sendMessage({ action: "GOOGLE_DRIVE_STATUS" }) as MessageResponse & { isConnected: boolean; email?: string };
+    if (result.ok && result.isConnected) {
+      googleDriveStatus.textContent = result.email || "Connected";
+      googleDriveConnectBtn.classList.add("hidden");
+      googleDriveDisconnectBtn.classList.remove("hidden");
+    } else {
+      googleDriveStatus.textContent = "Not connected";
+      googleDriveConnectBtn.classList.remove("hidden");
+      googleDriveDisconnectBtn.classList.add("hidden");
+    }
+  } catch {
+    googleDriveStatus.textContent = "Not connected";
+    googleDriveConnectBtn.classList.remove("hidden");
+    googleDriveDisconnectBtn.classList.add("hidden");
+  }
+}
+
 // Toggle recording
 toggleBtn.addEventListener("click", async () => {
   toggleBtn.disabled = true;
@@ -90,42 +115,49 @@ toggleBtn.addEventListener("click", async () => {
   await queryStatus();
 });
 
-// Download zip
-downloadBtn.addEventListener("click", async () => {
-  downloadBtn.disabled = true;
-  downloadBtn.textContent = "Packaging...";
-
-  try {
-    const result = await chrome.runtime.sendMessage({ action: "DOWNLOAD_RESULTS" }) as MessageResponse;
-    if (!result.ok) showError(result.error || "Failed to download");
-  } catch (e) {
-    showError((e as Error).message);
-  }
-
-  downloadBtn.disabled = false;
-  downloadBtn.textContent = "Download (.zip)";
-});
-
-// Upload to server
-uploadBtn.addEventListener("click", async () => {
-  uploadBtn.disabled = true;
-  uploadBtn.textContent = "Uploading...";
+// Upload to Google Drive
+uploadDriveBtn.addEventListener("click", async () => {
+  uploadDriveBtn.disabled = true;
+  uploadDriveBtn.classList.add("hidden");
+  uploadProgress.classList.remove("hidden");
   uploadResult.classList.add("hidden");
+  progressFill.style.width = "0%";
+  progressText.textContent = "Preparing upload...";
+
+  // Listen for progress messages
+  const progressListener = (message: any) => {
+    if (message.target === "offscreen" && message.type === "UPLOAD_PROGRESS" && message.data) {
+      const { step, total, message: msg } = message.data;
+      const percent = (step / total) * 100;
+      progressFill.style.width = `${percent}%`;
+      progressText.textContent = msg;
+    }
+  };
+
+  chrome.runtime.onMessage.addListener(progressListener);
 
   try {
-    const result = await chrome.runtime.sendMessage({ action: "UPLOAD_RECORDING" }) as MessageResponse;
+    const result = await chrome.runtime.sendMessage({ action: "UPLOAD_TO_GOOGLE_DRIVE" }) as MessageResponse;
+    chrome.runtime.onMessage.removeListener(progressListener);
+
     if (result.ok) {
       recordingLink.value = result.recordingUrl || "";
       uploadResult.classList.remove("hidden");
+      uploadProgress.classList.add("hidden");
     } else {
       showError(result.error || "Upload failed");
+      uploadProgress.classList.add("hidden");
+      uploadDriveBtn.classList.remove("hidden");
     }
   } catch (e) {
+    chrome.runtime.onMessage.removeListener(progressListener);
     showError((e as Error).message);
+    uploadProgress.classList.add("hidden");
+    uploadDriveBtn.classList.remove("hidden");
   }
 
-  uploadBtn.disabled = false;
-  uploadBtn.textContent = "Upload to Server";
+  uploadDriveBtn.disabled = false;
+  uploadDriveBtn.textContent = "Upload to Google Drive";
 });
 
 // Copy link
@@ -142,18 +174,44 @@ openLinkBtn.addEventListener("click", () => {
   }
 });
 
-// Server URL persistence
-chrome.runtime.sendMessage({ action: "GET_SERVER_URL" }).then((res: MessageResponse) => {
-  if (res && res.ok) serverUrlInput.value = res.url || "";
+// Google Drive connect
+googleDriveConnectBtn.addEventListener("click", async () => {
+  googleDriveConnectBtn.disabled = true;
+
+  try {
+    const result = await chrome.runtime.sendMessage({ action: "GOOGLE_DRIVE_CONNECT" }) as MessageResponse;
+    if (result.ok) {
+      await updateGoogleDriveStatus();
+    } else {
+      showError(result.error || "Connection failed");
+    }
+  } catch (e) {
+    showError((e as Error).message);
+  }
+
+  googleDriveConnectBtn.disabled = false;
 });
 
-let saveTimeout: ReturnType<typeof setTimeout>;
-serverUrlInput.addEventListener("input", () => {
-  clearTimeout(saveTimeout);
-  saveTimeout = setTimeout(() => {
-    chrome.runtime.sendMessage({ action: "SET_SERVER_URL", url: serverUrlInput.value.trim() });
-  }, 500);
+// Google Drive disconnect
+googleDriveDisconnectBtn.addEventListener("click", async () => {
+  googleDriveDisconnectBtn.disabled = true;
+
+  try {
+    const result = await chrome.runtime.sendMessage({ action: "GOOGLE_DRIVE_DISCONNECT" }) as MessageResponse;
+    if (result.ok) {
+      await updateGoogleDriveStatus();
+    } else {
+      showError(result.error || "Disconnect failed");
+    }
+  } catch (e) {
+    showError((e as Error).message);
+  }
+
+  googleDriveDisconnectBtn.disabled = false;
 });
+
+// Initial Google Drive status check
+updateGoogleDriveStatus();
 
 // Initial query and start polling
 queryStatus();

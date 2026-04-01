@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GN Web Tracing Player</title>
+  <link rel="stylesheet" href="player.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Loading state -->
+    <div id="loading-state" class="state-container">
+      <div class="spinner"></div>
+      <p>Loading recording...</p>
+    </div>
+
+    <!-- Error state -->
+    <div id="error-state" class="state-container hidden">
+      <h2>Invalid Recording Parameters</h2>
+      <p id="error-message">The recording parameters are missing or invalid.</p>
+    </div>
+
+    <!-- Main player UI -->
+    <div id="player-state" class="player-container hidden">
+      <!-- Header -->
+      <header class="header">
+        <h1>GN Web Tracing</h1>
+        <div class="header-info">
+          <span id="recording-url"></span>
+          <span id="recording-duration"></span>
+        </div>
+      </header>
+
+      <!-- Main 2-column layout -->
+      <div class="main-layout">
+        <!-- Video section -->
+        <section class="video-section">
+          <div class="video-container">
+            <video id="video-player" ref="videoRef"></video>
+          </div>
+
+          <!-- Video controls -->
+          <div class="video-controls">
+            <!-- Play/Pause -->
+            <button id="play-pause-btn" class="control-btn" title="Play/Pause (Space)">
+              <span id="play-icon">&#9658;</span>
+              <span id="pause-icon" class="hidden">&#9612;</span>
+            </button>
+
+            <!-- Current time -->
+            <span id="current-time" class="time-display">00:00</span>
+
+            <!-- Progress bar -->
+            <div id="progress-wrapper" class="progress-wrapper">
+              <div class="progress-bar">
+                <div id="buffered-bar" class="buffered-bar"></div>
+                <div id="played-bar" class="played-bar"></div>
+                <div id="markers-container" class="markers-container"></div>
+              </div>
+              <div id="progress-handle" class="progress-handle"></div>
+              <div id="tooltip" class="tooltip hidden"></div>
+            </div>
+
+            <!-- Duration -->
+            <span id="total-duration" class="time-display">00:00</span>
+
+            <!-- Speed control -->
+            <div class="speed-control">
+              <button id="speed-btn" class="speed-btn">1x</button>
+              <div id="speed-menu" class="speed-menu hidden">
+                <button class="speed-option" data-speed="0.5">0.5x</button>
+                <button class="speed-option" data-speed="0.75">0.75x</button>
+                <button class="speed-option" data-speed="1">1x</button>
+                <button class="speed-option" data-speed="1.25">1.25x</button>
+                <button class="speed-option" data-speed="1.5">1.5x</button>
+                <button class="speed-option" data-speed="2">2x</button>
+              </div>
+            </div>
+
+            <!-- Volume -->
+            <div class="volume-control">
+              <button id="mute-btn" class="control-btn" title="Mute">
+                <span id="volume-on">&#128266;</span>
+                <span id="volume-off" class="hidden">&#128268;</span>
+              </button>
+              <input type="range" id="volume-slider" class="volume-slider" min="0" max="1" step="0.05" value="1">
+            </div>
+          </div>
+        </section>
+
+        <!-- Logs panel -->
+        <div class="logs-panel">
+          <!-- Tab bar -->
+          <div class="tab-bar">
+            <button id="console-tab" class="tab-btn active">Console</button>
+            <button id="network-tab" class="tab-btn">Network</button>
+          </div>
+
+          <!-- Console viewer -->
+          <div id="console-viewer" class="viewer-container">
+            <div class="filter-bar">
+              <div class="filter-buttons" id="console-filters">
+                <button class="filter-btn active" data-filter="all">All</button>
+                <button class="filter-btn" data-filter="log">Log</button>
+                <button class="filter-btn" data-filter="warn">Warn</button>
+                <button class="filter-btn" data-filter="error">Error</button>
+                <button class="filter-btn" data-filter="info">Info</button>
+                <button class="filter-btn" data-filter="debug">Debug</button>
+              </div>
+            </div>
+            <div id="console-entries" class="entries-scroll"></div>
+          </div>
+
+          <!-- Network viewer -->
+          <div id="network-viewer" class="viewer-container hidden">
+            <div class="filter-bar">
+              <div class="filter-buttons" id="network-filters">
+                <button class="filter-btn active" data-filter="all">All</button>
+                <button class="filter-btn" data-filter="fetch">Fetch/XHR</button>
+                <button class="filter-btn" data-filter="js">JS</button>
+                <button class="filter-btn" data-filter="css">CSS</button>
+                <button class="filter-btn" data-filter="img">Img</button>
+                <button class="filter-btn" data-filter="doc">Doc</button>
+                <button class="filter-btn" data-filter="font">Font</button>
+                <button class="filter-btn" data-filter="media">Media</button>
+                <button class="filter-btn" data-filter="ws">WS</button>
+                <button class="filter-btn" data-filter="other">Other</button>
+              </div>
+              <span id="network-summary" class="network-summary"></span>
+            </div>
+            <div id="network-entries" class="entries-scroll">
+              <div class="network-header">
+                <span class="col-method">Method</span>
+                <span class="col-url">URL</span>
+                <span class="col-status">Status</span>
+                <span class="col-type">Type</span>
+                <span class="col-size">Size</span>
+              </div>
+              <div id="network-rows"></div>
+            </div>
+            <div id="websocket-section" class="websocket-section hidden">
+              <h3>WebSocket Connections</h3>
+              <div id="websocket-rows"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script src="player.js"></script>
+</body>
+</html>

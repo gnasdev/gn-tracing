@@ -28,8 +28,13 @@
     </div>
 
     <div id="download-section" class="hidden">
-      <button id="upload-btn" class="btn btn-upload">Upload to Server</button>
-      <button id="download-btn" class="btn btn-download">Download (.zip)</button>
+      <button id="upload-drive-btn" class="btn btn-upload">Upload to Google Drive</button>
+      <div id="upload-progress" class="hidden">
+        <div class="progress-bar-container">
+          <div id="progress-fill" class="progress-fill"></div>
+        </div>
+        <div id="progress-text" class="progress-text">Uploading...</div>
+      </div>
     </div>
 
     <div id="upload-result" class="hidden">
@@ -41,10 +46,12 @@
       <span id="copy-feedback" class="hidden">Copied!</span>
     </div>
 
-    <div id="settings-section">
+    <div id="google-drive-section">
       <div class="setting-row">
-        <label for="server-url">Server URL</label>
-        <input type="text" id="server-url" placeholder="http://localhost:3000">
+        <label>Google Drive</label>
+        <div id="google-drive-status">Not connected</div>
+        <button id="google-drive-connect-btn" class="btn btn-small">Connect</button>
+        <button id="google-drive-disconnect-btn" class="btn btn-small hidden">Disconnect</button>
       </div>
     </div>
 

@@ -2,18 +2,21 @@ export type MessageAction =
   | "START_RECORDING"
   | "STOP_RECORDING"
   | "GET_STATUS"
-  | "DOWNLOAD_RESULTS"
-  | "UPLOAD_RECORDING"
-  | "SET_SERVER_URL"
-  | "GET_SERVER_URL"
+  | "GOOGLE_DRIVE_CONNECT"
+  | "GOOGLE_DRIVE_DISCONNECT"
+  | "GOOGLE_DRIVE_STATUS"
+  | "GET_GOOGLE_DRIVE_TOKEN"
+  | "UPLOAD_TO_GOOGLE_DRIVE"
   | "RECORDING_COMPLETE"
-  | "ZIP_READY";
+  | "ZIP_READY"
+  | "OPEN_POPUP";
 
 export type OffscreenMessageType =
   | "START_CAPTURE"
   | "STOP_CAPTURE"
   | "CREATE_ZIP"
-  | "UPLOAD_TO_SERVER";
+  | "UPLOAD_TO_GOOGLE_DRIVE"
+  | "UPLOAD_PROGRESS";
 
 export interface ServiceWorkerMessage {
   action: MessageAction;
@@ -43,4 +46,14 @@ export interface RecordingStatus {
   consoleLogCount: number;
   networkRequestCount: number;
   hasRecording: boolean;
+}
+
+export interface UploadProgressMessage {
+  target: "offscreen";
+  type: "UPLOAD_PROGRESS";
+  data: {
+    step: number;
+    total: number;
+    message: string;
+  };
 }
