@@ -514,7 +514,6 @@ body {
   border-radius: 4px;
   color: var(--gh-secondary);
   font-size: 11px;
-  cursor: pointer;
 }
 
 .filter-btn:hover {
