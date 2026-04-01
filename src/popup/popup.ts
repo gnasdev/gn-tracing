@@ -174,22 +174,15 @@ openLinkBtn.addEventListener("click", () => {
   }
 });
 
-// Google Drive connect
+// Google Drive connect - open auth page
 googleDriveConnectBtn.addEventListener("click", async () => {
-  googleDriveConnectBtn.disabled = true;
+  // Open drive auth page in a new tab
+  chrome.tabs.create({
+    url: chrome.runtime.getURL("drive-auth/drive-auth.html"),
+  });
 
-  try {
-    const result = await chrome.runtime.sendMessage({ action: "GOOGLE_DRIVE_CONNECT" }) as MessageResponse;
-    if (result.ok) {
-      await updateGoogleDriveStatus();
-    } else {
-      showError(result.error || "Connection failed");
-    }
-  } catch (e) {
-    showError((e as Error).message);
-  }
-
-  googleDriveConnectBtn.disabled = false;
+  // Close popup
+  window.close();
 });
 
 // Google Drive disconnect

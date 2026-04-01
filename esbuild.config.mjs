@@ -37,6 +37,20 @@ function copyFile(src, dest) {
   fs.copyFileSync(src, dest);
 }
 
+function copyDir(src, dest) {
+  fs.mkdirSync(dest, { recursive: true });
+  const entries = fs.readdirSync(src, { withFileTypes: true });
+  for (const entry of entries) {
+    const srcPath = path.join(src, entry.name);
+    const destPath = path.join(dest, entry.name);
+    if (entry.isDirectory()) {
+      copyDir(srcPath, destPath);
+    } else {
+      fs.copyFileSync(srcPath, destPath);
+    }
+  }
+}
+
 async function build() {
   // Service worker — ESM (Chrome MV3 module worker)
   const swCtx = await esbuild.context({
@@ -46,12 +60,13 @@ async function build() {
     format: "esm",
   });
 
-  // Popup and offscreen — IIFE (loaded via non-module script tags)
+  // Popup, offscreen, and drive-auth — IIFE (loaded via non-module script tags)
   const uiCtx = await esbuild.context({
     ...commonOptions,
     entryPoints: [
       { in: "src/popup/popup.ts", out: "popup/popup" },
       { in: "src/offscreen/offscreen.ts", out: "offscreen/offscreen" },
+      { in: "src/drive-auth/drive-auth.ts", out: "drive-auth/drive-auth" },
     ],
     outdir: "dist",
     format: "iife",
@@ -68,6 +83,7 @@ async function build() {
     copyFile("player/player.html", "dist/player/player.html");
     copyFile("player/player.css", "dist/player/player.css");
     copyFile("player/player.js", "dist/player/player.js");
+    copyDir("player/icons", "dist/player/icons");
 
     // Copy JSZip
     copyFile("node_modules/jszip/dist/jszip.min.js", "dist/lib/jszip.min.js");

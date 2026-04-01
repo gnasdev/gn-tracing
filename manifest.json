@@ -40,7 +40,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["dist/player/*", "dist/lib/*"],
+      "resources": ["dist/player/*", "dist/lib/*", "player/icons/*", "drive-auth/*", "dist/drive-auth/*"],
       "matches": ["<all_urls>"]
     }
   ]
