@@ -130,7 +130,7 @@ export class StorageManager {
     return JSON.stringify({
       log: {
         version: "1.0",
-        creator: { name: "gn-web-tracing", version: "1.0.0" },
+        creator: { name: "gn-tracing", version: "1.0.0" },
         entries: this.#networkEntries.map((e) => ({
           request: {
             method: e.method,

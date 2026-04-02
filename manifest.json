@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "gn-web-tracing",
+  "name": "gn-tracing",
   "version": "1.0.0",
   "description": "Record tab video, console logs, and network requests for debugging",
   "permissions": [

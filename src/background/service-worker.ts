@@ -30,7 +30,7 @@ const state: RecordingState = {
 
 // Keep service worker alive during recording
 chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === "gn-web-tracing-keepalive" && state.isRecording) {
+  if (alarm.name === "gn-tracing-keepalive" && state.isRecording) {
     // Just waking up the service worker
   }
 });
@@ -128,7 +128,7 @@ async function startRecording(tabId: number): Promise<MessageResponse> {
     chrome.action.setBadgeText({ text: "REC" });
     chrome.action.setBadgeBackgroundColor({ color: "#ef233c" });
 
-    chrome.alarms.create("gn-web-tracing-keepalive", { periodInMinutes: 0.4 });
+    chrome.alarms.create("gn-tracing-keepalive", { periodInMinutes: 0.4 });
 
     return { ok: true };
   } catch (e) {
@@ -161,7 +161,7 @@ async function stopRecording(): Promise<MessageResponse> {
     storage.resolveSourceMaps(cdp.sourceMapResolver);
 
     chrome.action.setBadgeText({ text: "" });
-    chrome.alarms.clear("gn-web-tracing-keepalive");
+    chrome.alarms.clear("gn-tracing-keepalive");
 
     return { ok: true };
   } catch (e) {

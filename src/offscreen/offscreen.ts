@@ -124,7 +124,7 @@ async function uploadToGoogleDrive(
 ): Promise<{ ok: boolean; recordingUrl?: string; error?: string }> {
   const now = new Date();
   const dateStr = now.toISOString().replace(/[:.]/g, "-").slice(0, 19);
-  const baseName = `gn-web-tracing-${dateStr}`;
+  const baseName = `gn-tracing-${dateStr}`;
 
   try {
     // Upload video first (largest file, separate progress)
@@ -344,7 +344,7 @@ async function uploadToGoogleDrive(
       duration: data.duration,
       url: data.url,
       startTime: data.startTime,
-      extension: "gn-web-tracing",
+      extension: "gn-tracing",
       version: "1.0.0",
       videoFileId,
       consoleFileId,
@@ -438,7 +438,7 @@ async function createZip(data: ZipData): Promise<void> {
         duration: data.duration,
         url: data.url,
         startTime: data.startTime,
-        extension: "gn-web-tracing",
+        extension: "gn-tracing",
         version: "1.0.0",
       },
       null,
@@ -451,7 +451,7 @@ async function createZip(data: ZipData): Promise<void> {
 
   const now = new Date();
   const dateStr = now.toISOString().replace(/[:.]/g, "-").slice(0, 19);
-  const filename = `gn-web-tracing-${dateStr}.zip`;
+  const filename = `gn-tracing-${dateStr}.zip`;
 
   chrome.runtime.sendMessage({
     action: "ZIP_READY",
