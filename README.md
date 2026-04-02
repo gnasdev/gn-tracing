@@ -15,7 +15,7 @@ A Chrome Manifest V3 extension that records tab video, console logs, and network
 - **Source Map Resolution** — Automatically fetches and decodes source maps (VLQ) to resolve minified stack traces back to original source locations
 - **ZIP Download** — Package recording (video + JSON logs + metadata) as a ZIP file
 - **Google Drive Upload** — Upload recordings directly to Google Drive with shareable links via a dedicated authentication page (no server required)
-- **Server Upload** — Upload recordings to the companion [gn-web-tracing-server](https://github.com/user/gn-web-tracing-server) for viewing and sharing (optional)
+
 
 ## Architecture
 
@@ -119,7 +119,7 @@ npm run typecheck # Type checking only (no emit)
 4. Choose one of:
    - **Download ZIP** — saves a ZIP file with video (`.webm`), console logs, network requests, and metadata as JSON
    - **Upload to Google Drive** — uploads directly to your Google Drive with shareable link
-   - **Upload to Server** — sends the recording to a configured gn-web-tracing-server instance for viewing in a web UI
+
 
 ### Google Drive Setup
 
@@ -185,7 +185,7 @@ Click the gear icon in the popup to set the server URL (e.g., `http://localhost:
 
 ## Related
 
-- **[gn-web-tracing-server](../gn-web-tracing-server)** — Companion server for storing and viewing recordings
+
 
 ## License
 
