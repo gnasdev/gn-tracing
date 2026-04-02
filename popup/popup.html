@@ -55,6 +55,29 @@
       </div>
     </div>
 
+    <div id="player-config-section">
+      <div class="setting-row">
+        <label>Player Host</label>
+        <div id="player-host-display" class="player-display-inline">
+          <span id="player-host-value" class="player-value-inline">Built-in player</span>
+          <button id="edit-player-btn" class="btn-icon" title="Edit">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+            </svg>
+          </button>
+        </div>
+      </div>
+      <!-- Edit Mode - shown below the row when editing -->
+      <div id="player-edit-container" class="player-edit-container hidden">
+        <input type="url" id="player-host-input" placeholder="https://..." class="config-input">
+        <div class="edit-actions">
+          <button id="save-player-config-btn" class="btn btn-small">Save</button>
+          <button id="cancel-player-config-btn" class="btn btn-small btn-link">Cancel</button>
+        </div>
+      </div>
+    </div>
+
     <div id="error-msg" class="hidden"></div>
   </div>
   <script src="../dist/popup/popup.js"></script>

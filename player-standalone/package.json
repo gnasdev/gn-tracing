@@ -1,0 +1,22 @@
+{
+  "name": "gn-tracing-player-standalone",
+  "version": "1.0.0",
+  "description": "Standalone player for GN Tracing recordings",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port 5173",
+    "watch": "vite --port 5173",
+    "build": "tsc && vite build",
+    "build:prod": "tsc && vite build --mode production",
+    "preview": "vite preview",
+    "sync:player": "node scripts/sync-player.js",
+    "deploy": "./deploy.sh"
+  },
+  "devDependencies": {
+    "typescript": "~5.9.3",
+    "vite": "^7.3.1"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

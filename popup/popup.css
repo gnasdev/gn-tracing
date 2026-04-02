@@ -250,6 +250,100 @@ h1 {
   font-size: 12px;
 }
 
+.success-msg {
+  padding: 8px;
+  background: #1c3d22;
+  border-radius: 6px;
+  color: #2ec4b6;
+  font-size: 12px;
+}
+
+/* Player Config Section */
+#player-config-section {
+  border-top: 1px solid #16213e;
+  padding-top: 10px;
+}
+
+/* Inline display for label + value + edit */
+.player-display-inline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  justify-content: flex-end;
+}
+
+.player-value-inline {
+  font-size: 12px;
+  color: #e0e0e0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 140px;
+}
+
+.btn-icon {
+  padding: 4px;
+  background: transparent;
+  border: 1px solid #2a3a5c;
+  border-radius: 4px;
+  color: #8d99ae;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+}
+
+.btn-icon:hover {
+  background: #16213e;
+  color: #e0e0e0;
+  border-color: #4361ee;
+}
+
+/* Edit Container - shown below the row */
+.player-edit-container {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed #2a3a5c;
+}
+
+.edit-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.edit-actions .btn-small {
+  flex: 1;
+}
+
+.config-input {
+  width: 100%;
+  padding: 6px 8px;
+  background: #16213e;
+  border: 1px solid #2a3a5c;
+  border-radius: 6px;
+  color: #e0e0e0;
+  font-size: 12px;
+  outline: none;
+}
+
+.config-input:focus {
+  border-color: #4361ee;
+}
+
+.btn-link {
+  background: transparent;
+  color: #8d99ae;
+  border: 1px solid #2a3a5c;
+}
+
+.btn-link:hover {
+  background: #16213e;
+  color: #e0e0e0;
+}
+
 .hidden {
   display: none !important;
 }

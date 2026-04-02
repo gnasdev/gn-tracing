@@ -1,4 +1,4 @@
-import type { MessageResponse, RecordingStatus } from "../types/messages";
+import type { MessageResponse, RecordingStatus, UploadState, PlayerConfig } from "../types/messages";
 
 const toggleBtn = document.getElementById("toggle-btn") as HTMLButtonElement;
 const statusBar = document.getElementById("status-bar")!;
@@ -23,7 +23,58 @@ const googleDriveStatus = document.getElementById("google-drive-status")!;
 const googleDriveConnectBtn = document.getElementById("google-drive-connect-btn") as HTMLButtonElement;
 const googleDriveDisconnectBtn = document.getElementById("google-drive-disconnect-btn") as HTMLButtonElement;
 
-let pollInterval: ReturnType<typeof setInterval> | null = null;
+// Player Config elements
+const playerHostDisplay = document.getElementById("player-host-display") as HTMLDivElement;
+const playerEditContainer = document.getElementById("player-edit-container") as HTMLDivElement;
+const playerHostValue = document.getElementById("player-host-value") as HTMLSpanElement;
+const editPlayerBtn = document.getElementById("edit-player-btn") as HTMLButtonElement;
+const playerHostInput = document.getElementById("player-host-input") as HTMLInputElement;
+const savePlayerConfigBtn = document.getElementById("save-player-config-btn") as HTMLButtonElement;
+const cancelPlayerConfigBtn = document.getElementById("cancel-player-config-btn") as HTMLButtonElement;
+
+// Storage key cho state sync từ service worker (qua chrome.storage.session)
+const SERVICE_STATE_KEY = "gn_tracing_state";
+
+// Timer interval cho recording time display
+let timerInterval: ReturnType<typeof setInterval> | null = null;
+
+// Load state từ service worker storage
+async function loadStateFromStorage(): Promise<{ recording?: RecordingStatus; upload?: UploadState; googleDrive?: { isConnected: boolean } } | null> {
+  try {
+    const result = await chrome.storage.session.get(SERVICE_STATE_KEY);
+    return result[SERVICE_STATE_KEY] || null;
+  } catch {
+    return null;
+  }
+}
+
+// Subscribe to storage changes from service worker
+function subscribeToStateChanges(callback: (state: { recording?: RecordingStatus; upload?: UploadState; googleDrive?: { isConnected: boolean } }) => void): () => void {
+  const listener = (changes: { [key: string]: chrome.storage.StorageChange }) => {
+    if (changes[SERVICE_STATE_KEY]) {
+      callback(changes[SERVICE_STATE_KEY].newValue);
+    }
+  };
+  chrome.storage.session.onChanged.addListener(listener);
+  return () => chrome.storage.session.onChanged.removeListener(listener);
+}
+
+// Start timer cho recording
+function startRecordingTimer(startTime: number) {
+  if (timerInterval) clearInterval(timerInterval);
+  timerInterval = setInterval(() => {
+    const elapsed = Date.now() - startTime;
+    timerEl.textContent = formatTime(elapsed);
+  }, 1000);
+}
+
+// Stop timer
+function stopRecordingTimer() {
+  if (timerInterval) {
+    clearInterval(timerInterval);
+    timerInterval = null;
+  }
+}
 
 function formatTime(ms: number): string {
   const totalSec = Math.floor(ms / 1000);
@@ -44,8 +95,11 @@ function updateUI(status: RecordingStatus | null): void {
     downloadSection.classList.add("hidden");
     uploadResult.classList.add("hidden");
 
-    const elapsed = Date.now() - status.startTime!;
-    timerEl.textContent = formatTime(elapsed);
+    // Start timer if not already running
+    if (!timerInterval && status.startTime) {
+      startRecordingTimer(status.startTime);
+    }
+
     consoleCount.textContent = String(status.consoleLogCount || 0);
     networkCount.textContent = String(status.networkRequestCount || 0);
   } else {
@@ -54,10 +108,61 @@ function updateUI(status: RecordingStatus | null): void {
     toggleBtn.disabled = false;
     statusBar.classList.add("hidden");
     stats.classList.add("hidden");
+    stopRecordingTimer();
 
     if (status.hasRecording) {
       downloadSection.classList.remove("hidden");
+    } else {
+      downloadSection.classList.add("hidden");
     }
+  }
+}
+
+function updateUploadUI(uploadState: UploadState | null): void {
+  if (!uploadState) return;
+
+  // If upload is in progress, show progress
+  if (uploadState.isUploading) {
+    uploadDriveBtn.classList.add("hidden");
+    uploadProgress.classList.remove("hidden");
+    uploadResult.classList.add("hidden");
+    progressFill.style.width = `${uploadState.progress}%`;
+    progressText.textContent = uploadState.message || "Uploading...";
+    return;
+  }
+
+  // If upload completed successfully, show result
+  if (uploadState.recordingUrl) {
+    uploadDriveBtn.classList.add("hidden");
+    uploadProgress.classList.add("hidden");
+    uploadResult.classList.remove("hidden");
+    recordingLink.value = uploadState.recordingUrl;
+    return;
+  }
+
+  // If upload failed, show error and reset button
+  if (uploadState.error) {
+    uploadProgress.classList.add("hidden");
+    uploadDriveBtn.classList.remove("hidden");
+    uploadDriveBtn.disabled = false;
+    showError(uploadState.error);
+  } else {
+    // Reset to default state - show upload button
+    uploadProgress.classList.add("hidden");
+    uploadDriveBtn.classList.remove("hidden");
+    uploadDriveBtn.disabled = false;
+  }
+}
+
+function updateGoogleDriveUI(isConnected: boolean): void {
+  if (isConnected) {
+    googleDriveStatus.textContent = "Connected";
+    googleDriveConnectBtn.classList.add("hidden");
+    googleDriveDisconnectBtn.classList.remove("hidden");
+  } else {
+    googleDriveStatus.textContent = "Not connected";
+    googleDriveConnectBtn.classList.remove("hidden");
+    googleDriveDisconnectBtn.classList.add("hidden");
   }
 }
 
@@ -67,31 +172,16 @@ function showError(msg: string): void {
   setTimeout(() => errorMsg.classList.add("hidden"), 5000);
 }
 
-async function queryStatus(): Promise<void> {
-  try {
-    const status = await chrome.runtime.sendMessage({ action: "GET_STATUS" }) as RecordingStatus;
-    updateUI(status);
-  } catch {
-    // Extension context invalidated
+// Handle state update từ storage
+function handleStateUpdate(state: { recording?: RecordingStatus; upload?: UploadState; googleDrive?: { isConnected: boolean } }): void {
+  if (state.recording) {
+    updateUI(state.recording);
   }
-}
-
-async function updateGoogleDriveStatus(): Promise<void> {
-  try {
-    const result = await chrome.runtime.sendMessage({ action: "GOOGLE_DRIVE_STATUS" }) as MessageResponse & { isConnected: boolean; email?: string };
-    if (result.ok && result.isConnected) {
-      googleDriveStatus.textContent = result.email || "Connected";
-      googleDriveConnectBtn.classList.add("hidden");
-      googleDriveDisconnectBtn.classList.remove("hidden");
-    } else {
-      googleDriveStatus.textContent = "Not connected";
-      googleDriveConnectBtn.classList.remove("hidden");
-      googleDriveDisconnectBtn.classList.add("hidden");
-    }
-  } catch {
-    googleDriveStatus.textContent = "Not connected";
-    googleDriveConnectBtn.classList.remove("hidden");
-    googleDriveDisconnectBtn.classList.add("hidden");
+  if (state.upload) {
+    updateUploadUI(state.upload);
+  }
+  if (state.googleDrive) {
+    updateGoogleDriveUI(state.googleDrive.isConnected);
   }
 }
 
@@ -101,18 +191,23 @@ toggleBtn.addEventListener("click", async () => {
   errorMsg.classList.add("hidden");
   uploadResult.classList.add("hidden");
 
-  const status = await chrome.runtime.sendMessage({ action: "GET_STATUS" }) as RecordingStatus;
+  try {
+    const currentState = await loadStateFromStorage();
+    const isRecording = currentState?.recording?.isRecording ?? false;
 
-  if (status.isRecording) {
-    const result = await chrome.runtime.sendMessage({ action: "STOP_RECORDING" }) as MessageResponse;
-    if (!result.ok) showError(result.error || "Failed to stop recording");
-  } else {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    const result = await chrome.runtime.sendMessage({ action: "START_RECORDING", tabId: tab.id }) as MessageResponse;
-    if (!result.ok) showError(result.error || "Failed to start recording");
+    if (isRecording) {
+      const result = await chrome.runtime.sendMessage({ action: "STOP_RECORDING" }) as MessageResponse;
+      if (!result.ok) showError(result.error || "Failed to stop recording");
+    } else {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      const result = await chrome.runtime.sendMessage({ action: "START_RECORDING", tabId: tab.id }) as MessageResponse;
+      if (!result.ok) showError(result.error || "Failed to start recording");
+    }
+  } catch (e) {
+    showError((e as Error).message);
+  } finally {
+    toggleBtn.disabled = false;
   }
-
-  await queryStatus();
 });
 
 // Upload to Google Drive
@@ -136,9 +231,14 @@ uploadDriveBtn.addEventListener("click", async () => {
 
   chrome.runtime.onMessage.addListener(progressListener);
 
+  // Cleanup function để đảm bảo listener được xóa
+  const cleanup = () => {
+    chrome.runtime.onMessage.removeListener(progressListener);
+  };
+
   try {
     const result = await chrome.runtime.sendMessage({ action: "UPLOAD_TO_GOOGLE_DRIVE" }) as MessageResponse;
-    chrome.runtime.onMessage.removeListener(progressListener);
+    cleanup();
 
     if (result.ok) {
       recordingLink.value = result.recordingUrl || "";
@@ -148,16 +248,17 @@ uploadDriveBtn.addEventListener("click", async () => {
       showError(result.error || "Upload failed");
       uploadProgress.classList.add("hidden");
       uploadDriveBtn.classList.remove("hidden");
+      uploadDriveBtn.disabled = false;
+      uploadDriveBtn.textContent = "Upload to Google Drive";
     }
   } catch (e) {
-    chrome.runtime.onMessage.removeListener(progressListener);
+    cleanup();
     showError((e as Error).message);
     uploadProgress.classList.add("hidden");
     uploadDriveBtn.classList.remove("hidden");
+    uploadDriveBtn.disabled = false;
+    uploadDriveBtn.textContent = "Upload to Google Drive";
   }
-
-  uploadDriveBtn.disabled = false;
-  uploadDriveBtn.textContent = "Upload to Google Drive";
 });
 
 // Copy link
@@ -191,24 +292,155 @@ googleDriveDisconnectBtn.addEventListener("click", async () => {
 
   try {
     const result = await chrome.runtime.sendMessage({ action: "GOOGLE_DRIVE_DISCONNECT" }) as MessageResponse;
-    if (result.ok) {
-      await updateGoogleDriveStatus();
-    } else {
+    if (!result.ok) {
       showError(result.error || "Disconnect failed");
+    }
+    // State sẽ được cập nhật qua storage change event
+  } catch (e) {
+    showError((e as Error).message);
+  } finally {
+    googleDriveDisconnectBtn.disabled = false;
+  }
+});
+
+// Default player host from build-time env
+const DEFAULT_PLAYER_HOST = typeof process !== 'undefined' && process.env?.PLAYER_HOST_URL
+  ? process.env.PLAYER_HOST_URL
+  : "";
+
+// Current saved player host value
+let currentPlayerHost: string | null = null;
+
+// Toggle to edit mode
+function enterEditMode() {
+  playerEditContainer.classList.remove("hidden");
+  // Pre-fill with current value
+  playerHostInput.value = currentPlayerHost || "";
+  playerHostInput.focus();
+}
+
+// Toggle to display mode
+function exitEditMode() {
+  playerEditContainer.classList.add("hidden");
+}
+
+// Update display value
+function updatePlayerDisplay(value: string | null) {
+  currentPlayerHost = value;
+  if (value) {
+    playerHostValue.textContent = value;
+    playerHostValue.title = value;
+  } else {
+    playerHostValue.textContent = "Built-in player";
+    playerHostValue.title = "Using extension built-in player";
+  }
+}
+
+// Player Config - Load config when popup opens
+async function loadPlayerConfig(): Promise<void> {
+  try {
+    const response = await chrome.runtime.sendMessage({ action: "GET_PLAYER_CONFIG" }) as MessageResponse;
+    if (response.ok) {
+      const savedValue = response.playerHostUrl;
+      // savedValue === null: user explicitly wants built-in
+      // savedValue === "": no user config, check .env default
+      // savedValue has value: user custom config
+      let effectiveValue: string | null;
+      if (savedValue === null) {
+        effectiveValue = null; // Built-in
+      } else if (savedValue) {
+        effectiveValue = savedValue; // User custom
+      } else if (DEFAULT_PLAYER_HOST) {
+        effectiveValue = DEFAULT_PLAYER_HOST; // .env default
+      } else {
+        effectiveValue = null; // No config
+      }
+      updatePlayerDisplay(effectiveValue);
+    }
+  } catch (e) {
+    console.error("Failed to load player config:", e);
+    updatePlayerDisplay(null);
+  }
+}
+
+// Player Config - Edit button
+editPlayerBtn.addEventListener("click", () => {
+  enterEditMode();
+});
+
+// Player Config - Save config
+savePlayerConfigBtn.addEventListener("click", async () => {
+  const url = playerHostInput.value.trim();
+
+  // Validate URL if not empty
+  if (url) {
+    try {
+      const parsed = new URL(url);
+      if (!parsed.protocol.startsWith("http")) {
+        showError("URL must start with http:// or https://");
+        return;
+      }
+    } catch {
+      showError("Invalid URL");
+      return;
+    }
+  }
+
+  const config: PlayerConfig = { playerHostUrl: url || null };
+
+  try {
+    const result = await chrome.runtime.sendMessage({
+      action: "SET_PLAYER_CONFIG",
+      data: config,
+    }) as MessageResponse;
+
+    if (result.ok) {
+      updatePlayerDisplay(url || null);
+      exitEditMode();
+      showSuccess(url ? "Player host saved!" : "Using built-in player");
+    } else {
+      showError(result.error || "Failed to save");
     }
   } catch (e) {
     showError((e as Error).message);
   }
-
-  googleDriveDisconnectBtn.disabled = false;
 });
 
-// Initial Google Drive status check
-updateGoogleDriveStatus();
-
-// Initial query and start polling
-queryStatus();
-pollInterval = setInterval(queryStatus, 500);
-window.addEventListener("unload", () => {
-  if (pollInterval) clearInterval(pollInterval);
+// Player Config - Cancel edit
+cancelPlayerConfigBtn.addEventListener("click", () => {
+  exitEditMode();
 });
+
+function showSuccess(msg: string): void {
+  errorMsg.textContent = msg;
+  errorMsg.className = "success-msg";
+  setTimeout(() => {
+    errorMsg.className = "hidden";
+  }, 3000);
+}
+
+// Initialize popup - load state từ storage và subscribe đến changes
+async function initPopup(): Promise<void> {
+  // Load initial state
+  const initialState = await loadStateFromStorage();
+  if (initialState) {
+    handleStateUpdate(initialState);
+  }
+
+  // Load player config
+  await loadPlayerConfig();
+
+  // Subscribe to storage changes từ service worker
+  const unsubscribe = subscribeToStateChanges((newState) => {
+    handleStateUpdate(newState);
+  });
+
+  // Cleanup khi popup đóng
+  window.addEventListener("unload", () => {
+    stopRecordingTimer();
+    unsubscribe();
+  });
+}
+
+// Start
+initPopup();

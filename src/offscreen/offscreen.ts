@@ -188,7 +188,7 @@ async function uploadToGoogleDrive(
             "metadata",
             new Blob([JSON.stringify({ name: `${baseName}-console.json` })], { type: "application/json" })
           );
-          consoleFormData.append("file", new Blob([data.consoleLogs], { type: "application/json" }), `${baseName}-console.json`);
+          consoleFormData.append("file", new Blob([data.consoleLogs!], { type: "application/json" }), `${baseName}-console.json`);
 
           const consoleResponse = await fetch(
             "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id&supportsAllDrives=true",
@@ -236,7 +236,7 @@ async function uploadToGoogleDrive(
             "metadata",
             new Blob([JSON.stringify({ name: `${baseName}-network.json` })], { type: "application/json" })
           );
-          networkFormData.append("file", new Blob([data.networkRequests], { type: "application/json" }), `${baseName}-network.json`);
+          networkFormData.append("file", new Blob([data.networkRequests!], { type: "application/json" }), `${baseName}-network.json`);
 
           const networkResponse = await fetch(
             "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id&supportsAllDrives=true",
@@ -284,7 +284,7 @@ async function uploadToGoogleDrive(
             "metadata",
             new Blob([JSON.stringify({ name: `${baseName}-websocket.json` })], { type: "application/json" })
           );
-          wsFormData.append("file", new Blob([data.webSocketLogs], { type: "application/json" }), `${baseName}-websocket.json`);
+          wsFormData.append("file", new Blob([data.webSocketLogs!], { type: "application/json" }), `${baseName}-websocket.json`);
 
           const wsResponse = await fetch(
             "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id&supportsAllDrives=true",
@@ -393,8 +393,14 @@ async function uploadToGoogleDrive(
       }
     );
 
+    // Get player config from service worker (user override)
+    const configResponse = await chrome.runtime.sendMessage({ action: "GET_PLAYER_CONFIG" }) as { playerHostUrl: string | null };
+    const userPlayerHost = configResponse?.playerHostUrl;
+
+    // Use priority: user config > env config > null (fallback to extension player)
+    const playerHostUrl = userPlayerHost || (typeof process !== 'undefined' && process.env?.PLAYER_HOST_URL) || null;
+
     // Build player URL with file IDs as query params
-    const playerBaseUrl = chrome.runtime.getURL("dist/player/player.html");
     const params = new URLSearchParams();
     if (videoFileId) params.set("video", videoFileId);
     if (consoleFileId) params.set("console", consoleFileId);
@@ -402,7 +408,17 @@ async function uploadToGoogleDrive(
     if (websocketFileId) params.set("websocket", websocketFileId);
     if (metadataFileId) params.set("metadata", metadataFileId);
 
-    const recordingUrl = `${playerBaseUrl}?${params.toString()}`;
+    let recordingUrl: string;
+    if (playerHostUrl) {
+      // Use external standalone player
+      const baseUrl = playerHostUrl.replace(/\/$/, '');
+      recordingUrl = `${baseUrl}/?${params.toString()}`;
+    } else {
+      // Fallback: use extension's built-in player
+      const playerBaseUrl = chrome.runtime.getURL("dist/player/player.html");
+      recordingUrl = `${playerBaseUrl}?${params.toString()}`;
+    }
+
     return { ok: true, recordingUrl };
 
   } catch (e) {

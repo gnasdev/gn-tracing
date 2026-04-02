@@ -15,7 +15,7 @@
   ],
   "host_permissions": ["<all_urls>"],
   "oauth2": {
-    "client_id": "95916347176-ulk25djm5l4g6ebq7vftjik8iv9a11vf.apps.googleusercontent.com",
+    "client_id": "{{GOOGLE_CLIENT_ID}}",
     "scopes": [
       "https://www.googleapis.com/auth/drive.file"
     ]

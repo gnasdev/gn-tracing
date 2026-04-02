@@ -12,6 +12,8 @@ const cancelBtn = document.getElementById("cancel-btn") as HTMLButtonElement;
 const successDetail = document.getElementById("success-detail")!;
 const errorDetail = document.getElementById("error-detail")!;
 
+const SERVICE_STATE_KEY = "gn_tracing_state";
+
 // Show specific state
 function showState(state: "initial" | "loading" | "success" | "error") {
   initialState.classList.add("hidden");
@@ -35,6 +37,16 @@ function showState(state: "initial" | "loading" | "success" | "error") {
   }
 }
 
+// Update UI based on auth status
+function updateAuthUI(isConnected: boolean) {
+  if (isConnected) {
+    showState("success");
+    successDetail.textContent = "Your Google Drive account is connected.";
+  } else {
+    showState("initial");
+  }
+}
+
 // Start OAuth flow
 async function startAuth() {
   showState("loading");
@@ -43,8 +55,7 @@ async function startAuth() {
     const result = await chrome.runtime.sendMessage({ action: "GOOGLE_DRIVE_CONNECT" }) as MessageResponse;
 
     if (result.ok) {
-      showState("success");
-      successDetail.textContent = result.message || "Your Google Drive account has been connected successfully.";
+      updateAuthUI(true);
     } else {
       showState("error");
       errorDetail.textContent = result.error || "Authentication failed. Please try again.";
@@ -69,17 +80,24 @@ cancelBtn.addEventListener("click", closeWindow);
 // Check if already connected on load
 async function checkStatus() {
   try {
-    const result = await chrome.runtime.sendMessage({ action: "GOOGLE_DRIVE_STATUS" }) as MessageResponse & { isConnected: boolean; email?: string };
-    if (result.ok && result.isConnected) {
-      showState("success");
-      successDetail.textContent = result.email
-        ? `Connected as ${result.email}`
-        : "Your Google Drive account is already connected.";
+    const result = await chrome.runtime.sendMessage({ action: "GOOGLE_DRIVE_STATUS" }) as MessageResponse & { isConnected: boolean };
+    if (result.ok) {
+      updateAuthUI(result.isConnected);
     }
   } catch {
     // Ignore errors, stay on initial state
   }
 }
+
+// Listen for state changes from service worker
+chrome.storage.session.onChanged.addListener((changes) => {
+  if (changes[SERVICE_STATE_KEY]) {
+    const newState = changes[SERVICE_STATE_KEY].newValue;
+    if (newState?.googleDrive) {
+      updateAuthUI(newState.googleDrive.isConnected);
+    }
+  }
+});
 
 // Check status when page loads
 checkStatus();

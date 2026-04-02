@@ -5,10 +5,18 @@
   "scripts": {
     "build": "node esbuild.config.mjs",
     "watch": "node esbuild.config.mjs --watch",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "player:sync": "cd player-standalone && node scripts/sync-player.js",
+    "player:dev": "cd player-standalone && npm run dev",
+    "player:build": "cd player-standalone && npm run build",
+    "player:preview": "cd player-standalone && npm run preview",
+    "player:deploy": "cd player-standalone && npm run deploy",
+    "build:all": "npm run build && npm run player:sync && npm run player:build",
+    "watch:all": "concurrently 'npm run watch' 'npm run player:dev'"
   },
   "devDependencies": {
     "@types/chrome": "^0.0.287",
+    "concurrently": "^8.2.2",
     "esbuild": "^0.24.0",
     "typescript": "^5.7.0"
   },

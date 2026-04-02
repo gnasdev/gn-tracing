@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GN Tracing Player</title>
+  <!-- Load player CSS from public/ -->
+  <link rel="stylesheet" href="/player.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Container for player -->
+    <div id="player-root"></div>
+  </div>
+
+  <!-- Config for standalone mode - will be set by main.ts from .env -->
+  <script>
+    // Initial config, will be overridden by main.ts
+    window.GN_TRACING_CONFIG = {
+      mode: 'standalone',
+      driveApiKey: undefined,
+    };
+  </script>
+
+  <!-- Load adapter first, then player.js -->
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

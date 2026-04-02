@@ -27,7 +27,7 @@ const commonOptions = {
   minify: false,
   define: {
     "process.env.GOOGLE_CLIENT_ID": JSON.stringify(envVars.GOOGLE_CLIENT_ID || process.env.GOOGLE_CLIENT_ID || ""),
-    "process.env.GOOGLE_CLIENT_SECRET": JSON.stringify(envVars.GOOGLE_CLIENT_SECRET || process.env.GOOGLE_CLIENT_SECRET || ""),
+    "process.env.PLAYER_HOST_URL": JSON.stringify(envVars.PLAYER_HOST_URL || process.env.PLAYER_HOST_URL || ""),
   },
 };
 
@@ -51,7 +51,32 @@ function copyDir(src, dest) {
   }
 }
 
+// Generate manifest.json from template with env substitution
+function generateManifest() {
+  const templatePath = path.resolve(__dirname, "manifest.template.json");
+  const manifestPath = path.resolve(__dirname, "manifest.json");
+
+  if (!fs.existsSync(templatePath)) {
+    console.error("manifest.template.json not found");
+    return;
+  }
+
+  const clientId = envVars.GOOGLE_CLIENT_ID || process.env.GOOGLE_CLIENT_ID || "";
+
+  if (!clientId) {
+    console.warn("⚠️ GOOGLE_CLIENT_ID not set in .env - manifest.json may have empty client_id");
+  }
+
+  let template = fs.readFileSync(templatePath, "utf-8");
+  template = template.replace(/{{GOOGLE_CLIENT_ID}}/g, clientId);
+
+  fs.writeFileSync(manifestPath, template, "utf-8");
+  console.log("✓ manifest.json generated");
+}
+
 async function build() {
+  // Generate manifest.json first
+  generateManifest();
   // Service worker — ESM (Chrome MV3 module worker)
   const swCtx = await esbuild.context({
     ...commonOptions,

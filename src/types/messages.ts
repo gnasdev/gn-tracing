@@ -9,7 +9,10 @@ export type MessageAction =
   | "UPLOAD_TO_GOOGLE_DRIVE"
   | "RECORDING_COMPLETE"
   | "ZIP_READY"
-  | "OPEN_POPUP";
+  | "OPEN_POPUP"
+  | "GET_UPLOAD_STATE"
+  | "GET_PLAYER_CONFIG"
+  | "SET_PLAYER_CONFIG";
 
 export type OffscreenMessageType =
   | "START_CAPTURE"
@@ -35,8 +38,13 @@ export interface OffscreenMessage {
 export interface MessageResponse {
   ok: boolean;
   error?: string;
+  message?: string;
   url?: string;
   recordingUrl?: string;
+  // For player config responses
+  playerHostUrl?: string | null;
+  // For auth token responses
+  token?: string | null;
 }
 
 export interface RecordingStatus {
@@ -48,6 +56,23 @@ export interface RecordingStatus {
   hasRecording: boolean;
 }
 
+export interface UploadState {
+  isUploading: boolean;
+  progress: number;
+  message: string;
+  recordingUrl: string | null;
+  error: string | null;
+}
+
+export interface PopupState {
+  // Recording state
+  recordingStatus: RecordingStatus | null;
+  // Upload state
+  uploadState: UploadState;
+  // Google Drive state
+  googleDriveConnected: boolean;
+}
+
 export interface UploadProgressMessage {
   target: "offscreen";
   type: "UPLOAD_PROGRESS";
@@ -57,3 +82,15 @@ export interface UploadProgressMessage {
     message: string;
   };
 }
+
+// Player configuration for external player hosting
+export interface PlayerConfig {
+  /**
+   * URL of the standalone player deployment.
+   * Example: "https://tracing.gnas.dev/player/"
+   * If null/undefined, uses the built-in extension player
+   */
+  playerHostUrl: string | null;
+}
+
+export const PLAYER_CONFIG_KEY = "gn_tracing_player_config";

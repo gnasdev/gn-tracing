@@ -2,7 +2,7 @@ import { RecorderManager } from "./recorder-manager";
 import { CdpManager } from "./cdp-manager";
 import { StorageManager } from "./storage-manager";
 import { GoogleDriveAuth } from "./google-drive-auth";
-import type { ServiceWorkerMessage, MessageResponse, RecordingStatus } from "../types/messages";
+import type { ServiceWorkerMessage, MessageResponse, RecordingStatus, UploadState, PlayerConfig, PLAYER_CONFIG_KEY } from "../types/messages";
 
 const storage = new StorageManager();
 const recorder = new RecorderManager();
@@ -28,6 +28,34 @@ const state: RecordingState = {
   tabUrl: null,
 };
 
+const uploadState: UploadState = {
+  isUploading: false,
+  progress: 0,
+  message: "",
+  recordingUrl: null,
+  error: null,
+};
+
+// Storage key for state sync
+const STORAGE_KEY_STATE = "gn_tracing_state";
+
+// Save current state to storage for popup sync
+async function saveStateToStorage(): Promise<void> {
+  try {
+    const gdStatus = await googleAuth.getStatus();
+    const data = {
+      recording: getStatus(),
+      upload: getUploadState(),
+      googleDrive: {
+        isConnected: gdStatus.isConnected,
+      },
+    };
+    await chrome.storage.session.set({ [STORAGE_KEY_STATE]: data });
+  } catch {
+    // Ignore storage errors
+  }
+}
+
 // Keep service worker alive during recording
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === "gn-tracing-keepalive" && state.isRecording) {
@@ -42,24 +70,40 @@ chrome.runtime.onMessage.addListener((message: ServiceWorkerMessage, sender, sen
   return true;
 });
 
-// Forward progress messages from offscreen to popup
+// Forward progress messages from offscreen to popup and track upload state
 chrome.runtime.onMessage.addListener((message: any, sender, sendResponse) => {
   if (message.target === "offscreen" && message.type === "UPLOAD_PROGRESS") {
+    // Update upload state
+    if (message.data) {
+      const { step, total, message: msg } = message.data;
+      uploadState.isUploading = true;
+      uploadState.progress = (step / total) * 100;
+      uploadState.message = msg;
+    }
+    // Save to storage for popup sync (fire and forget is ok for progress)
+    void saveStateToStorage();
     // Forward to popup
-    chrome.runtime.sendMessage(message);
+    void chrome.runtime.sendMessage(message);
     sendResponse({ ok: true });
     return true;
   }
   return false;
 });
 
-chrome.tabs.onRemoved.addListener((tabId) => {
+chrome.tabs.onRemoved.addListener(async (tabId) => {
   if (state.isRecording && tabId === state.tabId) {
-    stopRecording();
+    try {
+      await stopRecording();
+    } catch {
+      // Fallback: force reset state if stopRecording fails
+      state.isRecording = false;
+      state.tabId = null;
+      await saveStateToStorage();
+    }
   }
 });
 
-async function handleMessage(message: ServiceWorkerMessage, _sender: chrome.runtime.MessageSender): Promise<MessageResponse | RecordingStatus> {
+async function handleMessage(message: ServiceWorkerMessage, _sender: chrome.runtime.MessageSender): Promise<MessageResponse | RecordingStatus | UploadState> {
   switch (message.action) {
     case "START_RECORDING":
       return await startRecording(message.tabId!);
@@ -69,10 +113,20 @@ async function handleMessage(message: ServiceWorkerMessage, _sender: chrome.runt
       return getStatus();
     case "UPLOAD_TO_GOOGLE_DRIVE":
       return await uploadToGoogleDrive();
-    case "GOOGLE_DRIVE_CONNECT":
-      return await googleAuth.launchOAuthFlow();
-    case "GOOGLE_DRIVE_DISCONNECT":
-      return await googleAuth.disconnect();
+    case "GET_UPLOAD_STATE":
+      return getUploadState();
+    case "GOOGLE_DRIVE_CONNECT": {
+      const result = await googleAuth.launchOAuthFlow();
+      if (result.ok) {
+        await saveStateToStorage();
+      }
+      return result;
+    }
+    case "GOOGLE_DRIVE_DISCONNECT": {
+      const result = await googleAuth.disconnect();
+      await saveStateToStorage();
+      return result;
+    }
     case "GOOGLE_DRIVE_STATUS":
       const status = await googleAuth.getStatus();
       return { ok: true, ...status };
@@ -92,6 +146,10 @@ async function handleMessage(message: ServiceWorkerMessage, _sender: chrome.runt
       return { ok: true };
     case "ZIP_READY":
       return await handleZipReady(message.data as { url: string; filename: string });
+    case "GET_PLAYER_CONFIG":
+      return await getPlayerConfig();
+    case "SET_PLAYER_CONFIG":
+      return await setPlayerConfig(message.data);
     default:
       return { ok: false, error: "Unknown action" };
   }
@@ -130,6 +188,9 @@ async function startRecording(tabId: number): Promise<MessageResponse> {
 
     chrome.alarms.create("gn-tracing-keepalive", { periodInMinutes: 0.4 });
 
+    // Save state to storage for popup sync
+    await saveStateToStorage();
+
     return { ok: true };
   } catch (e) {
     try { await cdp.detach(); } catch {}
@@ -138,6 +199,7 @@ async function startRecording(tabId: number): Promise<MessageResponse> {
     state.tabId = null;
     state.startTime = null;
     state.stopTime = null;
+    await saveStateToStorage();
     return { ok: false, error: (e as Error).message };
   }
 }
@@ -163,8 +225,12 @@ async function stopRecording(): Promise<MessageResponse> {
     chrome.action.setBadgeText({ text: "" });
     chrome.alarms.clear("gn-tracing-keepalive");
 
+    // Save state to storage for popup sync
+    await saveStateToStorage();
+
     return { ok: true };
   } catch (e) {
+    await saveStateToStorage();
     return { ok: false, error: (e as Error).message };
   }
 }
@@ -180,12 +246,29 @@ function getStatus(): RecordingStatus {
   };
 }
 
+function getUploadState(): UploadState {
+  return { ...uploadState };
+}
+
 async function uploadToGoogleDrive(): Promise<MessageResponse> {
   try {
+    // Reset upload state at start
+    uploadState.isUploading = true;
+    uploadState.progress = 0;
+    uploadState.message = "Preparing upload...";
+    uploadState.recordingUrl = null;
+    uploadState.error = null;
+
+    // Save initial state
+    await saveStateToStorage();
+
     // Get auth token
     const authToken = await googleAuth.getAuthToken();
     if (!authToken) {
-      return { ok: false, error: "Not connected to Google Drive. Please connect first." };
+      uploadState.isUploading = false;
+      uploadState.error = "Not connected to Google Drive. Please connect first.";
+      await saveStateToStorage();
+      return { ok: false, error: uploadState.error };
     }
 
     const consoleLogs = storage.exportConsoleJSON();
@@ -208,11 +291,22 @@ async function uploadToGoogleDrive(): Promise<MessageResponse> {
     }) as MessageResponse;
 
     if (result && result.ok) {
+      uploadState.isUploading = false;
+      uploadState.progress = 100;
+      uploadState.message = "Upload complete!";
+      uploadState.recordingUrl = result.recordingUrl || null;
+      await saveStateToStorage();
       return { ok: true, recordingUrl: result.recordingUrl };
     }
-    return { ok: false, error: (result && result.error) || "Upload failed" };
+    uploadState.isUploading = false;
+    uploadState.error = (result && result.error) || "Upload failed";
+    await saveStateToStorage();
+    return { ok: false, error: uploadState.error };
   } catch (e) {
-    return { ok: false, error: (e as Error).message };
+    uploadState.isUploading = false;
+    uploadState.error = (e as Error).message;
+    await saveStateToStorage();
+    return { ok: false, error: uploadState.error };
   }
 }
 
@@ -229,6 +323,24 @@ async function handleZipReady(data: { url: string; filename: string }): Promise<
     state.startTime = null;
     state.stopTime = null;
 
+    await saveStateToStorage();
+
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
+}
+
+// Player configuration storage
+async function getPlayerConfig(): Promise<MessageResponse> {
+  const result = await chrome.storage.local.get("gn_tracing_player_config");
+  const config = result.gn_tracing_player_config as PlayerConfig | undefined;
+  return { ok: true, playerHostUrl: config?.playerHostUrl ?? null };
+}
+
+async function setPlayerConfig(config: unknown): Promise<MessageResponse> {
+  try {
+    await chrome.storage.local.set({ gn_tracing_player_config: config as PlayerConfig });
     return { ok: true };
   } catch (e) {
     return { ok: false, error: (e as Error).message };
