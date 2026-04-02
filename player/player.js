@@ -1,5 +1,5 @@
 /**
- * GN Web Tracing Player
+ * GN Tracing Player
  * Loads recording data from Google Drive and displays video synchronized with logs
  */
 

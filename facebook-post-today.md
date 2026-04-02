@@ -1,11 +1,11 @@
-# 🚀 GN Web Tracing Extension - Update mới hôm nay!
+# 🚀 GN Tracing - Update mới hôm nay!
 
 > **Lưu ý khi đăng:** Hình ảnh nên được generate với prompt liên quan đến nội dung bài viết, ví dụ:
 > "Chrome extension developer tool for debugging web applications, showing browser with code and network logs, modern flat illustration with developer working on laptop, electric blue and cyan colors on dark navy background, tech aesthetic, circuit patterns"
 > 
 > Thay vì dùng ảnh logo chung chung.
 
-Mình vừa ra mắt bản cập nhật mới cho **GN Web Tracing Extension** với 3 cải tiến quan trọng:
+Mình vừa ra mắt bản cập nhật mới cho **GN Tracing** với 3 cải tiến quan trọng:
 
 ## 1. ⚡ Tốc độ upload nhanh hơn gấp 3 lần!
 - Upload song song console, network và websocket logs (parallel upload)
