@@ -19,3 +19,5 @@
   primary auth mechanism for Chrome; Edge uses `launchWebAuthFlow` plus locally stored access token fallback.
 - Google Drive REST APIs
   used for token verification, multipart upload, permission creation, and token revocation.
+- Cloudflare Pages Function `/api/drive?id=<file-id>`
+  proxies standalone replay downloads to `drive.usercontent.google.com` while preserving range requests and response content headers.

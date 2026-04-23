@@ -19,4 +19,5 @@ GN Tracing is designed for debugging and replaying real tab sessions without a b
 - recording state is ephemeral and memory-backed
 - service worker dormancy is mitigated with a `chrome.alarms` keepalive
 - upload success depends on Google Drive OAuth and publicly shareable file permissions
-- external player hosting is optional and user-configurable
+- external player hosting is fixed to `https://tracing.gnas.dev/`
+- standalone replay depends on the Cloudflare Pages `/api/drive` proxy to fetch public Drive artifacts without cross-origin download failures

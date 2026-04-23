@@ -29,5 +29,6 @@
 - `service-worker` -> `recorder-manager` -> `offscreen`: tab media recording lifecycle
 - `service-worker` -> `chrome.storage.session`: state fan-out to popup and auth page
 - `offscreen` -> Google Drive APIs: recording-folder creation, multipart uploads, chunked video upload, and sharing permissions
-- `offscreen` -> Cloudflare Pages standalone player URL generation with `folder` query contract
-- `release workflow` -> root `package.json` scripts: release orchestration for build, Cloudflare deploy, and extension artifact packaging
+- `offscreen` -> Cloudflare Pages standalone player URL generation with direct artifact file ID query params (`videos`, `metadata`, optional `console`, `network`, `websocket`)
+- `standalone player` -> same-origin `/api/drive?id=<file-id>` proxy for Drive artifact fetches during replay
+- `release workflow` -> root `package.json` scripts plus `player-standalone/deploy.sh`: extension build, player sync/build, Cloudflare Pages deploy, and extension artifact packaging

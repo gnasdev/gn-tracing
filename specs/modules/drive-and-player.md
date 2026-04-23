@@ -45,7 +45,7 @@ This module covers authentication, Google Drive upload, replay URL generation, b
 - standalone mode depends only on direct public file download behavior for the artifact IDs embedded in the replay URL.
 - standalone mode assumes the Cloudflare Pages deployment includes the `/api/drive` proxy function so the browser never fetches Drive artifacts cross-origin.
 - extension build and standalone player build are separate pipelines.
-- Cloudflare Pages deployment expects project `gn-tracing-player`, base path `/player/`, and secrets `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID`.
+- Cloudflare Pages deployment expects project `gn-tracing-player`, root base path `/`, and secrets `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID`.
 - local deploys can source root `.env` / `.env.example` with `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_PAGES_PROJECT`, `PLAYER_HOST_URL`, and `VITE_BASE_PATH`.
 
 ## 6. Relationships
