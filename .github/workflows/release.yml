@@ -14,12 +14,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    env:
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      CLOUDFLARE_PAGES_PROJECT: gn-tracing-player
-      PLAYER_HOST_URL: https://tracing.gnas.dev/
-      VITE_BASE_PATH: /
     steps:
       - name: Checkout
         uses: actions/checkout@v4

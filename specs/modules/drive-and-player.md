@@ -17,7 +17,7 @@ This module covers authentication, Google Drive upload, replay URL generation, b
 - Split recorded video into `<= 32 MB` parts before upload when needed.
 - Always return the Cloudflare-hosted standalone player URL at `https://tracing.gnas.dev/`.
 - Keep auth UI resilient to popup lifetime by using a dedicated auth page.
-- Keep standalone player deployment compatible with Cloudflare Pages tag-based release automation.
+- Keep standalone player deployable to Cloudflare Pages through a separate manual path outside the GitHub release workflow.
 
 ## 3. Data Models & APIs
 
@@ -37,6 +37,7 @@ This module covers authentication, Google Drive upload, replay URL generation, b
 - the auth page is a first-class surface that can both start auth and react to service-worker state updates.
 - standalone player is not the system of record for assets; it mirrors `player/` runtime logic through the sync script and wrapper adapters.
 - release automation expects both npm workspaces to have committed lockfiles so GitHub Actions can run `npm ci` at the repo root and inside `player-standalone/`.
+- tag-based GitHub releases only build the extension and publish the zip artifact; they do not invoke Cloudflare deploy steps for the standalone player.
 - if video exceeds the upload limit, offscreen upload slices the final recording blob into ordered byte chunks and the player reassembles them locally before playback.
 - upload hard-fails when folder creation, metadata, manifest, or any video part upload fails; console/network/websocket uploads are best-effort and omitted from the manifest when they fail.
 
@@ -46,7 +47,7 @@ This module covers authentication, Google Drive upload, replay URL generation, b
 - standalone mode depends only on direct public file download behavior for the artifact IDs embedded in the replay URL.
 - standalone mode assumes the Cloudflare Pages deployment includes the `/api/drive` proxy function so the browser never fetches Drive artifacts cross-origin.
 - extension build and standalone player build are separate pipelines.
-- Cloudflare Pages deployment expects project `gn-tracing-player`, root base path `/`, and secrets `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID`.
+- manual Cloudflare Pages deployment expects project `gn-tracing-player`, root base path `/`, and secrets `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID`.
 - local deploys can source root `.env` / `.env.example` with `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_PAGES_PROJECT`, `PLAYER_HOST_URL`, and `VITE_BASE_PATH`.
 
 ## 6. Relationships
@@ -60,12 +61,13 @@ This module covers authentication, Google Drive upload, replay URL generation, b
 
 - auth is moved out of the popup into `drive-auth.html` to avoid popup closure interrupting OAuth.
 - standalone replay distribution is standardized on Cloudflare Pages instead of popup-configured hosts.
-- tag release automation delegates deploy orchestration to root `package.json` scripts instead of embedding that flow in GitHub workflow steps.
+- tag release automation delegates only extension build/artifact packaging to root `package.json` scripts; standalone Cloudflare deploy is intentionally excluded from release CI.
 
 ## 8. Changelog
 
 - `2026-04-23`: Upload keeps folder-scoped Drive storage and `manifest.json`, but replay links now pass direct artifact file IDs via `videos`, `metadata`, `console`, `network`, and `websocket`; standalone playback no longer depends on folder listing.
 - `2026-04-23`: Standalone playback now routes Drive artifact downloads through a same-origin Pages Function proxy to avoid `Failed to fetch` errors from browser CORS/CORP enforcement.
+- `2026-04-23`: Tag-based release CI no longer deploys the standalone player to Cloudflare; it only builds and publishes the extension artifact, while player deploy stays manual.
 - `2026-04-23`: Replay links were fixed to `https://tracing.gnas.dev/` and standalone deployment was standardized on Cloudflare Pages tag releases.
 - `2026-04-23`: Local Cloudflare Pages deploy was executed after provisioning project `gn-tracing-player`; root env files now carry deploy variables for the player release flow.
 - `2026-04-23`: Initial spec extracted from current implementation.

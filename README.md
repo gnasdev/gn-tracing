@@ -176,15 +176,13 @@ Replay URLs use direct Drive artifact file IDs in the query string: `videos`, `m
 
 - Push a tag matching `v*` to trigger `.github/workflows/release.yml`
 - The deploy flow is defined in root `package.json` scripts:
-  - `npm run release:deploy` builds the extension and deploys the standalone player to Cloudflare Pages
+  - `npm run release:build` builds the extension release artifact inputs
   - `npm run release:artifact` zips `dist/` into a release artifact
-  - `npm run release:ci` runs the full release flow used by GitHub Actions
+  - `npm run release:ci` runs the GitHub Actions release flow without deploying Cloudflare
 - CI also installs `player-standalone/` dependencies, then calls the root release flow
 - both `package-lock.json` files must stay committed: the root lockfile for the extension workspace and `player-standalone/package-lock.json` for the standalone player workspace
 - The workflow only installs dependencies, runs `npm run release:ci`, and attaches the generated zip to the GitHub release
-- Required GitHub Actions secrets:
-  - `CLOUDFLARE_API_TOKEN`
-  - `CLOUDFLARE_ACCOUNT_ID`
+- `npm run player:deploy` remains available as a separate manual Cloudflare Pages deploy path for the standalone player
 
 ## Chrome Permissions
 
