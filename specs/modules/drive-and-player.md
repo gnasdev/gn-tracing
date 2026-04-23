@@ -24,6 +24,10 @@ This module covers authentication, Google Drive upload, replay URL generation, b
 - Keep network response inspection readable with syntax-highlighted source views for JavaScript, HTML, CSS, and JSON payloads.
 - Provide inline response preview panels for HTML, media, and JSON artifacts inside the network detail inspector.
 - Include recording-specific metadata in the player title so multiple open replay tabs remain distinguishable.
+- Show a usage/intro landing state when the player opens without replay query params, including GitHub and contribution guidance.
+- Surface GitHub and contribution entry points inside the extension popup, without exposing the fixed player host as popup UI.
+- Keep extension runtime state mirrored into a popup/auth snapshot without forcing a live Google Drive verification on every state write.
+- Recover popup-visible recording state after service-worker restart by reconciling the last session snapshot with the offscreen capture state when possible.
 
 ## 3. Data Models & APIs
 
@@ -45,7 +49,15 @@ This module covers authentication, Google Drive upload, replay URL generation, b
 - release automation expects both npm workspaces to have committed lockfiles so GitHub Actions can run `npm ci` at the repo root and inside `player-standalone/`.
 - tag-based GitHub releases only build the extension and publish the zip artifact; they do not invoke Cloudflare deploy steps for the standalone player.
 - if video exceeds the upload limit, offscreen upload slices the final recording blob into ordered byte chunks and the player reassembles them locally before playback.
-- popup upload status must surface aggregate transferred bytes and percent throughout the Drive upload flow.
+- popup upload status must surface both aggregate transferred bytes/percent and per-file progress rows throughout the Drive upload flow.
+- player loading must surface both aggregate transferred bytes/percent and per-file progress rows for metadata, optional artifacts, manifest, and each video part.
+- upload progress now measures artifact payload bytes rather than raw multipart HTTP body bytes so aggregate totals match the recording artifacts shown to the user.
+- service worker must re-hydrate Google Drive auth status on startup/install so popup state stays correct after extension reloads.
+- service worker now treats Google Drive connectivity as a separately refreshed cache; snapshot persistence reuses the cached auth state instead of calling Drive on every progress event.
+- popup-visible recording lifecycle is now explicit via phases (`idle`, `recording`, `recorded`, `uploading`, `interrupted`) so stale upload results do not override an active recording session.
+- upload byte totals should exclude optional artifacts that were skipped after failure so aggregate progress reaches the true final total.
+- when optional upload artifacts fail after partial transfer, the denominator now drops only by the remaining unsent payload bytes so aggregate progress stays monotonic.
+- player loading now ignores unknown-size responses until their final blob size is known, preventing the progress bar from briefly reaching 100% and then dropping once video totals are introduced.
 - upload hard-fails when folder creation, metadata, manifest, or any video part upload fails; console/network/websocket uploads are best-effort and omitted from the manifest when they fail.
 - player loading must surface transferred bytes and percent while downloading artifacts, and video part downloads should run in parallel rather than sequentially.
 - player layout preferences are stored per-origin in `localStorage` under a single player UI state entry and restored on load.
@@ -54,6 +66,9 @@ This module covers authentication, Google Drive upload, replay URL generation, b
 - network detail derives response presentation from mime type plus URL extension, then renders either highlighted source, an inline preview, or both.
 - HTML preview uses a sandboxed iframe, media preview uses inline data URLs when captured payloads are base64-backed, and JSON preview combines a summary card with formatted source.
 - player title derives a short label from metadata URL plus recording timestamp and applies it to both the visible header and `document.title`.
+- opening the player with no query params should render onboarding/help content rather than the invalid-params error; malformed partial query strings still use the error state.
+- popup should provide direct links to the GitHub repository and a contribution surface so users can discover the project and help improve it, while auth status is revalidated on popup open instead of relying only on cached session state.
+- per-file progress labels should use artifact-level filenames or stable labels so parallel transfers remain debuggable without coupling copy to transient upload ordering.
 
 ## 5. Constraints & Assumptions
 
@@ -61,10 +76,12 @@ This module covers authentication, Google Drive upload, replay URL generation, b
 - standalone mode depends only on direct public file download behavior for the artifact IDs embedded in the replay URL.
 - standalone mode assumes the Cloudflare Pages deployment includes the `/api/drive` proxy function so the browser never fetches Drive artifacts cross-origin.
 - extension build and standalone player build are separate pipelines.
-- built-in player HTML and standalone wrapper HTML must stay markup-compatible because only `player.css` and `player.js` are synced automatically into `player-standalone/public/`.
+- built-in player HTML and standalone wrapper HTML must stay markup-compatible because only `player.css` and `player.js` are synced automatically into `player-standalone/public/`; loading-state markup changes still require manual updates in `player-standalone/index.html`.
 - response preview intentionally stays dependency-free and lightweight; syntax highlighting is implemented in local player runtime helpers rather than external libraries.
 - manual Cloudflare Pages deployment expects project `gn-tracing-player`, root base path `/`, and secrets `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID`.
 - local deploys can source root `.env` / `.env.example` with `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_PAGES_PROJECT`, `PLAYER_HOST_URL`, and `VITE_BASE_PATH`.
+- intro/empty-state copy should stay aligned between extension and standalone player shells so the hosted root URL behaves as a clear product landing page.
+- service-worker restart recovery is intentionally best-effort: heavy artifacts still live in memory/offscreen only, but popup state is reconstructed from session snapshot plus offscreen probe when the capture document is still alive.
 
 ## 6. Relationships
 
@@ -78,10 +95,18 @@ This module covers authentication, Google Drive upload, replay URL generation, b
 - auth is moved out of the popup into `drive-auth.html` to avoid popup closure interrupting OAuth.
 - standalone replay distribution is standardized on Cloudflare Pages instead of popup-configured hosts.
 - tag release automation delegates only extension build/artifact packaging to root `package.json` scripts; standalone Cloudflare deploy is intentionally excluded from release CI.
+- popup/auth surfaces consume a reduced runtime snapshot, while service worker/offscreen remain the capture engines; auth refresh is decoupled from snapshot persistence to avoid progress-time API chatter.
+- upload progress snapshots now flow from offscreen to popup as an aggregate-plus-items contract, while player loading keeps a local per-entry registry that renders both the overall bar and each artifact row.
 
 ## 8. Changelog
 
 - `2026-04-23`: Network response detail now supports syntax highlighting for JavaScript/HTML/CSS/JSON and adds inline preview panels for HTML, media, and JSON payloads.
+- `2026-04-23`: Popup no longer shows the fixed player host, now revalidates Google Drive auth on open, and service-worker startup/install also refreshes auth state so connected UI stays in sync after reloads.
+- `2026-04-23`: Extension runtime now persists a phase-based popup snapshot, resets stale upload results before new recordings, avoids Drive auth verification on every snapshot write, and probes offscreen capture state during service-worker startup to recover recording visibility after MV3 restarts.
+- `2026-04-23`: Popup upload and player loading now keep the aggregate progress bar but also render per-file rows with label, status, percent, and transferred bytes for each artifact/video part.
+- `2026-04-23`: Upload total bytes now shrink when optional artifacts are skipped so aggregate byte progress remains accurate even while per-file progress stays visible.
+- `2026-04-23`: Upload byte progress now scales multipart transfer events back to artifact payload bytes, optional upload failures no longer make percent jump backward, and player loading no longer treats unknown-size metadata downloads as fully-known totals mid-transfer.
+- `2026-04-23`: Player root without params now shows an intro/how-to-use screen with GitHub CTA, and the popup now includes GitHub plus contribution CTAs.
 - `2026-04-23`: Player title now includes a short metadata-derived label so users can distinguish recordings when multiple replay tabs are open.
 - `2026-04-23`: Replay player now supports draggable pane resizing, persisted layout percent in `localStorage`, horizontal/vertical orientation switching, and in-tab immersive video expansion in both extension and standalone shells.
 - `2026-04-23`: Drive upload now runs with bounded parallelism and byte-level popup progress; player loading now reports byte-level progress and downloads video parts in parallel.

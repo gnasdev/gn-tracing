@@ -1,3 +1,4 @@
+import type { ProgressItemSnapshot, ProgressItemStatus } from "../types/messages";
 import { buildExternalPlayerUrl } from "../shared/player-host";
 
 let recorder: MediaRecorder | null = null;
@@ -25,6 +26,15 @@ chrome.runtime.onMessage.addListener(
       case "STOP_CAPTURE":
         stopCapture();
         sendResponse({ ok: true });
+        return false;
+
+      case "GET_CAPTURE_STATE":
+        sendResponse({
+          ok: true,
+          isRecording: Boolean(recorder && recorder.state !== "inactive"),
+          hasRecording: Boolean(recordedBlob && recordedBlob.size > 0),
+          recordedBytes: recordedBlob?.size || 0,
+        });
         return false;
 
       case "UPLOAD_TO_GOOGLE_DRIVE":
@@ -84,15 +94,16 @@ interface UploadProgressSnapshot {
   uploadedBytes: number;
   totalBytes: number;
   message: string;
+  items: ProgressItemSnapshot[];
 }
 
 interface UploadQueueItem {
   key: string;
   kind: "video" | "console" | "network" | "websocket" | "metadata";
+  label: string;
   filename: string;
   blob: Blob;
   required: boolean;
-  label: string;
   index?: number;
 }
 
@@ -315,7 +326,10 @@ async function uploadToGoogleDrive(
         xhr.setRequestHeader("Authorization", `Bearer ${data.authToken}`);
 
         xhr.upload.addEventListener("progress", (event) => {
-          onProgress?.(event.loaded, event.lengthComputable ? event.total : blob.size);
+          const loaded = event.lengthComputable && event.total > 0
+            ? Math.min(blob.size, Math.round((event.loaded / event.total) * blob.size))
+            : Math.min(event.loaded, blob.size);
+          onProgress?.(loaded, blob.size);
         });
 
         xhr.onerror = () => reject(new Error("Upload failed due to a network error"));
@@ -351,10 +365,10 @@ async function uploadToGoogleDrive(
       uploadItems.push({
         key: `video:${index}`,
         kind: "video",
+        label: `video.part-${String(index).padStart(3, "0")}.webm`,
         filename: `video.part-${String(index).padStart(3, "0")}.webm`,
         blob: part,
         required: true,
-        label: `video part ${index + 1}/${videoParts.length}`,
         index,
       });
     });
@@ -363,10 +377,10 @@ async function uploadToGoogleDrive(
       uploadItems.push({
         key: "console",
         kind: "console",
+        label: "console.json",
         filename: "console.json",
         blob: new Blob([data.consoleLogs], { type: "application/json" }),
         required: false,
-        label: "console logs",
       });
     }
 
@@ -374,10 +388,10 @@ async function uploadToGoogleDrive(
       uploadItems.push({
         key: "network",
         kind: "network",
+        label: "network.json",
         filename: "network.json",
         blob: new Blob([data.networkRequests], { type: "application/json" }),
         required: false,
-        label: "network logs",
       });
     }
 
@@ -385,29 +399,68 @@ async function uploadToGoogleDrive(
       uploadItems.push({
         key: "websocket",
         kind: "websocket",
+        label: "websocket.json",
         filename: "websocket.json",
         blob: new Blob([data.webSocketLogs], { type: "application/json" }),
         required: false,
-        label: "websocket logs",
       });
     }
 
     uploadItems.push({
       key: "metadata",
       kind: "metadata",
+      label: "metadata.json",
       filename: "metadata.json",
       blob: new Blob([], { type: "application/json" }),
       required: true,
-      label: "metadata",
     });
 
     let totalUploadBytes = uploadItems.reduce((sum, item) => sum + item.blob.size, 0);
     const totalSteps = 1 + uploadItems.length + 1;
     let completedSteps = 0;
     const uploadedBytesByKey = new Map<string, number>();
+    const totalBytesByKey = new Map<string, number>();
+    const progressStatusByKey = new Map<string, ProgressItemStatus>();
+
+    for (const item of uploadItems) {
+      totalBytesByKey.set(item.key, item.blob.size);
+      progressStatusByKey.set(item.key, "queued");
+    }
+    totalBytesByKey.set("manifest", 0);
+    progressStatusByKey.set("manifest", "queued");
+
+    const buildProgressItems = (): ProgressItemSnapshot[] => {
+      const uploadSnapshots = uploadItems.map((item) => {
+        const totalBytes = Math.max(0, totalBytesByKey.get(item.key) || item.blob.size);
+        const loadedBytes = Math.max(0, uploadedBytesByKey.get(item.key) || 0);
+        return {
+          key: item.key,
+          label: item.label,
+          status: progressStatusByKey.get(item.key) || "queued",
+          loadedBytes,
+          totalBytes,
+          percent: totalBytes > 0 ? clampPercent((Math.min(loadedBytes, totalBytes) / totalBytes) * 100) : 0,
+        };
+      });
+
+      const manifestTotalBytes = Math.max(0, totalBytesByKey.get("manifest") || 0);
+      const manifestLoadedBytes = Math.max(0, uploadedBytesByKey.get("manifest") || 0);
+      uploadSnapshots.push({
+        key: "manifest",
+        label: "manifest.json",
+        status: progressStatusByKey.get("manifest") || "queued",
+        loadedBytes: manifestLoadedBytes,
+        totalBytes: manifestTotalBytes,
+        percent: manifestTotalBytes > 0 ? clampPercent((Math.min(manifestLoadedBytes, manifestTotalBytes) / manifestTotalBytes) * 100) : 0,
+      });
+
+      return uploadSnapshots;
+    };
 
     const emitProgress = (message: string): void => {
-      const uploadedBytes = Array.from(uploadedBytesByKey.values()).reduce((sum, value) => sum + value, 0);
+      const uploadedBytes = Array.from(uploadedBytesByKey.entries())
+        .filter(([key]) => key !== "manifest:total")
+        .reduce((sum, [, value]) => sum + value, 0);
       const percent = totalUploadBytes > 0
         ? clampPercent((uploadedBytes / totalUploadBytes) * 100)
         : completedSteps >= totalSteps ? 100 : 0;
@@ -419,10 +472,11 @@ async function uploadToGoogleDrive(
         uploadedBytes,
         totalBytes: totalUploadBytes,
         message,
+        items: buildProgressItems(),
       });
     };
 
-    emitProgress("Creating recording folder...");
+    emitProgress("Preparing upload...");
     const folderId = await createFolder(baseName);
     const metadataItem = uploadItems.find((item) => item.kind === "metadata");
     if (metadataItem) {
@@ -453,9 +507,10 @@ async function uploadToGoogleDrive(
         { type: "application/json" },
       );
       totalUploadBytes = uploadItems.reduce((sum, item) => sum + item.blob.size, 0);
+      totalBytesByKey.set("metadata", metadataItem.blob.size);
     }
     completedSteps += 1;
-    emitProgress("Recording folder created. Starting parallel upload...");
+    emitProgress("Uploading recording...");
 
     const uploadedVideoParts: DriveFileDescriptor[] = [];
     const artifacts: RecordingManifest["artifacts"] = {
@@ -467,17 +522,19 @@ async function uploadToGoogleDrive(
     let metadataFileId: string | null = null;
 
     await mapWithConcurrency(uploadItems, 3, async (item) => {
-      emitProgress(`Uploading ${item.label}...`);
+      progressStatusByKey.set(item.key, "uploading");
+      emitProgress("Uploading recording...");
 
       try {
         const fileId = await uploadFile(item.filename, item.blob, folderId, (loaded, total) => {
           uploadedBytesByKey.set(item.key, Math.min(loaded, total || item.blob.size));
-          emitProgress(`Uploading ${item.label}...`);
+          emitProgress("Uploading recording...");
         });
 
         uploadedBytesByKey.set(item.key, item.blob.size);
+        progressStatusByKey.set(item.key, "uploaded");
         completedSteps += 1;
-        emitProgress(`Uploaded ${item.label}.`);
+        emitProgress("Uploading recording...");
 
         switch (item.kind) {
           case "video":
@@ -508,12 +565,19 @@ async function uploadToGoogleDrive(
         completedSteps += 1;
 
         if (item.required) {
+          progressStatusByKey.set(item.key, "failed");
+          emitProgress("Uploading recording...");
           throw error;
         }
 
-        uploadedBytesByKey.delete(item.key);
-        emitProgress(`Skipped ${item.label} after upload error.`);
-        console.warn(`[Google Drive Upload] Skipped ${item.label}:`, error);
+        const alreadyLoaded = Math.max(0, uploadedBytesByKey.get(item.key) || 0);
+        const remainingBytes = Math.max(0, item.blob.size - alreadyLoaded);
+        uploadedBytesByKey.set(item.key, alreadyLoaded);
+        totalUploadBytes = Math.max(0, totalUploadBytes - remainingBytes);
+        totalBytesByKey.set(item.key, alreadyLoaded);
+        progressStatusByKey.set(item.key, "skipped");
+        emitProgress("Uploading recording...");
+        console.warn(`[Google Drive Upload] Skipped optional ${item.filename}:`, error);
       }
     });
 
@@ -537,17 +601,26 @@ async function uploadToGoogleDrive(
 
     const manifestBlob = new Blob([JSON.stringify(manifest, null, 2)], { type: "application/json" });
     totalUploadBytes += manifestBlob.size;
-    emitProgress("Uploading manifest...");
-    await uploadFile(
-      "manifest.json",
-      manifestBlob,
-      folderId,
-      (loaded, total) => {
-        uploadedBytesByKey.set("manifest", Math.min(loaded, total || manifestBlob.size));
-        emitProgress("Uploading manifest...");
-      },
-    );
+    totalBytesByKey.set("manifest", manifestBlob.size);
+    progressStatusByKey.set("manifest", "uploading");
+    emitProgress("Uploading recording...");
+    try {
+      await uploadFile(
+        "manifest.json",
+        manifestBlob,
+        folderId,
+        (loaded, total) => {
+          uploadedBytesByKey.set("manifest", Math.min(loaded, total || manifestBlob.size));
+          emitProgress("Uploading recording...");
+        },
+      );
+    } catch (error) {
+      progressStatusByKey.set("manifest", "failed");
+      emitProgress("Uploading recording...");
+      throw error;
+    }
     uploadedBytesByKey.set("manifest", manifestBlob.size);
+    progressStatusByKey.set("manifest", "uploaded");
     completedSteps += 1;
     emitProgress("Upload complete!");
 

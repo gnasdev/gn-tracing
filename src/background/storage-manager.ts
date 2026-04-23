@@ -132,19 +132,20 @@ export class StorageManager {
         version: "1.0",
         creator: { name: "gn-tracing", version: "1.0.0" },
         entries: this.#networkEntries.map((e) => ({
+          _requestId: e.requestId,
           request: {
             method: e.method,
             url: e.url,
-            headers: e.requestHeaders
-              ? Object.entries(e.requestHeaders).map(([name, value]) => ({ name, value }))
+            headers: (e.requestHeadersExtra || e.requestHeaders)
+              ? Object.entries(e.requestHeadersExtra || e.requestHeaders || {}).map(([name, value]) => ({ name, value }))
               : [],
             postData: e.postData ? { text: e.postData } : undefined,
           },
           response: {
             status: e.status,
             statusText: e.statusText || "",
-            headers: e.responseHeaders
-              ? Object.entries(e.responseHeaders).map(([name, value]) => ({ name, value }))
+            headers: (e.responseHeadersExtra || e.responseHeaders)
+              ? Object.entries(e.responseHeadersExtra || e.responseHeaders || {}).map(([name, value]) => ({ name, value }))
               : [],
             content: {
               size: e.encodedDataLength,
@@ -167,6 +168,8 @@ export class StorageManager {
           serverIPAddress: e.remoteIPAddress,
           wallTime: e.wallTime || null,
           error: e.error || undefined,
+          servedFromCache: e.servedFromCache || undefined,
+          earlyHintsHeaders: e.earlyHintsHeaders || undefined,
           redirectChain: e.redirectChain || undefined,
           initiator: e.initiator || undefined,
         })),

@@ -19,12 +19,49 @@
         <div id="loading-progress-fill" class="loading-progress-fill"></div>
       </div>
       <p id="loading-progress-text" class="loading-progress-text">0 B / 0 B (0.0%)</p>
+      <div id="loading-progress-list" class="loading-progress-list"></div>
     </div>
 
     <!-- Error state -->
     <div id="error-state" class="state-container hidden">
       <h2>Invalid Recording Parameters</h2>
       <p id="error-message">The recording parameters are missing or invalid.</p>
+    </div>
+
+    <div id="intro-state" class="state-container hidden">
+      <div class="intro-card">
+        <span class="intro-eyebrow">Session Replay Player</span>
+        <h1>GN Tracing</h1>
+        <p class="intro-lead">
+          Replay a recorded browser session with synced video, console logs, network traffic, and WebSocket activity.
+        </p>
+        <div class="intro-actions">
+          <a class="intro-link intro-link-primary" href="https://github.com/gnasdev/gn-tracing" target="_blank" rel="noreferrer">
+            View on GitHub
+          </a>
+        </div>
+        <div class="intro-grid">
+          <section class="intro-panel">
+            <h2>How to use</h2>
+            <ol>
+              <li>Install the GN Tracing extension and start recording a tab.</li>
+              <li>Upload the capture to Google Drive from the extension popup.</li>
+              <li>Open the generated replay link to load the player with recording params.</li>
+            </ol>
+          </section>
+          <section class="intro-panel">
+            <h2>Expected params</h2>
+            <ul>
+              <li><code>videos</code> and <code>metadata</code> are required.</li>
+              <li><code>console</code>, <code>network</code>, and <code>websocket</code> are optional.</li>
+              <li>Links are generated automatically after a successful upload.</li>
+            </ul>
+          </section>
+        </div>
+        <p class="intro-footnote">
+          Contributions are welcome if you want to help improve replay quality, debugging ergonomics, or sharing flow.
+        </p>
+      </div>
     </div>
 
     <!-- Main player UI -->
@@ -127,6 +164,12 @@
           <!-- Console viewer -->
           <div id="console-viewer" class="viewer-container">
             <div class="filter-bar">
+              <div class="filter-meta">
+                <label class="search-input-wrap">
+                  <i class="ph ph-magnifying-glass"></i>
+                  <input id="console-search" class="search-input" type="search" placeholder="Search console">
+                </label>
+              </div>
               <div class="filter-buttons" id="console-filters">
                 <button class="filter-btn active" data-filter="all">All</button>
                 <button class="filter-btn" data-filter="log">Log</button>
@@ -135,12 +178,6 @@
                 <button class="filter-btn" data-filter="info">Info</button>
                 <button class="filter-btn" data-filter="debug">Debug</button>
               </div>
-              <div class="filter-meta">
-                <label class="search-input-wrap">
-                  <i class="ph ph-magnifying-glass"></i>
-                  <input id="console-search" class="search-input" type="search" placeholder="Search console">
-                </label>
-              </div>
             </div>
             <div id="console-entries" class="entries-scroll"></div>
           </div>
@@ -148,6 +185,13 @@
           <!-- Network viewer -->
           <div id="network-viewer" class="viewer-container hidden">
             <div class="filter-bar">
+              <div class="filter-meta">
+                <label class="search-input-wrap">
+                  <i class="ph ph-magnifying-glass"></i>
+                  <input id="network-search" class="search-input" type="search" placeholder="Search network">
+                </label>
+                <span id="network-summary" class="network-summary"></span>
+              </div>
               <div class="filter-buttons" id="network-filters">
                 <button class="filter-btn active" data-filter="all">All</button>
                 <button class="filter-btn" data-filter="fetch">Fetch/XHR</button>
@@ -159,13 +203,6 @@
                 <button class="filter-btn" data-filter="media">Media</button>
                 <button class="filter-btn" data-filter="ws">WS</button>
                 <button class="filter-btn" data-filter="other">Other</button>
-              </div>
-              <div class="filter-meta">
-                <label class="search-input-wrap">
-                  <i class="ph ph-magnifying-glass"></i>
-                  <input id="network-search" class="search-input" type="search" placeholder="Search network">
-                </label>
-                <span id="network-summary" class="network-summary"></span>
               </div>
             </div>
             <div id="network-entries" class="entries-scroll">

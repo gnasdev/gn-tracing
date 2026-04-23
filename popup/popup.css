@@ -91,6 +91,16 @@ h1 {
   background: #d90429;
 }
 
+.btn-secondary {
+  background: #16213e;
+  border: 1px solid #2a3a5c;
+  color: #eef2ff;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: #1d2a4d;
+}
+
 .btn-download {
   background: #2ec4b6;
   color: #fff;
@@ -166,6 +176,52 @@ h1 {
   font-size: 11px;
   color: #c7d2fe;
   text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.progress-items {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.progress-item {
+  padding: 8px;
+  border: 1px solid #2a3a5c;
+  border-radius: 8px;
+  background: #16213e;
+}
+
+.progress-item-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.progress-item-label {
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  word-break: break-all;
+}
+
+.progress-item-status {
+  color: #8d99ae;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.progress-item-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: #c7d2fe;
+  font-size: 10px;
   font-variant-numeric: tabular-nums;
 }
 
@@ -266,27 +322,36 @@ h1 {
 }
 
 /* Player Config Section */
-#player-config-section {
+#community-section {
   border-top: 1px solid #16213e;
-  padding-top: 10px;
-}
-
-/* Inline display for label + value + edit */
-.player-display-inline {
+  padding-top: 12px;
   display: flex;
-  align-items: center;
-  gap: 6px;
-  flex: 1;
-  justify-content: flex-end;
+  flex-direction: column;
+  gap: 10px;
 }
 
-.player-value-inline {
+.community-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.community-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+}
+
+.community-text {
   font-size: 12px;
-  color: #e0e0e0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 140px;
+  line-height: 1.5;
+  color: #8d99ae;
+}
+
+.community-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
 }
 
 .btn-icon {

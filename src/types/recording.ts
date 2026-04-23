@@ -61,6 +61,7 @@ export interface NetworkEntry {
   url: string;
   method: string;
   requestHeaders: Record<string, string> | null;
+  requestHeadersExtra?: Record<string, string> | null;
   postData: string | null;
   timestamp: number;
   wallTime: number;
@@ -69,6 +70,8 @@ export interface NetworkEntry {
   status: number | null;
   statusText: string | null;
   responseHeaders: Record<string, string> | null;
+  responseHeadersExtra?: Record<string, string> | null;
+  earlyHintsHeaders?: Record<string, string> | null;
   mimeType: string | null;
   timing: NetworkTiming | null;
   protocol: string | null;
@@ -77,6 +80,7 @@ export interface NetworkEntry {
   error: string | null;
   responseBody: ResponseBody | null;
   redirectChain: RedirectEntry[] | null;
+  servedFromCache?: boolean;
   canceled?: boolean;
 }
 

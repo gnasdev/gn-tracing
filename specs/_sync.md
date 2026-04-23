@@ -1,7 +1,7 @@
 # Spec Sync
 
 - **Head Commit**: `20ff17c26155a6f5aece7748f9f18d016f774506`
-- **Spec Status**: synced to current HEAD architecture snapshot on 2026-04-23 after replay player layout controls, network response preview/highlighting, metadata-derived tab titles, parallel Drive transfer/loading, and byte-level progress reporting were added, while release CI remained build-and-package only and standalone Cloudflare deploy remained manual
+- **Spec Status**: synced to current HEAD architecture snapshot on 2026-04-23 and refreshed for the current working tree after adding a no-param player intro/usage landing state, popup GitHub/contribution CTAs, startup auth/state hardening, and aggregate-plus-per-file upload/load progress while replay player layout controls, network response preview/highlighting, metadata-derived tab titles, and release CI boundaries remain documented
 - **Notes**:
   - `specs/` was initialized in this snapshot because the repository previously had no spec directory.
   - The sync target reflects current source architecture, not an older clean-tree baseline.
@@ -10,6 +10,12 @@
   - Replay player UI now supports draggable pane resizing, persisted split percentage in `localStorage`, horizontal/vertical orientation switching, and an immersive in-tab video mode that hides the log pane instead of entering screen fullscreen.
   - Network detail in the replay player now derives response presentation from mime type and file extension, syntax-highlights JavaScript/HTML/CSS/JSON bodies, and renders inline preview panels for HTML, JSON, and base64-backed media responses.
   - Player title now derives a compact label from replay metadata URL plus record time and applies it to both the visible header and browser tab title for easier multi-tab differentiation.
+  - Opening the player host root without replay params now shows an intro/how-to-use screen with a GitHub CTA instead of the invalid-params error; partial malformed query strings still use the error state.
+  - Extension popup now exposes GitHub and contribution CTAs without showing the fixed player host, and popup auth state is revalidated against the service worker so reloads do not leave Google Drive status stale.
+  - Service worker now refreshes persisted popup state on startup/install, caches Google Drive connectivity separately from popup snapshot persistence, and probes the offscreen capture document to recover recording visibility after runtime restarts when the media buffer is still alive.
+  - Popup/runtime state now uses an explicit recording phase model so a stale replay URL no longer reappears when a new recording starts.
+  - Upload and player load progress now keep the aggregate byte bar but also expose per-file rows with label, status, percent, and size for each artifact/video part; built-in player and standalone wrapper markup must stay aligned for that loading list.
+  - Upload progress now normalizes multipart transfer events back to artifact payload bytes, optional artifact failures preserve monotonic aggregate progress, and player loading waits for final blob sizes when `content-length` is unknown so progress no longer spikes to 100% before video totals are known.
   - Google Drive upload now transfers artifacts with bounded parallelism, keeps `manifest.json` as the final required upload after artifact IDs are known, and reports aggregate uploaded bytes plus percent through popup state updates.
   - Player loading still fans out artifact fetches in parallel, but video parts now download concurrently too and the loading screen shows transferred bytes plus percent.
   - Release automation is tag-driven via `.github/workflows/release.yml` and root `package.json` scripts, but it now stops at extension build plus zip artifact publishing; `player-standalone/deploy.sh` is no longer part of release CI.

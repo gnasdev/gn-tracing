@@ -77,6 +77,10 @@ export class RecorderManager {
     this.#recordingComplete = false;
   }
 
+  hydrateRecordingComplete(hasRecording: boolean): void {
+    this.#recordingComplete = hasRecording;
+  }
+
   async cleanup(): Promise<void> {
     if (this.#stopTimeoutId) {
       clearTimeout(this.#stopTimeoutId);

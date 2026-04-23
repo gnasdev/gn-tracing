@@ -18,6 +18,7 @@
   const CONFIG = window.GN_TRACING_CONFIG || {};
   const PLAYER_LAYOUT_STORAGE_KEY = 'gn-tracing-player-layout';
   const DEFAULT_PLAYER_TITLE = 'GN Tracing Player';
+  const GITHUB_REPO_URL = 'https://github.com/gnasdev/gn-tracing';
   const DEFAULT_LAYOUT_MODE = 'horizontal';
   const DEFAULT_SPLIT_PERCENT = {
     horizontal: 50,
@@ -93,6 +94,8 @@
     elements.loadingMessage = document.getElementById('loading-message');
     elements.loadingProgressFill = document.getElementById('loading-progress-fill');
     elements.loadingProgressText = document.getElementById('loading-progress-text');
+    elements.loadingProgressList = document.getElementById('loading-progress-list');
+    elements.introState = document.getElementById('intro-state');
     elements.errorState = document.getElementById('error-state');
     elements.playerState = document.getElementById('player-state');
     elements.mainLayout = document.querySelector('.main-layout');
@@ -219,16 +222,17 @@
 
   function renderLoadingProgress() {
     const progressEntries = Array.from(loadingProgressEntries.values());
-    const uploadedBytes = progressEntries.reduce((sum, entry) => sum + entry.loaded, 0);
+    const uploadedBytes = progressEntries
+      .reduce((sum, entry) => sum + (entry.total > 0 ? Math.min(entry.loaded, entry.total) : 0), 0);
     const videoLoadedBytes = progressEntries
       .filter(entry => entry.group === 'video')
-      .reduce((sum, entry) => sum + entry.loaded, 0);
+      .reduce((sum, entry) => sum + (entry.total > 0 ? Math.min(entry.loaded, entry.total) : 0), 0);
     const videoKnownTotalBytes = progressEntries
       .filter(entry => entry.group === 'video')
       .reduce((sum, entry) => sum + entry.total, 0);
     const otherTotalBytes = progressEntries
       .filter(entry => entry.group !== 'video')
-      .reduce((sum, entry) => sum + (entry.total || entry.loaded), 0);
+      .reduce((sum, entry) => sum + entry.total, 0);
     const totalBytes = Math.max(videoKnownTotalBytes, expectedVideoBytes, videoLoadedBytes) + otherTotalBytes;
     const percent = totalBytes > 0 ? Math.max(0, Math.min(100, (uploadedBytes / totalBytes) * 100)) : 0;
 
@@ -240,6 +244,25 @@
     }
     if (elements.loadingProgressText) {
       elements.loadingProgressText.textContent = `${formatBytes(uploadedBytes)} / ${formatBytes(totalBytes)} (${percent.toFixed(1)}%)`;
+    }
+    if (elements.loadingProgressList) {
+      elements.loadingProgressList.innerHTML = progressEntries.map((entry) => {
+        const entryPercent = entry.total > 0
+          ? `${Math.max(0, Math.min(100, (Math.min(entry.loaded, entry.total) / entry.total) * 100)).toFixed(1)}%`
+          : '—';
+        return `
+          <div class="loading-progress-item">
+            <div class="loading-progress-item-header">
+              <span class="loading-progress-item-label">${entry.label}</span>
+              <span class="loading-progress-item-status">${entry.status}</span>
+            </div>
+            <div class="loading-progress-item-meta">
+              <span>${entryPercent}</span>
+              <span>${formatBytes(entry.loaded)} / ${formatBytes(entry.total)}</span>
+            </div>
+          </div>
+        `;
+      }).join('');
     }
   }
 
@@ -260,12 +283,20 @@
     renderLoadingProgress();
   }
 
-  function updateLoadingEntry(key, { loaded = 0, total = 0, group = 'other', message } = {}) {
-    const previous = loadingProgressEntries.get(key) || { loaded: 0, total: 0, group };
+  function updateLoadingEntry(key, { loaded = 0, total = 0, group = 'other', label, status, message } = {}) {
+    const previous = loadingProgressEntries.get(key) || {
+      loaded: 0,
+      total: 0,
+      group,
+      label: label || key,
+      status: 'Queued'
+    };
     loadingProgressEntries.set(key, {
       loaded: Math.max(0, loaded),
       total: Math.max(0, total || previous.total || 0),
       group,
+      label: label || previous.label || key,
+      status: status || previous.status || 'Queued',
     });
     if (message) {
       loadingProgressMessage = message;
@@ -273,9 +304,26 @@
     renderLoadingProgress();
   }
 
-  function createLoadingProgressReporter(key, group, message) {
+  function registerLoadingEntry(key, label, group, status = 'Queued') {
+    updateLoadingEntry(key, { label, group, status, loaded: 0, total: 0 });
+  }
+
+  function markLoadingEntryLoaded(key, label, group) {
+    const current = loadingProgressEntries.get(key);
+    const loaded = current?.loaded || 0;
+    const total = current?.total || loaded || 0;
+    updateLoadingEntry(key, {
+      loaded,
+      total,
+      group,
+      label,
+      status: 'Loaded'
+    });
+  }
+
+  function createLoadingProgressReporter(key, group, label) {
     return ({ loaded, total }) => {
-      updateLoadingEntry(key, { loaded, total, group, message });
+      updateLoadingEntry(key, { loaded, total, group, label, status: 'Loading' });
     };
   }
 
@@ -1082,6 +1130,7 @@
     const blob = new Blob(chunks, {
       type: response.headers.get('content-type') || 'application/octet-stream'
     });
+    options.onProgress?.({ loaded: blob.size, total: blob.size });
 
     return new Response(blob, {
       status: response.status,
@@ -1137,6 +1186,9 @@
       throw new Error('No video parts found');
     }
 
+    files.forEach((file, index) => {
+      registerLoadingEntry(`video:${index}`, `video.part-${String(index).padStart(3, '0')}.webm`, 'video');
+    });
     const blobs = await Promise.all(files.map((file, index) =>
       downloadFileAsBlob(
         file.id,
@@ -1144,10 +1196,19 @@
           onProgress: createLoadingProgressReporter(
             `video:${index}`,
             'video',
-            `Downloading video part ${index + 1}/${files.length}...`
+            `video.part-${String(index).padStart(3, '0')}.webm`
           )
         }
-      )
+      ).then((blob) => {
+        updateLoadingEntry(`video:${index}`, {
+          loaded: blob.size,
+          total: blob.size,
+          group: 'video',
+          label: `video.part-${String(index).padStart(3, '0')}.webm`,
+          status: 'Loaded'
+        });
+        return blob;
+      })
     ));
 
     const combinedType = mimeType || blobs[0]?.type || 'video/webm';
@@ -1166,15 +1227,26 @@
 
   async function loadRecordingData() {
     try {
-      resetLoadingProgress('Loading metadata...');
+      resetLoadingProgress('Loading recording...');
+      registerLoadingEntry('metadata', 'metadata.json', 'other');
+      if (recordingFiles.console) {
+        registerLoadingEntry('console', 'console.json', 'other');
+      }
+      if (recordingFiles.network) {
+        registerLoadingEntry('network', 'network.json', 'other');
+      }
+      if (recordingFiles.websocket) {
+        registerLoadingEntry('websocket', 'websocket.json', 'other');
+      }
 
       // Load metadata first (needed for processing other data)
       const metadataJson = await downloadFileAsJson(
         recordingFiles.metadata.id,
         {
-          onProgress: createLoadingProgressReporter('metadata', 'other', 'Loading metadata...')
+          onProgress: createLoadingProgressReporter('metadata', 'other', 'metadata.json')
         }
       );
+      markLoadingEntryLoaded('metadata', 'metadata.json', 'other');
       metadata = metadataJson.metadata || metadataJson;
       startTime = metadata.startTime || new Date(metadata.timestamp || '').getTime();
       duration = metadata.duration || 0;
@@ -1194,11 +1266,12 @@
 
         // Load console logs
         recordingFiles.console ? downloadFileAsJson(
-          recordingFiles.console.id,
-          {
-            onProgress: createLoadingProgressReporter('console', 'other', 'Loading console logs...')
-          }
-        ).then(consoleJson => {
+        recordingFiles.console.id,
+        {
+          onProgress: createLoadingProgressReporter('console', 'other', 'console.json')
+        }
+      ).then(consoleJson => {
+          markLoadingEntryLoaded('console', 'console.json', 'other');
           const rawEntries = Array.isArray(consoleJson)
             ? consoleJson
             : (consoleJson.logs || consoleJson.data || []);
@@ -1210,11 +1283,12 @@
 
         // Load network logs
         recordingFiles.network ? downloadFileAsJson(
-          recordingFiles.network.id,
-          {
-            onProgress: createLoadingProgressReporter('network', 'other', 'Loading network logs...')
-          }
-        ).then(networkJson => {
+        recordingFiles.network.id,
+        {
+          onProgress: createLoadingProgressReporter('network', 'other', 'network.json')
+        }
+      ).then(networkJson => {
+          markLoadingEntryLoaded('network', 'network.json', 'other');
           const rawEntries = Array.isArray(networkJson)
             ? networkJson
             : (networkJson.log?.entries || networkJson.entries || networkJson.data || []);
@@ -1280,18 +1354,19 @@
 
         // Load WebSocket logs
         recordingFiles.websocket ? downloadFileAsJson(
-          recordingFiles.websocket.id,
-          {
-            onProgress: createLoadingProgressReporter('websocket', 'other', 'Loading websocket logs...')
-          }
-        ).then(wsJson => {
+        recordingFiles.websocket.id,
+        {
+          onProgress: createLoadingProgressReporter('websocket', 'other', 'websocket.json')
+        }
+      ).then(wsJson => {
+          markLoadingEntryLoaded('websocket', 'websocket.json', 'other');
           webSocketLogs = Array.isArray(wsJson) ? wsJson : (wsJson.data || wsJson.logs || []);
         }) : Promise.resolve(),
       ]);
 
       // Update UI
       elements.recordingDuration.textContent = formatTime(duration);
-      setLoadingMessage('Rendering recording...');
+      setLoadingMessage('Loading recording...');
 
       showPlayer();
     } catch (err) {
@@ -1305,18 +1380,30 @@
   function showLoading() {
     resetLoadingProgress('Loading recording...');
     elements.loadingState.classList.remove('hidden');
+    elements.introState.classList.add('hidden');
+    elements.errorState.classList.add('hidden');
+    elements.playerState.classList.add('hidden');
+  }
+
+  function showIntro() {
+    resetLoadingProgress();
+    updatePlayerTitle();
+    elements.loadingState.classList.add('hidden');
+    elements.introState.classList.remove('hidden');
     elements.errorState.classList.add('hidden');
     elements.playerState.classList.add('hidden');
   }
 
   function showError() {
     elements.loadingState.classList.add('hidden');
+    elements.introState.classList.add('hidden');
     elements.errorState.classList.remove('hidden');
     elements.playerState.classList.add('hidden');
   }
 
   function showPlayer() {
     elements.loadingState.classList.add('hidden');
+    elements.introState.classList.add('hidden');
     elements.errorState.classList.add('hidden');
     elements.playerState.classList.remove('hidden');
 
@@ -2255,6 +2342,7 @@
     initElements();
     applyLayoutState();
     updateVolumeDisplay();
+    document.title = DEFAULT_PLAYER_TITLE;
     window.addEventListener('unload', releaseVideoResources);
     setupLayoutListeners();
     setupVideoListeners();
@@ -2265,10 +2353,14 @@
     const urlParams = new URLSearchParams(window.location.search);
     const videos = urlParams.get('videos');
     const metadataFileId = urlParams.get('metadata');
+    const hasParams = Array.from(urlParams.keys()).length > 0;
 
     if (videos && metadataFileId) {
       recordingFiles = buildDirectRecordingFiles(urlParams);
       await loadRecordingFromFiles();
+    } else if (!hasParams) {
+      console.info('[GN Tracing Player] Showing intro state without replay params:', GITHUB_REPO_URL);
+      showIntro();
     } else {
       elements.errorMessage.textContent = 'Invalid or missing recording parameters. Please provide videos and metadata file IDs.';
       showError();

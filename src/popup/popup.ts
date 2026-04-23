@@ -1,5 +1,7 @@
-import { PLAYER_HOST_URL } from "../shared/player-host";
-import type { MessageResponse, RecordingStatus, UploadState } from "../types/messages";
+import type { MessageResponse, ProgressItemSnapshot, RecordingStatus, UploadState } from "../types/messages";
+
+const GITHUB_REPO_URL = "https://github.com/gnasdev/gn-tracing";
+const GITHUB_ISSUES_URL = `${GITHUB_REPO_URL}/issues`;
 
 const toggleBtn = document.getElementById("toggle-btn") as HTMLButtonElement;
 const statusBar = document.getElementById("status-bar")!;
@@ -13,6 +15,7 @@ const uploadProgress = document.getElementById("upload-progress")!;
 const progressFill = document.getElementById("progress-fill") as HTMLDivElement;
 const progressText = document.getElementById("progress-text") as HTMLDivElement;
 const progressMeta = document.getElementById("progress-meta") as HTMLDivElement;
+const uploadItemsEl = document.getElementById("upload-items")!;
 const uploadResult = document.getElementById("upload-result")!;
 const recordingLink = document.getElementById("recording-link") as HTMLInputElement;
 const copyLinkBtn = document.getElementById("copy-link-btn")!;
@@ -25,7 +28,8 @@ const googleDriveStatus = document.getElementById("google-drive-status")!;
 const googleDriveConnectBtn = document.getElementById("google-drive-connect-btn") as HTMLButtonElement;
 const googleDriveDisconnectBtn = document.getElementById("google-drive-disconnect-btn") as HTMLButtonElement;
 
-const playerHostValue = document.getElementById("player-host-value") as HTMLSpanElement;
+const githubLinkBtn = document.getElementById("github-link-btn") as HTMLButtonElement;
+const contributeLinkBtn = document.getElementById("contribute-link-btn") as HTMLButtonElement;
 
 // Storage key cho state sync từ service worker (qua chrome.storage.session)
 const SERVICE_STATE_KEY = "gn_tracing_state";
@@ -100,21 +104,60 @@ function renderUploadProgress(progress: {
   percent?: number;
   uploadedBytes?: number;
   totalBytes?: number;
-  message?: string;
 } | null): void {
   const percent = Math.max(0, Math.min(100, progress?.percent ?? 0));
   const uploadedBytes = Math.max(0, progress?.uploadedBytes ?? 0);
   const totalBytes = Math.max(0, progress?.totalBytes ?? 0);
 
   progressFill.style.width = `${percent}%`;
-  progressText.textContent = progress?.message || "Uploading...";
+  progressText.textContent = "Uploading recording...";
   progressMeta.textContent = `${formatBytes(uploadedBytes)} / ${formatBytes(totalBytes)} (${percent.toFixed(1)}%)`;
+}
+
+function getProgressStatusLabel(status: ProgressItemSnapshot["status"]): string {
+  switch (status) {
+    case "queued":
+      return "Queued";
+    case "uploading":
+      return "Uploading";
+    case "uploaded":
+      return "Uploaded";
+    case "skipped":
+      return "Skipped";
+    case "failed":
+      return "Failed";
+    default:
+      return status;
+  }
+}
+
+function renderUploadItems(items: ProgressItemSnapshot[] | undefined): void {
+  const safeItems = Array.isArray(items) ? items : [];
+  uploadItemsEl.innerHTML = safeItems.map((item) => {
+    const totalBytes = Math.max(0, item.totalBytes || 0);
+    const loadedBytes = Math.max(0, item.loadedBytes || 0);
+    const percent = totalBytes > 0 ? Math.max(0, Math.min(100, item.percent || 0)) : 0;
+    const percentLabel = totalBytes > 0 ? `${percent.toFixed(1)}%` : "—";
+    const sizeLabel = `${formatBytes(loadedBytes)} / ${formatBytes(totalBytes)}`;
+    return `
+      <div class="progress-item">
+        <div class="progress-item-header">
+          <span class="progress-item-label">${item.label}</span>
+          <span class="progress-item-status">${getProgressStatusLabel(item.status)}</span>
+        </div>
+        <div class="progress-item-meta">
+          <span>${percentLabel}</span>
+          <span>${sizeLabel}</span>
+        </div>
+      </div>
+    `;
+  }).join("");
 }
 
 function updateUI(status: RecordingStatus | null): void {
   if (!status) return;
 
-  if (status.isRecording) {
+  if (status.phase === "recording") {
     toggleBtn.textContent = "Stop Recording";
     toggleBtn.className = "btn btn-stop";
     toggleBtn.disabled = false;
@@ -143,6 +186,10 @@ function updateUI(status: RecordingStatus | null): void {
     } else {
       downloadSection.classList.add("hidden");
     }
+
+    if (status.phase === "interrupted") {
+      uploadResult.classList.add("hidden");
+    }
   }
 }
 
@@ -158,8 +205,8 @@ function updateUploadUI(uploadState: UploadState | null): void {
       percent: uploadState.progress,
       uploadedBytes: uploadState.uploadedBytes,
       totalBytes: uploadState.totalBytes,
-      message: uploadState.message,
     });
+    renderUploadItems(uploadState.items);
     return;
   }
 
@@ -198,6 +245,17 @@ function updateGoogleDriveUI(isConnected: boolean): void {
   }
 }
 
+async function refreshGoogleDriveStatus(): Promise<void> {
+  try {
+    const result = await chrome.runtime.sendMessage({ action: "GOOGLE_DRIVE_STATUS" }) as MessageResponse & { isConnected?: boolean };
+    if (result.ok) {
+      updateGoogleDriveUI(Boolean(result.isConnected));
+    }
+  } catch {
+    // Keep last known UI state if service worker is still warming up
+  }
+}
+
 function showError(msg: string): void {
   errorMsg.textContent = msg;
   errorMsg.classList.remove("hidden");
@@ -209,7 +267,7 @@ function handleStateUpdate(state: { recording?: RecordingStatus; upload?: Upload
   if (state.recording) {
     updateUI(state.recording);
   }
-  if (state.upload) {
+  if (state.upload && state.recording?.phase !== "recording") {
     updateUploadUI(state.upload);
   }
   if (state.googleDrive) {
@@ -249,8 +307,9 @@ uploadDriveBtn.addEventListener("click", async () => {
   uploadProgress.classList.remove("hidden");
   uploadResult.classList.add("hidden");
   progressFill.style.width = "0%";
-  progressText.textContent = "Preparing upload...";
+      progressText.textContent = "Uploading recording...";
   progressMeta.textContent = "0 B / 0 B (0.0%)";
+  uploadItemsEl.innerHTML = "";
 
   // Listen for progress messages
   const progressListener = (message: any) => {
@@ -259,9 +318,10 @@ uploadDriveBtn.addEventListener("click", async () => {
         percent,
         uploadedBytes,
         totalBytes,
-        message: msg,
+        items,
       } = message.data;
-      renderUploadProgress({ percent, uploadedBytes, totalBytes, message: msg });
+      renderUploadProgress({ percent, uploadedBytes, totalBytes });
+      renderUploadItems(items);
     }
   };
 
@@ -339,9 +399,8 @@ googleDriveDisconnectBtn.addEventListener("click", async () => {
   }
 });
 
-function renderPlayerHost(): void {
-  playerHostValue.textContent = PLAYER_HOST_URL;
-  playerHostValue.title = PLAYER_HOST_URL;
+function openExternalUrl(url: string): void {
+  chrome.tabs.create({ url });
 }
 
 // Initialize popup - load state từ storage và subscribe đến changes
@@ -351,8 +410,7 @@ async function initPopup(): Promise<void> {
   if (initialState) {
     handleStateUpdate(initialState);
   }
-
-  renderPlayerHost();
+  await refreshGoogleDriveStatus();
 
   // Subscribe to storage changes từ service worker
   const unsubscribe = subscribeToStateChanges((newState) => {
@@ -367,4 +425,12 @@ async function initPopup(): Promise<void> {
 }
 
 // Start
+githubLinkBtn.addEventListener("click", () => {
+  openExternalUrl(GITHUB_REPO_URL);
+});
+
+contributeLinkBtn.addEventListener("click", () => {
+  openExternalUrl(GITHUB_ISSUES_URL);
+});
+
 initPopup();

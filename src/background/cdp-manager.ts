@@ -30,6 +30,11 @@ interface CdpRequestWillBeSentParams {
   };
 }
 
+interface CdpRequestWillBeSentExtraInfoParams {
+  requestId: string;
+  headers?: Record<string, string>;
+}
+
 interface CdpResponseReceivedParams {
   requestId: string;
   response: {
@@ -49,6 +54,17 @@ interface CdpResponseReceivedParams {
   };
 }
 
+interface CdpResponseReceivedExtraInfoParams {
+  requestId: string;
+  headers?: Record<string, string>;
+  statusCode?: number;
+}
+
+interface CdpResponseReceivedEarlyHintsParams {
+  requestId: string;
+  headers?: Record<string, string>;
+}
+
 interface CdpLoadingFinishedParams {
   requestId: string;
   encodedDataLength: number;
@@ -58,6 +74,10 @@ interface CdpLoadingFailedParams {
   requestId: string;
   errorText: string;
   canceled?: boolean;
+}
+
+interface CdpRequestServedFromCacheParams {
+  requestId: string;
 }
 
 interface CdpWebSocketCreatedParams {
@@ -111,6 +131,19 @@ interface CdpScriptParsedParams {
   sourceMapURL?: string;
 }
 
+interface CdpAttachedToTargetParams {
+  sessionId: string;
+  targetInfo?: {
+    type?: string;
+    url?: string;
+  };
+  waitingForDebugger?: boolean;
+}
+
+interface CdpDetachedFromTargetParams {
+  sessionId: string;
+}
+
 interface CdpRemoteObject {
   type: string;
   subtype?: string;
@@ -150,8 +183,14 @@ interface CdpRawStackTrace {
 
 export class CdpManager {
   #tabId: number | null = null;
-  #pendingRequests = new Map<string, NetworkEntry>();
-  #pendingWebSockets = new Map<string, WebSocketEntry>();
+  #pendingRequests = new Map<string, PendingNetworkRequest>();
+  #pendingWebSockets = new Map<string, PendingWebSocket>();
+  #responseBodyFetches = new Map<string, Promise<void>>();
+  #pendingRequestExtraInfo = new Map<string, Record<string, string>>();
+  #pendingResponseExtraInfo = new Map<string, { headers?: Record<string, string>; statusCode?: number }>();
+  #pendingEarlyHints = new Map<string, Record<string, string>>();
+  #pendingServedFromCache = new Set<string>();
+  #attachedSessions = new Set<string>();
   #storage: StorageManager;
   #attached = false;
   #boundEventHandler: (source: chrome.debugger.Debuggee, method: string, params?: object) => void;
@@ -182,6 +221,12 @@ export class CdpManager {
     this.#tabId = tabId;
     this.#pendingRequests.clear();
     this.#pendingWebSockets.clear();
+    this.#responseBodyFetches.clear();
+    this.#pendingRequestExtraInfo.clear();
+    this.#pendingResponseExtraInfo.clear();
+    this.#pendingEarlyHints.clear();
+    this.#pendingServedFromCache.clear();
+    this.#attachedSessions.clear();
     this.#sourceMapResolver.clear();
     this.#sourceMapFetches.clear();
 
@@ -191,24 +236,8 @@ export class CdpManager {
     chrome.debugger.onEvent.addListener(this.#boundEventHandler);
     chrome.debugger.onDetach.addListener(this.#boundDetachHandler);
 
-    await Promise.all([
-      chrome.debugger.sendCommand({ tabId }, "Network.enable", {
-        maxPostDataSize: 65536,
-      }),
-      chrome.debugger.sendCommand({ tabId }, "Runtime.enable", {
-        generatePreviews: true,
-      }),
-      chrome.debugger.sendCommand({ tabId }, "Log.enable"),
-    ]);
-
-    try {
-      await chrome.debugger.sendCommand({ tabId }, "Debugger.enable");
-      await chrome.debugger.sendCommand({ tabId }, "Debugger.setAsyncCallStackDepth", {
-        maxDepth: 32,
-      });
-    } catch {
-      // Debugger domain failed — async stacks won't be available
-    }
+    await this.#enableDomains();
+    await this.#configureAutoAttach();
   }
 
   async detach(): Promise<void> {
@@ -223,15 +252,21 @@ export class CdpManager {
       }
     }
 
-    for (const [, entry] of this.#pendingRequests) {
-      this.#storage.addNetworkEntry(entry);
+    await Promise.allSettled(Array.from(this.#responseBodyFetches.values()));
+    for (const key of Array.from(this.#pendingRequests.keys())) {
+      this.#finalizePendingRequest(key);
     }
-    this.#pendingRequests.clear();
+    this.#responseBodyFetches.clear();
+    this.#pendingRequestExtraInfo.clear();
+    this.#pendingResponseExtraInfo.clear();
+    this.#pendingEarlyHints.clear();
+    this.#pendingServedFromCache.clear();
 
     for (const [, ws] of this.#pendingWebSockets) {
-      this.#storage.addWebSocketEntry(ws);
+      this.#storage.addWebSocketEntry(ws.entry);
     }
     this.#pendingWebSockets.clear();
+    this.#attachedSessions.clear();
 
     this.#attached = false;
   }
@@ -248,29 +283,47 @@ export class CdpManager {
     if (source.tabId !== this.#tabId) return;
 
     switch (method) {
+      case "Target.attachedToTarget":
+        void this.#onAttachedToTarget(params as CdpAttachedToTargetParams);
+        break;
+      case "Target.detachedFromTarget":
+        this.#onDetachedFromTarget(params as CdpDetachedFromTargetParams);
+        break;
       case "Network.requestWillBeSent":
-        this.#onRequestWillBeSent(params as CdpRequestWillBeSentParams);
+        this.#onRequestWillBeSent(source, params as CdpRequestWillBeSentParams);
+        break;
+      case "Network.requestWillBeSentExtraInfo":
+        this.#onRequestWillBeSentExtraInfo(source, params as CdpRequestWillBeSentExtraInfoParams);
         break;
       case "Network.responseReceived":
-        this.#onResponseReceived(params as CdpResponseReceivedParams);
+        this.#onResponseReceived(source, params as CdpResponseReceivedParams);
+        break;
+      case "Network.responseReceivedExtraInfo":
+        this.#onResponseReceivedExtraInfo(source, params as CdpResponseReceivedExtraInfoParams);
+        break;
+      case "Network.responseReceivedEarlyHints":
+        this.#onResponseReceivedEarlyHints(source, params as CdpResponseReceivedEarlyHintsParams);
+        break;
+      case "Network.requestServedFromCache":
+        this.#onRequestServedFromCache(source, params as CdpRequestServedFromCacheParams);
         break;
       case "Network.loadingFinished":
         this.#onLoadingFinished(source, params as CdpLoadingFinishedParams);
         break;
       case "Network.loadingFailed":
-        this.#onLoadingFailed(params as CdpLoadingFailedParams);
+        this.#onLoadingFailed(source, params as CdpLoadingFailedParams);
         break;
       case "Network.webSocketCreated":
-        this.#onWebSocketCreated(params as CdpWebSocketCreatedParams);
+        this.#onWebSocketCreated(source, params as CdpWebSocketCreatedParams);
         break;
       case "Network.webSocketFrameSent":
-        this.#onWebSocketFrameSent(params as CdpWebSocketFrameParams);
+        this.#onWebSocketFrameSent(source, params as CdpWebSocketFrameParams);
         break;
       case "Network.webSocketFrameReceived":
-        this.#onWebSocketFrameReceived(params as CdpWebSocketFrameParams);
+        this.#onWebSocketFrameReceived(source, params as CdpWebSocketFrameParams);
         break;
       case "Network.webSocketClosed":
-        this.#onWebSocketClosed(params as CdpWebSocketClosedParams);
+        this.#onWebSocketClosed(source, params as CdpWebSocketClosedParams);
         break;
       case "Runtime.consoleAPICalled":
         this.#onConsoleAPICalled(params as CdpConsoleAPICalledParams);
@@ -282,10 +335,10 @@ export class CdpManager {
         this.#onLogEntryAdded(params as CdpLogEntryAddedParams);
         break;
       case "Debugger.scriptParsed":
-        this.#onScriptParsed(params as CdpScriptParsedParams);
+        this.#onScriptParsed(source, params as CdpScriptParsedParams);
         break;
       case "Debugger.paused":
-        chrome.debugger.sendCommand({ tabId: this.#tabId! }, "Debugger.resume").catch(() => {});
+        void this.#sendCommand(source, "Debugger.resume").catch(() => {});
         break;
     }
   }
@@ -294,23 +347,64 @@ export class CdpManager {
   // Network handlers
   // ════════════════════════════════════════════
 
-  #onRequestWillBeSent(params: CdpRequestWillBeSentParams): void {
+  async #onAttachedToTarget(params: CdpAttachedToTargetParams): Promise<void> {
+    if (!params.sessionId || this.#attachedSessions.has(params.sessionId)) {
+      return;
+    }
+
+    this.#attachedSessions.add(params.sessionId);
+
+    try {
+      await this.#enableDomains(params.sessionId);
+      await this.#configureAutoAttach(params.sessionId);
+      if (params.waitingForDebugger) {
+        await this.#sendCommand(this.#getDebuggee(params.sessionId), "Runtime.runIfWaitingForDebugger");
+      }
+    } catch {
+      // Ignore child target setup failures and continue recording on the main target.
+    }
+  }
+
+  #onDetachedFromTarget(params: CdpDetachedFromTargetParams): void {
+    if (!params.sessionId) return;
+    this.#attachedSessions.delete(params.sessionId);
+    const prefix = `${params.sessionId}:`;
+    for (const key of Array.from(this.#pendingRequests.keys())) {
+      if (key.startsWith(prefix) && !this.#responseBodyFetches.has(key)) {
+        this.#finalizePendingRequest(key);
+      }
+    }
+    for (const key of Array.from(this.#pendingWebSockets.keys())) {
+      if (key.startsWith(prefix)) {
+        const pending = this.#pendingWebSockets.get(key);
+        if (pending) {
+          this.#storage.addWebSocketEntry(pending.entry);
+        }
+        this.#pendingWebSockets.delete(key);
+      }
+    }
+    this.#pruneMetadataForPrefix(prefix);
+  }
+
+  #onRequestWillBeSent(source: chrome.debugger.Debuggee, params: CdpRequestWillBeSentParams): void {
+    const key = this.#requestKey(source, params.requestId);
     if (params.redirectResponse) {
-      const existing = this.#pendingRequests.get(params.requestId);
+      const existing = this.#pendingRequests.get(key);
       if (existing) {
-        if (!existing.redirectChain) existing.redirectChain = [];
-        existing.redirectChain.push({
-          url: existing.url,
+        if (!existing.entry.redirectChain) existing.entry.redirectChain = [];
+        existing.entry.redirectChain.push({
+          url: existing.entry.url,
           status: params.redirectResponse.status,
           statusText: params.redirectResponse.statusText,
           headers: params.redirectResponse.headers,
         });
-        existing.url = params.request.url;
-        existing.method = params.request.method;
-        existing.requestHeaders = params.request.headers;
-        existing.postData = params.request.postData ?? null;
-        existing.timestamp = params.timestamp;
-        existing.wallTime = params.wallTime;
+        existing.entry.url = params.request.url;
+        existing.entry.method = params.request.method;
+        existing.entry.requestHeaders = params.request.headers;
+        existing.entry.postData = params.request.postData ?? null;
+        existing.entry.timestamp = params.timestamp;
+        existing.entry.wallTime = params.wallTime;
+        this.#applyPendingRequestMetadata(key, existing.entry);
         return;
       }
     }
@@ -320,6 +414,7 @@ export class CdpManager {
       url: params.request.url,
       method: params.request.method,
       requestHeaders: params.request.headers,
+      requestHeadersExtra: null,
       postData: params.request.postData ?? null,
       timestamp: params.timestamp,
       wallTime: params.wallTime,
@@ -328,6 +423,8 @@ export class CdpManager {
       status: null,
       statusText: null,
       responseHeaders: null,
+      responseHeadersExtra: null,
+      earlyHintsHeaders: null,
       mimeType: null,
       timing: null,
       protocol: null,
@@ -336,54 +433,108 @@ export class CdpManager {
       error: null,
       responseBody: null,
       redirectChain: null,
+      servedFromCache: false,
     };
 
-    this.#pendingRequests.set(params.requestId, entry);
+    this.#applyPendingRequestMetadata(key, entry);
+    this.#pendingRequests.set(key, { sessionId: this.#getSessionId(source), entry });
 
     if (params.request.hasPostData && !params.request.postData) {
-      this.#fetchPostData(params.requestId);
+      void this.#fetchPostData(source, params.requestId);
     }
   }
 
-  async #fetchPostData(requestId: string): Promise<void> {
+  #onRequestWillBeSentExtraInfo(source: chrome.debugger.Debuggee, params: CdpRequestWillBeSentExtraInfoParams): void {
+    const key = this.#requestKey(source, params.requestId);
+    if (params.headers) {
+      const existing = this.#pendingRequests.get(key);
+      if (existing) {
+        existing.entry.requestHeadersExtra = params.headers;
+      } else {
+        this.#pendingRequestExtraInfo.set(key, params.headers);
+      }
+    }
+  }
+
+  async #fetchPostData(source: chrome.debugger.Debuggee, requestId: string): Promise<void> {
     try {
-      const result = await chrome.debugger.sendCommand(
-        { tabId: this.#tabId! },
+      const result = await this.#sendCommand(
+        source,
         "Network.getRequestPostData",
         { requestId }
       ) as { postData?: string } | undefined;
-      const entry = this.#pendingRequests.get(requestId);
+      const entry = this.#pendingRequests.get(this.#requestKey(source, requestId));
       if (entry && result) {
-        entry.postData = result.postData ?? null;
+        entry.entry.postData = result.postData ?? null;
       }
     } catch {
       // Request may have been completed already
     }
   }
 
-  #onResponseReceived(params: CdpResponseReceivedParams): void {
-    const entry = this.#pendingRequests.get(params.requestId);
+  #onResponseReceived(source: chrome.debugger.Debuggee, params: CdpResponseReceivedParams): void {
+    const entry = this.#pendingRequests.get(this.#requestKey(source, params.requestId));
     if (entry) {
-      entry.status = params.response.status;
-      entry.statusText = params.response.statusText;
-      entry.responseHeaders = params.response.headers;
-      entry.mimeType = params.response.mimeType;
-      entry.timing = params.response.timing ?? null;
-      entry.protocol = params.response.protocol ?? null;
-      entry.remoteIPAddress = params.response.remoteIPAddress ?? null;
+      entry.entry.status = params.response.status;
+      entry.entry.statusText = params.response.statusText;
+      entry.entry.responseHeaders = params.response.headers;
+      entry.entry.mimeType = params.response.mimeType;
+      entry.entry.timing = params.response.timing ?? null;
+      entry.entry.protocol = params.response.protocol ?? null;
+      entry.entry.remoteIPAddress = params.response.remoteIPAddress ?? null;
+    }
+  }
+
+  #onResponseReceivedExtraInfo(source: chrome.debugger.Debuggee, params: CdpResponseReceivedExtraInfoParams): void {
+    const key = this.#requestKey(source, params.requestId);
+    const existing = this.#pendingRequests.get(key);
+    if (existing) {
+      existing.entry.responseHeadersExtra = params.headers ?? null;
+      if ((existing.entry.status == null || existing.entry.status === 0) && typeof params.statusCode === "number") {
+        existing.entry.status = params.statusCode;
+      }
+    } else {
+      this.#pendingResponseExtraInfo.set(key, {
+        headers: params.headers,
+        statusCode: params.statusCode,
+      });
+    }
+  }
+
+  #onResponseReceivedEarlyHints(source: chrome.debugger.Debuggee, params: CdpResponseReceivedEarlyHintsParams): void {
+    const key = this.#requestKey(source, params.requestId);
+    const existing = this.#pendingRequests.get(key);
+    if (existing) {
+      existing.entry.earlyHintsHeaders = params.headers ?? null;
+    } else if (params.headers) {
+      this.#pendingEarlyHints.set(key, params.headers);
+    }
+  }
+
+  #onRequestServedFromCache(source: chrome.debugger.Debuggee, params: CdpRequestServedFromCacheParams): void {
+    const key = this.#requestKey(source, params.requestId);
+    const existing = this.#pendingRequests.get(key);
+    if (existing) {
+      existing.entry.servedFromCache = true;
+    } else {
+      this.#pendingServedFromCache.add(key);
     }
   }
 
   #onLoadingFinished(source: chrome.debugger.Debuggee, params: CdpLoadingFinishedParams): void {
-    const entry = this.#pendingRequests.get(params.requestId);
+    const key = this.#requestKey(source, params.requestId);
+    const entry = this.#pendingRequests.get(key);
     if (entry) {
-      entry.encodedDataLength = params.encodedDataLength;
+      entry.entry.encodedDataLength = params.encodedDataLength;
 
-      if (this.#shouldFetchBody(entry)) {
-        this.#fetchResponseBody(source, params.requestId, entry);
+      if (this.#shouldFetchBody(entry.entry)) {
+        const fetchPromise = this.#fetchResponseBody(source, params.requestId);
+        this.#responseBodyFetches.set(key, fetchPromise);
+        void fetchPromise.finally(() => {
+          this.#responseBodyFetches.delete(key);
+        });
       } else {
-        this.#storage.addNetworkEntry(entry);
-        this.#pendingRequests.delete(params.requestId);
+        this.#finalizePendingRequest(key);
       }
     }
   }
@@ -406,15 +557,20 @@ export class CdpManager {
     return textTypes.some((t) => entry.mimeType!.startsWith(t));
   }
 
-  async #fetchResponseBody(_source: chrome.debugger.Debuggee, requestId: string, entry: NetworkEntry): Promise<void> {
+  async #fetchResponseBody(source: chrome.debugger.Debuggee, requestId: string): Promise<void> {
+    const key = this.#requestKey(source, requestId);
+    const pending = this.#pendingRequests.get(key);
+    if (!pending) return;
+
     try {
-      const result = await chrome.debugger.sendCommand(
-        { tabId: this.#tabId! },
+      const result = await this.#sendCommand(
+        source,
         "Network.getResponseBody",
         { requestId }
       ) as { body?: string; base64Encoded?: boolean } | undefined;
-      if (result) {
-        entry.responseBody = {
+      const latestPending = this.#pendingRequests.get(key);
+      if (latestPending && result) {
+        latestPending.entry.responseBody = {
           body: result.body ?? "",
           base64Encoded: result.base64Encoded ?? false,
         };
@@ -422,17 +578,16 @@ export class CdpManager {
     } catch {
       // Response body may have been evicted
     }
-    this.#storage.addNetworkEntry(entry);
-    this.#pendingRequests.delete(requestId);
+    this.#finalizePendingRequest(key);
   }
 
-  #onLoadingFailed(params: CdpLoadingFailedParams): void {
-    const entry = this.#pendingRequests.get(params.requestId);
+  #onLoadingFailed(source: chrome.debugger.Debuggee, params: CdpLoadingFailedParams): void {
+    const key = this.#requestKey(source, params.requestId);
+    const entry = this.#pendingRequests.get(key);
     if (entry) {
-      entry.error = params.errorText;
-      entry.canceled = params.canceled;
-      this.#storage.addNetworkEntry(entry);
-      this.#pendingRequests.delete(params.requestId);
+      entry.entry.error = params.errorText;
+      entry.entry.canceled = params.canceled;
+      this.#finalizePendingRequest(key);
     }
   }
 
@@ -440,20 +595,23 @@ export class CdpManager {
   // WebSocket handlers
   // ════════════════════════════════════════════
 
-  #onWebSocketCreated(params: CdpWebSocketCreatedParams): void {
-    this.#pendingWebSockets.set(params.requestId, {
-      requestId: params.requestId,
-      url: params.url,
-      initiator: params.initiator,
-      frames: [],
-      closed: false,
+  #onWebSocketCreated(source: chrome.debugger.Debuggee, params: CdpWebSocketCreatedParams): void {
+    this.#pendingWebSockets.set(this.#requestKey(source, params.requestId), {
+      sessionId: this.#getSessionId(source),
+      entry: {
+        requestId: params.requestId,
+        url: params.url,
+        initiator: params.initiator,
+        frames: [],
+        closed: false,
+      },
     });
   }
 
-  #onWebSocketFrameSent(params: CdpWebSocketFrameParams): void {
-    const ws = this.#pendingWebSockets.get(params.requestId);
+  #onWebSocketFrameSent(source: chrome.debugger.Debuggee, params: CdpWebSocketFrameParams): void {
+    const ws = this.#pendingWebSockets.get(this.#requestKey(source, params.requestId));
     if (ws) {
-      ws.frames.push({
+      ws.entry.frames.push({
         direction: "sent",
         timestamp: params.timestamp,
         opcode: params.response.opcode,
@@ -462,10 +620,10 @@ export class CdpManager {
     }
   }
 
-  #onWebSocketFrameReceived(params: CdpWebSocketFrameParams): void {
-    const ws = this.#pendingWebSockets.get(params.requestId);
+  #onWebSocketFrameReceived(source: chrome.debugger.Debuggee, params: CdpWebSocketFrameParams): void {
+    const ws = this.#pendingWebSockets.get(this.#requestKey(source, params.requestId));
     if (ws) {
-      ws.frames.push({
+      ws.entry.frames.push({
         direction: "received",
         timestamp: params.timestamp,
         opcode: params.response.opcode,
@@ -474,12 +632,12 @@ export class CdpManager {
     }
   }
 
-  #onWebSocketClosed(params: CdpWebSocketClosedParams): void {
-    const ws = this.#pendingWebSockets.get(params.requestId);
+  #onWebSocketClosed(source: chrome.debugger.Debuggee, params: CdpWebSocketClosedParams): void {
+    const ws = this.#pendingWebSockets.get(this.#requestKey(source, params.requestId));
     if (ws) {
-      ws.closed = true;
-      this.#storage.addWebSocketEntry(ws);
-      this.#pendingWebSockets.delete(params.requestId);
+      ws.entry.closed = true;
+      this.#storage.addWebSocketEntry(ws.entry);
+      this.#pendingWebSockets.delete(this.#requestKey(source, params.requestId));
     }
   }
 
@@ -606,10 +764,10 @@ export class CdpManager {
   // Sourcemap collection
   // ════════════════════════════════════════════
 
-  #onScriptParsed(params: CdpScriptParsedParams): void {
+  #onScriptParsed(source: chrome.debugger.Debuggee, params: CdpScriptParsedParams): void {
     if (params.sourceMapURL && params.url) {
       const promise = this.#trackSourceMapFetch(
-        this.#fetchAndRegisterSourceMap(params.url, params.sourceMapURL),
+        this.#fetchAndRegisterSourceMap(source, params.url, params.sourceMapURL),
       );
       this.#sourceMapFetches.add(promise);
     }
@@ -622,10 +780,14 @@ export class CdpManager {
     return promise;
   }
 
-  async #fetchAndRegisterSourceMap(scriptUrl: string, sourceMapURL: string): Promise<void> {
+  async #fetchAndRegisterSourceMap(
+    source: chrome.debugger.Debuggee,
+    scriptUrl: string,
+    sourceMapURL: string,
+  ): Promise<void> {
     try {
       const resolvedUrl = this.#resolveSourceMapUrl(sourceMapURL, scriptUrl);
-      const content = await this.#fetchSourceMapContent(resolvedUrl);
+      const content = await this.#fetchSourceMapContent(source, resolvedUrl);
       if (content) {
         const raw = JSON.parse(content);
         this.#sourceMapResolver.addMap(scriptUrl, raw);
@@ -644,7 +806,7 @@ export class CdpManager {
     }
   }
 
-  async #fetchSourceMapContent(url: string): Promise<string | null> {
+  async #fetchSourceMapContent(source: chrome.debugger.Debuggee, url: string): Promise<string | null> {
     if (url.startsWith("data:")) {
       const commaIdx = url.indexOf(",");
       if (commaIdx < 0) return null;
@@ -656,8 +818,8 @@ export class CdpManager {
     if (!this.#attached || !this.#tabId) return null;
     try {
       const maxSize = 5 * 1024 * 1024;
-      const result = await chrome.debugger.sendCommand(
-        { tabId: this.#tabId },
+      const result = await this.#sendCommand(
+        source,
         "Runtime.evaluate",
         {
           expression: `fetch(${JSON.stringify(url)}).then(r=>r.ok?r.text():null).then(t=>t&&t.length<=${maxSize}?t:null).catch(()=>null)`,
@@ -679,6 +841,7 @@ export class CdpManager {
   #mapConsoleType(type: string): string {
     const map: Record<string, string> = {
       log: "log",
+      verbose: "debug",
       debug: "debug",
       info: "info",
       warning: "warn",
@@ -693,8 +856,136 @@ export class CdpManager {
       endGroup: "log",
       assert: "error",
       count: "log",
+      countReset: "log",
+      timeLog: "log",
       timeEnd: "log",
+      profile: "info",
+      profileEnd: "info",
     };
     return map[type] || "log";
   }
+
+  #requestKey(source: chrome.debugger.Debuggee, requestId: string): string {
+    return `${this.#getSessionId(source) || "root"}:${requestId}`;
+  }
+
+  #getSessionId(source: chrome.debugger.Debuggee): string | undefined {
+    return (source as chrome.debugger.Debuggee & { sessionId?: string }).sessionId;
+  }
+
+  async #enableDomains(sessionId?: string): Promise<void> {
+    const target = this.#getDebuggee(sessionId);
+    await Promise.all([
+      this.#sendCommand(target, "Network.enable", {
+        maxPostDataSize: 65536,
+      }),
+      this.#sendCommand(target, "Runtime.enable", {
+        generatePreviews: true,
+      }),
+      this.#sendCommand(target, "Log.enable"),
+    ]);
+
+    try {
+      await this.#sendCommand(target, "Debugger.enable");
+      await this.#sendCommand(target, "Debugger.setAsyncCallStackDepth", {
+        maxDepth: 32,
+      });
+    } catch {
+      // Debugger domain failed — async stacks won't be available
+    }
+  }
+
+  async #configureAutoAttach(sessionId?: string): Promise<void> {
+    await this.#sendCommand(this.#getDebuggee(sessionId), "Target.setAutoAttach", {
+      autoAttach: true,
+      waitForDebuggerOnStart: false,
+      flatten: true,
+    }).catch(() => {});
+  }
+
+  #applyPendingRequestMetadata(key: string, entry: NetworkEntry): void {
+    const requestHeadersExtra = this.#pendingRequestExtraInfo.get(key);
+    if (requestHeadersExtra) {
+      entry.requestHeadersExtra = requestHeadersExtra;
+      this.#pendingRequestExtraInfo.delete(key);
+    }
+
+    const responseExtra = this.#pendingResponseExtraInfo.get(key);
+    if (responseExtra) {
+      entry.responseHeadersExtra = responseExtra.headers ?? null;
+      if ((entry.status == null || entry.status === 0) && typeof responseExtra.statusCode === "number") {
+        entry.status = responseExtra.statusCode;
+      }
+      this.#pendingResponseExtraInfo.delete(key);
+    }
+
+    const earlyHints = this.#pendingEarlyHints.get(key);
+    if (earlyHints) {
+      entry.earlyHintsHeaders = earlyHints;
+      this.#pendingEarlyHints.delete(key);
+    }
+
+    if (this.#pendingServedFromCache.has(key)) {
+      entry.servedFromCache = true;
+      this.#pendingServedFromCache.delete(key);
+    }
+  }
+
+  #finalizePendingRequest(key: string): void {
+    const pending = this.#pendingRequests.get(key);
+    if (!pending) return;
+    this.#applyPendingRequestMetadata(key, pending.entry);
+    this.#storage.addNetworkEntry(pending.entry);
+    this.#pendingRequests.delete(key);
+  }
+
+  #pruneMetadataForPrefix(prefix: string): void {
+    for (const key of Array.from(this.#pendingRequestExtraInfo.keys())) {
+      if (key.startsWith(prefix) && !this.#pendingRequests.has(key)) {
+        this.#pendingRequestExtraInfo.delete(key);
+      }
+    }
+    for (const key of Array.from(this.#pendingResponseExtraInfo.keys())) {
+      if (key.startsWith(prefix) && !this.#pendingRequests.has(key)) {
+        this.#pendingResponseExtraInfo.delete(key);
+      }
+    }
+    for (const key of Array.from(this.#pendingEarlyHints.keys())) {
+      if (key.startsWith(prefix) && !this.#pendingRequests.has(key)) {
+        this.#pendingEarlyHints.delete(key);
+      }
+    }
+    for (const key of Array.from(this.#pendingServedFromCache)) {
+      if (key.startsWith(prefix) && !this.#pendingRequests.has(key)) {
+        this.#pendingServedFromCache.delete(key);
+      }
+    }
+  }
+
+  #getDebuggee(sessionId?: string): chrome.debugger.Debuggee {
+    if (!this.#tabId) {
+      throw new Error("Debugger is not attached");
+    }
+    return sessionId
+      ? ({ tabId: this.#tabId, sessionId } as chrome.debugger.Debuggee)
+      : { tabId: this.#tabId };
+  }
+
+  async #sendCommand(
+    target: chrome.debugger.Debuggee,
+    method: string,
+    commandParams?: object,
+  ): Promise<object | undefined> {
+    return chrome.debugger.sendCommand(target, method, commandParams);
+  }
+}
+
+interface PendingNetworkRequest {
+  sessionId?: string;
+  entry: NetworkEntry;
+}
+
+interface PendingWebSocket {
+  sessionId?: string;
+  entry: WebSocketEntry;
 }

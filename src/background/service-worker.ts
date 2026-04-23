@@ -3,7 +3,7 @@ import { CdpManager } from "./cdp-manager";
 import { StorageManager } from "./storage-manager";
 import { GoogleDriveAuth } from "./google-drive-auth";
 import { buildExternalPlayerUrl } from "../shared/player-host";
-import type { ServiceWorkerMessage, MessageResponse, RecordingStatus, UploadState } from "../types/messages";
+import type { ProgressItemSnapshot, RecordingPhase, ServiceWorkerMessage, MessageResponse, RecordingStatus, UploadState } from "../types/messages";
 
 const storage = new StorageManager();
 const recorder = new RecorderManager();
@@ -35,22 +35,104 @@ const uploadState: UploadState = {
   uploadedBytes: 0,
   totalBytes: 0,
   message: "",
+  items: [],
   recordingUrl: null,
   error: null,
 };
 
+const googleDriveState = {
+  isConnected: false,
+  checkedAt: 0,
+};
+
+let phaseOverride: RecordingPhase | null = null;
+
 // Storage key for state sync
 const STORAGE_KEY_STATE = "gn_tracing_state";
+
+interface PersistedPopupState {
+  recording?: Partial<RecordingStatus>;
+  upload?: Partial<UploadState> | null;
+  googleDrive?: {
+    isConnected?: boolean;
+  } | null;
+}
+
+interface OffscreenCaptureState {
+  ok: boolean;
+  isRecording?: boolean;
+  hasRecording?: boolean;
+  recordedBytes?: number;
+}
+
+function getRecordingPhase(): RecordingPhase {
+  if (phaseOverride) {
+    return phaseOverride;
+  }
+  if (uploadState.isUploading) {
+    return "uploading";
+  }
+  if (state.isRecording) {
+    return "recording";
+  }
+  if (recorder.hasRecording) {
+    return "recorded";
+  }
+  return "idle";
+}
+
+function resetUploadState(): void {
+  uploadState.isUploading = false;
+  uploadState.progress = 0;
+  uploadState.uploadedBytes = 0;
+  uploadState.totalBytes = 0;
+  uploadState.message = "";
+  uploadState.items = [];
+  uploadState.recordingUrl = null;
+  uploadState.error = null;
+}
+
+async function loadPersistedPopupState(): Promise<PersistedPopupState | null> {
+  try {
+    const result = await chrome.storage.session.get(STORAGE_KEY_STATE);
+    return (result[STORAGE_KEY_STATE] as PersistedPopupState | undefined) || null;
+  } catch {
+    return null;
+  }
+}
+
+async function probeOffscreenCaptureState(): Promise<OffscreenCaptureState | null> {
+  try {
+    const contexts = await chrome.runtime.getContexts({
+      contextTypes: [chrome.runtime.ContextType.OFFSCREEN_DOCUMENT],
+    });
+    if (contexts.length === 0) {
+      return null;
+    }
+
+    return await chrome.runtime.sendMessage({
+      target: "offscreen",
+      type: "GET_CAPTURE_STATE",
+    }) as OffscreenCaptureState;
+  } catch {
+    return null;
+  }
+}
+
+async function refreshGoogleDriveState(): Promise<void> {
+  const status = await googleAuth.getStatus();
+  googleDriveState.isConnected = status.isConnected;
+  googleDriveState.checkedAt = Date.now();
+}
 
 // Save current state to storage for popup sync
 async function saveStateToStorage(): Promise<void> {
   try {
-    const gdStatus = await googleAuth.getStatus();
     const data = {
       recording: getStatus(),
       upload: getUploadState(),
       googleDrive: {
-        isConnected: gdStatus.isConnected,
+        isConnected: googleDriveState.isConnected,
       },
     };
     await chrome.storage.session.set({ [STORAGE_KEY_STATE]: data });
@@ -58,6 +140,82 @@ async function saveStateToStorage(): Promise<void> {
     // Ignore storage errors
   }
 }
+
+async function syncRuntimeState(): Promise<void> {
+  const persistedState = await loadPersistedPopupState();
+  const offscreenState = await probeOffscreenCaptureState();
+
+  phaseOverride = null;
+
+  if (persistedState?.googleDrive && typeof persistedState.googleDrive.isConnected === "boolean") {
+    googleDriveState.isConnected = persistedState.googleDrive.isConnected;
+  }
+
+  if (persistedState?.recording) {
+    state.tabId = persistedState.recording.tabId ?? state.tabId;
+    state.startTime = persistedState.recording.startTime ?? state.startTime;
+    state.stopTime = persistedState.recording.stopTime ?? state.stopTime;
+    state.tabUrl = persistedState.recording.tabUrl ?? state.tabUrl;
+  }
+
+  if (persistedState?.upload) {
+    uploadState.isUploading = Boolean(persistedState.upload.isUploading);
+    uploadState.progress = persistedState.upload.progress ?? 0;
+    uploadState.uploadedBytes = persistedState.upload.uploadedBytes ?? 0;
+    uploadState.totalBytes = persistedState.upload.totalBytes ?? 0;
+    uploadState.message = persistedState.upload.message ?? "";
+    uploadState.items = Array.isArray(persistedState.upload.items)
+      ? persistedState.upload.items as ProgressItemSnapshot[]
+      : [];
+    uploadState.recordingUrl = persistedState.upload.recordingUrl ?? null;
+    uploadState.error = persistedState.upload.error ?? null;
+  }
+
+  recorder.hydrateRecordingComplete(false);
+
+  if (offscreenState?.ok) {
+    const hasRecording = Boolean(offscreenState.hasRecording);
+    const isRecording = Boolean(offscreenState.isRecording);
+
+    recorder.hydrateRecordingComplete(hasRecording);
+    state.isRecording = isRecording;
+
+    if ((hasRecording || isRecording) && !uploadState.isUploading) {
+      resetUploadState();
+    }
+
+    if (hasRecording && !state.stopTime) {
+      state.stopTime = persistedState?.recording?.stopTime ?? Date.now();
+    }
+
+    if (!hasRecording && !isRecording && uploadState.isUploading) {
+      resetUploadState();
+      uploadState.error = "Upload was interrupted when the extension runtime restarted.";
+      phaseOverride = "interrupted";
+    }
+  } else {
+    const previousPhase = persistedState?.recording?.phase;
+    if (previousPhase === "recording" || previousPhase === "uploading") {
+      state.isRecording = false;
+      recorder.hydrateRecordingComplete(false);
+      resetUploadState();
+      phaseOverride = "interrupted";
+    }
+  }
+
+  await refreshGoogleDriveState();
+  await saveStateToStorage();
+}
+
+void syncRuntimeState();
+
+chrome.runtime.onStartup.addListener(() => {
+  void syncRuntimeState();
+});
+
+chrome.runtime.onInstalled.addListener(() => {
+  void syncRuntimeState();
+});
 
 // Keep service worker alive during recording
 chrome.alarms.onAlarm.addListener((alarm) => {
@@ -85,12 +243,14 @@ chrome.runtime.onMessage.addListener((message: any, sender, sendResponse) => {
         uploadedBytes,
         totalBytes,
         message: msg,
+        items,
       } = message.data;
       uploadState.isUploading = true;
       uploadState.progress = typeof percent === "number" ? percent : (step / total) * 100;
       uploadState.uploadedBytes = typeof uploadedBytes === "number" ? uploadedBytes : 0;
       uploadState.totalBytes = typeof totalBytes === "number" ? totalBytes : 0;
       uploadState.message = msg;
+      uploadState.items = Array.isArray(items) ? items : [];
     }
     // Save to storage for popup sync (fire and forget is ok for progress)
     void saveStateToStorage();
@@ -130,18 +290,24 @@ async function handleMessage(message: ServiceWorkerMessage, _sender: chrome.runt
     case "GOOGLE_DRIVE_CONNECT": {
       const result = await googleAuth.launchOAuthFlow();
       if (result.ok) {
+        await refreshGoogleDriveState();
         await saveStateToStorage();
       }
       return result;
     }
     case "GOOGLE_DRIVE_DISCONNECT": {
       const result = await googleAuth.disconnect();
+      await refreshGoogleDriveState();
       await saveStateToStorage();
       return result;
     }
-    case "GOOGLE_DRIVE_STATUS":
+    case "GOOGLE_DRIVE_STATUS": {
       const status = await googleAuth.getStatus();
+      googleDriveState.isConnected = status.isConnected;
+      googleDriveState.checkedAt = Date.now();
+      await saveStateToStorage();
       return { ok: true, ...status };
+    }
     case "GET_GOOGLE_DRIVE_TOKEN":
       const token = await googleAuth.getAuthToken();
       return { ok: true, token };
@@ -159,6 +325,8 @@ async function startRecording(tabId: number): Promise<MessageResponse> {
   }
 
   try {
+    phaseOverride = null;
+    resetUploadState();
     state.tabId = tabId;
 
     const tab = await chrome.tabs.get(tabId);
@@ -193,6 +361,7 @@ async function startRecording(tabId: number): Promise<MessageResponse> {
   } catch (e) {
     try { await cdp.detach(); } catch {}
     try { await recorder.cleanup(); } catch {}
+    resetUploadState();
     state.isRecording = false;
     state.tabId = null;
     state.startTime = null;
@@ -236,9 +405,12 @@ async function stopRecording(): Promise<MessageResponse> {
 
 function getStatus(): RecordingStatus {
   return {
+    phase: getRecordingPhase(),
     isRecording: state.isRecording,
     tabId: state.tabId,
     startTime: state.startTime,
+    stopTime: state.stopTime,
+    tabUrl: state.tabUrl,
     consoleLogCount: storage.getConsoleLogCount(),
     networkRequestCount: storage.getNetworkEntryCount(),
     hasRecording: recorder.hasRecording,
@@ -268,13 +440,10 @@ function normalizeRecordingUrl(recordingUrl: string | null | undefined): string 
 async function uploadToGoogleDrive(): Promise<MessageResponse> {
   try {
     // Reset upload state at start
+    phaseOverride = null;
+    resetUploadState();
     uploadState.isUploading = true;
-    uploadState.progress = 0;
-    uploadState.uploadedBytes = 0;
-    uploadState.totalBytes = 0;
-    uploadState.message = "Preparing upload...";
-    uploadState.recordingUrl = null;
-    uploadState.error = null;
+    uploadState.message = "Uploading recording...";
 
     // Save initial state
     await saveStateToStorage();
@@ -316,6 +485,7 @@ async function uploadToGoogleDrive(): Promise<MessageResponse> {
       uploadState.recordingUrl = normalizedRecordingUrl;
       storage.clear();
       recorder.clearRecording();
+      phaseOverride = null;
       state.tabId = null;
       state.startTime = null;
       state.stopTime = null;
@@ -324,11 +494,13 @@ async function uploadToGoogleDrive(): Promise<MessageResponse> {
       return { ok: true, recordingUrl: normalizedRecordingUrl || undefined };
     }
     uploadState.isUploading = false;
+    phaseOverride = null;
     uploadState.error = (result && result.error) || "Upload failed";
     await saveStateToStorage();
     return { ok: false, error: uploadState.error };
   } catch (e) {
     uploadState.isUploading = false;
+    phaseOverride = null;
     uploadState.error = (e as Error).message;
     await saveStateToStorage();
     return { ok: false, error: uploadState.error };

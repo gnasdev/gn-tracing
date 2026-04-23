@@ -13,8 +13,16 @@ export type MessageAction =
 export type OffscreenMessageType =
   | "START_CAPTURE"
   | "STOP_CAPTURE"
+  | "GET_CAPTURE_STATE"
   | "UPLOAD_TO_GOOGLE_DRIVE"
   | "UPLOAD_PROGRESS";
+
+export type RecordingPhase =
+  | "idle"
+  | "recording"
+  | "recorded"
+  | "uploading"
+  | "interrupted";
 
 export interface ServiceWorkerMessage {
   action: MessageAction;
@@ -40,10 +48,31 @@ export interface MessageResponse {
   token?: string | null;
 }
 
+export type ProgressItemStatus =
+  | "queued"
+  | "uploading"
+  | "uploaded"
+  | "loading"
+  | "loaded"
+  | "skipped"
+  | "failed";
+
+export interface ProgressItemSnapshot {
+  key: string;
+  label: string;
+  status: ProgressItemStatus;
+  loadedBytes: number;
+  totalBytes: number;
+  percent: number;
+}
+
 export interface RecordingStatus {
+  phase: RecordingPhase;
   isRecording: boolean;
   tabId: number | null;
   startTime: number | null;
+  stopTime?: number | null;
+  tabUrl?: string | null;
   consoleLogCount: number;
   networkRequestCount: number;
   hasRecording: boolean;
@@ -55,6 +84,7 @@ export interface UploadState {
   uploadedBytes: number;
   totalBytes: number;
   message: string;
+  items: ProgressItemSnapshot[];
   recordingUrl: string | null;
   error: string | null;
 }
@@ -78,5 +108,6 @@ export interface UploadProgressMessage {
     uploadedBytes: number;
     totalBytes: number;
     message: string;
+    items: ProgressItemSnapshot[];
   };
 }
