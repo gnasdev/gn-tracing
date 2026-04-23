@@ -180,6 +180,7 @@ Replay URLs use direct Drive artifact file IDs in the query string: `videos`, `m
   - `npm run release:artifact` zips `dist/` into a release artifact
   - `npm run release:ci` runs the full release flow used by GitHub Actions
 - CI also installs `player-standalone/` dependencies, then calls the root release flow
+- both `package-lock.json` files must stay committed: the root lockfile for the extension workspace and `player-standalone/package-lock.json` for the standalone player workspace
 - The workflow only installs dependencies, runs `npm run release:ci`, and attaches the generated zip to the GitHub release
 - Required GitHub Actions secrets:
   - `CLOUDFLARE_API_TOKEN`

@@ -36,6 +36,7 @@ This module covers authentication, Google Drive upload, replay URL generation, b
 - replay links always target the full Cloudflare Pages player host URL directly.
 - the auth page is a first-class surface that can both start auth and react to service-worker state updates.
 - standalone player is not the system of record for assets; it mirrors `player/` runtime logic through the sync script and wrapper adapters.
+- release automation expects both npm workspaces to have committed lockfiles so GitHub Actions can run `npm ci` at the repo root and inside `player-standalone/`.
 - if video exceeds the upload limit, offscreen upload slices the final recording blob into ordered byte chunks and the player reassembles them locally before playback.
 - upload hard-fails when folder creation, metadata, manifest, or any video part upload fails; console/network/websocket uploads are best-effort and omitted from the manifest when they fail.
 
