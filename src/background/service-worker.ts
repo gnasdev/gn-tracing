@@ -2,7 +2,8 @@ import { RecorderManager } from "./recorder-manager";
 import { CdpManager } from "./cdp-manager";
 import { StorageManager } from "./storage-manager";
 import { GoogleDriveAuth } from "./google-drive-auth";
-import type { ServiceWorkerMessage, MessageResponse, RecordingStatus, UploadState, PlayerConfig, PLAYER_CONFIG_KEY } from "../types/messages";
+import { buildExternalPlayerUrl } from "../shared/player-host";
+import type { ServiceWorkerMessage, MessageResponse, RecordingStatus, UploadState } from "../types/messages";
 
 const storage = new StorageManager();
 const recorder = new RecorderManager();
@@ -133,23 +134,9 @@ async function handleMessage(message: ServiceWorkerMessage, _sender: chrome.runt
     case "GET_GOOGLE_DRIVE_TOKEN":
       const token = await googleAuth.getAuthToken();
       return { ok: true, token };
-    case "OPEN_POPUP":
-      chrome.windows.create({
-        type: "popup",
-        url: chrome.runtime.getURL("popup/popup.html"),
-        width: 320,
-        height: 500,
-      });
-      return { ok: true };
     case "RECORDING_COMPLETE":
       recorder.onRecordingComplete();
       return { ok: true };
-    case "ZIP_READY":
-      return await handleZipReady(message.data as { url: string; filename: string });
-    case "GET_PLAYER_CONFIG":
-      return await getPlayerConfig();
-    case "SET_PLAYER_CONFIG":
-      return await setPlayerConfig(message.data);
     default:
       return { ok: false, error: "Unknown action" };
   }
@@ -221,6 +208,7 @@ async function stopRecording(): Promise<MessageResponse> {
     ]);
 
     storage.resolveSourceMaps(cdp.sourceMapResolver);
+    cdp.releaseSourceMaps();
 
     chrome.action.setBadgeText({ text: "" });
     chrome.alarms.clear("gn-tracing-keepalive");
@@ -248,6 +236,22 @@ function getStatus(): RecordingStatus {
 
 function getUploadState(): UploadState {
   return { ...uploadState };
+}
+
+function normalizeRecordingUrl(recordingUrl: string | null | undefined): string | null {
+  if (!recordingUrl) {
+    return null;
+  }
+
+  try {
+    const parsed = new URL(recordingUrl);
+    if (parsed.protocol === "chrome-extension:" || parsed.pathname.endsWith("/player/player.html")) {
+      return buildExternalPlayerUrl(parsed.searchParams);
+    }
+    return recordingUrl;
+  } catch {
+    return recordingUrl;
+  }
 }
 
 async function uploadToGoogleDrive(): Promise<MessageResponse> {
@@ -291,12 +295,19 @@ async function uploadToGoogleDrive(): Promise<MessageResponse> {
     }) as MessageResponse;
 
     if (result && result.ok) {
+      const normalizedRecordingUrl = normalizeRecordingUrl(result.recordingUrl);
       uploadState.isUploading = false;
       uploadState.progress = 100;
       uploadState.message = "Upload complete!";
-      uploadState.recordingUrl = result.recordingUrl || null;
+      uploadState.recordingUrl = normalizedRecordingUrl;
+      storage.clear();
+      recorder.clearRecording();
+      state.tabId = null;
+      state.startTime = null;
+      state.stopTime = null;
+      state.tabUrl = null;
       await saveStateToStorage();
-      return { ok: true, recordingUrl: result.recordingUrl };
+      return { ok: true, recordingUrl: normalizedRecordingUrl || undefined };
     }
     uploadState.isUploading = false;
     uploadState.error = (result && result.error) || "Upload failed";
@@ -307,42 +318,5 @@ async function uploadToGoogleDrive(): Promise<MessageResponse> {
     uploadState.error = (e as Error).message;
     await saveStateToStorage();
     return { ok: false, error: uploadState.error };
-  }
-}
-
-async function handleZipReady(data: { url: string; filename: string }): Promise<MessageResponse> {
-  try {
-    await chrome.downloads.download({
-      url: data.url,
-      filename: data.filename,
-      saveAs: true,
-    });
-
-    await recorder.cleanup();
-    state.tabId = null;
-    state.startTime = null;
-    state.stopTime = null;
-
-    await saveStateToStorage();
-
-    return { ok: true };
-  } catch (e) {
-    return { ok: false, error: (e as Error).message };
-  }
-}
-
-// Player configuration storage
-async function getPlayerConfig(): Promise<MessageResponse> {
-  const result = await chrome.storage.local.get("gn_tracing_player_config");
-  const config = result.gn_tracing_player_config as PlayerConfig | undefined;
-  return { ok: true, playerHostUrl: config?.playerHostUrl ?? null };
-}
-
-async function setPlayerConfig(config: unknown): Promise<MessageResponse> {
-  try {
-    await chrome.storage.local.set({ gn_tracing_player_config: config as PlayerConfig });
-    return { ok: true };
-  } catch (e) {
-    return { ok: false, error: (e as Error).message };
   }
 }

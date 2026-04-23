@@ -1,12 +1,39 @@
 import type { MessageResponse } from "../types/messages";
 
+const GOOGLE_CLIENT_ID = "95916347176-ulk25djm5l4g6ebq7vftjik8iv9a11vf.apps.googleusercontent.com";
 const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file";
+const EDGE_DRIVE_SCOPE = "https://www.googleapis.com/auth/drive";
+const EDGE_ACCESS_TOKEN_KEY = "gn_tracing_edge_access_token";
 
 /**
  * Google Drive Auth using chrome.identity.getAuthToken()
  * No client_secret required - Chrome handles token management internally
  */
 export class GoogleDriveAuth {
+  private isEdgeBrowser(): boolean {
+    return navigator.userAgent.includes("Edg/");
+  }
+
+  private async getStoredEdgeToken(): Promise<string | null> {
+    const result = await chrome.storage.local.get(EDGE_ACCESS_TOKEN_KEY);
+    return (result[EDGE_ACCESS_TOKEN_KEY] as string | undefined) ?? null;
+  }
+
+  private async setStoredEdgeToken(token: string): Promise<void> {
+    await chrome.storage.local.set({ [EDGE_ACCESS_TOKEN_KEY]: token });
+  }
+
+  private async clearStoredEdgeToken(): Promise<void> {
+    await chrome.storage.local.remove(EDGE_ACCESS_TOKEN_KEY);
+  }
+
+  private async verifyToken(token: string): Promise<boolean> {
+    const response = await fetch("https://www.googleapis.com/drive/v3/files?pageSize=1", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    return response.ok;
+  }
+
   /**
    * Initialize - no-op since Chrome manages token state
    */
@@ -18,15 +45,29 @@ export class GoogleDriveAuth {
    * Get valid auth token. Chrome handles refresh automatically.
    */
   async getAuthToken(): Promise<string | null> {
+    if (this.isEdgeBrowser()) {
+      try {
+        const token = await this.getStoredEdgeToken();
+        if (!token) {
+          return null;
+        }
+
+        if (await this.verifyToken(token)) {
+          return token;
+        }
+
+        await this.clearStoredEdgeToken();
+        return null;
+      } catch {
+        return null;
+      }
+    }
+
     try {
       const token = await chrome.identity.getAuthToken({ interactive: false });
-      console.log('[GoogleDriveAuth] getAuthToken raw result:', token, typeof token);
-      // Token might be string or object depending on Chrome version
       const tokenStr = typeof token === 'string' ? token : (token?.token ?? null);
       return tokenStr;
     } catch (e) {
-      console.error('[GoogleDriveAuth] getAuthToken error:', e);
-      // No cached token available
       return null;
     }
   }
@@ -35,14 +76,52 @@ export class GoogleDriveAuth {
    * Launch OAuth flow interactively. Chrome handles the entire flow.
    */
   async launchOAuthFlow(): Promise<MessageResponse> {
+    if (this.isEdgeBrowser()) {
+      try {
+        const redirectUri = chrome.identity.getRedirectURL();
+        const authUrl =
+          "https://accounts.google.com/o/oauth2/v2/auth" +
+          `?client_id=${GOOGLE_CLIENT_ID}` +
+          "&response_type=token" +
+          `&redirect_uri=${encodeURIComponent(redirectUri)}` +
+          `&scope=${encodeURIComponent(EDGE_DRIVE_SCOPE)}` +
+          "&prompt=consent";
+
+        const resultUrl = await chrome.identity.launchWebAuthFlow({
+          url: authUrl,
+          interactive: true,
+        });
+
+        if (!resultUrl) {
+          return { ok: false, error: "No redirect URL received" };
+        }
+
+        const hash = new URL(resultUrl).hash;
+        const params = new URLSearchParams(hash.substring(1));
+        const accessToken = params.get("access_token");
+
+        if (!accessToken) {
+          return { ok: false, error: "No access token" };
+        }
+
+        if (!(await this.verifyToken(accessToken))) {
+          return { ok: false, error: "Authentication failed. Please try again." };
+        }
+
+        await this.setStoredEdgeToken(accessToken);
+        return { ok: true, message: "Google Drive connected successfully" };
+      } catch (e) {
+        console.error("[GoogleDriveAuth] Edge OAuth flow error:", e);
+        return { ok: false, error: (e as Error).message };
+      }
+    }
+
     try {
-      // Get token - this may trigger OAuth popup if needed
       const tokenResult = await chrome.identity.getAuthToken({
         interactive: true,
         scopes: [DRIVE_SCOPE],
       });
 
-      // Extract token string
       let tokenStr: string | undefined;
       if (typeof tokenResult === 'string') {
         tokenStr = tokenResult;
@@ -54,13 +133,7 @@ export class GoogleDriveAuth {
         return { ok: false, error: "No token received" };
       }
 
-      // Verify token works with Drive API (list files with limit 1)
-      const response = await fetch("https://www.googleapis.com/drive/v3/files?pageSize=1", {
-        headers: { Authorization: `Bearer ${tokenStr}` },
-      });
-
-      if (!response.ok) {
-        // Token invalid, remove and fail
+      if (!(await this.verifyToken(tokenStr))) {
         await new Promise<void>((resolve) => {
           chrome.identity.removeCachedAuthToken({ token: tokenStr }, () => resolve());
         });
@@ -78,27 +151,31 @@ export class GoogleDriveAuth {
    * Disconnect from Google Drive and revoke token.
    */
   async disconnect(): Promise<MessageResponse> {
-    try {
-      // Get current token to revoke
-      const tokenResult = await chrome.identity.getAuthToken({ interactive: false });
-      console.log('[GoogleDriveAuth] disconnect raw token:', tokenResult, typeof tokenResult);
+    if (this.isEdgeBrowser()) {
+      try {
+        const token = await this.getStoredEdgeToken();
+        if (token) {
+          await fetch(`https://oauth2.googleapis.com/revoke?token=${token}`);
+          await this.clearStoredEdgeToken();
+        }
 
-      // Token might be string or object depending on Chrome version
+        return { ok: true, message: "Disconnected from Google Drive" };
+      } catch (e) {
+        console.error("[GoogleDriveAuth] Edge disconnect error:", e);
+        return { ok: true, message: "Disconnected from Google Drive" };
+      }
+    }
+
+    try {
+      const tokenResult = await chrome.identity.getAuthToken({ interactive: false });
       const token = typeof tokenResult === 'string' ? tokenResult : (tokenResult?.token ?? null);
-      console.log('[GoogleDriveAuth] extracted token:', token ? token.substring(0, 20) + '...' : null);
 
       if (token) {
-        // Revoke on Google side
-        console.log('[GoogleDriveAuth] revoking token...');
-        const revokeRes = await fetch(`https://oauth2.googleapis.com/revoke?token=${token}`);
-        console.log('[GoogleDriveAuth] revoke response:', revokeRes.status);
+        await fetch(`https://oauth2.googleapis.com/revoke?token=${token}`);
 
-        // Remove from Chrome's cache - use callback style for compatibility
-        console.log('[GoogleDriveAuth] removing cached token...');
         await new Promise<void>((resolve, reject) => {
           chrome.identity.removeCachedAuthToken({ token }, () => {
             const err = chrome.runtime.lastError;
-            console.log('[GoogleDriveAuth] removeCachedAuthToken callback, lastError:', err);
             if (err) {
               reject(new Error(err.message));
             } else {
@@ -106,9 +183,6 @@ export class GoogleDriveAuth {
             }
           });
         });
-        console.log('[GoogleDriveAuth] token removed from cache');
-      } else {
-        console.log('[GoogleDriveAuth] no token to revoke');
       }
 
       return { ok: true, message: "Disconnected from Google Drive" };
@@ -124,19 +198,13 @@ export class GoogleDriveAuth {
    */
   async getStatus(): Promise<{ isConnected: boolean }> {
     try {
-      const tokenResult = await chrome.identity.getAuthToken({ interactive: false });
-      const token = typeof tokenResult === 'string' ? tokenResult : (tokenResult?.token ?? null);
+      const token = await this.getAuthToken();
 
       if (!token) {
         return { isConnected: false };
       }
 
-      // Verify token works with Drive API
-      const response = await fetch("https://www.googleapis.com/drive/v3/files?pageSize=1", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      return { isConnected: response.ok };
+      return { isConnected: await this.verifyToken(token) };
     } catch {
       return { isConnected: false };
     }

@@ -20,8 +20,12 @@ async function init() {
     setupDriveAdapter();
   }
 
-  // Player.js will be loaded by index.html after this module
-  // The player.js code will detect the mode and use appropriate loaders
+  if (!document.querySelector('script[data-gn-player-script="true"]')) {
+    const playerScript = document.createElement('script');
+    playerScript.src = '/player.js';
+    playerScript.dataset.gnPlayerScript = 'true';
+    document.body.appendChild(playerScript);
+  }
 }
 
 init().catch(console.error);

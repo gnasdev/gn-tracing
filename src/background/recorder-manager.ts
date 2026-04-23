@@ -1,6 +1,8 @@
 export class RecorderManager {
   #offscreenCreated = false;
   #recordingComplete = false;
+  #stopPromiseResolve: (() => void) | null = null;
+  #stopTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
   get hasRecording(): boolean {
     return this.#recordingComplete;
@@ -38,14 +40,16 @@ export class RecorderManager {
     this.#recordingComplete = false;
   }
 
-  #stopPromiseResolve: (() => void) | null = null;
-  
   async stopCapture(): Promise<void> {
     try {
       const p = new Promise<void>((resolve) => {
         this.#stopPromiseResolve = resolve;
         // safety timeout in case the recording drops
-        setTimeout(() => resolve(), 3000);
+        this.#stopTimeoutId = setTimeout(() => {
+          this.#stopTimeoutId = null;
+          this.#stopPromiseResolve = null;
+          resolve();
+        }, 3000);
       });
       await chrome.runtime.sendMessage({
         target: "offscreen",
@@ -59,21 +63,26 @@ export class RecorderManager {
 
   onRecordingComplete(): void {
     this.#recordingComplete = true;
+    if (this.#stopTimeoutId) {
+      clearTimeout(this.#stopTimeoutId);
+      this.#stopTimeoutId = null;
+    }
     if (this.#stopPromiseResolve) {
       this.#stopPromiseResolve();
       this.#stopPromiseResolve = null;
     }
   }
 
-  async createZip(data: Record<string, unknown>): Promise<void> {
-    await chrome.runtime.sendMessage({
-      target: "offscreen",
-      type: "CREATE_ZIP",
-      data,
-    });
+  clearRecording(): void {
+    this.#recordingComplete = false;
   }
 
   async cleanup(): Promise<void> {
+    if (this.#stopTimeoutId) {
+      clearTimeout(this.#stopTimeoutId);
+      this.#stopTimeoutId = null;
+    }
+    this.#stopPromiseResolve = null;
     if (this.#offscreenCreated) {
       try {
         await chrome.offscreen.closeDocument();

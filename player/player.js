@@ -32,11 +32,25 @@
 
   let activeConsoleFilter = 'all';
   let activeNetworkFilter = 'all';
+  let consoleSearchQuery = '';
+  let networkSearchQuery = '';
   let expandedConsoleIndex = null;
   let expandedNetworkIndex = null;
   let expandedWsIndex = null;
   let closestConsoleIndex = -1;
   let closestNetworkIndex = -1;
+
+  function releaseVideoResources() {
+    if (videoUrl) {
+      URL.revokeObjectURL(videoUrl);
+      videoUrl = null;
+    }
+    videoBlob = null;
+    if (elements && elements.video) {
+      elements.video.removeAttribute('src');
+      elements.video.load();
+    }
+  }
 
   // Auto-scroll refs
   let lastScrolledConsoleIndex = -1;
@@ -46,7 +60,9 @@
 
   // Recording files from Drive
   let recordingFiles = {
-    video: null,
+    folderId: null,
+    manifest: null,
+    videoParts: [],
     metadata: null,
     console: null,
     network: null,
@@ -93,10 +109,12 @@
 
     // Console
     elements.consoleFilters = document.getElementById('console-filters');
+    elements.consoleSearch = document.getElementById('console-search');
     elements.consoleEntries = document.getElementById('console-entries');
 
     // Network
     elements.networkFilters = document.getElementById('network-filters');
+    elements.networkSearch = document.getElementById('network-search');
     elements.networkSummary = document.getElementById('network-summary');
     elements.networkRows = document.getElementById('network-rows');
     elements.websocketSection = document.getElementById('websocket-section');
@@ -215,6 +233,133 @@
     if (status >= 200 && status < 300) return 'success';
     if (status >= 300 && status < 400) return 'redirect';
     return 'error';
+  }
+
+  function normalizeSearchQuery(value) {
+    return String(value || '').trim().toLowerCase();
+  }
+
+  function stringifyForSearch(value) {
+    if (value == null) return '';
+    if (typeof value === 'string') return value;
+    if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+    if (Array.isArray(value)) return value.map(stringifyForSearch).join(' ');
+    if (typeof value === 'object') {
+      if (typeof value.value === 'string') return value.value;
+      if (typeof value.description === 'string') return value.description;
+      if (typeof value.text === 'string') return value.text;
+      try {
+        return JSON.stringify(value);
+      } catch {
+        return String(value);
+      }
+    }
+    return String(value);
+  }
+
+  function getConsoleSearchText(entry) {
+    const parts = [
+      entry.source,
+      entry.level,
+      entry.message,
+      entry.url,
+      entry.originalSource,
+      renderArgs(entry),
+      ...(entry.args || []).map(stringifyForSearch),
+      ...((entry.stackTrace || []).flatMap(frame => [
+        frame.asyncBoundary,
+        frame.functionName,
+        frame.originalName,
+        frame.url,
+        frame.originalSource,
+      ])),
+    ];
+
+    return normalizeSearchQuery(parts.filter(Boolean).join(' '));
+  }
+
+  function getNetworkSearchText(entry) {
+    const request = entry.request || {};
+    const response = entry.response || {};
+    const content = getNetworkResponseContent(entry);
+    const initiator = entry.initiator || {};
+
+    const parts = [
+      entry.method,
+      request.method,
+      entry.url,
+      request.url,
+      entry.resourceType,
+      entry.status,
+      response.status,
+      entry.statusText,
+      response.statusText,
+      entry.mimeType,
+      content.mimeType,
+      entry.error,
+      entry.remoteIPAddress,
+      entry.postData,
+      request.postData,
+      content.text,
+      stringifyForSearch(entry.requestHeaders),
+      stringifyForSearch(request.headers),
+      stringifyForSearch(entry.responseHeaders),
+      stringifyForSearch(response.headers),
+      stringifyForSearch(entry.redirectChain),
+      initiator.type,
+      stringifyForSearch(initiator.stack),
+    ];
+
+    return normalizeSearchQuery(parts.filter(Boolean).join(' '));
+  }
+
+  function getWsSearchText(ws) {
+    const frames = Array.isArray(ws.frames) ? ws.frames : [];
+    const frameText = frames.map(frame => stringifyForSearch(frame.payloadData || frame.text || frame.opcode)).join(' ');
+    return normalizeSearchQuery([ws.url, ws.closed ? 'closed' : 'open', frameText].join(' '));
+  }
+
+  function getVisibleConsoleEntries() {
+    const consoleQuery = normalizeSearchQuery(consoleSearchQuery);
+
+    return consoleLogs
+      .map((entry, i) => ({
+        entry,
+        index: i,
+        level: getConsoleLevel(entry),
+        filterLevel: getFilterLevel(entry),
+        searchText: getConsoleSearchText(entry),
+      }))
+      .filter((pe) => pe.entry.relativeMs <= currentTimeMs)
+      .filter((pe) => activeConsoleFilter === 'all' || pe.filterLevel === activeConsoleFilter)
+      .filter((pe) => !consoleQuery || pe.searchText.includes(consoleQuery));
+  }
+
+  function getVisibleNetworkEntries() {
+    const networkQuery = normalizeSearchQuery(networkSearchQuery);
+
+    return networkLogs
+      .map((entry, i) => ({
+        entry,
+        index: i,
+        filterType: getNetworkFilterType(entry),
+        searchText: getNetworkSearchText(entry),
+      }))
+      .filter((pe) => pe.entry.relativeMs <= currentTimeMs)
+      .filter((pe) => activeNetworkFilter === 'all' || pe.filterType === activeNetworkFilter)
+      .filter((pe) => !networkQuery || pe.searchText.includes(networkQuery));
+  }
+
+  function getVisibleWebSocketEntries() {
+    const networkQuery = normalizeSearchQuery(networkSearchQuery);
+
+    return webSocketLogs
+      .map((ws, index) => ({
+        ws,
+        index,
+        searchText: getWsSearchText(ws),
+      }))
+      .filter((item) => !networkQuery || item.searchText.includes(networkQuery));
   }
 
   // Render remote object to HTML
@@ -338,19 +483,30 @@
     return String(headers);
   }
 
+  function getNetworkResponseContent(entry) {
+    const response = entry.response || {};
+    const content = response.content || {};
+    const responseBody = entry.responseBody || null;
+
+    return {
+      mimeType: content.mimeType || response.mimeType || entry.mimeType || '',
+      size: content.size ?? entry.encodedDataLength ?? 0,
+      text: content.text ?? responseBody?.body ?? '',
+      encoding: content.encoding || (responseBody?.base64Encoded ? 'base64' : undefined),
+    };
+  }
+
   // Google Drive API functions
   // Check if external adapter is available (set by standalone mode)
   const DRIVE_ADAPTER = window.GN_DRIVE_ADAPTER || null;
-
   async function downloadFile(fileId) {
-    // Use external adapter if available (standalone mode with custom loader)
-    if (DRIVE_ADAPTER && DRIVE_ADAPTER.loadJson) {
-      const blob = await DRIVE_ADAPTER.loadVideo(fileId);
+    if (DRIVE_ADAPTER && DRIVE_ADAPTER.loadBlob) {
+      const blob = await DRIVE_ADAPTER.loadBlob(fileId);
       return new Response(blob);
     }
 
-    // Use direct download URL for public files instead of Drive API
-    const url = `https://drive.google.com/uc?export=download&id=${fileId}`;
+    // Use the final public download host directly to avoid CORS issues on Drive redirects.
+    const url = `https://drive.usercontent.google.com/download?id=${fileId}&export=download`;
     const response = await fetch(url);
 
     if (!response.ok) {
@@ -370,6 +526,52 @@
     return response.blob();
   }
 
+  function buildDirectRecordingFiles(urlParams) {
+    const parseFileId = value => {
+      if (typeof value !== 'string') {
+        return null;
+      }
+      const trimmed = value.trim();
+      return trimmed ? { id: trimmed } : null;
+    };
+
+    const videoParts = (urlParams.get('videos') || '')
+      .split(',')
+      .map(part => part.trim())
+      .filter(Boolean)
+      .map(id => ({ id }));
+
+    const resolved = {
+      folderId: null,
+      manifest: null,
+      metadata: parseFileId(urlParams.get('metadata')),
+      console: parseFileId(urlParams.get('console')),
+      network: parseFileId(urlParams.get('network')),
+      websocket: parseFileId(urlParams.get('websocket')),
+      videoParts
+    };
+
+    if (!resolved.metadata || resolved.videoParts.length === 0) {
+      throw new Error('Invalid or missing recording parameters. Please provide videos and metadata file IDs.');
+    }
+
+    return resolved;
+  }
+
+  async function downloadCombinedBlob(files, mimeType) {
+    if (!Array.isArray(files) || files.length === 0) {
+      throw new Error('No video parts found');
+    }
+
+    const blobs = [];
+    for (const file of files) {
+      blobs.push(await downloadFileAsBlob(file.id));
+    }
+
+    const combinedType = mimeType || blobs[0]?.type || 'video/webm';
+    return new Blob(blobs, { type: combinedType });
+  }
+
   async function loadRecordingFromFiles() {
     try {
       await loadRecordingData();
@@ -387,11 +589,13 @@
       metadata = metadataJson.metadata || metadataJson;
       startTime = metadata.startTime || new Date(metadata.timestamp || '').getTime();
       duration = metadata.duration || 0;
+      const videoMimeType = recordingFiles.manifest?.video?.mimeType || metadata.video?.mimeType || 'video/webm';
 
       // Load video, console, network, websocket in parallel
       await Promise.all([
         // Load video
-        recordingFiles.video ? downloadFileAsBlob(recordingFiles.video.id).then(blob => {
+        recordingFiles.videoParts.length ? downloadCombinedBlob(recordingFiles.videoParts, videoMimeType).then(blob => {
+          releaseVideoResources();
           videoBlob = blob;
           videoUrl = URL.createObjectURL(blob);
           elements.video.src = videoUrl;
@@ -515,35 +719,25 @@
 
   // Render console entries
   function renderConsoleEntries() {
-    const processedEntries = consoleLogs.map((entry, i) => ({
-      entry,
-      index: i,
-      level: getConsoleLevel(entry),
-      filterLevel: getFilterLevel(entry),
-    }));
+    const visible = getVisibleConsoleEntries();
 
     // Find closest entry and visible entries
     let closestIdx = -1;
     let closestDist = Infinity;
 
-    const visible = processedEntries.filter((pe) => {
-      const inTime = pe.entry.relativeMs <= currentTimeMs;
-      if (!inTime) return false;
+    visible.forEach((pe) => {
       const dist = Math.abs(pe.entry.relativeMs - currentTimeMs);
       if (dist < closestDist) {
         closestDist = dist;
         closestIdx = pe.index;
       }
-      return true;
     });
 
     // Only highlight if within 1.5s
     if (closestDist >= 1500) closestIdx = -1;
     closestConsoleIndex = closestIdx;
 
-    const filtered = activeConsoleFilter === 'all'
-      ? visible
-      : visible.filter((pe) => pe.filterLevel === activeConsoleFilter);
+    const filtered = visible;
 
     const lastVisibleIndex = filtered.length > 0 ? filtered[filtered.length - 1].index : -1;
 
@@ -702,49 +896,40 @@
 
   // Render network entries
   function renderNetworkEntries() {
-    const processedEntries = networkLogs.map((entry, i) => ({
-      entry,
-      index: i,
-      filterType: getNetworkFilterType(entry),
-    }));
+    const filtered = getVisibleNetworkEntries();
 
     // Find closest entry and visible entries
     let closestIdx = -1;
     let closestDist = Infinity;
 
-    const visible = processedEntries.filter((pe) => {
-      const inTime = pe.entry.relativeMs <= currentTimeMs;
-      if (!inTime) return false;
+    filtered.forEach((pe) => {
       const dist = Math.abs(pe.entry.relativeMs - currentTimeMs);
       if (dist < closestDist) {
         closestDist = dist;
         closestIdx = pe.index;
       }
-      return true;
     });
 
     // Only highlight if within 1.5s
     if (closestDist >= 1500) closestIdx = -1;
     closestNetworkIndex = closestIdx;
 
-    const filtered = activeNetworkFilter === 'all'
-      ? visible
-      : visible.filter((pe) => pe.filterType === activeNetworkFilter);
-
     const lastVisibleIndex = filtered.length > 0 ? filtered[filtered.length - 1].index : -1;
     const visibleCount = filtered.length;
+    const visibleWs = getVisibleWebSocketEntries();
 
     // Summary text
     let summaryText = `${visibleCount}/${networkLogs.length} requests`;
     if (activeNetworkFilter !== 'all') summaryText += ` (${activeNetworkFilter})`;
-    if (webSocketLogs.length > 0) summaryText += ` | ${webSocketLogs.length} WS`;
+    if (networkSearchQuery) summaryText += ` | search`;
+    if (webSocketLogs.length > 0) summaryText += ` | ${visibleWs.length}/${webSocketLogs.length} WS`;
     elements.networkSummary.textContent = summaryText;
 
     elements.networkRows.innerHTML = filtered.map((pe, vi) => {
       const { entry, index } = pe;
       const request = entry.request || {};
       const response = entry.response || {};
-      const content = response.content || {};
+      const content = getNetworkResponseContent(entry);
       const isActive = index === closestIdx;
       const isExpanded = expandedNetworkIndex === index;
       const isLast = vi === filtered.length - 1;
@@ -788,12 +973,12 @@
     });
 
     // WebSocket entries
-    if (webSocketLogs.length > 0) {
+    if (visibleWs.length > 0) {
       elements.websocketSection.classList.remove('hidden');
-      elements.websocketRows.innerHTML = webSocketLogs.map((ws, i) => {
-        const isExpanded = expandedWsIndex === i;
+      elements.websocketRows.innerHTML = visibleWs.map(({ ws, index }) => {
+        const isExpanded = expandedWsIndex === index;
         return `
-          <div class="ws-row ${isExpanded ? 'expanded' : ''}" data-index="${i}">
+          <div class="ws-row ${isExpanded ? 'expanded' : ''}" data-index="${index}">
             <button class="toggle-expand" aria-label="Toggle details"><i class="ph ${isExpanded ? 'ph-caret-down' : 'ph-caret-right'}"></i></button>
             <span class="ws-url" title="${escapeHtml(ws.url || '')}">${escapeHtml(ws.url || '')}</span>
             <span class="ws-frames">${(ws.frames || []).length} frames</span>
@@ -819,7 +1004,7 @@
   function renderNetworkDetail(entry) {
     const request = entry.request || {};
     const response = entry.response || {};
-    const content = response.content || {};
+    const content = getNetworkResponseContent(entry);
     const timings = entry.timing || {};
 
     let detailHtml = '<div class="network-detail">';
@@ -1284,6 +1469,16 @@
         renderNetworkEntries();
       });
     });
+
+    elements.consoleSearch.addEventListener('input', () => {
+      consoleSearchQuery = elements.consoleSearch.value || '';
+      renderConsoleEntries();
+    });
+
+    elements.networkSearch.addEventListener('input', () => {
+      networkSearchQuery = elements.networkSearch.value || '';
+      renderNetworkEntries();
+    });
   }
 
   // Tab handlers
@@ -1339,23 +1534,17 @@
         const row = e.target.closest('.network-row');
         if (row) {
           const index = parseInt(row.dataset.index);
-          const filtered = networkLogs.filter(entry => {
-            if (activeNetworkFilter === 'all') return true;
-            return getNetworkFilterType(entry) === activeNetworkFilter;
-          });
-          const visibleFiltered = filtered.filter(entry => entry.relativeMs <= currentTimeMs);
-          const entry = visibleFiltered[index];
+          const entry = networkLogs[index];
 
           if (entry) {
             let text = '';
+            const content = getNetworkResponseContent(entry);
             if (action === 'copy-curl') {
               text = generateCurl(entry);
             } else if (action === 'copy-response') {
-              const content = (entry.response || {}).content || {};
               text = content.text || '';
             } else if (action === 'copy-all') {
               const curl = generateCurl(entry);
-              const content = (entry.response || {}).content || {};
               text = curl + '\n\n--- Response ---\n\n' + (content.text || '');
             }
 
@@ -1375,32 +1564,21 @@
   // Initialize
   async function init() {
     initElements();
+    window.addEventListener('unload', releaseVideoResources);
     setupVideoListeners();
     setupFilterListeners();
     setupTabListeners();
     setupCopyListeners();
 
-    // Check for file IDs in URL params
     const urlParams = new URLSearchParams(window.location.search);
-    const videoId = urlParams.get('video');
-    const metadataId = urlParams.get('metadata');
-    const consoleId = urlParams.get('console');
-    const networkId = urlParams.get('network');
-    const websocketId = urlParams.get('websocket');
+    const videos = urlParams.get('videos');
+    const metadataFileId = urlParams.get('metadata');
 
-    if (videoId && metadataId) {
-      // Load specific recording from file IDs
-      recordingFiles = {
-        video: { id: videoId },
-        metadata: { id: metadataId },
-        console: consoleId ? { id: consoleId } : null,
-        network: networkId ? { id: networkId } : null,
-        websocket: websocketId ? { id: websocketId } : null
-      };
+    if (videos && metadataFileId) {
+      recordingFiles = buildDirectRecordingFiles(urlParams);
       await loadRecordingFromFiles();
     } else {
-      // No valid params - show error
-      elements.errorMessage.textContent = 'Invalid or missing recording parameters. Please provide video and metadata file IDs.';
+      elements.errorMessage.textContent = 'Invalid or missing recording parameters. Please provide videos and metadata file IDs.';
       showError();
     }
   }

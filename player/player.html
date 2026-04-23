@@ -4,6 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>GN Tracing Player</title>
+  <link rel="icon" type="image/svg+xml" href="../icons/icon.svg">
+  <link rel="icon" type="image/png" sizes="32x32" href="../icons/icon32.png">
   <link rel="stylesheet" href="icons/phosphor-icons.css">
   <link rel="stylesheet" href="player.css">
 </head>
@@ -107,6 +109,12 @@
                 <button class="filter-btn" data-filter="info">Info</button>
                 <button class="filter-btn" data-filter="debug">Debug</button>
               </div>
+              <div class="filter-meta">
+                <label class="search-input-wrap">
+                  <i class="ph ph-magnifying-glass"></i>
+                  <input id="console-search" class="search-input" type="search" placeholder="Search console">
+                </label>
+              </div>
             </div>
             <div id="console-entries" class="entries-scroll"></div>
           </div>
@@ -126,7 +134,13 @@
                 <button class="filter-btn" data-filter="ws">WS</button>
                 <button class="filter-btn" data-filter="other">Other</button>
               </div>
-              <span id="network-summary" class="network-summary"></span>
+              <div class="filter-meta">
+                <label class="search-input-wrap">
+                  <i class="ph ph-magnifying-glass"></i>
+                  <input id="network-search" class="search-input" type="search" placeholder="Search network">
+                </label>
+                <span id="network-summary" class="network-summary"></span>
+              </div>
             </div>
             <div id="network-entries" class="entries-scroll">
               <div class="network-header">

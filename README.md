@@ -13,7 +13,6 @@ A Chrome Manifest V3 extension that records tab video, console logs, and network
 - **Network Requests** — Records HTTP/HTTPS requests and responses including headers, POST data, response bodies (text-based MIME types < 1MB), timing data (DNS, SSL, connect, wait), redirects, and errors
 - **WebSocket Support** — Tracks WebSocket connections, sent/received frames, opcodes, and payloads
 - **Source Map Resolution** — Automatically fetches and decodes source maps (VLQ) to resolve minified stack traces back to original source locations
-- **ZIP Download** — Package recording (video + JSON logs + metadata) as a ZIP file
 - **Google Drive Upload** — Upload recordings directly to Google Drive with shareable links via a dedicated authentication page (no server required)
 
 
@@ -49,8 +48,8 @@ A Chrome Manifest V3 extension that records tab video, console logs, and network
 │                                        ▼                 │
 │                             ┌────────────────────────┐  │
 │                             │  Offscreen Document    │  │
-│                             │  (MediaRecorder + ZIP  │  │
-│                             │   + server upload)     │  │
+│                             │  (MediaRecorder +      │  │
+│                             │   Drive upload)        │  │
 │                             └────────────────────────┘  │
 │                                        │                 │
 │                             ┌────────────────────────┐  │
@@ -73,12 +72,11 @@ src/
 │   ├── recorder-manager.ts      # Tab media capture via offscreen document
 │   ├── storage-manager.ts       # In-memory data storage, JSON export
 │   ├── sourcemap-resolver.ts    # VLQ decoder, minified → original source mapping
-│   ├── google-drive-auth.ts     # Google Drive OAuth2 authentication flow
-│   └── google-drive-uploader.ts # Google Drive file upload and sharing
+│   └── google-drive-auth.ts     # Google Drive OAuth2 authentication flow
 ├── popup/
-│   └── popup.ts                 # UI: start/stop, download ZIP, upload to server
+│   └── popup.ts                 # UI: start/stop, Drive upload, player host config
 ├── offscreen/
-│   └── offscreen.ts             # MediaRecorder, ZIP creation (JSZip), server upload
+│   └── offscreen.ts             # MediaRecorder and Drive upload
 └── drive-auth/
     └── drive-auth.ts            # Dedicated Google Drive auth page logic
 ```
@@ -97,12 +95,15 @@ npm install
 npm run build
 ```
 
+The extension is not loadable from a fresh checkout until `npm run build` creates the compiled files under `dist/`.
+If Chrome shows `Could not load background script ''` or `Could not load manifest`, the usual cause is that `dist/background/service-worker.js` does not exist yet.
+
 ### Load Extension in Chrome
 
 1. Open `chrome://extensions`
 2. Enable **Developer mode** (top right)
 3. Click **Load unpacked**
-4. Select the root directory of this project (after building)
+4. Select the `dist/` directory from this project (after building)
 
 ### Development
 
@@ -117,7 +118,6 @@ npm run typecheck # Type checking only (no emit)
 2. Click **Start Recording** — the extension captures video, console logs, and network requests from the active tab
 3. Click **Stop Recording** when done
 4. Choose one of:
-   - **Download ZIP** — saves a ZIP file with video (`.webm`), console logs, network requests, and metadata as JSON
    - **Upload to Google Drive** — uploads directly to your Google Drive with shareable link
 
 
@@ -133,12 +133,12 @@ To enable Google Drive upload:
    - Copy the Client ID
 
 2. **Configure extension:**
-   - Set environment variable before building:
+   - The extension already has a built-in Google OAuth Client ID for development builds.
+   - Rebuild after changes:
      ```bash
-     export GOOGLE_CLIENT_ID="your-client-id.apps.googleusercontent.com"
      npm run build
      ```
-   - Or update `manifest.json` with your Client ID in the `oauth2` section
+   - If you need a different OAuth app later, update the `oauth2.client_id` value in `manifest.template.json`
 
 3. **Connect Google Drive:**
    - Click the **Connect** button in the extension popup
@@ -148,9 +148,22 @@ To enable Google Drive upload:
 
 > **Note:** The OAuth flow happens in a dedicated page instead of the popup to prevent authentication interruptions when the popup closes.
 
-### Server Configuration
+### Player Host
 
-Click the gear icon in the popup to set the server URL (e.g., `http://localhost:3000`). The URL is persisted across sessions.
+Uploaded recordings always open in the standalone player hosted at `https://tracing.gnas.dev/`.
+The extension returns the full Cloudflare Pages player URL directly.
+
+### Release Flow
+
+- Push a tag matching `v*` to trigger `.github/workflows/release.yml`
+- The deploy flow is defined in root `package.json` scripts:
+  - `npm run release:deploy` builds the extension and deploys the standalone player to Cloudflare Pages
+  - `npm run release:artifact` zips `dist/` into a release artifact
+  - `npm run release:ci` runs the full release flow used by GitHub Actions
+- The workflow only installs dependencies, runs `npm run release:ci`, and attaches the generated zip to the GitHub release
+- Required GitHub Actions secrets:
+  - `CLOUDFLARE_API_TOKEN`
+  - `CLOUDFLARE_ACCOUNT_ID`
 
 ## Chrome Permissions
 
@@ -160,8 +173,7 @@ Click the gear icon in the popup to set the server URL (e.g., `http://localhost:
 | `offscreen` | Create offscreen document for MediaRecorder (MV3 requirement) |
 | `debugger` | Attach Chrome DevTools Protocol for console + network capture |
 | `activeTab` | Access active tab information |
-| `downloads` | Download ZIP files |
-| `storage` | Persist server URL preference |
+| `storage` | Persist Google Drive auth state used by the extension runtime |
 | `alarms` | Keep service worker alive during recording (24s interval) |
 | `identity` | OAuth 2.0 authentication for Google Drive upload |
 | `<all_urls>` | Host permission required for CDP access to any page |
@@ -178,7 +190,6 @@ Click the gear icon in the popup to set the server URL (e.g., `http://localhost:
 
 ## Dependencies
 
-- **[jszip](https://www.npmjs.com/package/jszip)** — ZIP file creation for recording export
 - **[@types/chrome](https://www.npmjs.com/package/@types/chrome)** — Chrome extension API types (dev)
 - **[esbuild](https://www.npmjs.com/package/esbuild)** — TypeScript bundler (dev)
 - **[typescript](https://www.npmjs.com/package/typescript)** — Type checking (dev)

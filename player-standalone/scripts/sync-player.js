@@ -39,6 +39,8 @@ for (const file of filesToCopy) {
 // Copy icons directory
 const iconsSrc = path.join(sourceDir, 'icons');
 const iconsDest = path.join(targetDir, 'icons');
+const sharedIconsSrc = path.resolve(__dirname, '../../icons');
+const sharedIconFiles = ['icon.svg', 'icon32.png'];
 
 if (fs.existsSync(iconsSrc)) {
   if (!fs.existsSync(iconsDest)) {
@@ -55,6 +57,21 @@ if (fs.existsSync(iconsSrc)) {
   copiedCount++;
 } else {
   console.error('  ✗ Missing icons/');
+}
+
+for (const file of sharedIconFiles) {
+  const src = path.join(sharedIconsSrc, file);
+  const dest = path.join(iconsDest, file);
+
+  if (fs.existsSync(src)) {
+    if (!fs.existsSync(iconsDest)) {
+      fs.mkdirSync(iconsDest, { recursive: true });
+    }
+    fs.copyFileSync(src, dest);
+    console.log(`  ✓ icons/${file}`);
+  } else {
+    console.error(`  ✗ Missing shared icon ${file}`);
+  }
 }
 
 console.log(`\\n✅ Synced ${copiedCount} items`);

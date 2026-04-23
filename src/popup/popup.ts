@@ -1,4 +1,5 @@
-import type { MessageResponse, RecordingStatus, UploadState, PlayerConfig } from "../types/messages";
+import { PLAYER_HOST_URL } from "../shared/player-host";
+import type { MessageResponse, RecordingStatus, UploadState } from "../types/messages";
 
 const toggleBtn = document.getElementById("toggle-btn") as HTMLButtonElement;
 const statusBar = document.getElementById("status-bar")!;
@@ -23,14 +24,7 @@ const googleDriveStatus = document.getElementById("google-drive-status")!;
 const googleDriveConnectBtn = document.getElementById("google-drive-connect-btn") as HTMLButtonElement;
 const googleDriveDisconnectBtn = document.getElementById("google-drive-disconnect-btn") as HTMLButtonElement;
 
-// Player Config elements
-const playerHostDisplay = document.getElementById("player-host-display") as HTMLDivElement;
-const playerEditContainer = document.getElementById("player-edit-container") as HTMLDivElement;
 const playerHostValue = document.getElementById("player-host-value") as HTMLSpanElement;
-const editPlayerBtn = document.getElementById("edit-player-btn") as HTMLButtonElement;
-const playerHostInput = document.getElementById("player-host-input") as HTMLInputElement;
-const savePlayerConfigBtn = document.getElementById("save-player-config-btn") as HTMLButtonElement;
-const cancelPlayerConfigBtn = document.getElementById("cancel-player-config-btn") as HTMLButtonElement;
 
 // Storage key cho state sync từ service worker (qua chrome.storage.session)
 const SERVICE_STATE_KEY = "gn_tracing_state";
@@ -303,120 +297,9 @@ googleDriveDisconnectBtn.addEventListener("click", async () => {
   }
 });
 
-// Default player host from build-time env
-const DEFAULT_PLAYER_HOST = typeof process !== 'undefined' && process.env?.PLAYER_HOST_URL
-  ? process.env.PLAYER_HOST_URL
-  : "";
-
-// Current saved player host value
-let currentPlayerHost: string | null = null;
-
-// Toggle to edit mode
-function enterEditMode() {
-  playerEditContainer.classList.remove("hidden");
-  // Pre-fill with current value
-  playerHostInput.value = currentPlayerHost || "";
-  playerHostInput.focus();
-}
-
-// Toggle to display mode
-function exitEditMode() {
-  playerEditContainer.classList.add("hidden");
-}
-
-// Update display value
-function updatePlayerDisplay(value: string | null) {
-  currentPlayerHost = value;
-  if (value) {
-    playerHostValue.textContent = value;
-    playerHostValue.title = value;
-  } else {
-    playerHostValue.textContent = "Built-in player";
-    playerHostValue.title = "Using extension built-in player";
-  }
-}
-
-// Player Config - Load config when popup opens
-async function loadPlayerConfig(): Promise<void> {
-  try {
-    const response = await chrome.runtime.sendMessage({ action: "GET_PLAYER_CONFIG" }) as MessageResponse;
-    if (response.ok) {
-      const savedValue = response.playerHostUrl;
-      // savedValue === null: user explicitly wants built-in
-      // savedValue === "": no user config, check .env default
-      // savedValue has value: user custom config
-      let effectiveValue: string | null;
-      if (savedValue === null) {
-        effectiveValue = null; // Built-in
-      } else if (savedValue) {
-        effectiveValue = savedValue; // User custom
-      } else if (DEFAULT_PLAYER_HOST) {
-        effectiveValue = DEFAULT_PLAYER_HOST; // .env default
-      } else {
-        effectiveValue = null; // No config
-      }
-      updatePlayerDisplay(effectiveValue);
-    }
-  } catch (e) {
-    console.error("Failed to load player config:", e);
-    updatePlayerDisplay(null);
-  }
-}
-
-// Player Config - Edit button
-editPlayerBtn.addEventListener("click", () => {
-  enterEditMode();
-});
-
-// Player Config - Save config
-savePlayerConfigBtn.addEventListener("click", async () => {
-  const url = playerHostInput.value.trim();
-
-  // Validate URL if not empty
-  if (url) {
-    try {
-      const parsed = new URL(url);
-      if (!parsed.protocol.startsWith("http")) {
-        showError("URL must start with http:// or https://");
-        return;
-      }
-    } catch {
-      showError("Invalid URL");
-      return;
-    }
-  }
-
-  const config: PlayerConfig = { playerHostUrl: url || null };
-
-  try {
-    const result = await chrome.runtime.sendMessage({
-      action: "SET_PLAYER_CONFIG",
-      data: config,
-    }) as MessageResponse;
-
-    if (result.ok) {
-      updatePlayerDisplay(url || null);
-      exitEditMode();
-      showSuccess(url ? "Player host saved!" : "Using built-in player");
-    } else {
-      showError(result.error || "Failed to save");
-    }
-  } catch (e) {
-    showError((e as Error).message);
-  }
-});
-
-// Player Config - Cancel edit
-cancelPlayerConfigBtn.addEventListener("click", () => {
-  exitEditMode();
-});
-
-function showSuccess(msg: string): void {
-  errorMsg.textContent = msg;
-  errorMsg.className = "success-msg";
-  setTimeout(() => {
-    errorMsg.className = "hidden";
-  }, 3000);
+function renderPlayerHost(): void {
+  playerHostValue.textContent = PLAYER_HOST_URL;
+  playerHostValue.title = PLAYER_HOST_URL;
 }
 
 // Initialize popup - load state từ storage và subscribe đến changes
@@ -427,8 +310,7 @@ async function initPopup(): Promise<void> {
     handleStateUpdate(initialState);
   }
 
-  // Load player config
-  await loadPlayerConfig();
+  renderPlayerHost();
 
   // Subscribe to storage changes từ service worker
   const unsubscribe = subscribeToStateChanges((newState) => {

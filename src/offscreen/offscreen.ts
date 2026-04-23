@@ -1,8 +1,9 @@
-import JSZip from "jszip";
+import { buildExternalPlayerUrl } from "../shared/player-host";
 
 let recorder: MediaRecorder | null = null;
 let chunks: Blob[] = [];
 let recordedBlob: Blob | null = null;
+let playbackAudioContext: AudioContext | null = null;
 
 interface OffscreenIncomingMessage {
   target: string;
@@ -26,12 +27,6 @@ chrome.runtime.onMessage.addListener(
         sendResponse({ ok: true });
         return false;
 
-      case "CREATE_ZIP":
-        createZip(message.data as unknown as ZipData)
-          .then(() => sendResponse({ ok: true }))
-          .catch((e: Error) => sendResponse({ ok: false, error: e.message }));
-        return true;
-
       case "UPLOAD_TO_GOOGLE_DRIVE":
         uploadToGoogleDrive(message.data as unknown as GoogleDriveUploadData)
           .then((result) => sendResponse(result))
@@ -54,12 +49,54 @@ interface GoogleDriveUploadData extends ZipData {
   authToken: string;
 }
 
+interface DriveFileDescriptor {
+  id: string;
+  name: string;
+  size?: number;
+  mimeType?: string;
+}
+
+interface RecordingManifest {
+  schemaVersion: number;
+  folderId: string;
+  video: {
+    mimeType: string;
+    totalBytes: number;
+    parts: Array<{
+      name: string;
+      size: number;
+    }>;
+  };
+  artifacts: {
+    metadata: string;
+    console?: string;
+    network?: string;
+    websocket?: string;
+  };
+}
+
+const MAX_DRIVE_UPLOAD_BYTES = 32 * 1024 * 1024;
+
 function sendProgress(step: number, total: number, message: string): void {
   chrome.runtime.sendMessage({
     target: "offscreen",
     type: "UPLOAD_PROGRESS",
     data: { step, total, message },
   });
+}
+
+function clearCapturedMedia(options?: { clearBlob?: boolean }): void {
+  chunks = [];
+
+  if (options?.clearBlob) {
+    recordedBlob = null;
+  }
+
+  if (recorder) {
+    recorder.ondataavailable = null;
+    recorder.onstop = null;
+    recorder = null;
+  }
 }
 
 async function startCapture(streamId: string): Promise<void> {
@@ -82,13 +119,14 @@ async function startCapture(streamId: string): Promise<void> {
   });
 
   // Pass audio through so the user can still hear the tab
-  const audioCtx = new AudioContext();
-  const source = audioCtx.createMediaStreamSource(stream);
-  source.connect(audioCtx.destination);
+  playbackAudioContext = new AudioContext();
+  const source = playbackAudioContext.createMediaStreamSource(stream);
+  source.connect(playbackAudioContext.destination);
 
   const mimeType = MediaRecorder.isTypeSupported("video/webm;codecs=vp9,opus")
     ? "video/webm;codecs=vp9,opus"
     : "video/webm;codecs=vp8,opus";
+  const finalMimeType = mimeType;
 
   recorder = new MediaRecorder(stream, { mimeType });
   chunks = [];
@@ -99,15 +137,21 @@ async function startCapture(streamId: string): Promise<void> {
   };
 
   recorder.onstop = () => {
-    recordedBlob = new Blob(chunks, { type: recorder!.mimeType });
+    recordedBlob = new Blob(chunks, { type: finalMimeType });
     chunks = [];
 
     stream.getTracks().forEach((t) => t.stop());
+    if (playbackAudioContext) {
+      void playbackAudioContext.close().catch(() => {});
+      playbackAudioContext = null;
+    }
 
     chrome.runtime.sendMessage({
       action: "RECORDING_COMPLETE",
-      data: { mimeType: recorder!.mimeType, size: recordedBlob!.size },
+      data: { mimeType: finalMimeType, size: recordedBlob!.size },
     });
+
+    clearCapturedMedia();
   };
 
   recorder.start();
@@ -119,6 +163,23 @@ function stopCapture(): void {
   }
 }
 
+function splitBlobIntoParts(blob: Blob, maxChunkSize: number): Blob[] {
+  if (blob.size <= maxChunkSize) {
+    return [blob];
+  }
+
+  const parts: Blob[] = [];
+  let offset = 0;
+
+  while (offset < blob.size) {
+    const end = Math.min(offset + maxChunkSize, blob.size);
+    parts.push(blob.slice(offset, end, blob.type));
+    offset = end;
+  }
+
+  return parts;
+}
+
 async function uploadToGoogleDrive(
   data: GoogleDriveUploadData,
 ): Promise<{ ok: boolean; recordingUrl?: string; error?: string }> {
@@ -127,260 +188,8 @@ async function uploadToGoogleDrive(
   const baseName = `gn-tracing-${dateStr}`;
 
   try {
-    // Upload video first (largest file, separate progress)
-    let videoFileId: string | undefined;
-    if (recordedBlob) {
-      sendProgress(1, 5, "Uploading video...");
-      const videoFormData = new FormData();
-      videoFormData.append(
-        "metadata",
-        new Blob([JSON.stringify({ name: `${baseName}.webm` })], { type: "application/json" })
-      );
-      videoFormData.append("file", recordedBlob, `${baseName}.webm`);
-
-      const videoResponse = await fetch(
-        "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id&supportsAllDrives=true",
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${data.authToken}`,
-          },
-          body: videoFormData,
-        }
-      );
-
-      if (!videoResponse.ok) {
-        const error = await videoResponse.json().catch(() => ({}));
-        throw new Error(error.error?.message || `Video upload failed with status ${videoResponse.status}`);
-      }
-
-      const videoResult = await videoResponse.json();
-      videoFileId = videoResult.id;
-
-      // Make video shareable
-      await fetch(
-        `https://www.googleapis.com/drive/v3/files/${videoFileId}/permissions`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${data.authToken}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            type: "anyone",
-            role: "reader",
-          }),
-        }
-      );
-    }
-
-    // Upload console, network, and websocket logs in parallel
-    sendProgress(2, 5, "Uploading logs...");
-
-    const uploadPromises: Promise<{ type: string; fileId?: string }>[] = [];
-
-    // Console logs
-    if (data.consoleLogs) {
-      uploadPromises.push(
-        (async () => {
-          const consoleFormData = new FormData();
-          consoleFormData.append(
-            "metadata",
-            new Blob([JSON.stringify({ name: `${baseName}-console.json` })], { type: "application/json" })
-          );
-          consoleFormData.append("file", new Blob([data.consoleLogs!], { type: "application/json" }), `${baseName}-console.json`);
-
-          const consoleResponse = await fetch(
-            "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id&supportsAllDrives=true",
-            {
-              method: "POST",
-              headers: {
-                Authorization: `Bearer ${data.authToken}`,
-              },
-              body: consoleFormData,
-            }
-          );
-
-          if (consoleResponse.ok) {
-            const consoleResult = await consoleResponse.json();
-            const consoleFileId = consoleResult.id;
-
-            // Make shareable
-            await fetch(
-              `https://www.googleapis.com/drive/v3/files/${consoleFileId}/permissions`,
-              {
-                method: "POST",
-                headers: {
-                  Authorization: `Bearer ${data.authToken}`,
-                  "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                  type: "anyone",
-                  role: "reader",
-                }),
-              }
-            );
-            return { type: "console", fileId: consoleFileId };
-          }
-          return { type: "console" };
-        })()
-      );
-    }
-
-    // Network logs
-    if (data.networkRequests) {
-      uploadPromises.push(
-        (async () => {
-          const networkFormData = new FormData();
-          networkFormData.append(
-            "metadata",
-            new Blob([JSON.stringify({ name: `${baseName}-network.json` })], { type: "application/json" })
-          );
-          networkFormData.append("file", new Blob([data.networkRequests!], { type: "application/json" }), `${baseName}-network.json`);
-
-          const networkResponse = await fetch(
-            "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id&supportsAllDrives=true",
-            {
-              method: "POST",
-              headers: {
-                Authorization: `Bearer ${data.authToken}`,
-              },
-              body: networkFormData,
-            }
-          );
-
-          if (networkResponse.ok) {
-            const networkResult = await networkResponse.json();
-            const networkFileId = networkResult.id;
-
-            // Make shareable
-            await fetch(
-              `https://www.googleapis.com/drive/v3/files/${networkFileId}/permissions`,
-              {
-                method: "POST",
-                headers: {
-                  Authorization: `Bearer ${data.authToken}`,
-                  "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                  type: "anyone",
-                  role: "reader",
-                }),
-              }
-            );
-            return { type: "network", fileId: networkFileId };
-          }
-          return { type: "network" };
-        })()
-      );
-    }
-
-    // WebSocket logs
-    if (data.webSocketLogs) {
-      uploadPromises.push(
-        (async () => {
-          const wsFormData = new FormData();
-          wsFormData.append(
-            "metadata",
-            new Blob([JSON.stringify({ name: `${baseName}-websocket.json` })], { type: "application/json" })
-          );
-          wsFormData.append("file", new Blob([data.webSocketLogs!], { type: "application/json" }), `${baseName}-websocket.json`);
-
-          const wsResponse = await fetch(
-            "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id&supportsAllDrives=true",
-            {
-              method: "POST",
-              headers: {
-                Authorization: `Bearer ${data.authToken}`,
-              },
-              body: wsFormData,
-            }
-          );
-
-          if (wsResponse.ok) {
-            const wsResult = await wsResponse.json();
-            const websocketFileId = wsResult.id;
-
-            // Make shareable
-            await fetch(
-              `https://www.googleapis.com/drive/v3/files/${websocketFileId}/permissions`,
-              {
-                method: "POST",
-                headers: {
-                  Authorization: `Bearer ${data.authToken}`,
-                  "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                  type: "anyone",
-                  role: "reader",
-                }),
-              }
-            );
-            return { type: "websocket", fileId: websocketFileId };
-          }
-          return { type: "websocket" };
-        })()
-      );
-    }
-
-    // Wait for all log uploads to complete
-    const uploadResults = await Promise.all(uploadPromises);
-
-    let consoleFileId: string | undefined;
-    let networkFileId: string | undefined;
-    let websocketFileId: string | undefined;
-
-    for (const result of uploadResults) {
-      if (result.type === "console") consoleFileId = result.fileId;
-      if (result.type === "network") networkFileId = result.fileId;
-      if (result.type === "websocket") websocketFileId = result.fileId;
-    }
-
-    // Upload metadata (needs file IDs from above uploads)
-    let metadataFileId: string | undefined;
-    sendProgress(5, 5, "Uploading metadata...");
-    const metadata = {
-      timestamp: new Date().toISOString(),
-      duration: data.duration,
-      url: data.url,
-      startTime: data.startTime,
-      extension: "gn-tracing",
-      version: "1.0.0",
-      videoFileId,
-      consoleFileId,
-      networkFileId,
-      websocketFileId,
-    };
-    const metadataFormData = new FormData();
-    metadataFormData.append(
-      "metadata",
-      new Blob([JSON.stringify({ name: `${baseName}-metadata.json` })], { type: "application/json" })
-    );
-    metadataFormData.append("file", new Blob([JSON.stringify(metadata, null, 2)], { type: "application/json" }), `${baseName}-metadata.json`);
-
-    const metadataResponse = await fetch(
-      "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id&supportsAllDrives=true",
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${data.authToken}`,
-        },
-        body: metadataFormData,
-      }
-    );
-
-    if (!metadataResponse.ok) {
-      const error = await metadataResponse.json().catch(() => ({}));
-      throw new Error(error.error?.message || `Metadata upload failed`);
-    }
-
-    const metadataResult = await metadataResponse.json();
-    metadataFileId = metadataResult.id;
-
-    // Make metadata shareable
-    await fetch(
-      `https://www.googleapis.com/drive/v3/files/${metadataFileId}/permissions`,
-      {
+    const makeShareable = async (fileId: string): Promise<void> => {
+      await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}/permissions`, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${data.authToken}`,
@@ -390,87 +199,235 @@ async function uploadToGoogleDrive(
           type: "anyone",
           role: "reader",
         }),
+      });
+    };
+
+    const createFolder = async (folderName: string): Promise<string> => {
+      const response = await fetch(
+        "https://www.googleapis.com/drive/v3/files?fields=id&supportsAllDrives=true",
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${data.authToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            name: folderName,
+            mimeType: "application/vnd.google-apps.folder",
+          }),
+        },
+      );
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.error?.message || `Create folder failed with status ${response.status}`);
       }
-    );
 
-    // Get player config from service worker (user override)
-    const configResponse = await chrome.runtime.sendMessage({ action: "GET_PLAYER_CONFIG" }) as { playerHostUrl: string | null };
-    const userPlayerHost = configResponse?.playerHostUrl;
+      const result = await response.json();
+      await makeShareable(result.id);
+      return result.id;
+    };
 
-    // Use priority: user config > env config > null (fallback to extension player)
-    const playerHostUrl = userPlayerHost || (typeof process !== 'undefined' && process.env?.PLAYER_HOST_URL) || null;
+    const uploadFile = async (
+      filename: string,
+      blob: Blob,
+      parentId: string,
+    ): Promise<string> => {
+      const formData = new FormData();
+      formData.append(
+        "metadata",
+        new Blob(
+          [
+            JSON.stringify({
+              name: filename,
+              parents: [parentId],
+            }),
+          ],
+          { type: "application/json" },
+        ),
+      );
+      formData.append("file", blob, filename);
 
-    // Build player URL with file IDs as query params
-    const params = new URLSearchParams();
-    if (videoFileId) params.set("video", videoFileId);
-    if (consoleFileId) params.set("console", consoleFileId);
-    if (networkFileId) params.set("network", networkFileId);
-    if (websocketFileId) params.set("websocket", websocketFileId);
-    if (metadataFileId) params.set("metadata", metadataFileId);
+      const response = await fetch(
+        "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id&supportsAllDrives=true",
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${data.authToken}`,
+          },
+          body: formData,
+        },
+      );
 
-    let recordingUrl: string;
-    if (playerHostUrl) {
-      // Use external standalone player
-      const baseUrl = playerHostUrl.replace(/\/$/, '');
-      recordingUrl = `${baseUrl}/?${params.toString()}`;
-    } else {
-      // Fallback: use extension's built-in player
-      const playerBaseUrl = chrome.runtime.getURL("dist/player/player.html");
-      recordingUrl = `${playerBaseUrl}?${params.toString()}`;
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.error?.message || `Upload failed with status ${response.status}`);
+      }
+
+      const result = await response.json();
+      await makeShareable(result.id);
+      return result.id;
+    };
+
+    const videoMimeType = recordedBlob?.type || "video/webm";
+    const videoParts = recordedBlob ? splitBlobIntoParts(recordedBlob, MAX_DRIVE_UPLOAD_BYTES) : [];
+    const requiredSteps = 1 + videoParts.length + 2;
+    const optionalSteps =
+      (data.consoleLogs ? 1 : 0) +
+      (data.networkRequests ? 1 : 0) +
+      (data.webSocketLogs ? 1 : 0);
+    const totalSteps = requiredSteps + optionalSteps;
+    let currentStep = 1;
+
+    sendProgress(currentStep, totalSteps, "Creating recording folder...");
+    const folderId = await createFolder(baseName);
+
+    const uploadedVideoParts: DriveFileDescriptor[] = [];
+    if (recordedBlob) {
+      for (const [index, part] of videoParts.entries()) {
+        currentStep += 1;
+        sendProgress(
+          currentStep,
+          totalSteps,
+          `Uploading video part ${index + 1}/${videoParts.length}...`,
+        );
+        const filename = `video.part-${String(index).padStart(3, "0")}.webm`;
+        const fileId = await uploadFile(filename, part, folderId);
+        uploadedVideoParts.push({
+          id: fileId,
+          name: filename,
+          size: part.size,
+          mimeType: videoMimeType,
+        });
+      }
     }
 
-    return { ok: true, recordingUrl };
+    const artifacts: RecordingManifest["artifacts"] = {
+      metadata: "metadata.json",
+    };
+    let consoleFileId: string | null = null;
+    if (data.consoleLogs) {
+      currentStep += 1;
+      sendProgress(currentStep, totalSteps, "Uploading console logs...");
+      try {
+        consoleFileId = await uploadFile(
+          "console.json",
+          new Blob([data.consoleLogs], { type: "application/json" }),
+          folderId,
+        );
+        artifacts.console = "console.json";
+      } catch (error) {
+        console.warn("[Google Drive Upload] Skipped console logs:", error);
+      }
+    }
 
+    let networkFileId: string | null = null;
+    if (data.networkRequests) {
+      currentStep += 1;
+      sendProgress(currentStep, totalSteps, "Uploading network logs...");
+      try {
+        networkFileId = await uploadFile(
+          "network.json",
+          new Blob([data.networkRequests], { type: "application/json" }),
+          folderId,
+        );
+        artifacts.network = "network.json";
+      } catch (error) {
+        console.warn("[Google Drive Upload] Skipped network logs:", error);
+      }
+    }
+
+    let websocketFileId: string | null = null;
+    if (data.webSocketLogs) {
+      currentStep += 1;
+      sendProgress(currentStep, totalSteps, "Uploading websocket logs...");
+      try {
+        websocketFileId = await uploadFile(
+          "websocket.json",
+          new Blob([data.webSocketLogs], { type: "application/json" }),
+          folderId,
+        );
+        artifacts.websocket = "websocket.json";
+      } catch (error) {
+        console.warn("[Google Drive Upload] Skipped websocket logs:", error);
+      }
+    }
+
+    const manifest: RecordingManifest = {
+      schemaVersion: 1,
+      folderId,
+      video: {
+        mimeType: videoMimeType,
+        totalBytes: recordedBlob?.size || 0,
+        parts: uploadedVideoParts.map((part) => ({
+          name: part.name,
+          size: part.size || 0,
+        })),
+      },
+      artifacts,
+    };
+
+    const metadata = {
+      timestamp: new Date().toISOString(),
+      duration: data.duration,
+      url: data.url,
+      startTime: data.startTime,
+      extension: "gn-tracing",
+      version: "1.0.0",
+      storage: {
+        provider: "google-drive",
+        folderId,
+      },
+      video: {
+        mimeType: videoMimeType,
+        totalBytes: recordedBlob?.size || 0,
+        partCount: uploadedVideoParts.length,
+      },
+    };
+
+    currentStep += 1;
+    sendProgress(currentStep, totalSteps, "Uploading metadata...");
+    const metadataFileId = await uploadFile(
+      "metadata.json",
+      new Blob([JSON.stringify(metadata, null, 2)], { type: "application/json" }),
+      folderId,
+    );
+
+    currentStep += 1;
+    sendProgress(currentStep, totalSteps, "Uploading manifest...");
+    await uploadFile(
+      "manifest.json",
+      new Blob([JSON.stringify(manifest, null, 2)], { type: "application/json" }),
+      folderId,
+    );
+
+    const params = new URLSearchParams();
+    if (uploadedVideoParts.length > 0) {
+      params.set(
+        "videos",
+        uploadedVideoParts
+          .map((part) => part.id)
+          .filter(Boolean)
+          .join(","),
+      );
+    }
+    params.set("metadata", metadataFileId);
+    if (consoleFileId) {
+      params.set("console", consoleFileId);
+    }
+    if (networkFileId) {
+      params.set("network", networkFileId);
+    }
+    if (websocketFileId) {
+      params.set("websocket", websocketFileId);
+    }
+
+    const recordingUrl = buildExternalPlayerUrl(params);
+    clearCapturedMedia({ clearBlob: true });
+
+    return { ok: true, recordingUrl };
   } catch (e) {
     console.error("[Google Drive Upload] Error:", e);
     return { ok: false, error: (e as Error).message };
   }
-}
-
-async function createZip(data: ZipData): Promise<void> {
-  const zip = new JSZip();
-
-  if (recordedBlob) {
-    zip.file("recording.webm", recordedBlob);
-  }
-
-  if (data.consoleLogs) {
-    zip.file("console-logs.json", data.consoleLogs);
-  }
-
-  if (data.networkRequests) {
-    zip.file("network-requests.json", data.networkRequests);
-  }
-
-  if (data.webSocketLogs) {
-    zip.file("websocket-logs.json", data.webSocketLogs);
-  }
-
-  zip.file(
-    "metadata.json",
-    JSON.stringify(
-      {
-        timestamp: new Date().toISOString(),
-        duration: data.duration,
-        url: data.url,
-        startTime: data.startTime,
-        extension: "gn-tracing",
-        version: "1.0.0",
-      },
-      null,
-      2,
-    ),
-  );
-
-  const blob = await zip.generateAsync({ type: "blob" });
-  const url = URL.createObjectURL(blob);
-
-  const now = new Date();
-  const dateStr = now.toISOString().replace(/[:.]/g, "-").slice(0, 19);
-  const filename = `gn-tracing-${dateStr}.zip`;
-
-  chrome.runtime.sendMessage({
-    action: "ZIP_READY",
-    data: { url, filename },
-  });
 }

@@ -3,3 +3,14 @@
 dist/
 node_modules/
 .env
+.env.local
+.env.*.local
+*.log
+*.tsbuildinfo
+coverage/
+graphify-out/
+.mcp.json
+.claude/
+.codex/
+.agents/
+AGENTS.md

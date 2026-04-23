@@ -4,37 +4,25 @@ import path from "path";
 import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
-// Load .env file if exists
-const envPath = path.resolve(__dirname, ".env");
-let envVars = {};
-if (fs.existsSync(envPath)) {
-  const envContent = fs.readFileSync(envPath, "utf-8");
-  envContent.split("\n").forEach((line) => {
-    const [key, ...valueParts] = line.split("=");
-    if (key && valueParts.length > 0) {
-      envVars[key.trim()] = valueParts.join("=").trim();
-    }
-  });
-}
+const GOOGLE_CLIENT_ID = "95916347176-ulk25djm5l4g6ebq7vftjik8iv9a11vf.apps.googleusercontent.com";
 
 const watch = process.argv.includes("--watch");
-
 const commonOptions = {
   bundle: true,
   target: "chrome120",
   sourcemap: true,
   minify: false,
-  define: {
-    "process.env.GOOGLE_CLIENT_ID": JSON.stringify(envVars.GOOGLE_CLIENT_ID || process.env.GOOGLE_CLIENT_ID || ""),
-    "process.env.PLAYER_HOST_URL": JSON.stringify(envVars.PLAYER_HOST_URL || process.env.PLAYER_HOST_URL || ""),
-  },
 };
 
-// Copy helper function
 function copyFile(src, dest) {
   fs.mkdirSync(path.dirname(dest), { recursive: true });
   fs.copyFileSync(src, dest);
+}
+
+function copyTextFile(src, dest, transform) {
+  fs.mkdirSync(path.dirname(dest), { recursive: true });
+  const content = fs.readFileSync(src, "utf-8");
+  fs.writeFileSync(dest, transform ? transform(content) : content, "utf-8");
 }
 
 function copyDir(src, dest) {
@@ -51,33 +39,28 @@ function copyDir(src, dest) {
   }
 }
 
-// Generate manifest.json from template with env substitution
-function generateManifest() {
+function generateManifest(outputPath) {
   const templatePath = path.resolve(__dirname, "manifest.template.json");
-  const manifestPath = path.resolve(__dirname, "manifest.json");
+  const manifestPath = path.resolve(__dirname, outputPath);
 
   if (!fs.existsSync(templatePath)) {
     console.error("manifest.template.json not found");
     return;
   }
 
-  const clientId = envVars.GOOGLE_CLIENT_ID || process.env.GOOGLE_CLIENT_ID || "";
-
-  if (!clientId) {
-    console.warn("⚠️ GOOGLE_CLIENT_ID not set in .env - manifest.json may have empty client_id");
-  }
-
-  let template = fs.readFileSync(templatePath, "utf-8");
-  template = template.replace(/{{GOOGLE_CLIENT_ID}}/g, clientId);
+  const template = fs
+    .readFileSync(templatePath, "utf-8")
+    .replace(/{{GOOGLE_CLIENT_ID}}/g, GOOGLE_CLIENT_ID);
 
   fs.writeFileSync(manifestPath, template, "utf-8");
   console.log("✓ manifest.json generated");
 }
 
 async function build() {
-  // Generate manifest.json first
-  generateManifest();
-  // Service worker — ESM (Chrome MV3 module worker)
+  if (!watch) {
+    fs.rmSync(path.resolve(__dirname, "dist"), { recursive: true, force: true });
+  }
+
   const swCtx = await esbuild.context({
     ...commonOptions,
     entryPoints: ["src/background/service-worker.ts"],
@@ -85,7 +68,6 @@ async function build() {
     format: "esm",
   });
 
-  // Popup, offscreen, and drive-auth — IIFE (loaded via non-module script tags)
   const uiCtx = await esbuild.context({
     ...commonOptions,
     entryPoints: [
@@ -99,22 +81,30 @@ async function build() {
 
   if (watch) {
     await Promise.all([swCtx.watch(), uiCtx.watch()]);
+    generateManifest("dist/manifest.json");
+    copyStaticAssets();
     console.log("Watching extension sources...");
-  } else {
-    await Promise.all([swCtx.rebuild(), uiCtx.rebuild()]);
-    await Promise.all([swCtx.dispose(), uiCtx.dispose()]);
-
-    // Copy player files
-    copyFile("player/player.html", "dist/player/player.html");
-    copyFile("player/player.css", "dist/player/player.css");
-    copyFile("player/player.js", "dist/player/player.js");
-    copyDir("player/icons", "dist/player/icons");
-
-    // Copy JSZip
-    copyFile("node_modules/jszip/dist/jszip.min.js", "dist/lib/jszip.min.js");
-
-    console.log("Extension built.");
+    return;
   }
+
+  await Promise.all([swCtx.rebuild(), uiCtx.rebuild()]);
+  await Promise.all([swCtx.dispose(), uiCtx.dispose()]);
+  generateManifest("dist/manifest.json");
+  copyStaticAssets();
+
+  console.log("Extension built.");
+}
+
+function copyStaticAssets() {
+  copyTextFile("popup/popup.html", "dist/popup/popup.html");
+  copyFile("popup/popup.css", "dist/popup/popup.css");
+  copyTextFile("offscreen/offscreen.html", "dist/offscreen/offscreen.html");
+  copyTextFile("drive-auth/drive-auth.html", "dist/drive-auth/drive-auth.html");
+  copyDir("icons", "dist/icons");
+  copyFile("player/player.html", "dist/player/player.html");
+  copyFile("player/player.css", "dist/player/player.css");
+  copyFile("player/player.js", "dist/player/player.js");
+  copyDir("player/icons", "dist/player/icons");
 }
 
 build().catch((e) => {

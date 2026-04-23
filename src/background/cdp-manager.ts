@@ -157,7 +157,7 @@ export class CdpManager {
   #boundEventHandler: (source: chrome.debugger.Debuggee, method: string, params?: object) => void;
   #boundDetachHandler: (source: chrome.debugger.Debuggee, reason: string) => void;
   #sourceMapResolver = new SourceMapResolver();
-  #sourceMapFetches: Promise<void>[] = [];
+  #sourceMapFetches = new Set<Promise<void>>();
 
   constructor(storage: StorageManager) {
     this.#storage = storage;
@@ -170,8 +170,12 @@ export class CdpManager {
   }
 
   async flushSourceMaps(): Promise<void> {
-    await Promise.allSettled(this.#sourceMapFetches);
-    this.#sourceMapFetches = [];
+    await Promise.allSettled(Array.from(this.#sourceMapFetches));
+  }
+
+  releaseSourceMaps(): void {
+    this.#sourceMapFetches.clear();
+    this.#sourceMapResolver.clear();
   }
 
   async attach(tabId: number): Promise<void> {
@@ -179,7 +183,7 @@ export class CdpManager {
     this.#pendingRequests.clear();
     this.#pendingWebSockets.clear();
     this.#sourceMapResolver.clear();
-    this.#sourceMapFetches = [];
+    this.#sourceMapFetches.clear();
 
     await chrome.debugger.attach({ tabId }, "1.3");
     this.#attached = true;
@@ -604,9 +608,18 @@ export class CdpManager {
 
   #onScriptParsed(params: CdpScriptParsedParams): void {
     if (params.sourceMapURL && params.url) {
-      const promise = this.#fetchAndRegisterSourceMap(params.url, params.sourceMapURL);
-      this.#sourceMapFetches.push(promise);
+      const promise = this.#trackSourceMapFetch(
+        this.#fetchAndRegisterSourceMap(params.url, params.sourceMapURL),
+      );
+      this.#sourceMapFetches.add(promise);
     }
+  }
+
+  #trackSourceMapFetch(promise: Promise<void>): Promise<void> {
+    promise.finally(() => {
+      this.#sourceMapFetches.delete(promise);
+    });
+    return promise;
   }
 
   async #fetchAndRegisterSourceMap(scriptUrl: string, sourceMapURL: string): Promise<void> {

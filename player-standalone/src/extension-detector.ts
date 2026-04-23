@@ -30,6 +30,6 @@ export function getDriveFileUrl(fileId: string): string {
 }
 
 export function getDriveDownloadUrl(fileId: string): string {
-  // For JSON files and other data
-  return `https://drive.google.com/uc?export=download&id=${fileId}`;
+  // Standalone player proxies Drive downloads through the same Pages origin to avoid browser CORS/CORP issues.
+  return `/api/drive?id=${encodeURIComponent(fileId)}`;
 }

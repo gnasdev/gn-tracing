@@ -11,7 +11,11 @@
     "player:build": "cd player-standalone && npm run build",
     "player:preview": "cd player-standalone && npm run preview",
     "player:deploy": "cd player-standalone && npm run deploy",
+    "player:deploy:cloudflare": "cd player-standalone && npm run deploy:cloudflare",
     "build:all": "npm run build && npm run player:sync && npm run player:build",
+    "release:deploy": "npm run build && npm run player:deploy:cloudflare",
+    "release:artifact": "sh -c 'zip -r \"gn-tracing-extension-${GITHUB_REF_NAME:-local}.zip\" dist'",
+    "release:ci": "npm run release:deploy && npm run release:artifact",
     "watch:all": "concurrently 'npm run watch' 'npm run player:dev'"
   },
   "devDependencies": {
@@ -19,8 +23,5 @@
     "concurrently": "^8.2.2",
     "esbuild": "^0.24.0",
     "typescript": "^5.7.0"
-  },
-  "dependencies": {
-    "jszip": "^3.10.1"
   }
 }

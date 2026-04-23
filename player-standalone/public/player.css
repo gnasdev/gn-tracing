@@ -507,6 +507,46 @@ body {
   flex-wrap: wrap;
 }
 
+.filter-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  min-width: 0;
+}
+
+.search-input-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 180px;
+  padding: 0 8px;
+  border: 1px solid var(--gh-border);
+  border-radius: 6px;
+  background: var(--gh-bg);
+  color: var(--gh-muted);
+}
+
+.search-input-wrap:focus-within {
+  border-color: var(--gh-accent);
+  color: var(--gh-accent);
+}
+
+.search-input {
+  width: 100%;
+  min-width: 0;
+  padding: 6px 0;
+  background: transparent;
+  border: none;
+  color: var(--gh-text);
+  font-size: 12px;
+  outline: none;
+}
+
+.search-input::placeholder {
+  color: var(--gh-muted);
+}
+
 .filter-btn {
   padding: 2px 8px;
   background: transparent;
@@ -530,6 +570,7 @@ body {
 .network-summary {
   font-size: 11px;
   color: var(--gh-secondary);
+  white-space: nowrap;
 }
 
 /* Entries scroll */
@@ -554,6 +595,19 @@ body {
 
 .entries-scroll::-webkit-scrollbar-thumb:hover {
   background: var(--gh-muted);
+}
+
+@media (max-width: 900px) {
+  .filter-meta {
+    width: 100%;
+    margin-left: 0;
+    justify-content: space-between;
+  }
+
+  .search-input-wrap {
+    flex: 1;
+    min-width: 0;
+  }
 }
 
 /* Console entries */

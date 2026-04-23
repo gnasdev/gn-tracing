@@ -8,9 +8,12 @@
     "watch": "vite --port 5173",
     "build": "tsc && vite build",
     "build:prod": "tsc && vite build --mode production",
+    "build:cloudflare": "sh -c 'VITE_BASE_PATH=\"${VITE_BASE_PATH:-/}\" npm run build'",
     "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
     "sync:player": "node scripts/sync-player.js",
-    "deploy": "./deploy.sh"
+    "deploy": "./deploy.sh",
+    "deploy:cloudflare": "./deploy.sh"
   },
   "devDependencies": {
     "typescript": "~5.9.3",
