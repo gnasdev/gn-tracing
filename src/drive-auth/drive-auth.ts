@@ -11,8 +11,81 @@ const retryBtn = document.getElementById("retry-btn") as HTMLButtonElement;
 const cancelBtn = document.getElementById("cancel-btn") as HTMLButtonElement;
 const successDetail = document.getElementById("success-detail")!;
 const errorDetail = document.getElementById("error-detail")!;
+const langEnBtn = document.getElementById("lang-en-btn") as HTMLButtonElement;
+const langViBtn = document.getElementById("lang-vi-btn") as HTMLButtonElement;
 
 const SERVICE_STATE_KEY = "gn_tracing_state";
+const LANGUAGE_STORAGE_KEY = "gn_tracing_drive_auth_language";
+
+type Language = "en" | "vi";
+type DetailKind = "connected" | "authFailed" | "unexpectedError" | "authError";
+
+const TEXT: Record<DetailKind, Record<Language, string>> = {
+  connected: {
+    en: "Your Google Drive is connected. You can go back and upload the recording now.",
+    vi: "Google Drive của bạn đã được kết nối. Bây giờ bạn có thể quay lại và tải bản ghi lên.",
+  },
+  authFailed: {
+    en: "Connection was not completed. Please try again.",
+    vi: "Kết nối chưa hoàn tất. Vui lòng thử lại.",
+  },
+  unexpectedError: {
+    en: "Something went wrong. Please try again.",
+    vi: "Đã có lỗi xảy ra. Vui lòng thử lại.",
+  },
+  authError: {
+    en: "We could not finish connecting to Google Drive.",
+    vi: "Không thể hoàn tất kết nối với Google Drive.",
+  },
+};
+
+let currentLanguage: Language = getInitialLanguage();
+let currentErrorMessage: string | null = null;
+
+function getInitialLanguage(): Language {
+  const savedLanguage = window.localStorage.getItem(LANGUAGE_STORAGE_KEY);
+  if (savedLanguage === "en" || savedLanguage === "vi") {
+    return savedLanguage;
+  }
+
+  return navigator.language.toLowerCase().startsWith("vi") ? "vi" : "en";
+}
+
+function translate(kind: DetailKind): string {
+  return TEXT[kind][currentLanguage];
+}
+
+function applyTranslations(): void {
+  const translatableElements = document.querySelectorAll<HTMLElement>("[data-en][data-vi]");
+  for (const element of translatableElements) {
+    const translation = element.dataset[currentLanguage];
+    if (translation) {
+      element.textContent = translation;
+    }
+  }
+
+  document.documentElement.lang = currentLanguage;
+  document.title = currentLanguage === "vi"
+    ? "Kết nối Google Drive - GN Tracing"
+    : "Connect Google Drive - GN Tracing";
+
+  langEnBtn.classList.toggle("active", currentLanguage === "en");
+  langViBtn.classList.toggle("active", currentLanguage === "vi");
+}
+
+function setLanguage(language: Language): void {
+  currentLanguage = language;
+  window.localStorage.setItem(LANGUAGE_STORAGE_KEY, language);
+  applyTranslations();
+
+  if (!successState.classList.contains("hidden")) {
+    successDetail.textContent = translate("connected");
+  }
+
+  if (!errorState.classList.contains("hidden")) {
+    errorDetail.textContent = currentErrorMessage || translate("authError");
+  }
+}
 
 // Show specific state
 function showState(state: "initial" | "loading" | "success" | "error") {
@@ -41,7 +114,7 @@ function showState(state: "initial" | "loading" | "success" | "error") {
 function updateAuthUI(isConnected: boolean) {
   if (isConnected) {
     showState("success");
-    successDetail.textContent = "Your Google Drive account is connected.";
+    successDetail.textContent = translate("connected");
   } else {
     showState("initial");
   }
@@ -55,14 +128,18 @@ async function startAuth() {
     const result = await chrome.runtime.sendMessage({ action: "GOOGLE_DRIVE_CONNECT" }) as MessageResponse;
 
     if (result.ok) {
+      currentErrorMessage = null;
       updateAuthUI(true);
     } else {
       showState("error");
-      errorDetail.textContent = result.error || "Authentication failed. Please try again.";
+      currentErrorMessage = result.error || null;
+      errorDetail.textContent = currentErrorMessage || translate("authFailed");
     }
   } catch (e) {
     showState("error");
-    errorDetail.textContent = (e as Error).message || "An unexpected error occurred.";
+    const message = (e as Error).message;
+    currentErrorMessage = message || null;
+    errorDetail.textContent = currentErrorMessage || translate("unexpectedError");
   }
 }
 
@@ -76,6 +153,8 @@ connectBtn.addEventListener("click", startAuth);
 closeBtn.addEventListener("click", closeWindow);
 retryBtn.addEventListener("click", () => showState("initial"));
 cancelBtn.addEventListener("click", closeWindow);
+langEnBtn.addEventListener("click", () => setLanguage("en"));
+langViBtn.addEventListener("click", () => setLanguage("vi"));
 
 // Check if already connected on load
 async function checkStatus() {
@@ -100,4 +179,5 @@ chrome.storage.session.onChanged.addListener((changes) => {
 });
 
 // Check status when page loads
+applyTranslations();
 checkStatus();

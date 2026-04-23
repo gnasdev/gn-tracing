@@ -49,6 +49,7 @@
   let expandedConsoleIndex = null;
   let expandedNetworkIndex = null;
   let expandedWsIndex = null;
+  const networkDetailTabs = new Map();
   let closestConsoleIndex = -1;
   let closestNetworkIndex = -1;
   let layoutState = loadLayoutState();
@@ -373,8 +374,9 @@
   }
 
   function formatTimeMs(ms) {
-    const totalSec = Math.floor(Math.max(0, ms) / 1000);
-    const millis = String(Math.floor(ms % 1000)).padStart(3, '0');
+    const safeMs = Math.max(0, ms);
+    const totalSec = Math.floor(safeMs / 1000);
+    const millis = String(Math.floor(safeMs % 1000)).padStart(3, '0');
     const min = String(Math.floor(totalSec / 60)).padStart(2, '0');
     const sec = String(totalSec % 60).padStart(2, '0');
     return `${min}:${sec}.${millis}`;
@@ -472,40 +474,78 @@
     document.title = label ? `${label} | ${DEFAULT_PLAYER_TITLE}` : DEFAULT_PLAYER_TITLE;
   }
 
+  function detectNetworkFilterFromUrlAndMime(url, mimeType) {
+    const normalizedMimeType = String(mimeType || '').toLowerCase();
+
+    if (normalizedMimeType.includes('json')) return 'fetch';
+    if (normalizedMimeType.includes('javascript') || normalizedMimeType.includes('ecmascript')) return 'js';
+    if (normalizedMimeType.includes('css')) return 'css';
+    if (normalizedMimeType.includes('html')) return 'doc';
+    if (normalizedMimeType.startsWith('image/')) return 'img';
+    if (normalizedMimeType.startsWith('font/')) return 'font';
+    if (normalizedMimeType.startsWith('audio/') || normalizedMimeType.startsWith('video/')) return 'media';
+
+    try {
+      const pathname = new URL(url || '', 'http://x').pathname.toLowerCase();
+      const dot = pathname.lastIndexOf('.');
+      if (dot !== -1) {
+        const ext = pathname.slice(dot);
+        const extMap = {
+          '.js': 'js', '.mjs': 'js', '.cjs': 'js', '.map': 'js',
+          '.css': 'css',
+          '.png': 'img', '.jpg': 'img', '.jpeg': 'img', '.gif': 'img', '.svg': 'img', '.webp': 'img', '.ico': 'img', '.avif': 'img', '.bmp': 'img',
+          '.woff': 'font', '.woff2': 'font', '.ttf': 'font', '.eot': 'font', '.otf': 'font',
+          '.mp4': 'media', '.webm': 'media', '.mp3': 'media', '.ogg': 'media', '.wav': 'media',
+          '.html': 'doc', '.htm': 'doc', '.php': 'doc', '.asp': 'doc', '.aspx': 'doc', '.jsp': 'doc',
+        };
+        if (extMap[ext]) return extMap[ext];
+      }
+    } catch {}
+
+    return null;
+  }
+
   function getNetworkFilterType(entry) {
-    const resourceType = entry.resourceType || '';
-    if (resourceType === 'XHR' || resourceType === 'Fetch') {
-      const url = (entry.request && entry.request.url) || entry.url || '';
-      try {
-        const pathname = new URL(url, 'http://x').pathname;
-        const dot = pathname.lastIndexOf('.');
-        if (dot !== -1) {
-          const ext = pathname.slice(dot).toLowerCase();
-          const extMap = {
-            '.js': 'js', '.mjs': 'js', '.cjs': 'js', '.map': 'js',
-            '.css': 'css',
-            '.png': 'img', '.jpg': 'img', '.jpeg': 'img', '.gif': 'img', '.svg': 'img', '.webp': 'img', '.ico': 'img', '.avif': 'img',
-            '.woff': 'font', '.woff2': 'font', '.ttf': 'font', '.eot': 'font', '.otf': 'font',
-            '.mp4': 'media', '.webm': 'media', '.mp3': 'media', '.ogg': 'media', '.wav': 'media',
-            '.html': 'doc', '.htm': 'doc',
-          };
-          if (extMap[ext]) return extMap[ext];
-        }
-      } catch {}
+    const resourceType = String(entry.resourceType || '').trim();
+    const normalizedResourceType = resourceType.toLowerCase();
+    const url = (entry.request && entry.request.url) || entry.url || '';
+    const mimeType = (entry.response && entry.response.mimeType) || entry.mimeType || '';
+
+    if (normalizedResourceType === 'xhr' || normalizedResourceType === 'fetch') {
+      const detectedType = detectNetworkFilterFromUrlAndMime(url, mimeType);
+      if (detectedType && detectedType !== 'doc') return detectedType;
       return 'fetch';
     }
+
     const typeMap = {
-      'Script': 'js',
-      'Stylesheet': 'css',
-      'Image': 'img',
-      'Document': 'doc',
-      'Font': 'font',
-      'Media': 'media',
-      'WebSocket': 'ws',
+      script: 'js',
+      stylesheet: 'css',
+      image: 'img',
+      document: 'doc',
+      font: 'font',
+      media: 'media',
+      texttrack: 'media',
+      websocket: 'ws',
+      xhr: 'fetch',
+      fetch: 'fetch',
+      preflight: 'fetch',
+      prefetch: 'fetch',
+      eventsource: 'fetch',
+      manifest: 'doc',
+      signedexchange: 'doc',
+      ping: 'other',
+      cspviolationreport: 'other',
+      fedcm: 'other',
+      other: 'other',
     };
-    for (const [filterKey, types] of Object.entries(typeMap)) {
-      if (types.includes(resourceType)) return filterKey;
+
+    if (typeMap[normalizedResourceType]) {
+      return typeMap[normalizedResourceType];
     }
+
+    const detectedType = detectNetworkFilterFromUrlAndMime(url, mimeType);
+    if (detectedType) return detectedType;
+
     return 'other';
   }
 
@@ -652,6 +692,7 @@
         index,
         searchText: getWsSearchText(ws),
       }))
+      .filter(() => activeNetworkFilter === 'all' || activeNetworkFilter === 'ws')
       .filter((item) => !networkQuery || item.searchText.includes(networkQuery));
   }
 
@@ -1077,6 +1118,78 @@
       <div class="detail-section">
         <h4>Response Body</h4>
         <pre class="response-body response-code-block">${highlighted}${truncatedSuffix}</pre>
+      </div>
+    `;
+  }
+
+  function getNetworkDetailTabKey(entry) {
+    return entry.requestId || entry.url || String(entry.timestamp || '');
+  }
+
+  function getActiveNetworkDetailTab(entry, hasPreview, hasBody) {
+    const key = getNetworkDetailTabKey(entry);
+    const savedTab = networkDetailTabs.get(key);
+
+    if (savedTab === 'preview' && hasPreview) return 'preview';
+    if (savedTab === 'body' && hasBody) return 'body';
+    if (hasPreview) return 'preview';
+    if (hasBody) return 'body';
+    return null;
+  }
+
+  function buildResponseTabs(entry, previewHtml, responseBodyHtml) {
+    const hasPreview = Boolean(previewHtml);
+    const hasBody = Boolean(responseBodyHtml);
+    const activeTab = getActiveNetworkDetailTab(entry, hasPreview, hasBody);
+
+    if (!activeTab) {
+      return '';
+    }
+
+    return `
+      <div class="detail-section">
+        <div class="network-detail-tabs" role="tablist" aria-label="Response detail tabs">
+          ${hasPreview ? `
+            <button
+              class="network-detail-tab ${activeTab === 'preview' ? 'active' : ''}"
+              type="button"
+              role="tab"
+              aria-selected="${activeTab === 'preview'}"
+              data-tab="preview"
+            >
+              Response Preview
+            </button>
+          ` : ''}
+          ${hasBody ? `
+            <button
+              class="network-detail-tab ${activeTab === 'body' ? 'active' : ''}"
+              type="button"
+              role="tab"
+              aria-selected="${activeTab === 'body'}"
+              data-tab="body"
+            >
+              Response Body
+            </button>
+          ` : ''}
+        </div>
+        ${hasPreview ? `
+          <div
+            class="network-detail-panel ${activeTab === 'preview' ? 'active' : 'hidden'}"
+            role="tabpanel"
+            data-panel="preview"
+          >
+            ${previewHtml}
+          </div>
+        ` : ''}
+        ${hasBody ? `
+          <div
+            class="network-detail-panel ${activeTab === 'body' ? 'active' : 'hidden'}"
+            role="tabpanel"
+            data-panel="body"
+          >
+            ${responseBodyHtml}
+          </div>
+        ` : ''}
       </div>
     `;
   }
@@ -1773,16 +1886,7 @@
       </div>
     `;
 
-    if (previewHtml) {
-      detailHtml += `
-        <div class="detail-section">
-          <h4>Preview</h4>
-          ${previewHtml}
-        </div>
-      `;
-    }
-
-    detailHtml += responseBodyHtml;
+    detailHtml += buildResponseTabs(entry, previewHtml, responseBodyHtml);
 
     // Timing
     if (timings && Object.keys(timings).length > 0) {
@@ -2337,6 +2441,24 @@
     });
   }
 
+  function setupNetworkDetailTabListeners() {
+    document.addEventListener('click', (e) => {
+      const tab = e.target.closest('.network-detail-tab');
+      if (!tab) return;
+
+      const row = tab.closest('.network-row');
+      if (!row) return;
+
+      const index = parseInt(row.dataset.index);
+      const entry = networkLogs[index];
+      const targetTab = tab.dataset.tab;
+      if (!entry || !targetTab) return;
+
+      networkDetailTabs.set(getNetworkDetailTabKey(entry), targetTab);
+      renderNetworkEntries();
+    });
+  }
+
   // Initialize
   async function init() {
     initElements();
@@ -2349,6 +2471,7 @@
     setupFilterListeners();
     setupTabListeners();
     setupCopyListeners();
+    setupNetworkDetailTabListeners();
 
     const urlParams = new URLSearchParams(window.location.search);
     const videos = urlParams.get('videos');

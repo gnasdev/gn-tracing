@@ -1245,6 +1245,47 @@ body {
   font-style: italic;
 }
 
+.network-detail .network-detail-tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.network-detail .network-detail-tab {
+  border: 1px solid var(--gh-border);
+  background: var(--gh-bg);
+  color: var(--gh-secondary);
+  border-radius: 999px;
+  padding: 5px 10px;
+  font-size: 11px;
+  line-height: 1.2;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+
+.network-detail .network-detail-tab:hover {
+  color: var(--gh-text);
+  border-color: var(--gh-accent);
+}
+
+.network-detail .network-detail-tab.active {
+  background: rgba(47, 129, 247, 0.14);
+  color: var(--gh-accent);
+  border-color: rgba(47, 129, 247, 0.35);
+}
+
+.network-detail .network-detail-panel.hidden {
+  display: none;
+}
+
+.network-detail .network-detail-panel.active {
+  display: block;
+}
+
+.network-detail .network-detail-panel > .detail-section:last-child {
+  margin-bottom: 0;
+}
+
 .network-detail .response-code-block {
   white-space: pre-wrap;
   word-break: break-word;

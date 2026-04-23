@@ -2,7 +2,6 @@ import type { MessageResponse } from "../types/messages";
 
 const GOOGLE_CLIENT_ID = "95916347176-ulk25djm5l4g6ebq7vftjik8iv9a11vf.apps.googleusercontent.com";
 const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file";
-const EDGE_DRIVE_SCOPE = "https://www.googleapis.com/auth/drive";
 const EDGE_ACCESS_TOKEN_KEY = "gn_tracing_edge_access_token";
 
 /**
@@ -10,6 +9,41 @@ const EDGE_ACCESS_TOKEN_KEY = "gn_tracing_edge_access_token";
  * No client_secret required - Chrome handles token management internally
  */
 export class GoogleDriveAuth {
+  private normalizeChromeToken(
+    tokenResult: string | chrome.identity.GetAuthTokenResult | undefined | null,
+  ): string | null {
+    if (typeof tokenResult === "string") {
+      return tokenResult;
+    }
+    return tokenResult?.token ?? null;
+  }
+
+  private async revokeAccessToken(token: string): Promise<void> {
+    const response = await fetch(`https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(token)}`);
+    if (!response.ok) {
+      throw new Error(`Token revoke failed with status ${response.status}`);
+    }
+  }
+
+  private async removeCachedAuthToken(token: string): Promise<void> {
+    await new Promise<void>((resolve, reject) => {
+      chrome.identity.removeCachedAuthToken({ token }, () => {
+        const err = chrome.runtime.lastError;
+        if (err) {
+          reject(new Error(err.message));
+        } else {
+          resolve();
+        }
+      });
+    });
+  }
+
+  private async clearChromeIdentityState(): Promise<void> {
+    if (typeof chrome.identity.clearAllCachedAuthTokens === "function") {
+      await chrome.identity.clearAllCachedAuthTokens();
+    }
+  }
+
   private isEdgeBrowser(): boolean {
     return navigator.userAgent.includes("Edg/");
   }
@@ -65,7 +99,7 @@ export class GoogleDriveAuth {
 
     try {
       const token = await chrome.identity.getAuthToken({ interactive: false });
-      const tokenStr = typeof token === 'string' ? token : (token?.token ?? null);
+      const tokenStr = this.normalizeChromeToken(token);
       return tokenStr;
     } catch (e) {
       return null;
@@ -84,7 +118,7 @@ export class GoogleDriveAuth {
           `?client_id=${GOOGLE_CLIENT_ID}` +
           "&response_type=token" +
           `&redirect_uri=${encodeURIComponent(redirectUri)}` +
-          `&scope=${encodeURIComponent(EDGE_DRIVE_SCOPE)}` +
+          `&scope=${encodeURIComponent(DRIVE_SCOPE)}` +
           "&prompt=consent";
 
         const resultUrl = await chrome.identity.launchWebAuthFlow({
@@ -122,21 +156,14 @@ export class GoogleDriveAuth {
         scopes: [DRIVE_SCOPE],
       });
 
-      let tokenStr: string | undefined;
-      if (typeof tokenResult === 'string') {
-        tokenStr = tokenResult;
-      } else if (tokenResult && typeof tokenResult === 'object') {
-        tokenStr = tokenResult.token;
-      }
+      const tokenStr = this.normalizeChromeToken(tokenResult);
 
       if (!tokenStr) {
         return { ok: false, error: "No token received" };
       }
 
       if (!(await this.verifyToken(tokenStr))) {
-        await new Promise<void>((resolve) => {
-          chrome.identity.removeCachedAuthToken({ token: tokenStr }, () => resolve());
-        });
+        await this.removeCachedAuthToken(tokenStr);
         return { ok: false, error: "Authentication failed. Please try again." };
       }
 
@@ -152,43 +179,54 @@ export class GoogleDriveAuth {
    */
   async disconnect(): Promise<MessageResponse> {
     if (this.isEdgeBrowser()) {
+      const token = await this.getStoredEdgeToken();
       try {
-        const token = await this.getStoredEdgeToken();
         if (token) {
-          await fetch(`https://oauth2.googleapis.com/revoke?token=${token}`);
-          await this.clearStoredEdgeToken();
+          await this.revokeAccessToken(token);
         }
-
-        return { ok: true, message: "Disconnected from Google Drive" };
       } catch (e) {
         console.error("[GoogleDriveAuth] Edge disconnect error:", e);
-        return { ok: true, message: "Disconnected from Google Drive" };
-      }
-    }
-
-    try {
-      const tokenResult = await chrome.identity.getAuthToken({ interactive: false });
-      const token = typeof tokenResult === 'string' ? tokenResult : (tokenResult?.token ?? null);
-
-      if (token) {
-        await fetch(`https://oauth2.googleapis.com/revoke?token=${token}`);
-
-        await new Promise<void>((resolve, reject) => {
-          chrome.identity.removeCachedAuthToken({ token }, () => {
-            const err = chrome.runtime.lastError;
-            if (err) {
-              reject(new Error(err.message));
-            } else {
-              resolve();
-            }
-          });
-        });
+      } finally {
+        await this.clearStoredEdgeToken();
       }
 
       return { ok: true, message: "Disconnected from Google Drive" };
+    }
+
+    const token = await this.getAuthToken();
+    try {
+      if (token) {
+        try {
+          await this.revokeAccessToken(token);
+        } catch (e) {
+          console.warn("[GoogleDriveAuth] Token revoke failed during disconnect:", e);
+        }
+
+        try {
+          await this.removeCachedAuthToken(token);
+        } catch (e) {
+          console.warn("[GoogleDriveAuth] Cached token removal failed during disconnect:", e);
+        }
+      }
+
+      await this.clearChromeIdentityState();
+      return { ok: true, message: "Disconnected from Google Drive" };
     } catch (e) {
       console.error("[GoogleDriveAuth] Disconnect error:", e);
-      // Still return success if token was already invalid
+      if (token) {
+        try {
+          await this.removeCachedAuthToken(token);
+        } catch {
+          // Ignore follow-up cache cleanup failures after the main disconnect path already failed.
+        }
+      }
+
+      try {
+        await this.clearChromeIdentityState();
+      } catch {
+        // Ignore clear-all failures and still return a success-style response for already-invalid auth state.
+      }
+
       return { ok: true, message: "Disconnected from Google Drive" };
     }
   }
