@@ -12,6 +12,7 @@ const uploadDriveBtn = document.getElementById("upload-drive-btn") as HTMLButton
 const uploadProgress = document.getElementById("upload-progress")!;
 const progressFill = document.getElementById("progress-fill") as HTMLDivElement;
 const progressText = document.getElementById("progress-text") as HTMLDivElement;
+const progressMeta = document.getElementById("progress-meta") as HTMLDivElement;
 const uploadResult = document.getElementById("upload-result")!;
 const recordingLink = document.getElementById("recording-link") as HTMLInputElement;
 const copyLinkBtn = document.getElementById("copy-link-btn")!;
@@ -77,6 +78,39 @@ function formatTime(ms: number): string {
   return `${min}:${sec}`;
 }
 
+function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) {
+    return "0 B";
+  }
+
+  const units = ["B", "KB", "MB", "GB"];
+  let value = bytes;
+  let unitIndex = 0;
+
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+
+  const digits = value >= 100 || unitIndex === 0 ? 0 : value >= 10 ? 1 : 2;
+  return `${value.toFixed(digits)} ${units[unitIndex]}`;
+}
+
+function renderUploadProgress(progress: {
+  percent?: number;
+  uploadedBytes?: number;
+  totalBytes?: number;
+  message?: string;
+} | null): void {
+  const percent = Math.max(0, Math.min(100, progress?.percent ?? 0));
+  const uploadedBytes = Math.max(0, progress?.uploadedBytes ?? 0);
+  const totalBytes = Math.max(0, progress?.totalBytes ?? 0);
+
+  progressFill.style.width = `${percent}%`;
+  progressText.textContent = progress?.message || "Uploading...";
+  progressMeta.textContent = `${formatBytes(uploadedBytes)} / ${formatBytes(totalBytes)} (${percent.toFixed(1)}%)`;
+}
+
 function updateUI(status: RecordingStatus | null): void {
   if (!status) return;
 
@@ -120,8 +154,12 @@ function updateUploadUI(uploadState: UploadState | null): void {
     uploadDriveBtn.classList.add("hidden");
     uploadProgress.classList.remove("hidden");
     uploadResult.classList.add("hidden");
-    progressFill.style.width = `${uploadState.progress}%`;
-    progressText.textContent = uploadState.message || "Uploading...";
+    renderUploadProgress({
+      percent: uploadState.progress,
+      uploadedBytes: uploadState.uploadedBytes,
+      totalBytes: uploadState.totalBytes,
+      message: uploadState.message,
+    });
     return;
   }
 
@@ -212,14 +250,18 @@ uploadDriveBtn.addEventListener("click", async () => {
   uploadResult.classList.add("hidden");
   progressFill.style.width = "0%";
   progressText.textContent = "Preparing upload...";
+  progressMeta.textContent = "0 B / 0 B (0.0%)";
 
   // Listen for progress messages
   const progressListener = (message: any) => {
     if (message.target === "offscreen" && message.type === "UPLOAD_PROGRESS" && message.data) {
-      const { step, total, message: msg } = message.data;
-      const percent = (step / total) * 100;
-      progressFill.style.width = `${percent}%`;
-      progressText.textContent = msg;
+      const {
+        percent,
+        uploadedBytes,
+        totalBytes,
+        message: msg,
+      } = message.data;
+      renderUploadProgress({ percent, uploadedBytes, totalBytes, message: msg });
     }
   };
 

@@ -13,7 +13,11 @@
   <div id="app">
     <div id="loading-state" class="state-container">
       <div class="spinner"></div>
-      <p>Loading recording...</p>
+      <p id="loading-message">Loading recording...</p>
+      <div class="loading-progress-bar">
+        <div id="loading-progress-fill" class="loading-progress-fill"></div>
+      </div>
+      <p id="loading-progress-text" class="loading-progress-text">0 B / 0 B (0.0%)</p>
     </div>
 
     <div id="error-state" class="state-container hidden">
@@ -23,14 +27,14 @@
 
     <div id="player-state" class="player-container hidden">
       <header class="header">
-        <h1>GN Tracing</h1>
+        <h1 id="player-title">GN Tracing</h1>
         <div class="header-info">
           <span id="recording-duration"></span>
         </div>
       </header>
 
       <div class="main-layout">
-        <section class="video-section">
+        <section id="video-section" class="video-section">
           <div class="video-container">
             <video id="video-player"></video>
           </div>
@@ -74,10 +78,32 @@
               </button>
               <input type="range" id="volume-slider" class="volume-slider" min="0" max="1" step="0.05" value="1">
             </div>
+
+            <div class="layout-control-group" aria-label="Player layout controls">
+              <button id="layout-horizontal-btn" class="control-btn layout-btn active" title="Horizontal layout">
+                <i class="ph ph-columns"></i>
+              </button>
+              <button id="layout-vertical-btn" class="control-btn layout-btn" title="Vertical layout">
+                <i class="ph ph-rows"></i>
+              </button>
+              <button id="video-fullscreen-btn" class="control-btn" title="Expand video in tab">
+                <i id="fullscreen-enter-icon" class="ph ph-corners-out"></i>
+                <i id="fullscreen-exit-icon" class="ph ph-corners-in hidden"></i>
+              </button>
+            </div>
           </div>
         </section>
 
-        <div class="logs-panel">
+        <div
+          id="layout-splitter"
+          class="layout-splitter"
+          role="separator"
+          aria-label="Resize player and logs panels"
+          aria-orientation="vertical"
+          tabindex="0"
+        ></div>
+
+        <div id="logs-panel" class="logs-panel">
           <div class="tab-bar">
             <button id="console-tab" class="tab-btn active">Console</button>
             <button id="network-tab" class="tab-btn">Network</button>

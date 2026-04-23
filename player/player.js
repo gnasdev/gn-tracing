@@ -16,6 +16,17 @@
 
   // Get config from window (set by standalone adapter if running standalone)
   const CONFIG = window.GN_TRACING_CONFIG || {};
+  const PLAYER_LAYOUT_STORAGE_KEY = 'gn-tracing-player-layout';
+  const DEFAULT_PLAYER_TITLE = 'GN Tracing Player';
+  const DEFAULT_LAYOUT_MODE = 'horizontal';
+  const DEFAULT_SPLIT_PERCENT = {
+    horizontal: 50,
+    vertical: 55
+  };
+  const MIN_SPLIT_PERCENT = 25;
+  const MAX_SPLIT_PERCENT = 75;
+  const MAX_RESPONSE_DISPLAY_CHARS = 10240;
+  const MAX_RESPONSE_PREVIEW_CHARS = 40000;
 
   console.log('[GN Tracing Player] Mode:', IS_EXTENSION ? 'extension' : 'standalone');
 
@@ -39,6 +50,11 @@
   let expandedWsIndex = null;
   let closestConsoleIndex = -1;
   let closestNetworkIndex = -1;
+  let layoutState = loadLayoutState();
+  let isVideoFullscreen = false;
+  let loadingProgressMessage = 'Loading recording...';
+  const loadingProgressEntries = new Map();
+  let expectedVideoBytes = 0;
 
   function releaseVideoResources() {
     if (videoUrl) {
@@ -74,10 +90,16 @@
 
   function initElements() {
     elements.loadingState = document.getElementById('loading-state');
+    elements.loadingMessage = document.getElementById('loading-message');
+    elements.loadingProgressFill = document.getElementById('loading-progress-fill');
+    elements.loadingProgressText = document.getElementById('loading-progress-text');
     elements.errorState = document.getElementById('error-state');
     elements.playerState = document.getElementById('player-state');
+    elements.mainLayout = document.querySelector('.main-layout');
+    elements.playerTitle = document.getElementById('player-title');
 
     // Video elements
+    elements.videoSection = document.getElementById('video-section');
     elements.video = document.getElementById('video-player');
     elements.playPauseBtn = document.getElementById('play-pause-btn');
     elements.playIcon = document.getElementById('play-icon');
@@ -96,6 +118,13 @@
     elements.volumeOn = document.getElementById('volume-on');
     elements.volumeOff = document.getElementById('volume-off');
     elements.volumeSlider = document.getElementById('volume-slider');
+    elements.layoutHorizontalBtn = document.getElementById('layout-horizontal-btn');
+    elements.layoutVerticalBtn = document.getElementById('layout-vertical-btn');
+    elements.videoFullscreenBtn = document.getElementById('video-fullscreen-btn');
+    elements.fullscreenEnterIcon = document.getElementById('fullscreen-enter-icon');
+    elements.fullscreenExitIcon = document.getElementById('fullscreen-exit-icon');
+    elements.layoutSplitter = document.getElementById('layout-splitter');
+    elements.logsPanel = document.getElementById('logs-panel');
 
     // Header info
     elements.recordingDuration = document.getElementById('recording-duration');
@@ -119,6 +148,172 @@
     elements.networkRows = document.getElementById('network-rows');
     elements.websocketSection = document.getElementById('websocket-section');
     elements.websocketRows = document.getElementById('websocket-rows');
+  }
+
+  function clampSplitPercent(value) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) {
+      return DEFAULT_SPLIT_PERCENT[DEFAULT_LAYOUT_MODE];
+    }
+    return Math.max(MIN_SPLIT_PERCENT, Math.min(MAX_SPLIT_PERCENT, numeric));
+  }
+
+  function loadLayoutState() {
+    const fallback = {
+      mode: DEFAULT_LAYOUT_MODE,
+      splitPercent: DEFAULT_SPLIT_PERCENT[DEFAULT_LAYOUT_MODE]
+    };
+
+    try {
+      const raw = window.localStorage.getItem(PLAYER_LAYOUT_STORAGE_KEY);
+      if (!raw) {
+        return fallback;
+      }
+
+      const parsed = JSON.parse(raw);
+      const mode = parsed?.mode === 'vertical' ? 'vertical' : DEFAULT_LAYOUT_MODE;
+      const defaultPercent = DEFAULT_SPLIT_PERCENT[mode];
+      return {
+        mode,
+        splitPercent: clampSplitPercent(parsed?.splitPercent ?? defaultPercent)
+      };
+    } catch (error) {
+      console.warn('[GN Tracing Player] Failed to load layout state:', error);
+      return fallback;
+    }
+  }
+
+  function saveLayoutState() {
+    try {
+      window.localStorage.setItem(PLAYER_LAYOUT_STORAGE_KEY, JSON.stringify(layoutState));
+    } catch (error) {
+      console.warn('[GN Tracing Player] Failed to persist layout state:', error);
+    }
+  }
+
+  function updateFullscreenButton() {
+    elements.videoFullscreenBtn.classList.toggle('active', isVideoFullscreen);
+    elements.fullscreenEnterIcon.classList.toggle('hidden', isVideoFullscreen);
+    elements.fullscreenExitIcon.classList.toggle('hidden', !isVideoFullscreen);
+    elements.videoFullscreenBtn.title = isVideoFullscreen ? 'Exit expanded video' : 'Expand video in tab';
+    elements.videoFullscreenBtn.setAttribute('aria-pressed', String(isVideoFullscreen));
+  }
+
+  function formatBytes(bytes) {
+    if (!Number.isFinite(bytes) || bytes <= 0) {
+      return '0 B';
+    }
+
+    const units = ['B', 'KB', 'MB', 'GB'];
+    let value = bytes;
+    let unitIndex = 0;
+
+    while (value >= 1024 && unitIndex < units.length - 1) {
+      value /= 1024;
+      unitIndex += 1;
+    }
+
+    const digits = value >= 100 || unitIndex === 0 ? 0 : value >= 10 ? 1 : 2;
+    return `${value.toFixed(digits)} ${units[unitIndex]}`;
+  }
+
+  function renderLoadingProgress() {
+    const progressEntries = Array.from(loadingProgressEntries.values());
+    const uploadedBytes = progressEntries.reduce((sum, entry) => sum + entry.loaded, 0);
+    const videoLoadedBytes = progressEntries
+      .filter(entry => entry.group === 'video')
+      .reduce((sum, entry) => sum + entry.loaded, 0);
+    const videoKnownTotalBytes = progressEntries
+      .filter(entry => entry.group === 'video')
+      .reduce((sum, entry) => sum + entry.total, 0);
+    const otherTotalBytes = progressEntries
+      .filter(entry => entry.group !== 'video')
+      .reduce((sum, entry) => sum + (entry.total || entry.loaded), 0);
+    const totalBytes = Math.max(videoKnownTotalBytes, expectedVideoBytes, videoLoadedBytes) + otherTotalBytes;
+    const percent = totalBytes > 0 ? Math.max(0, Math.min(100, (uploadedBytes / totalBytes) * 100)) : 0;
+
+    if (elements.loadingMessage) {
+      elements.loadingMessage.textContent = loadingProgressMessage;
+    }
+    if (elements.loadingProgressFill) {
+      elements.loadingProgressFill.style.width = `${percent}%`;
+    }
+    if (elements.loadingProgressText) {
+      elements.loadingProgressText.textContent = `${formatBytes(uploadedBytes)} / ${formatBytes(totalBytes)} (${percent.toFixed(1)}%)`;
+    }
+  }
+
+  function resetLoadingProgress(message = 'Loading recording...') {
+    loadingProgressEntries.clear();
+    expectedVideoBytes = 0;
+    loadingProgressMessage = message;
+    renderLoadingProgress();
+  }
+
+  function setLoadingMessage(message) {
+    loadingProgressMessage = message;
+    renderLoadingProgress();
+  }
+
+  function setExpectedVideoBytes(totalBytes) {
+    expectedVideoBytes = Number.isFinite(totalBytes) && totalBytes > 0 ? totalBytes : 0;
+    renderLoadingProgress();
+  }
+
+  function updateLoadingEntry(key, { loaded = 0, total = 0, group = 'other', message } = {}) {
+    const previous = loadingProgressEntries.get(key) || { loaded: 0, total: 0, group };
+    loadingProgressEntries.set(key, {
+      loaded: Math.max(0, loaded),
+      total: Math.max(0, total || previous.total || 0),
+      group,
+    });
+    if (message) {
+      loadingProgressMessage = message;
+    }
+    renderLoadingProgress();
+  }
+
+  function createLoadingProgressReporter(key, group, message) {
+    return ({ loaded, total }) => {
+      updateLoadingEntry(key, { loaded, total, group, message });
+    };
+  }
+
+  function applyLayoutState() {
+    const mode = layoutState.mode === 'vertical' ? 'vertical' : 'horizontal';
+    const splitPercent = clampSplitPercent(layoutState.splitPercent);
+    layoutState = { mode, splitPercent };
+
+    elements.playerState.dataset.layoutMode = mode;
+    elements.playerState.style.setProperty('--player-split-percent', String(splitPercent));
+    elements.layoutSplitter.setAttribute('aria-orientation', mode === 'vertical' ? 'horizontal' : 'vertical');
+    elements.layoutHorizontalBtn.classList.toggle('active', mode === 'horizontal');
+    elements.layoutVerticalBtn.classList.toggle('active', mode === 'vertical');
+    elements.layoutHorizontalBtn.setAttribute('aria-pressed', String(mode === 'horizontal'));
+    elements.layoutVerticalBtn.setAttribute('aria-pressed', String(mode === 'vertical'));
+    elements.playerState.classList.toggle('is-video-fullscreen', isVideoFullscreen);
+    updateFullscreenButton();
+  }
+
+  function setLayoutMode(mode) {
+    const nextMode = mode === 'vertical' ? 'vertical' : 'horizontal';
+    layoutState.mode = nextMode;
+    layoutState.splitPercent = clampSplitPercent(layoutState.splitPercent || DEFAULT_SPLIT_PERCENT[nextMode]);
+    applyLayoutState();
+    saveLayoutState();
+  }
+
+  function setSplitPercent(percent, persist = true) {
+    layoutState.splitPercent = clampSplitPercent(percent);
+    applyLayoutState();
+    if (persist) {
+      saveLayoutState();
+    }
+  }
+
+  function toggleVideoFullscreen() {
+    isVideoFullscreen = !isVideoFullscreen;
+    applyLayoutState();
   }
 
   // Utility functions
@@ -177,6 +372,56 @@
       hour: '2-digit',
       minute: '2-digit'
     });
+  }
+
+  function getRecordingTitleLabel(meta) {
+    if (!meta || typeof meta !== 'object') {
+      return '';
+    }
+
+    const parts = [];
+    const rawUrl = typeof meta.url === 'string' ? meta.url : '';
+    const recordedAt = meta.startTime || meta.timestamp;
+
+    if (rawUrl) {
+      try {
+        const url = new URL(rawUrl);
+        parts.push(url.hostname.replace(/^www\./, ''));
+
+        const segments = url.pathname.split('/').filter(Boolean);
+        const lastSegment = segments[segments.length - 1];
+        if (lastSegment) {
+          parts.push(lastSegment.length > 24 ? `${lastSegment.slice(0, 24)}...` : lastSegment);
+        }
+      } catch {
+        parts.push(rawUrl.length > 40 ? `${rawUrl.slice(0, 40)}...` : rawUrl);
+      }
+    }
+
+    if (recordedAt) {
+      const date = new Date(recordedAt);
+      if (!Number.isNaN(date.getTime())) {
+        parts.push(date.toLocaleTimeString('en-US', {
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit'
+        }));
+      }
+    }
+
+    return parts.filter(Boolean).join(' • ');
+  }
+
+  function updatePlayerTitle(meta) {
+    const label = getRecordingTitleLabel(meta);
+    const visibleTitle = label ? `GN Tracing - ${label}` : 'GN Tracing';
+
+    if (elements.playerTitle) {
+      elements.playerTitle.textContent = visibleTitle;
+      elements.playerTitle.title = label || DEFAULT_PLAYER_TITLE;
+    }
+
+    document.title = label ? `${label} | ${DEFAULT_PLAYER_TITLE}` : DEFAULT_PLAYER_TITLE;
   }
 
   function getNetworkFilterType(entry) {
@@ -496,33 +741,362 @@
     };
   }
 
+  function decodeBase64Text(value) {
+    if (!value) return null;
+
+    try {
+      const binary = atob(value);
+      const bytes = Uint8Array.from(binary, char => char.charCodeAt(0));
+      return new TextDecoder().decode(bytes);
+    } catch {
+      return null;
+    }
+  }
+
+  function getUrlPathname(url) {
+    try {
+      return new URL(url, 'https://example.invalid').pathname || '';
+    } catch {
+      return '';
+    }
+  }
+
+  function detectResponseBodyKind(entry, content) {
+    const mimeType = String(content.mimeType || '').toLowerCase();
+    const pathname = getUrlPathname((entry.request || {}).url || entry.url || '').toLowerCase();
+
+    if (mimeType.includes('json') || pathname.endsWith('.json')) return 'json';
+    if (mimeType.includes('javascript') || mimeType.includes('ecmascript') || pathname.endsWith('.js') || pathname.endsWith('.mjs') || pathname.endsWith('.cjs')) return 'js';
+    if (mimeType.includes('html') || pathname.endsWith('.html') || pathname.endsWith('.htm')) return 'html';
+    if (mimeType.includes('css') || pathname.endsWith('.css')) return 'css';
+    if (mimeType.startsWith('image/')) return 'image';
+    if (mimeType.startsWith('audio/')) return 'audio';
+    if (mimeType.startsWith('video/')) return 'video';
+    return 'text';
+  }
+
+  function getResponseBodyText(entry, content) {
+    if (!content.text) return '';
+    if (content.encoding === 'base64') {
+      const detectedKind = detectResponseBodyKind(entry, content);
+      if (detectedKind === 'json' || detectedKind === 'js' || detectedKind === 'html' || detectedKind === 'css' || String(content.mimeType || '').startsWith('text/')) {
+        return decodeBase64Text(content.text) || '';
+      }
+      return '';
+    }
+    return String(content.text);
+  }
+
+  function buildPreviewDataUrl(mimeType, payload) {
+    if (!mimeType || !payload) return null;
+    return `data:${mimeType};base64,${payload}`;
+  }
+
+  function formatJsonPreview(text) {
+    try {
+      return JSON.stringify(JSON.parse(text), null, 2);
+    } catch {
+      return text;
+    }
+  }
+
+  function highlightJson(text) {
+    const source = formatJsonPreview(text);
+    return tokenizeWithPattern(
+      source,
+      /("(?:\\.|[^"\\])*"(\s*:)?|\btrue\b|\bfalse\b|\bnull\b|-?\d+(?:\.\d+)?(?:[eE][+\-]?\d+)?)/g,
+      (token, match) => {
+        if (/^"/.test(token)) return match[2] ? 'token-key' : 'token-string';
+        if (token === 'true' || token === 'false') return 'token-boolean';
+        if (token === 'null') return 'token-null';
+        return 'token-number';
+      }
+    );
+  }
+
+  function tokenizeWithPattern(text, pattern, classifyToken) {
+    let result = '';
+    let lastIndex = 0;
+    let match;
+
+    while ((match = pattern.exec(text)) !== null) {
+      const [token] = match;
+      result += escapeHtml(text.slice(lastIndex, match.index));
+      const cls = classifyToken(token, match);
+      result += cls ? `<span class="${cls}">${escapeHtml(token)}</span>` : escapeHtml(token);
+      lastIndex = match.index + token.length;
+    }
+
+    result += escapeHtml(text.slice(lastIndex));
+    pattern.lastIndex = 0;
+    return result;
+  }
+
+  function highlightJavascript(text) {
+    const pattern = /("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`|\/\/[^\n]*|\/\*[\s\S]*?\*\/|\b(?:await|async|break|case|catch|class|const|continue|default|delete|else|export|extends|finally|for|from|function|if|import|in|instanceof|let|new|null|return|super|switch|this|throw|true|false|try|typeof|var|while|yield)\b|-?\d+(?:\.\d+)?(?:[eE][+\-]?\d+)?)/g;
+    return tokenizeWithPattern(text, pattern, (token) => {
+      if (token.startsWith('//') || token.startsWith('/*')) return 'token-comment';
+      if (token.startsWith('"') || token.startsWith("'") || token.startsWith('`')) return 'token-string';
+      if (/^-?\d/.test(token)) return 'token-number';
+      return 'token-keyword';
+    });
+  }
+
+  function highlightCss(text) {
+    const pattern = /(\/\*[\s\S]*?\*\/|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|@[a-z-]+|\.[\w-]+|#[\w-]+|-?\d+(?:\.\d+)?(?:px|em|rem|vh|vw|%|s|ms|deg)?|#[0-9a-fA-F]{3,8})/g;
+    return tokenizeWithPattern(text, pattern, (token) => {
+      if (token.startsWith('/*')) return 'token-comment';
+      if (token.startsWith('"') || token.startsWith("'")) return 'token-string';
+      if (token.startsWith('@')) return 'token-keyword';
+      if (token.startsWith('.') || token.startsWith('#')) return token.length > 1 && /^[#.][\w-]+$/.test(token) ? 'token-selector' : 'token-number';
+      return 'token-number';
+    });
+  }
+
+  function highlightHtmlTag(tag) {
+    const trimmedTag = tag.replace(/^</, '').replace(/>$/, '');
+    const isClosing = trimmedTag.startsWith('/');
+    const tagNameMatch = trimmedTag.match(/^\/?([^\s/>]+)/);
+    const tagName = tagNameMatch ? tagNameMatch[1] : '';
+    let result = '&lt;';
+
+    if (isClosing) {
+      result += '/';
+    }
+
+    if (tagName) {
+      result += `<span class="token-tag">${escapeHtml(tagName)}</span>`;
+    }
+
+    const attrSource = trimmedTag.slice(tagNameMatch ? tagNameMatch[0].length : 0);
+    const attrPattern = /(\s+)([\w:-]+)(?:\s*=\s*("(?:[^"]*)"|'(?:[^']*)'|[^\s"'=<>`]+))?/g;
+    let lastIndex = 0;
+    let match;
+
+    while ((match = attrPattern.exec(attrSource)) !== null) {
+      result += escapeHtml(attrSource.slice(lastIndex, match.index));
+      result += escapeHtml(match[1]);
+      result += `<span class="token-attr">${escapeHtml(match[2])}</span>`;
+      if (match[3]) {
+        result += '<span class="token-operator">=</span>';
+        result += `<span class="token-string">${escapeHtml(match[3])}</span>`;
+      }
+      lastIndex = match.index + match[0].length;
+    }
+
+    result += escapeHtml(attrSource.slice(lastIndex));
+    if (tag.endsWith('/>')) {
+      result += '/';
+    }
+    result += '&gt;';
+    return result;
+  }
+
+  function highlightHtml(text) {
+    const pattern = /<!--[\s\S]*?-->|<\/?[\w:-]+(?:\s+[\w:-]+(?:=(?:"[^"]*"|'[^']*'|[^\s"'=<>`]+))?)*\s*\/?>/g;
+    let result = '';
+    let lastIndex = 0;
+    let match;
+
+    while ((match = pattern.exec(text)) !== null) {
+      result += escapeHtml(text.slice(lastIndex, match.index));
+      const token = match[0];
+      if (token.startsWith('<!--')) {
+        result += `<span class="token-comment">${escapeHtml(token)}</span>`;
+      } else {
+        result += highlightHtmlTag(token);
+      }
+      lastIndex = match.index + token.length;
+    }
+
+    result += escapeHtml(text.slice(lastIndex));
+    pattern.lastIndex = 0;
+    return result;
+  }
+
+  function highlightResponseText(kind, text) {
+    if (!text) return '';
+    if (kind === 'json') return highlightJson(text);
+    if (kind === 'js') return highlightJavascript(text);
+    if (kind === 'html') return highlightHtml(text);
+    if (kind === 'css') return highlightCss(text);
+    return escapeHtml(text);
+  }
+
+  function buildJsonPreview(text) {
+    const formatted = formatJsonPreview(text);
+    let summaryHtml = '';
+
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed && typeof parsed === 'object') {
+        const entries = Array.isArray(parsed)
+          ? parsed.slice(0, 6).map((value, index) => [`[${index}]`, value])
+          : Object.entries(parsed).slice(0, 6);
+
+        summaryHtml = `
+          <div class="json-preview-summary">
+            ${entries.map(([key, value]) => `
+              <div class="json-preview-item">
+                <span class="json-preview-key">${escapeHtml(String(key))}</span>
+                <span class="json-preview-value">${escapeHtml(stringifyForSearch(value).slice(0, 120) || '(empty)')}</span>
+              </div>
+            `).join('')}
+          </div>
+        `;
+      }
+    } catch {}
+
+    return `
+      <div class="response-preview-card response-preview-json">
+        ${summaryHtml}
+        <pre class="response-code-block">${highlightJson(formatted.slice(0, MAX_RESPONSE_PREVIEW_CHARS))}${formatted.length > MAX_RESPONSE_PREVIEW_CHARS ? '\n<span class="token-comment">...(truncated)</span>' : ''}</pre>
+      </div>
+    `;
+  }
+
+  function buildResponsePreview(entry, content) {
+    const kind = detectResponseBodyKind(entry, content);
+    const responseText = getResponseBodyText(entry, content);
+    const mimeType = String(content.mimeType || '').toLowerCase();
+
+    if (kind === 'html' && responseText) {
+      const previewHtml = responseText.slice(0, MAX_RESPONSE_PREVIEW_CHARS);
+      return `
+        <div class="response-preview-card response-preview-html">
+          <iframe class="response-preview-frame" sandbox="" srcdoc="${escapeHtml(previewHtml)}"></iframe>
+        </div>
+      `;
+    }
+
+    if ((kind === 'image' || kind === 'audio' || kind === 'video') && content.encoding === 'base64' && content.text) {
+      const dataUrl = buildPreviewDataUrl(mimeType || 'application/octet-stream', content.text);
+      if (!dataUrl) return '';
+      if (kind === 'image') {
+        return `
+          <div class="response-preview-card response-preview-media">
+            <img class="response-preview-image" src="${escapeHtml(dataUrl)}" alt="Response preview">
+          </div>
+        `;
+      }
+      if (kind === 'audio') {
+        return `
+          <div class="response-preview-card response-preview-media">
+            <audio class="response-preview-audio" controls preload="metadata" src="${escapeHtml(dataUrl)}"></audio>
+          </div>
+        `;
+      }
+      return `
+        <div class="response-preview-card response-preview-media">
+          <video class="response-preview-video" controls preload="metadata" src="${escapeHtml(dataUrl)}"></video>
+        </div>
+      `;
+    }
+
+    if (kind === 'json' && responseText) {
+      return buildJsonPreview(responseText);
+    }
+
+    return '';
+  }
+
+  function buildResponseBodySection(entry, content) {
+    const kind = detectResponseBodyKind(entry, content);
+    const responseText = getResponseBodyText(entry, content);
+    const isBinary = content.encoding === 'base64' && !responseText;
+
+    if (!content.text) {
+      return '';
+    }
+
+    if (isBinary) {
+      return `
+        <div class="detail-section">
+          <h4>Response Body</h4>
+          <pre class="response-body binary">(binary data)</pre>
+        </div>
+      `;
+    }
+
+    const displayText = kind === 'json' ? formatJsonPreview(responseText) : responseText;
+    const truncatedText = displayText.slice(0, MAX_RESPONSE_DISPLAY_CHARS);
+    const highlighted = highlightResponseText(kind, truncatedText);
+    const truncatedSuffix = displayText.length > MAX_RESPONSE_DISPLAY_CHARS
+      ? '\n<span class="token-comment">...(truncated)</span>'
+      : '';
+
+    return `
+      <div class="detail-section">
+        <h4>Response Body</h4>
+        <pre class="response-body response-code-block">${highlighted}${truncatedSuffix}</pre>
+      </div>
+    `;
+  }
+
   // Google Drive API functions
   // Check if external adapter is available (set by standalone mode)
   const DRIVE_ADAPTER = window.GN_DRIVE_ADAPTER || null;
-  async function downloadFile(fileId) {
-    if (DRIVE_ADAPTER && DRIVE_ADAPTER.loadBlob) {
-      const blob = await DRIVE_ADAPTER.loadBlob(fileId);
-      return new Response(blob);
+  function getDownloadUrl(fileId) {
+    if (IS_STANDALONE && DRIVE_ADAPTER) {
+      return `/api/drive?id=${encodeURIComponent(fileId)}`;
     }
 
-    // Use the final public download host directly to avoid CORS issues on Drive redirects.
-    const url = `https://drive.usercontent.google.com/download?id=${fileId}&export=download`;
-    const response = await fetch(url);
+    return `https://drive.usercontent.google.com/download?id=${fileId}&export=download`;
+  }
+
+  async function downloadFile(fileId, options = {}) {
+    const response = await fetch(getDownloadUrl(fileId));
 
     if (!response.ok) {
       throw new Error(`Failed to download file ${fileId}`);
     }
 
-    return response;
+    if (!options.onProgress || !response.body) {
+      const blob = await response.blob();
+      options.onProgress?.({ loaded: blob.size, total: blob.size });
+      return new Response(blob, {
+        status: response.status,
+        statusText: response.statusText,
+        headers: new Headers(response.headers)
+      });
+    }
+
+    const reader = response.body.getReader();
+    const chunks = [];
+    const total = Number(response.headers.get('content-length')) || 0;
+    let loaded = 0;
+
+    options.onProgress({ loaded, total });
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+
+      chunks.push(value);
+      loaded += value.byteLength;
+      options.onProgress({ loaded, total });
+    }
+
+    const blob = new Blob(chunks, {
+      type: response.headers.get('content-type') || 'application/octet-stream'
+    });
+
+    return new Response(blob, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: new Headers(response.headers)
+    });
   }
 
-  async function downloadFileAsJson(fileId) {
-    const response = await downloadFile(fileId);
+  async function downloadFileAsJson(fileId, options = {}) {
+    const response = await downloadFile(fileId, options);
     return response.json();
   }
 
-  async function downloadFileAsBlob(fileId) {
-    const response = await downloadFile(fileId);
+  async function downloadFileAsBlob(fileId, options = {}) {
+    const response = await downloadFile(fileId, options);
     return response.blob();
   }
 
@@ -563,10 +1137,18 @@
       throw new Error('No video parts found');
     }
 
-    const blobs = [];
-    for (const file of files) {
-      blobs.push(await downloadFileAsBlob(file.id));
-    }
+    const blobs = await Promise.all(files.map((file, index) =>
+      downloadFileAsBlob(
+        file.id,
+        {
+          onProgress: createLoadingProgressReporter(
+            `video:${index}`,
+            'video',
+            `Downloading video part ${index + 1}/${files.length}...`
+          )
+        }
+      )
+    ));
 
     const combinedType = mimeType || blobs[0]?.type || 'video/webm';
     return new Blob(blobs, { type: combinedType });
@@ -584,11 +1166,20 @@
 
   async function loadRecordingData() {
     try {
+      resetLoadingProgress('Loading metadata...');
+
       // Load metadata first (needed for processing other data)
-      const metadataJson = await downloadFileAsJson(recordingFiles.metadata.id);
+      const metadataJson = await downloadFileAsJson(
+        recordingFiles.metadata.id,
+        {
+          onProgress: createLoadingProgressReporter('metadata', 'other', 'Loading metadata...')
+        }
+      );
       metadata = metadataJson.metadata || metadataJson;
       startTime = metadata.startTime || new Date(metadata.timestamp || '').getTime();
       duration = metadata.duration || 0;
+      updatePlayerTitle(metadata);
+      setExpectedVideoBytes(metadata.video?.totalBytes || 0);
       const videoMimeType = recordingFiles.manifest?.video?.mimeType || metadata.video?.mimeType || 'video/webm';
 
       // Load video, console, network, websocket in parallel
@@ -602,7 +1193,12 @@
         }) : Promise.resolve(),
 
         // Load console logs
-        recordingFiles.console ? downloadFileAsJson(recordingFiles.console.id).then(consoleJson => {
+        recordingFiles.console ? downloadFileAsJson(
+          recordingFiles.console.id,
+          {
+            onProgress: createLoadingProgressReporter('console', 'other', 'Loading console logs...')
+          }
+        ).then(consoleJson => {
           const rawEntries = Array.isArray(consoleJson)
             ? consoleJson
             : (consoleJson.logs || consoleJson.data || []);
@@ -613,7 +1209,12 @@
         }) : Promise.resolve(),
 
         // Load network logs
-        recordingFiles.network ? downloadFileAsJson(recordingFiles.network.id).then(networkJson => {
+        recordingFiles.network ? downloadFileAsJson(
+          recordingFiles.network.id,
+          {
+            onProgress: createLoadingProgressReporter('network', 'other', 'Loading network logs...')
+          }
+        ).then(networkJson => {
           const rawEntries = Array.isArray(networkJson)
             ? networkJson
             : (networkJson.log?.entries || networkJson.entries || networkJson.data || []);
@@ -678,13 +1279,19 @@
         }) : Promise.resolve(),
 
         // Load WebSocket logs
-        recordingFiles.websocket ? downloadFileAsJson(recordingFiles.websocket.id).then(wsJson => {
+        recordingFiles.websocket ? downloadFileAsJson(
+          recordingFiles.websocket.id,
+          {
+            onProgress: createLoadingProgressReporter('websocket', 'other', 'Loading websocket logs...')
+          }
+        ).then(wsJson => {
           webSocketLogs = Array.isArray(wsJson) ? wsJson : (wsJson.data || wsJson.logs || []);
         }) : Promise.resolve(),
       ]);
 
       // Update UI
       elements.recordingDuration.textContent = formatTime(duration);
+      setLoadingMessage('Rendering recording...');
 
       showPlayer();
     } catch (err) {
@@ -696,6 +1303,7 @@
 
   // State management
   function showLoading() {
+    resetLoadingProgress('Loading recording...');
     elements.loadingState.classList.remove('hidden');
     elements.errorState.classList.add('hidden');
     elements.playerState.classList.add('hidden');
@@ -1006,6 +1614,8 @@
     const response = entry.response || {};
     const content = getNetworkResponseContent(entry);
     const timings = entry.timing || {};
+    const previewHtml = buildResponsePreview(entry, content);
+    const responseBodyHtml = buildResponseBodySection(entry, content);
 
     let detailHtml = '<div class="network-detail">';
 
@@ -1076,24 +1686,16 @@
       </div>
     `;
 
-    // Response Body
-    if (content.text) {
-      const isBase64 = content.encoding === 'base64';
-      let bodyText = content.text || '';
-      if (content.mimeType && content.mimeType.includes('json')) {
-        try {
-          bodyText = JSON.stringify(JSON.parse(bodyText), null, 2);
-        } catch {}
-      }
+    if (previewHtml) {
       detailHtml += `
         <div class="detail-section">
-          <h4>Response Body</h4>
-          <pre class="response-body${isBase64 ? ' binary' : ''}">
-            ${isBase64 ? '(binary data)' : escapeHtml(bodyText.slice(0, 10240))}${bodyText.length > 10240 ? '\n...(truncated)' : ''}
-          </pre>
+          <h4>Preview</h4>
+          ${previewHtml}
         </div>
       `;
     }
+
+    detailHtml += responseBodyHtml;
 
     // Timing
     if (timings && Object.keys(timings).length > 0) {
@@ -1238,6 +1840,83 @@
       if (pct < 0 || pct > 100) return '';
       return `<div class="marker" style="left: ${pct}%; background-color: ${marker.color};" title="${escapeHtml(marker.label)}"></div>`;
     }).join('');
+  }
+
+  function getSplitPercentFromPointer(clientX, clientY) {
+    const rect = elements.mainLayout.getBoundingClientRect();
+    if (layoutState.mode === 'vertical') {
+      const relativeY = clientY - rect.top;
+      return (relativeY / rect.height) * 100;
+    }
+
+    const relativeX = clientX - rect.left;
+    return (relativeX / rect.width) * 100;
+  }
+
+  function setupLayoutListeners() {
+    let activePointerId = null;
+
+    const stopResizing = () => {
+      if (activePointerId !== null) {
+        try {
+          elements.layoutSplitter.releasePointerCapture(activePointerId);
+        } catch {}
+      }
+      activePointerId = null;
+      elements.playerState.classList.remove('is-resizing');
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+    };
+
+    elements.layoutHorizontalBtn.addEventListener('click', () => setLayoutMode('horizontal'));
+    elements.layoutVerticalBtn.addEventListener('click', () => setLayoutMode('vertical'));
+    elements.videoFullscreenBtn.addEventListener('click', toggleVideoFullscreen);
+
+    elements.layoutSplitter.addEventListener('pointerdown', (event) => {
+      activePointerId = event.pointerId;
+      elements.layoutSplitter.setPointerCapture(event.pointerId);
+      elements.playerState.classList.add('is-resizing');
+      document.body.style.userSelect = 'none';
+      document.body.style.cursor = layoutState.mode === 'vertical' ? 'row-resize' : 'col-resize';
+      setSplitPercent(getSplitPercentFromPointer(event.clientX, event.clientY), false);
+      event.preventDefault();
+    });
+
+    elements.layoutSplitter.addEventListener('pointermove', (event) => {
+      if (event.pointerId !== activePointerId) {
+        return;
+      }
+      setSplitPercent(getSplitPercentFromPointer(event.clientX, event.clientY), false);
+    });
+
+    elements.layoutSplitter.addEventListener('pointerup', (event) => {
+      if (event.pointerId !== activePointerId) {
+        return;
+      }
+      setSplitPercent(layoutState.splitPercent, true);
+      stopResizing();
+    });
+
+    elements.layoutSplitter.addEventListener('pointercancel', stopResizing);
+
+    elements.layoutSplitter.addEventListener('keydown', (event) => {
+      const step = event.shiftKey ? 5 : 2;
+      if (layoutState.mode === 'horizontal' && event.key === 'ArrowLeft') {
+        event.preventDefault();
+        setSplitPercent(layoutState.splitPercent - step);
+      } else if (layoutState.mode === 'horizontal' && event.key === 'ArrowRight') {
+        event.preventDefault();
+        setSplitPercent(layoutState.splitPercent + step);
+      } else if (layoutState.mode === 'vertical' && event.key === 'ArrowUp') {
+        event.preventDefault();
+        setSplitPercent(layoutState.splitPercent - step);
+      } else if (layoutState.mode === 'vertical' && event.key === 'ArrowDown') {
+        event.preventDefault();
+        setSplitPercent(layoutState.splitPercent + step);
+      }
+    });
+
+    window.addEventListener('blur', stopResizing);
   }
 
   // Video event handlers
@@ -1397,6 +2076,16 @@
           elements.video.playbackRate = 2;
           elements.speedBtn.textContent = '2x';
           break;
+        case 'KeyF':
+          e.preventDefault();
+          toggleVideoFullscreen();
+          break;
+        case 'Escape':
+          if (isVideoFullscreen) {
+            e.preventDefault();
+            toggleVideoFullscreen();
+          }
+          break;
       }
     });
   }
@@ -1542,10 +2231,10 @@
             if (action === 'copy-curl') {
               text = generateCurl(entry);
             } else if (action === 'copy-response') {
-              text = content.text || '';
+              text = getResponseBodyText(entry, content) || content.text || '';
             } else if (action === 'copy-all') {
               const curl = generateCurl(entry);
-              text = curl + '\n\n--- Response ---\n\n' + (content.text || '');
+              text = curl + '\n\n--- Response ---\n\n' + (getResponseBodyText(entry, content) || content.text || '');
             }
 
             navigator.clipboard.writeText(text).then(() => {
@@ -1564,7 +2253,10 @@
   // Initialize
   async function init() {
     initElements();
+    applyLayoutState();
+    updateVolumeDisplay();
     window.addEventListener('unload', releaseVideoResources);
+    setupLayoutListeners();
     setupVideoListeners();
     setupFilterListeners();
     setupTabListeners();

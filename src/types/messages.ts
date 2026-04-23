@@ -52,6 +52,8 @@ export interface RecordingStatus {
 export interface UploadState {
   isUploading: boolean;
   progress: number;
+  uploadedBytes: number;
+  totalBytes: number;
   message: string;
   recordingUrl: string | null;
   error: string | null;
@@ -72,6 +74,9 @@ export interface UploadProgressMessage {
   data: {
     step: number;
     total: number;
+    percent: number;
+    uploadedBytes: number;
+    totalBytes: number;
     message: string;
   };
 }

@@ -32,6 +32,8 @@ const state: RecordingState = {
 const uploadState: UploadState = {
   isUploading: false,
   progress: 0,
+  uploadedBytes: 0,
+  totalBytes: 0,
   message: "",
   recordingUrl: null,
   error: null,
@@ -76,9 +78,18 @@ chrome.runtime.onMessage.addListener((message: any, sender, sendResponse) => {
   if (message.target === "offscreen" && message.type === "UPLOAD_PROGRESS") {
     // Update upload state
     if (message.data) {
-      const { step, total, message: msg } = message.data;
+      const {
+        step,
+        total,
+        percent,
+        uploadedBytes,
+        totalBytes,
+        message: msg,
+      } = message.data;
       uploadState.isUploading = true;
-      uploadState.progress = (step / total) * 100;
+      uploadState.progress = typeof percent === "number" ? percent : (step / total) * 100;
+      uploadState.uploadedBytes = typeof uploadedBytes === "number" ? uploadedBytes : 0;
+      uploadState.totalBytes = typeof totalBytes === "number" ? totalBytes : 0;
       uploadState.message = msg;
     }
     // Save to storage for popup sync (fire and forget is ok for progress)
@@ -259,6 +270,8 @@ async function uploadToGoogleDrive(): Promise<MessageResponse> {
     // Reset upload state at start
     uploadState.isUploading = true;
     uploadState.progress = 0;
+    uploadState.uploadedBytes = 0;
+    uploadState.totalBytes = 0;
     uploadState.message = "Preparing upload...";
     uploadState.recordingUrl = null;
     uploadState.error = null;
@@ -298,6 +311,7 @@ async function uploadToGoogleDrive(): Promise<MessageResponse> {
       const normalizedRecordingUrl = normalizeRecordingUrl(result.recordingUrl);
       uploadState.isUploading = false;
       uploadState.progress = 100;
+      uploadState.uploadedBytes = uploadState.totalBytes;
       uploadState.message = "Upload complete!";
       uploadState.recordingUrl = normalizedRecordingUrl;
       storage.clear();

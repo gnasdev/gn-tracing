@@ -162,6 +162,13 @@ h1 {
   text-align: center;
 }
 
+.progress-meta {
+  font-size: 11px;
+  color: #c7d2fe;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
 .btn-upload {
   background: #7209b7;
   color: #fff;

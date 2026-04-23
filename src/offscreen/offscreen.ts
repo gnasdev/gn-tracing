@@ -77,12 +77,69 @@ interface RecordingManifest {
 
 const MAX_DRIVE_UPLOAD_BYTES = 32 * 1024 * 1024;
 
-function sendProgress(step: number, total: number, message: string): void {
+interface UploadProgressSnapshot {
+  step: number;
+  total: number;
+  percent: number;
+  uploadedBytes: number;
+  totalBytes: number;
+  message: string;
+}
+
+interface UploadQueueItem {
+  key: string;
+  kind: "video" | "console" | "network" | "websocket" | "metadata";
+  filename: string;
+  blob: Blob;
+  required: boolean;
+  label: string;
+  index?: number;
+}
+
+function sendProgress(progress: UploadProgressSnapshot): void {
   chrome.runtime.sendMessage({
     target: "offscreen",
     type: "UPLOAD_PROGRESS",
-    data: { step, total, message },
+    data: progress,
   });
+}
+
+function clampPercent(value: number): number {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+  return Math.max(0, Math.min(100, value));
+}
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  worker: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  if (items.length === 0) {
+    return [];
+  }
+
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+
+  const runWorker = async (): Promise<void> => {
+    while (true) {
+      const currentIndex = nextIndex;
+      nextIndex += 1;
+
+      if (currentIndex >= items.length) {
+        return;
+      }
+
+      results[currentIndex] = await worker(items[currentIndex], currentIndex);
+    }
+  };
+
+  await Promise.all(
+    Array.from({ length: Math.min(Math.max(1, concurrency), items.length) }, () => runWorker()),
+  );
+  return results;
 }
 
 function clearCapturedMedia(options?: { clearBlob?: boolean }): void {
@@ -232,6 +289,7 @@ async function uploadToGoogleDrive(
       filename: string,
       blob: Blob,
       parentId: string,
+      onProgress?: (loaded: number, total: number) => void,
     ): Promise<string> => {
       const formData = new FormData();
       formData.append(
@@ -248,110 +306,216 @@ async function uploadToGoogleDrive(
       );
       formData.append("file", blob, filename);
 
-      const response = await fetch(
-        "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id&supportsAllDrives=true",
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${data.authToken}`,
-          },
-          body: formData,
-        },
-      );
+      const result = await new Promise<{ id: string }>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open(
+          "POST",
+          "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id&supportsAllDrives=true",
+        );
+        xhr.setRequestHeader("Authorization", `Bearer ${data.authToken}`);
 
-      if (!response.ok) {
-        const error = await response.json().catch(() => ({}));
-        throw new Error(error.error?.message || `Upload failed with status ${response.status}`);
-      }
+        xhr.upload.addEventListener("progress", (event) => {
+          onProgress?.(event.loaded, event.lengthComputable ? event.total : blob.size);
+        });
 
-      const result = await response.json();
+        xhr.onerror = () => reject(new Error("Upload failed due to a network error"));
+        xhr.onload = () => {
+          let payload: { id?: string; error?: { message?: string } } = {};
+          try {
+            payload = xhr.responseText ? JSON.parse(xhr.responseText) : {};
+          } catch {
+            payload = {};
+          }
+
+          if (xhr.status < 200 || xhr.status >= 300 || !payload.id) {
+            reject(new Error(payload.error?.message || `Upload failed with status ${xhr.status}`));
+            return;
+          }
+
+          resolve({ id: payload.id });
+        };
+
+        xhr.send(formData);
+      });
+
+      onProgress?.(blob.size, blob.size);
       await makeShareable(result.id);
       return result.id;
     };
 
     const videoMimeType = recordedBlob?.type || "video/webm";
     const videoParts = recordedBlob ? splitBlobIntoParts(recordedBlob, MAX_DRIVE_UPLOAD_BYTES) : [];
-    const requiredSteps = 1 + videoParts.length + 2;
-    const optionalSteps =
-      (data.consoleLogs ? 1 : 0) +
-      (data.networkRequests ? 1 : 0) +
-      (data.webSocketLogs ? 1 : 0);
-    const totalSteps = requiredSteps + optionalSteps;
-    let currentStep = 1;
+    const uploadItems: UploadQueueItem[] = [];
 
-    sendProgress(currentStep, totalSteps, "Creating recording folder...");
-    const folderId = await createFolder(baseName);
+    videoParts.forEach((part, index) => {
+      uploadItems.push({
+        key: `video:${index}`,
+        kind: "video",
+        filename: `video.part-${String(index).padStart(3, "0")}.webm`,
+        blob: part,
+        required: true,
+        label: `video part ${index + 1}/${videoParts.length}`,
+        index,
+      });
+    });
 
-    const uploadedVideoParts: DriveFileDescriptor[] = [];
-    if (recordedBlob) {
-      for (const [index, part] of videoParts.entries()) {
-        currentStep += 1;
-        sendProgress(
-          currentStep,
-          totalSteps,
-          `Uploading video part ${index + 1}/${videoParts.length}...`,
-        );
-        const filename = `video.part-${String(index).padStart(3, "0")}.webm`;
-        const fileId = await uploadFile(filename, part, folderId);
-        uploadedVideoParts.push({
-          id: fileId,
-          name: filename,
-          size: part.size,
-          mimeType: videoMimeType,
-        });
-      }
+    if (data.consoleLogs) {
+      uploadItems.push({
+        key: "console",
+        kind: "console",
+        filename: "console.json",
+        blob: new Blob([data.consoleLogs], { type: "application/json" }),
+        required: false,
+        label: "console logs",
+      });
     }
 
+    if (data.networkRequests) {
+      uploadItems.push({
+        key: "network",
+        kind: "network",
+        filename: "network.json",
+        blob: new Blob([data.networkRequests], { type: "application/json" }),
+        required: false,
+        label: "network logs",
+      });
+    }
+
+    if (data.webSocketLogs) {
+      uploadItems.push({
+        key: "websocket",
+        kind: "websocket",
+        filename: "websocket.json",
+        blob: new Blob([data.webSocketLogs], { type: "application/json" }),
+        required: false,
+        label: "websocket logs",
+      });
+    }
+
+    uploadItems.push({
+      key: "metadata",
+      kind: "metadata",
+      filename: "metadata.json",
+      blob: new Blob([], { type: "application/json" }),
+      required: true,
+      label: "metadata",
+    });
+
+    let totalUploadBytes = uploadItems.reduce((sum, item) => sum + item.blob.size, 0);
+    const totalSteps = 1 + uploadItems.length + 1;
+    let completedSteps = 0;
+    const uploadedBytesByKey = new Map<string, number>();
+
+    const emitProgress = (message: string): void => {
+      const uploadedBytes = Array.from(uploadedBytesByKey.values()).reduce((sum, value) => sum + value, 0);
+      const percent = totalUploadBytes > 0
+        ? clampPercent((uploadedBytes / totalUploadBytes) * 100)
+        : completedSteps >= totalSteps ? 100 : 0;
+
+      sendProgress({
+        step: completedSteps,
+        total: totalSteps,
+        percent,
+        uploadedBytes,
+        totalBytes: totalUploadBytes,
+        message,
+      });
+    };
+
+    emitProgress("Creating recording folder...");
+    const folderId = await createFolder(baseName);
+    const metadataItem = uploadItems.find((item) => item.kind === "metadata");
+    if (metadataItem) {
+      metadataItem.blob = new Blob(
+        [
+          JSON.stringify(
+            {
+              timestamp: new Date().toISOString(),
+              duration: data.duration,
+              url: data.url,
+              startTime: data.startTime,
+              extension: "gn-tracing",
+              version: "1.0.0",
+              storage: {
+                provider: "google-drive",
+                folderId,
+              },
+              video: {
+                mimeType: videoMimeType,
+                totalBytes: recordedBlob?.size || 0,
+                partCount: videoParts.length,
+              },
+            },
+            null,
+            2,
+          ),
+        ],
+        { type: "application/json" },
+      );
+      totalUploadBytes = uploadItems.reduce((sum, item) => sum + item.blob.size, 0);
+    }
+    completedSteps += 1;
+    emitProgress("Recording folder created. Starting parallel upload...");
+
+    const uploadedVideoParts: DriveFileDescriptor[] = [];
     const artifacts: RecordingManifest["artifacts"] = {
       metadata: "metadata.json",
     };
     let consoleFileId: string | null = null;
-    if (data.consoleLogs) {
-      currentStep += 1;
-      sendProgress(currentStep, totalSteps, "Uploading console logs...");
-      try {
-        consoleFileId = await uploadFile(
-          "console.json",
-          new Blob([data.consoleLogs], { type: "application/json" }),
-          folderId,
-        );
-        artifacts.console = "console.json";
-      } catch (error) {
-        console.warn("[Google Drive Upload] Skipped console logs:", error);
-      }
-    }
-
     let networkFileId: string | null = null;
-    if (data.networkRequests) {
-      currentStep += 1;
-      sendProgress(currentStep, totalSteps, "Uploading network logs...");
-      try {
-        networkFileId = await uploadFile(
-          "network.json",
-          new Blob([data.networkRequests], { type: "application/json" }),
-          folderId,
-        );
-        artifacts.network = "network.json";
-      } catch (error) {
-        console.warn("[Google Drive Upload] Skipped network logs:", error);
-      }
-    }
-
     let websocketFileId: string | null = null;
-    if (data.webSocketLogs) {
-      currentStep += 1;
-      sendProgress(currentStep, totalSteps, "Uploading websocket logs...");
+    let metadataFileId: string | null = null;
+
+    await mapWithConcurrency(uploadItems, 3, async (item) => {
+      emitProgress(`Uploading ${item.label}...`);
+
       try {
-        websocketFileId = await uploadFile(
-          "websocket.json",
-          new Blob([data.webSocketLogs], { type: "application/json" }),
-          folderId,
-        );
-        artifacts.websocket = "websocket.json";
+        const fileId = await uploadFile(item.filename, item.blob, folderId, (loaded, total) => {
+          uploadedBytesByKey.set(item.key, Math.min(loaded, total || item.blob.size));
+          emitProgress(`Uploading ${item.label}...`);
+        });
+
+        uploadedBytesByKey.set(item.key, item.blob.size);
+        completedSteps += 1;
+        emitProgress(`Uploaded ${item.label}.`);
+
+        switch (item.kind) {
+          case "video":
+            uploadedVideoParts[item.index || 0] = {
+              id: fileId,
+              name: item.filename,
+              size: item.blob.size,
+              mimeType: videoMimeType,
+            };
+            break;
+          case "console":
+            consoleFileId = fileId;
+            artifacts.console = item.filename;
+            break;
+          case "network":
+            networkFileId = fileId;
+            artifacts.network = item.filename;
+            break;
+          case "websocket":
+            websocketFileId = fileId;
+            artifacts.websocket = item.filename;
+            break;
+          case "metadata":
+            metadataFileId = fileId;
+            break;
+        }
       } catch (error) {
-        console.warn("[Google Drive Upload] Skipped websocket logs:", error);
+        completedSteps += 1;
+
+        if (item.required) {
+          throw error;
+        }
+
+        uploadedBytesByKey.delete(item.key);
+        emitProgress(`Skipped ${item.label} after upload error.`);
+        console.warn(`[Google Drive Upload] Skipped ${item.label}:`, error);
       }
-    }
+    });
 
     const manifest: RecordingManifest = {
       schemaVersion: 1,
@@ -367,39 +531,25 @@ async function uploadToGoogleDrive(
       artifacts,
     };
 
-    const metadata = {
-      timestamp: new Date().toISOString(),
-      duration: data.duration,
-      url: data.url,
-      startTime: data.startTime,
-      extension: "gn-tracing",
-      version: "1.0.0",
-      storage: {
-        provider: "google-drive",
-        folderId,
-      },
-      video: {
-        mimeType: videoMimeType,
-        totalBytes: recordedBlob?.size || 0,
-        partCount: uploadedVideoParts.length,
-      },
-    };
+    if (!metadataFileId) {
+      throw new Error("Metadata upload did not return a file ID");
+    }
 
-    currentStep += 1;
-    sendProgress(currentStep, totalSteps, "Uploading metadata...");
-    const metadataFileId = await uploadFile(
-      "metadata.json",
-      new Blob([JSON.stringify(metadata, null, 2)], { type: "application/json" }),
-      folderId,
-    );
-
-    currentStep += 1;
-    sendProgress(currentStep, totalSteps, "Uploading manifest...");
+    const manifestBlob = new Blob([JSON.stringify(manifest, null, 2)], { type: "application/json" });
+    totalUploadBytes += manifestBlob.size;
+    emitProgress("Uploading manifest...");
     await uploadFile(
       "manifest.json",
-      new Blob([JSON.stringify(manifest, null, 2)], { type: "application/json" }),
+      manifestBlob,
       folderId,
+      (loaded, total) => {
+        uploadedBytesByKey.set("manifest", Math.min(loaded, total || manifestBlob.size));
+        emitProgress("Uploading manifest...");
+      },
     );
+    uploadedBytesByKey.set("manifest", manifestBlob.size);
+    completedSteps += 1;
+    emitProgress("Upload complete!");
 
     const params = new URLSearchParams();
     if (uploadedVideoParts.length > 0) {
