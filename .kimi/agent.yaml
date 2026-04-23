@@ -1,3 +1,0 @@
-version: 1
-agent:
-  system_prompt_path: ../.agent/rules/AGENTS.md

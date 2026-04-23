@@ -1,7 +1,7 @@
 # Spec Sync
 
-- **Head Commit**: `cc08866e03aa84382fc72bc2b9f8895fdceb16f9`
-- **Spec Status**: synced to current working tree architecture snapshot on 2026-04-23 after replay player layout controls, network response preview/highlighting, metadata-derived tab titles, parallel Drive transfer/loading, and byte-level progress reporting were added, while release CI remained build-and-package only and standalone Cloudflare deploy remained manual
+- **Head Commit**: `20ff17c26155a6f5aece7748f9f18d016f774506`
+- **Spec Status**: synced to current HEAD architecture snapshot on 2026-04-23 after replay player layout controls, network response preview/highlighting, metadata-derived tab titles, parallel Drive transfer/loading, and byte-level progress reporting were added, while release CI remained build-and-package only and standalone Cloudflare deploy remained manual
 - **Notes**:
   - `specs/` was initialized in this snapshot because the repository previously had no spec directory.
   - The sync target reflects current source architecture, not an older clean-tree baseline.
