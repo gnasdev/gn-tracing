@@ -2,6 +2,7 @@
   "name": "gn-tracing",
   "version": "1.0.0",
   "private": true,
+  "license": "GPL-3.0-or-later",
   "scripts": {
     "build": "node esbuild.config.mjs",
     "watch": "node esbuild.config.mjs --watch",

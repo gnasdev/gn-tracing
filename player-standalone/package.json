@@ -2,6 +2,7 @@
   "name": "gn-tracing-player-standalone",
   "version": "1.0.0",
   "description": "Standalone player for GN Tracing recordings",
+  "license": "GPL-3.0-or-later",
   "type": "module",
   "scripts": {
     "dev": "vite --port 5173",
