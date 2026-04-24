@@ -9,6 +9,7 @@ node_modules/
 *.tsbuildinfo
 coverage/
 graphify-out/
+.codebaxing/
 .mcp.json
 .claude/
 .codex/

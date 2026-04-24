@@ -46,7 +46,6 @@ function createDriveProxyMiddleware(): Connect.NextHandleFunction {
 
       for (const headerName of [
         'accept-ranges',
-        'cache-control',
         'content-disposition',
         'content-length',
         'content-range',
@@ -61,6 +60,7 @@ function createDriveProxyMiddleware(): Connect.NextHandleFunction {
       }
 
       res.setHeader('access-control-allow-origin', '*');
+      res.setHeader('cache-control', 'public, max-age=86400');
       res.setHeader('x-content-type-options', 'nosniff');
 
       if (!upstreamResponse.body) {

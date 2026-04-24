@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>GN Tracing Upload History</title>
+  <link rel="stylesheet" href="../popup/popup.css">
+  <link rel="stylesheet" href="./history.css">
+</head>
+<body class="history-page">
+  <div id="app" class="history-app">
+    <header class="history-hero">
+      <div class="history-hero-copy">
+        <div class="history-eyebrow">GN Tracing Library</div>
+        <h1 class="history-title">Upload History</h1>
+        <p class="history-lead">
+          Review previous uploads, jump back into a replay, copy a shareable link, or clean up old items.
+        </p>
+      </div>
+      <div class="history-hero-stats">
+        <div class="history-stat-label">Saved Uploads</div>
+        <div id="history-count" class="history-stat-value">0</div>
+      </div>
+    </header>
+
+    <section class="history-panel">
+      <div class="history-panel-header">
+        <div>
+          <h2 class="history-panel-title">Recent Uploads</h2>
+          <p id="history-summary" class="history-summary">
+            Browse your recent uploads here once recordings are uploaded.
+          </p>
+        </div>
+      </div>
+
+      <div id="upload-history-section">
+        <div id="upload-history-list" class="history-list"></div>
+      </div>
+    </section>
+
+    <div id="error-slot" class="history-feedback">
+      <div id="error-msg" class="hidden"></div>
+    </div>
+  </div>
+  <script src="./history.js"></script>
+</body>
+</html>

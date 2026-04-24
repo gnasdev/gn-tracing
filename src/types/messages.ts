@@ -1,7 +1,13 @@
 export type MessageAction =
   | "START_RECORDING"
   | "STOP_RECORDING"
+  | "PAUSE_RECORDING"
+  | "RESUME_RECORDING"
   | "GET_STATUS"
+  | "GET_SETTINGS"
+  | "UPDATE_SETTINGS"
+  | "DELETE_UPLOAD_HISTORY_ENTRY"
+  | "DELETE_SESSION"
   | "GOOGLE_DRIVE_CONNECT"
   | "GOOGLE_DRIVE_DISCONNECT"
   | "GOOGLE_DRIVE_STATUS"
@@ -13,16 +19,24 @@ export type MessageAction =
 export type OffscreenMessageType =
   | "START_CAPTURE"
   | "STOP_CAPTURE"
+  | "PAUSE_CAPTURE"
+  | "RESUME_CAPTURE"
   | "GET_CAPTURE_STATE"
   | "UPLOAD_TO_GOOGLE_DRIVE"
+  | "DELETE_SESSION_SNAPSHOT"
   | "UPLOAD_PROGRESS";
 
 export type RecordingPhase =
   | "idle"
   | "recording"
+  | "paused"
+  | "interrupted";
+
+export type RecordingSessionPhase =
   | "recorded"
   | "uploading"
-  | "interrupted";
+  | "uploaded"
+  | "failed";
 
 export interface ServiceWorkerMessage {
   action: MessageAction;
@@ -44,7 +58,6 @@ export interface MessageResponse {
   message?: string;
   url?: string;
   recordingUrl?: string;
-  // For auth token responses
   token?: string | null;
 }
 
@@ -68,14 +81,37 @@ export interface ProgressItemSnapshot {
 
 export interface RecordingStatus {
   phase: RecordingPhase;
+  sessionId: string | null;
   isRecording: boolean;
+  isPaused: boolean;
   tabId: number | null;
   startTime: number | null;
   stopTime?: number | null;
   tabUrl?: string | null;
+  elapsedMs: number;
   consoleLogCount: number;
   networkRequestCount: number;
-  hasRecording: boolean;
+}
+
+export interface RecordingSessionSummary {
+  id: string;
+  phase: RecordingSessionPhase;
+  startTime: number | null;
+  stopTime: number | null;
+  elapsedMs: number;
+  tabUrl: string | null;
+  consoleLogCount: number;
+  networkRequestCount: number;
+  hasLocalSnapshot: boolean;
+  progress: number;
+  uploadedBytes: number;
+  totalBytes: number;
+  message: string;
+  items: ProgressItemSnapshot[];
+  recordingUrl: string | null;
+  recordingFolderId: string | null;
+  indexFileId: string | null;
+  error: string | null;
 }
 
 export interface UploadState {
@@ -89,19 +125,36 @@ export interface UploadState {
   error: string | null;
 }
 
+export interface UploadSettings {
+  folderInput: string;
+  folderId: string | null;
+}
+
+export interface UploadHistoryEntry {
+  id: string;
+  uploadedAt: number;
+  pageUrl: string;
+  recordingUrl: string;
+  recordingFolderId: string;
+  targetFolderId: string | null;
+  durationMs: number;
+}
+
 export interface PopupState {
-  // Recording state
-  recordingStatus: RecordingStatus | null;
-  // Upload state
-  uploadState: UploadState;
-  // Google Drive state
-  googleDriveConnected: boolean;
+  recording: RecordingStatus | null;
+  sessions: RecordingSessionSummary[];
+  googleDrive: {
+    isConnected: boolean;
+  };
+  settings: UploadSettings;
+  uploadHistory: UploadHistoryEntry[];
 }
 
 export interface UploadProgressMessage {
   target: "offscreen";
   type: "UPLOAD_PROGRESS";
   data: {
+    sessionId: string;
     step: number;
     total: number;
     percent: number;

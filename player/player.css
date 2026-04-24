@@ -88,14 +88,35 @@ body {
 }
 
 .loading-progress-item {
+  position: relative;
+  overflow: hidden;
   padding: 10px 12px;
   border-radius: 10px;
   border: 1px solid var(--gh-border);
   background: rgba(255, 255, 255, 0.03);
 }
 
+.loading-progress-item::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: var(--item-progress, 0%);
+  background: linear-gradient(90deg, rgba(96, 165, 250, 0.26), rgba(59, 130, 246, 0.12));
+  transition: width 0.2s ease;
+}
+
+.loading-progress-item.is-success::before {
+  background: linear-gradient(90deg, rgba(34, 197, 94, 0.28), rgba(22, 163, 74, 0.14));
+}
+
+.loading-progress-item.is-failed::before {
+  background: linear-gradient(90deg, rgba(239, 68, 68, 0.28), rgba(220, 38, 38, 0.14));
+}
+
 .loading-progress-item-header,
 .loading-progress-item-meta {
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: baseline;
   justify-content: space-between;
@@ -119,6 +140,14 @@ body {
   letter-spacing: 0.04em;
   text-transform: uppercase;
   white-space: nowrap;
+}
+
+.loading-progress-item.is-success .loading-progress-item-status {
+  color: #86efac;
+}
+
+.loading-progress-item.is-failed .loading-progress-item-status {
+  color: #fca5a5;
 }
 
 .loading-progress-item-meta {

@@ -83,18 +83,22 @@ From the repository root:
 
 ```bash
 npm run build
+npm run dist
 npm run watch
 npm run typecheck
 npm run build:all
+npm run dist:all
 npm run watch:all
 ```
 
 What they do:
 
-- `npm run build`: build the extension into `dist/`
+- `npm run build`: build the extension into `dist/` with the development environment
+- `npm run dist`: build the extension into `dist/` with the production environment
 - `npm run watch`: rebuild the extension on source changes
 - `npm run typecheck`: run root TypeScript checks
-- `npm run build:all`: build the extension, sync player assets, and build the standalone player
+- `npm run build:all`: build the extension and standalone player with the development environment
+- `npm run dist:all`: build the extension and standalone player with the production environment
 - `npm run watch:all`: run extension watch and standalone player dev mode together
 
 From `player-standalone/`:
@@ -102,6 +106,7 @@ From `player-standalone/`:
 ```bash
 npm run dev
 npm run build
+npm run dist
 npm run typecheck
 ```
 
@@ -192,7 +197,7 @@ Release is tag-driven.
 
 Current release artifact behavior:
 
-- `npm run release:build` builds the extension
+- `npm run release:build` builds the extension with the production environment
 - `npm run release:artifact` zips the `dist/` directory
 - the published release artifact is intended to be extracted and loaded from `dist/`
 

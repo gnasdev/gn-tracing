@@ -5,6 +5,7 @@ GN Tracing is a Chrome/Edge extension for capturing a single browser tab and bun
 Instead of sending only a screen recording, you can capture:
 
 - tab video, with tab audio when available
+- pause and resume during capture
 - console logs and runtime exceptions
 - network requests and responses
 - WebSocket activity
@@ -78,18 +79,22 @@ GN Tracing is currently distributed as a packaged release artifact from this rep
 2. Click the `GN Tracing` extension icon.
 3. Click `Start Recording`.
 4. Reproduce the issue.
-5. Click `Stop Recording`.
-6. Connect Google Drive if you have not connected it yet.
-7. Click `Upload to Google Drive`.
-8. Copy or open the generated replay link.
+5. Optionally pause and resume while reproducing the issue.
+6. Click `Stop Recording`.
+7. If Google Drive is connected, GN Tracing uploads automatically after stop.
+8. Copy or open the generated replay link from the popup history or result block.
 
 ## Google Drive upload and replay
 
 GN Tracing uploads the recording artifacts to your Google Drive and then generates a replay URL for the web player.
 
 - Google authentication runs in a separate tab so the popup does not get interrupted during auth.
+- You can configure a target upload folder in the popup by pasting a Drive folder ID or folder link. Leaving it blank uses the Drive root.
 - The generated replay link points to the hosted player and includes the artifact references needed to load the recording.
+- The replay link now uses a single uploaded index file id in the form `https://tracing.gnas.dev/<id>`.
 - The uploaded folder and files are made readable by link so teammates can open the replay URL directly.
+- Each upload also writes a `recording-index.json` file containing the uploaded artifact ids; the player loads that file first, then fetches the referenced artifacts.
+- Upload history is stored locally and synced as `gn-tracing-upload-history.json` into the configured upload folder.
 
 ## Typical flow
 
@@ -97,7 +102,8 @@ GN Tracing uploads the recording artifacts to your Google Drive and then generat
 flowchart LR
   User["User"] --> Record["Start recording"]
   Record --> Reproduce["Reproduce the issue"]
-  Reproduce --> Stop["Stop recording"]
+  Reproduce --> Pause["Optional pause / resume"]
+  Pause --> Stop["Stop recording"]
   Stop --> Upload["Upload to Google Drive"]
   Upload --> Replay["Open or share the replay link"]
   Replay --> Inspect["Review video, console, network, and WebSocket data"]

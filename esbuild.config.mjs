@@ -5,11 +5,10 @@ import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const GOOGLE_CLIENT_ID = "95916347176-ulk25djm5l4g6ebq7vftjik8iv9a11vf.apps.googleusercontent.com";
-loadEnvFile(path.resolve(__dirname, ".env"));
-
+const cliEnv = getCliArgValue("--env");
 const watch = process.argv.includes("--watch");
-const appEnv = process.env.ENV || process.env.NODE_ENV || "production";
-const playerHostUrl = process.env.PLAYER_HOST_URL || "https://tracing.gnas.dev/";
+const rawAppEnv = cliEnv || (watch ? "development" : "production");
+const appEnv = normalizeAppEnv(rawAppEnv);
 const playerLocalPort = process.env.PLAYER_LOCAL_PORT || "5173";
 const commonOptions = {
   bundle: true,
@@ -18,32 +17,30 @@ const commonOptions = {
   minify: false,
   define: {
     __APP_ENV__: JSON.stringify(appEnv),
-    __PLAYER_HOST_URL__: JSON.stringify(playerHostUrl),
     __PLAYER_LOCAL_PORT__: JSON.stringify(playerLocalPort),
   },
 };
 
-function loadEnvFile(filePath) {
-  if (!fs.existsSync(filePath)) return;
+function normalizeAppEnv(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === "dev") return "development";
+  if (normalized === "prod") return "production";
+  return normalized || "production";
+}
 
-  const lines = fs.readFileSync(filePath, "utf-8").split(/\r?\n/);
-  for (const rawLine of lines) {
-    const line = rawLine.trim();
-    if (!line || line.startsWith("#")) continue;
-
-    const separatorIndex = line.indexOf("=");
-    if (separatorIndex === -1) continue;
-
-    const key = line.slice(0, separatorIndex).trim();
-    let value = line.slice(separatorIndex + 1).trim();
-    if (!key || process.env[key] !== undefined) continue;
-
-    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
-      value = value.slice(1, -1);
+function getCliArgValue(flagName) {
+  for (let i = 0; i < process.argv.length; i += 1) {
+    const arg = process.argv[i];
+    if (arg === flagName) {
+      return process.argv[i + 1];
     }
 
-    process.env[key] = value;
+    if (arg.startsWith(`${flagName}=`)) {
+      return arg.slice(flagName.length + 1);
+    }
   }
+
+  return undefined;
 }
 
 function copyFile(src, dest) {
@@ -104,6 +101,7 @@ async function build() {
     ...commonOptions,
     entryPoints: [
       { in: "src/popup/popup.ts", out: "popup/popup" },
+      { in: "src/history/history.ts", out: "history/history" },
       { in: "src/offscreen/offscreen.ts", out: "offscreen/offscreen" },
       { in: "src/drive-auth/drive-auth.ts", out: "drive-auth/drive-auth" },
     ],
@@ -130,6 +128,8 @@ async function build() {
 function copyStaticAssets() {
   copyTextFile("popup/popup.html", "dist/popup/popup.html");
   copyFile("popup/popup.css", "dist/popup/popup.css");
+  copyTextFile("history/history.html", "dist/history/history.html");
+  copyFile("history/history.css", "dist/history/history.css");
   copyTextFile("offscreen/offscreen.html", "dist/offscreen/offscreen.html");
   copyTextFile("drive-auth/drive-auth.html", "dist/drive-auth/drive-auth.html");
   copyDir("icons", "dist/icons");

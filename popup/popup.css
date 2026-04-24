@@ -5,7 +5,7 @@
 }
 
 body {
-  width: 280px;
+  width: 320px;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   font-size: 13px;
   color: #e0e0e0;
@@ -13,6 +13,7 @@ body {
 }
 
 #app {
+  position: relative;
   padding: 16px;
   display: flex;
   flex-direction: column;
@@ -25,10 +26,40 @@ body {
   align-items: center;
 }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 h1 {
   font-size: 15px;
   font-weight: 600;
   color: #fff;
+}
+
+.icon-btn {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #2a3a5c;
+  border-radius: 8px;
+  background: #16213e;
+  color: #eef2ff;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.icon-btn:hover:not(:disabled) {
+  background: #1d2a4d;
+}
+
+.icon-btn svg {
+  width: 14px;
+  height: 14px;
+  display: block;
 }
 
 #status-bar {
@@ -136,47 +167,157 @@ h1 {
   color: #fff;
 }
 
-#download-section {
+#session-queue-section {
   border-top: 1px solid #16213e;
   padding-top: 12px;
+}
+
+.hidden {
+  display: none !important;
+}
+
+.session-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.session-empty {
+  color: #8d99ae;
+  font-size: 12px;
+}
+
+.session-item {
+  padding: 10px;
+  border: 1px solid #2a3a5c;
+  border-radius: 10px;
+  background: #16213e;
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
-#upload-progress {
+.session-item-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.session-item-title {
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  word-break: break-word;
+}
+
+.session-item-badge {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  background: #1d2a4d;
+  color: #c7d2fe;
+}
+
+.session-item-badge.phase-recorded {
+  background: #2a334b;
+  color: #dbe4ff;
+}
+
+.session-item-badge.phase-uploading {
+  background: #17355f;
+  color: #93c5fd;
+}
+
+.session-item-badge.phase-uploaded {
+  background: #163828;
+  color: #86efac;
+}
+
+.session-item-badge.phase-failed {
+  background: #431a21;
+  color: #fca5a5;
+}
+
+.session-item-meta {
+  color: #8d99ae;
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.session-item-error {
+  padding: 8px;
+  border-radius: 8px;
+  background: rgba(153, 27, 27, 0.18);
+  color: #fca5a5;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.session-item-progress {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 8px 0;
 }
 
-.progress-bar-container {
-  width: 100%;
-  height: 8px;
-  background: #16213e;
-  border-radius: 4px;
-  overflow: hidden;
-}
-
-.progress-fill {
-  height: 100%;
-  background: linear-gradient(90deg, #4361ee, #3a56d4);
-  width: 0%;
-  transition: width 0.3s ease;
-}
-
-.progress-text {
-  font-size: 11px;
-  color: #8d99ae;
-  text-align: center;
-}
-
-.progress-meta {
-  font-size: 11px;
+.session-progress-meta {
   color: #c7d2fe;
-  text-align: center;
+  font-size: 11px;
+}
+
+.session-progress-summary {
+  color: #8d99ae;
+  font-size: 10px;
   font-variant-numeric: tabular-nums;
+}
+
+.session-item-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.session-item-actions button {
+  padding: 6px 8px;
+  border: 1px solid #2a3a5c;
+  border-radius: 6px;
+  background: #1d2a4d;
+  color: #eef2ff;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.session-icon-button {
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+
+.session-icon-button svg {
+  width: 15px;
+  height: 15px;
+  display: block;
+}
+
+.session-item-actions button:hover:not(:disabled) {
+  background: #23335d;
+}
+
+.session-item-actions button[data-action="delete-session"] {
+  background: #3a1820;
+  border-color: #6b2330;
+  color: #fecaca;
+}
+
+.session-item-actions button[data-action="delete-session"]:hover:not(:disabled) {
+  background: #56222c;
 }
 
 .progress-items {
@@ -187,10 +328,39 @@ h1 {
 }
 
 .progress-item {
+  position: relative;
+  overflow: hidden;
   padding: 8px;
   border: 1px solid #2a3a5c;
   border-radius: 8px;
   background: #16213e;
+}
+
+.progress-item::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: var(--item-progress, 0%);
+  background: linear-gradient(90deg, rgba(96, 165, 250, 0.26), rgba(59, 130, 246, 0.14));
+  transition: width 0.2s ease;
+}
+
+.progress-item.is-success::before {
+  background: linear-gradient(90deg, rgba(34, 197, 94, 0.30), rgba(22, 163, 74, 0.16));
+}
+
+.progress-item.is-failed::before {
+  background: linear-gradient(90deg, rgba(239, 68, 68, 0.30), rgba(220, 38, 38, 0.16));
+}
+
+.progress-item.is-skipped::before {
+  background: linear-gradient(90deg, rgba(148, 163, 184, 0.22), rgba(100, 116, 139, 0.12));
+}
+
+.progress-item-header,
+.progress-item-meta {
+  position: relative;
+  z-index: 1;
 }
 
 .progress-item-header {
@@ -216,6 +386,14 @@ h1 {
   white-space: nowrap;
 }
 
+.progress-item.is-success .progress-item-status {
+  color: #86efac;
+}
+
+.progress-item.is-failed .progress-item-status {
+  color: #fca5a5;
+}
+
 .progress-item-meta {
   display: flex;
   justify-content: space-between;
@@ -223,61 +401,6 @@ h1 {
   color: #c7d2fe;
   font-size: 10px;
   font-variant-numeric: tabular-nums;
-}
-
-.btn-upload {
-  background: #7209b7;
-  color: #fff;
-}
-
-.btn-upload:hover:not(:disabled) {
-  background: #560bad;
-}
-
-#link-container {
-  display: flex;
-  gap: 6px;
-}
-
-#recording-link {
-  flex: 1;
-  padding: 6px 8px;
-  background: #16213e;
-  border: 1px solid #2a3a5c;
-  border-radius: 6px;
-  color: #e0e0e0;
-  font-size: 11px;
-  outline: none;
-}
-
-#copy-link-btn,
-#open-link-btn {
-  padding: 6px 10px;
-  background: #4361ee;
-  color: #fff;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 11px;
-  white-space: nowrap;
-}
-
-#copy-link-btn:hover,
-#open-link-btn:hover {
-  background: #3a56d4;
-}
-
-#open-link-btn {
-  background: #2ec4b6;
-}
-
-#open-link-btn:hover {
-  background: #25a99d;
-}
-
-#copy-feedback {
-  color: #2ec4b6;
-  font-size: 11px;
 }
 
 #google-drive-section {
@@ -305,6 +428,161 @@ h1 {
   width: auto;
 }
 
+.settings-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.setting-label {
+  font-size: 11px;
+  color: #c7d2fe;
+}
+
+.folder-input-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+#google-drive-folder-input {
+  width: 100%;
+  flex: 1;
+  padding: 8px 10px;
+  background: #16213e;
+  border: 1px solid #2a3a5c;
+  border-radius: 8px;
+  color: #e0e0e0;
+  font-size: 12px;
+  outline: none;
+}
+
+#google-drive-folder-input:disabled {
+  color: #c7d2fe;
+  background: #101a33;
+  border-color: #233255;
+  cursor: default;
+}
+
+#google-drive-folder-input::placeholder {
+  color: #6f7c98;
+}
+
+.folder-edit-btn {
+  flex: 0 0 auto;
+  width: 36px;
+  padding: 7px 12px;
+}
+
+.folder-edit-btn svg {
+  width: 14px;
+  height: 14px;
+  display: block;
+}
+
+.setting-hint {
+  font-size: 11px;
+  color: #8d99ae;
+  line-height: 1.4;
+}
+
+#upload-history-section {
+  border-top: 1px solid #16213e;
+  padding-top: 10px;
+}
+
+.section-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #fff;
+  margin-bottom: 8px;
+}
+
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.history-more-btn {
+  margin-top: 8px;
+}
+
+.history-empty {
+  color: #8d99ae;
+  font-size: 12px;
+}
+
+.history-item {
+  padding: 8px;
+  border: 1px solid #2a3a5c;
+  border-radius: 8px;
+  background: #16213e;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.history-item-title {
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  word-break: break-word;
+}
+
+.history-item-meta {
+  color: #8d99ae;
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.history-item-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.history-item-actions button {
+  padding: 6px 8px;
+  border: 1px solid #2a3a5c;
+  border-radius: 6px;
+  background: #1d2a4d;
+  color: #eef2ff;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.history-icon-button {
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+
+.history-icon-button svg {
+  width: 15px;
+  height: 15px;
+  display: block;
+}
+
+.history-item-actions button:hover {
+  background: #23335d;
+}
+
+.history-item-actions button[data-action="delete-history"] {
+  background: #3a1820;
+  border-color: #6b2330;
+  color: #fecaca;
+}
+
+.history-item-actions button[data-action="delete-history"]:hover {
+  background: #56222c;
+}
+
 #error-msg {
   padding: 8px;
   background: #3d1c22;
@@ -319,6 +597,23 @@ h1 {
   border-radius: 6px;
   color: #2ec4b6;
   font-size: 12px;
+}
+
+.toast {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  max-width: 180px;
+  padding: 8px 10px;
+  border: 1px solid #1f5f4e;
+  border-radius: 8px;
+  background: rgba(22, 56, 40, 0.96);
+  color: #d1fae5;
+  font-size: 11px;
+  font-weight: 600;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.28);
+  pointer-events: none;
+  z-index: 10;
 }
 
 /* Player Config Section */

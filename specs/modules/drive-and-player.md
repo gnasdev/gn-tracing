@@ -69,6 +69,10 @@ This module covers authentication, Google Drive upload, replay URL generation, b
 - opening the player with no query params should render onboarding/help content rather than the invalid-params error; malformed partial query strings still use the error state.
 - popup should provide direct links to the GitHub repository and a contribution surface so users can discover the project and help improve it, while auth status is revalidated on popup open instead of relying only on cached session state.
 - per-file progress labels should use artifact-level filenames or stable labels so parallel transfers remain debuggable without coupling copy to transient upload ordering.
+- popup should let the user configure an optional Google Drive parent folder by pasting either a folder id or a Google Drive folder link; blank means Drive root.
+- popup should expose recent upload history, and the same history should also sync into `gn-tracing-upload-history.json` inside the configured upload folder.
+- stopping a finished capture should auto-start the Drive upload when a valid Drive token is already available.
+- recording duration should exclude paused intervals, and popup controls should expose pause/resume separately from stop.
 
 ## 5. Constraints & Assumptions
 
@@ -97,6 +101,8 @@ This module covers authentication, Google Drive upload, replay URL generation, b
 - tag release automation delegates only extension build/artifact packaging to root `package.json` scripts; standalone Cloudflare deploy is intentionally excluded from release CI.
 - popup/auth surfaces consume a reduced runtime snapshot, while service worker/offscreen remain the capture engines; auth refresh is decoupled from snapshot persistence to avoid progress-time API chatter.
 - upload progress snapshots now flow from offscreen to popup as an aggregate-plus-items contract, while player loading keeps a local per-entry registry that renders both the overall bar and each artifact row.
+- replay links now resolve through a single uploaded recording index file id (`/<id>`), and the player fetches that index before loading metadata/log/video artifacts.
+- player artifact downloads now use a one-day client-side cache, and the standalone Drive proxy also advertises one-day cacheability.
 
 ## 8. Changelog
 
@@ -115,4 +121,5 @@ This module covers authentication, Google Drive upload, replay URL generation, b
 - `2026-04-23`: Tag-based release CI no longer deploys the standalone player to Cloudflare; it only builds and publishes the extension artifact, while player deploy stays manual.
 - `2026-04-23`: Replay links were fixed to `https://tracing.gnas.dev/` and standalone deployment was standardized on Cloudflare Pages tag releases.
 - `2026-04-23`: Local Cloudflare Pages deploy was executed after provisioning project `gn-tracing-player`; root env files now carry deploy variables for the player release flow.
+- `2026-04-24`: Popup now supports configurable Drive parent folders, persisted upload history with Drive JSON sync, automatic upload on stop when connected, and pause/resume capture controls.
 - `2026-04-23`: Initial spec extracted from current implementation.

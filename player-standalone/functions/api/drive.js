@@ -25,7 +25,6 @@ export async function onRequestGet(context) {
   const responseHeaders = new Headers();
   for (const headerName of [
     "accept-ranges",
-    "cache-control",
     "content-disposition",
     "content-length",
     "content-range",
@@ -40,6 +39,7 @@ export async function onRequestGet(context) {
   }
 
   responseHeaders.set("access-control-allow-origin", "*");
+  responseHeaders.set("cache-control", "public, max-age=86400");
   responseHeaders.set("x-content-type-options", "nosniff");
 
   return new Response(upstreamResponse.body, {

@@ -8,13 +8,21 @@
   <div id="app">
     <div id="header">
       <h1>GN Tracing</h1>
-      <div id="status-bar" class="hidden">
-        <span id="recording-indicator"></span>
-        <span id="timer">00:00</span>
+      <div class="header-actions">
+        <button id="reload-btn" class="icon-btn" type="button" aria-label="Reload popup" title="Reload popup">
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M12 6a6 6 0 1 1-5.65 8H4.26A8 8 0 1 0 6 7.76V5H2v4h2.76A7.97 7.97 0 0 1 12 6Z" fill="currentColor"/>
+          </svg>
+        </button>
+        <div id="status-bar" class="hidden">
+          <span id="recording-indicator"></span>
+          <span id="timer">00:00</span>
+        </div>
       </div>
     </div>
 
     <button id="toggle-btn" class="btn btn-start">Start Recording</button>
+    <button id="pause-resume-btn" class="btn btn-secondary hidden" type="button">Pause Recording</button>
 
     <div id="stats" class="hidden">
       <div class="stat-row">
@@ -27,25 +35,17 @@
       </div>
     </div>
 
-    <div id="download-section" class="hidden">
-      <button id="upload-drive-btn" class="btn btn-upload">Upload to Google Drive</button>
-      <div id="upload-progress" class="hidden">
-        <div class="progress-bar-container">
-          <div id="progress-fill" class="progress-fill"></div>
-        </div>
-        <div id="progress-text" class="progress-text">Uploading...</div>
-        <div id="progress-meta" class="progress-meta">0 B / 0 B (0.0%)</div>
-        <div id="upload-items" class="progress-items"></div>
-      </div>
+    <div id="session-queue-section">
+      <div class="section-title">Capture Queue</div>
+      <div id="session-list" class="session-list"></div>
     </div>
 
-    <div id="upload-result" class="hidden">
-      <div id="link-container">
-        <input type="text" id="recording-link" readonly>
-        <button id="copy-link-btn">Copy</button>
-        <button id="open-link-btn">Open</button>
-      </div>
-      <span id="copy-feedback" class="hidden">Copied!</span>
+    <div id="upload-history-section">
+      <div class="section-title">Upload History</div>
+      <div id="upload-history-list" class="history-list"></div>
+      <button id="upload-history-more-btn" class="btn btn-secondary history-more-btn hidden" type="button">
+        View more history items
+      </button>
     </div>
 
     <div id="google-drive-section">
@@ -54,6 +54,27 @@
         <div id="google-drive-status">Not connected</div>
         <button id="google-drive-connect-btn" class="btn btn-small">Connect</button>
         <button id="google-drive-disconnect-btn" class="btn btn-small hidden">Disconnect</button>
+      </div>
+      <div class="settings-stack">
+        <label for="google-drive-folder-input" class="setting-label">Upload Folder</label>
+        <div class="folder-input-row">
+          <input
+            id="google-drive-folder-input"
+            type="text"
+            value="/"
+            placeholder="Folder ID or Drive link"
+            autocomplete="off"
+            disabled
+          >
+          <button
+            id="save-folder-btn"
+            class="btn btn-secondary btn-small folder-edit-btn"
+            type="button"
+            aria-label="Edit upload folder"
+            title="Edit upload folder"
+          ></button>
+        </div>
+        <div id="google-drive-folder-hint" class="setting-hint">Using your Google Drive root folder.</div>
       </div>
     </div>
 
@@ -71,6 +92,7 @@
     </div>
 
     <div id="error-msg" class="hidden"></div>
+    <div id="toast" class="toast hidden" aria-live="polite"></div>
   </div>
   <script src="./popup.js"></script>
 </body>

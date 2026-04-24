@@ -1,17 +1,18 @@
 export class RecorderManager {
   #offscreenCreated = false;
-  #recordingComplete = false;
   #stopPromiseResolve: (() => void) | null = null;
   #stopTimeoutId: ReturnType<typeof setTimeout> | null = null;
+  #activeSessionId: string | null = null;
 
-  get hasRecording(): boolean {
-    return this.#recordingComplete;
+  get activeSessionId(): string | null {
+    return this.#activeSessionId;
   }
 
-  async startCapture(tabId: number): Promise<void> {
+  async startCapture(tabId: number, sessionId: string): Promise<void> {
     const contexts = await chrome.runtime.getContexts({
       contextTypes: [chrome.runtime.ContextType.OFFSCREEN_DOCUMENT],
     });
+
     if (contexts.length === 0) {
       await chrome.offscreen.createDocument({
         url: "offscreen/offscreen.html",
@@ -34,51 +35,70 @@ export class RecorderManager {
     await chrome.runtime.sendMessage({
       target: "offscreen",
       type: "START_CAPTURE",
-      data: { streamId },
+      data: { streamId, sessionId },
     });
 
-    this.#recordingComplete = false;
+    this.#activeSessionId = sessionId;
   }
 
   async stopCapture(): Promise<void> {
     try {
-      const p = new Promise<void>((resolve) => {
+      const stopPromise = new Promise<void>((resolve) => {
         this.#stopPromiseResolve = resolve;
-        // safety timeout in case the recording drops
         this.#stopTimeoutId = setTimeout(() => {
           this.#stopTimeoutId = null;
           this.#stopPromiseResolve = null;
           resolve();
         }, 3000);
       });
+
       await chrome.runtime.sendMessage({
         target: "offscreen",
         type: "STOP_CAPTURE",
       });
-      await p;
+
+      await stopPromise;
     } catch {
-      // Offscreen document may already be closed
+      // Offscreen document may already be closed.
     }
   }
 
-  onRecordingComplete(): void {
-    this.#recordingComplete = true;
+  async pauseCapture(): Promise<void> {
+    await chrome.runtime.sendMessage({
+      target: "offscreen",
+      type: "PAUSE_CAPTURE",
+    });
+  }
+
+  async resumeCapture(): Promise<void> {
+    await chrome.runtime.sendMessage({
+      target: "offscreen",
+      type: "RESUME_CAPTURE",
+    });
+  }
+
+  onRecordingComplete(sessionId?: string): void {
+    if (this.#activeSessionId && sessionId && sessionId !== this.#activeSessionId) {
+      return;
+    }
+
     if (this.#stopTimeoutId) {
       clearTimeout(this.#stopTimeoutId);
       this.#stopTimeoutId = null;
     }
+
     if (this.#stopPromiseResolve) {
       this.#stopPromiseResolve();
       this.#stopPromiseResolve = null;
     }
   }
 
-  clearRecording(): void {
-    this.#recordingComplete = false;
+  clearActiveSession(): void {
+    this.#activeSessionId = null;
   }
 
-  hydrateRecordingComplete(hasRecording: boolean): void {
-    this.#recordingComplete = hasRecording;
+  hydrateActiveSession(sessionId: string | null): void {
+    this.#activeSessionId = sessionId;
   }
 
   async cleanup(): Promise<void> {
@@ -87,14 +107,16 @@ export class RecorderManager {
       this.#stopTimeoutId = null;
     }
     this.#stopPromiseResolve = null;
+
     if (this.#offscreenCreated) {
       try {
         await chrome.offscreen.closeDocument();
       } catch {
-        // Already closed
+        // Already closed.
       }
       this.#offscreenCreated = false;
     }
-    this.#recordingComplete = false;
+
+    this.#activeSessionId = null;
   }
 }

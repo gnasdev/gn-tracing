@@ -28,6 +28,8 @@
   const MAX_SPLIT_PERCENT = 75;
   const MAX_RESPONSE_DISPLAY_CHARS = 10240;
   const MAX_RESPONSE_PREVIEW_CHARS = 40000;
+  const DRIVE_CACHE_NAME = 'gn-tracing-drive-files-v1';
+  const DRIVE_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
   console.log('[GN Tracing Player] Mode:', IS_EXTENSION ? 'extension' : 'standalone');
 
@@ -78,6 +80,7 @@
 
   // Recording files from Drive
   let recordingFiles = {
+    indexId: null,
     folderId: null,
     manifest: null,
     videoParts: [],
@@ -248,14 +251,25 @@
     }
     if (elements.loadingProgressList) {
       elements.loadingProgressList.innerHTML = progressEntries.map((entry) => {
-        const entryPercent = entry.total > 0
-          ? `${Math.max(0, Math.min(100, (Math.min(entry.loaded, entry.total) / entry.total) * 100)).toFixed(1)}%`
-          : '—';
+        const percentValue = entry.total > 0
+          ? Math.max(0, Math.min(100, (Math.min(entry.loaded, entry.total) / entry.total) * 100))
+          : 0;
+        const entryPercent = entry.total > 0 ? `${percentValue.toFixed(1)}%` : '—';
+        const statusText = String(entry.status || 'Queued');
+        const statusKey = statusText.toLowerCase();
+        const statusClass = statusKey === 'loaded'
+          ? 'is-success'
+          : statusKey === 'failed'
+            ? 'is-failed'
+            : statusKey === 'loading'
+              ? 'is-active'
+              : 'is-queued';
+        const fillPercent = statusKey === 'loaded' || statusKey === 'failed' ? 100 : percentValue;
         return `
-          <div class="loading-progress-item">
+          <div class="loading-progress-item ${statusClass}" style="--item-progress:${fillPercent}%;">
             <div class="loading-progress-item-header">
               <span class="loading-progress-item-label">${entry.label}</span>
-              <span class="loading-progress-item-status">${entry.status}</span>
+              <span class="loading-progress-item-status">${statusText}</span>
             </div>
             <div class="loading-progress-item-meta">
               <span>${entryPercent}</span>
@@ -320,6 +334,19 @@
       label,
       status: 'Loaded'
     });
+  }
+
+  function markPendingLoadingEntriesFailed() {
+    for (const [key, entry] of loadingProgressEntries.entries()) {
+      if (entry.status === 'Loaded' || entry.status === 'Failed') {
+        continue;
+      }
+      loadingProgressEntries.set(key, {
+        ...entry,
+        status: 'Failed'
+      });
+    }
+    renderLoadingProgress();
   }
 
   function createLoadingProgressReporter(key, group, label) {
@@ -1205,8 +1232,44 @@
     return `https://drive.usercontent.google.com/download?id=${fileId}&export=download`;
   }
 
+  async function fetchDriveFileWithCache(fileId) {
+    const url = getDownloadUrl(fileId);
+    if (typeof caches === 'undefined') {
+      return fetch(url);
+    }
+
+    const cache = await caches.open(DRIVE_CACHE_NAME);
+    const cached = await cache.match(url);
+    const cachedAt = Number(cached?.headers.get('x-gn-cached-at')) || 0;
+    const isFresh = cached && cachedAt > 0 && (Date.now() - cachedAt) < DRIVE_CACHE_TTL_MS;
+
+    if (isFresh) {
+      return cached.clone();
+    }
+
+    try {
+      const networkResponse = await fetch(url);
+      if (networkResponse.ok) {
+        const blob = await networkResponse.clone().blob();
+        const headers = new Headers(networkResponse.headers);
+        headers.set('x-gn-cached-at', String(Date.now()));
+        await cache.put(url, new Response(blob, {
+          status: networkResponse.status,
+          statusText: networkResponse.statusText,
+          headers,
+        }));
+      }
+      return networkResponse;
+    } catch (error) {
+      if (cached) {
+        return cached.clone();
+      }
+      throw error;
+    }
+  }
+
   async function downloadFile(fileId, options = {}) {
-    const response = await fetch(getDownloadUrl(fileId));
+    const response = await fetchDriveFileWithCache(fileId);
 
     if (!response.ok) {
       throw new Error(`Failed to download file ${fileId}`);
@@ -1278,6 +1341,7 @@
       .map(id => ({ id }));
 
     const resolved = {
+      indexId: null,
       folderId: null,
       manifest: null,
       metadata: parseFileId(urlParams.get('metadata')),
@@ -1289,6 +1353,60 @@
 
     if (!resolved.metadata || resolved.videoParts.length === 0) {
       throw new Error('Invalid or missing recording parameters. Please provide videos and metadata file IDs.');
+    }
+
+    return resolved;
+  }
+
+  function resolveReplayRecordingId() {
+    const searchId = new URLSearchParams(window.location.search).get('id');
+    if (searchId) {
+      return searchId.trim();
+    }
+
+    const segments = window.location.pathname
+      .split('/')
+      .map(segment => segment.trim())
+      .filter(Boolean);
+    const lastSegment = segments[segments.length - 1] || '';
+
+    if (!lastSegment || lastSegment.includes('.')) {
+      return null;
+    }
+
+    try {
+      return decodeURIComponent(lastSegment);
+    } catch {
+      return lastSegment;
+    }
+  }
+
+  async function loadRecordingFilesFromIndex(indexId) {
+    registerLoadingEntry('index', 'recording-index.json', 'other');
+    const indexJson = await downloadFileAsJson(
+      indexId,
+      {
+        onProgress: createLoadingProgressReporter('index', 'other', 'recording-index.json')
+      }
+    );
+    markLoadingEntryLoaded('index', 'recording-index.json', 'other');
+
+    const videoPartFileIds = Array.isArray(indexJson?.video?.partFileIds)
+      ? indexJson.video.partFileIds.filter(Boolean)
+      : [];
+    const resolved = {
+      indexId,
+      folderId: typeof indexJson?.folderId === 'string' ? indexJson.folderId : null,
+      manifest: indexJson?.manifestFileId ? { id: indexJson.manifestFileId } : null,
+      metadata: indexJson?.metadataFileId ? { id: indexJson.metadataFileId } : null,
+      console: indexJson?.artifacts?.consoleFileId ? { id: indexJson.artifacts.consoleFileId } : null,
+      network: indexJson?.artifacts?.networkFileId ? { id: indexJson.artifacts.networkFileId } : null,
+      websocket: indexJson?.artifacts?.websocketFileId ? { id: indexJson.artifacts.websocketFileId } : null,
+      videoParts: videoPartFileIds.map(id => ({ id })),
+    };
+
+    if (!resolved.metadata || resolved.videoParts.length === 0) {
+      throw new Error('Invalid recording index. Missing metadata or video parts.');
     }
 
     return resolved;
@@ -1332,6 +1450,7 @@
     try {
       await loadRecordingData();
     } catch (err) {
+      markPendingLoadingEntriesFailed();
       console.error('Failed to load recording:', err);
       elements.errorMessage.textContent = err.message || 'Failed to load recording';
       showError();
@@ -1341,6 +1460,9 @@
   async function loadRecordingData() {
     try {
       resetLoadingProgress('Loading recording...');
+      if (recordingFiles.indexId) {
+        registerLoadingEntry('index', 'recording-index.json', 'other', 'Loaded');
+      }
       registerLoadingEntry('metadata', 'metadata.json', 'other');
       if (recordingFiles.console) {
         registerLoadingEntry('console', 'console.json', 'other');
@@ -1483,6 +1605,7 @@
 
       showPlayer();
     } catch (err) {
+      markPendingLoadingEntriesFailed();
       console.error('Failed to load recording:', err);
       elements.errorMessage.textContent = err.message || 'Failed to load recording';
       showError();
@@ -2476,9 +2599,14 @@
     const urlParams = new URLSearchParams(window.location.search);
     const videos = urlParams.get('videos');
     const metadataFileId = urlParams.get('metadata');
+    const replayRecordingId = resolveReplayRecordingId();
     const hasParams = Array.from(urlParams.keys()).length > 0;
 
-    if (videos && metadataFileId) {
+    if (replayRecordingId) {
+      resetLoadingProgress('Loading recording index...');
+      recordingFiles = await loadRecordingFilesFromIndex(replayRecordingId);
+      await loadRecordingFromFiles();
+    } else if (videos && metadataFileId) {
       recordingFiles = buildDirectRecordingFiles(urlParams);
       await loadRecordingFromFiles();
     } else if (!hasParams) {
