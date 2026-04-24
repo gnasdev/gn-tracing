@@ -14,6 +14,7 @@ export type MessageAction =
   | "GET_GOOGLE_DRIVE_TOKEN"
   | "UPLOAD_TO_GOOGLE_DRIVE"
   | "RECORDING_COMPLETE"
+  | "GET_UPLOAD_ARTIFACT_CHUNK"
   | "GET_UPLOAD_STATE";
 
 export type OffscreenMessageType =

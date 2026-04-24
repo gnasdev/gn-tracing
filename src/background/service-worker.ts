@@ -70,13 +70,22 @@ interface UploadSuccessResult {
   indexFileId?: string;
 }
 
+type UploadArtifactKey = "consoleLogs" | "networkRequests" | "webSocketLogs";
+
+interface UploadArtifactChunkResponse extends MessageResponse {
+  chunk?: string;
+  nextOffset?: number;
+  totalLength?: number;
+}
+
 const STORAGE_KEY_STATE = "gn_tracing_state";
 const STORAGE_KEY_ARTIFACTS = "gn_tracing_session_artifacts";
 const STORAGE_KEY_SETTINGS = "gn_tracing_upload_settings";
 const STORAGE_KEY_HISTORY = "gn_tracing_upload_history";
 const STORAGE_KEY_HISTORY_FILES = "gn_tracing_upload_history_files";
 const UPLOAD_HISTORY_FILENAME = "gn-tracing-upload-history.json";
-const MAX_UPLOAD_HISTORY_ITEMS = 20;
+const MAX_UPLOAD_HISTORY_ITEMS = 100;
+const UPLOAD_ARTIFACT_CHUNK_CHARS = 1024 * 1024;
 
 const activeRecording: ActiveRecordingState = {
   sessionId: null,
@@ -491,7 +500,7 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
 async function handleMessage(
   message: ServiceWorkerMessage,
   _sender: chrome.runtime.MessageSender,
-): Promise<MessageResponse | RecordingStatus | PopupState["sessions"] | null> {
+): Promise<MessageResponse | UploadArtifactChunkResponse | RecordingStatus | PopupState["sessions"] | null> {
   switch (message.action) {
     case "START_RECORDING":
       return startRecording(message.tabId || 0);
@@ -541,9 +550,38 @@ async function handleMessage(
     case "RECORDING_COMPLETE":
       recorder.onRecordingComplete(typeof message.data?.sessionId === "string" ? message.data.sessionId : undefined);
       return { ok: true };
+    case "GET_UPLOAD_ARTIFACT_CHUNK":
+      return getUploadArtifactChunk(message.data);
     default:
       return { ok: false, error: "Unknown action" };
   }
+}
+
+function getUploadArtifactChunk(data: Record<string, unknown> | undefined): UploadArtifactChunkResponse {
+  const sessionId = typeof data?.sessionId === "string" ? data.sessionId : "";
+  const key = typeof data?.key === "string" ? data.key : "";
+  const offset = typeof data?.offset === "number" && Number.isFinite(data.offset)
+    ? Math.max(0, Math.floor(data.offset))
+    : 0;
+
+  if (!sessionId || !isUploadArtifactKey(key)) {
+    return { ok: false, error: "Missing upload artifact reference." };
+  }
+
+  const value = sessionArtifacts[sessionId]?.[key] || "";
+  const totalLength = value.length;
+  const chunk = value.slice(offset, offset + UPLOAD_ARTIFACT_CHUNK_CHARS);
+
+  return {
+    ok: true,
+    chunk,
+    nextOffset: offset + chunk.length,
+    totalLength,
+  };
+}
+
+function isUploadArtifactKey(key: string): key is UploadArtifactKey {
+  return key === "consoleLogs" || key === "networkRequests" || key === "webSocketLogs";
 }
 
 async function startRecording(tabId: number): Promise<MessageResponse> {
@@ -1025,9 +1063,11 @@ async function runSessionUpload(sessionId: string, authToken: string): Promise<v
       type: "UPLOAD_TO_GOOGLE_DRIVE",
       data: {
         sessionId,
-        consoleLogs: artifacts.consoleLogs,
-        networkRequests: artifacts.networkRequests,
-        webSocketLogs: artifacts.webSocketLogs,
+        artifactKeys: {
+          consoleLogs: Boolean(artifacts.consoleLogs),
+          networkRequests: Boolean(artifacts.networkRequests),
+          webSocketLogs: Boolean(artifacts.webSocketLogs),
+        },
         duration: artifacts.duration,
         url: artifacts.url,
         startTime: artifacts.startTime,

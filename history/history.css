@@ -8,7 +8,7 @@ body.history-page {
 }
 
 .history-app {
-  max-width: 1080px;
+  max-width: 860px;
   margin: 0 auto;
   min-height: 100vh;
   padding: 40px 20px 56px;
@@ -153,8 +153,10 @@ body.history-page .history-item-meta {
 }
 
 body.history-page .history-item-actions {
+  display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  justify-content: flex-end;
 }
 
 body.history-page .history-item-actions button {

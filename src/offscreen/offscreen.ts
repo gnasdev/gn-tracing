@@ -35,6 +35,21 @@ interface ZipData {
 interface GoogleDriveUploadData extends ZipData {
   authToken: string;
   targetFolderId?: string | null;
+  artifactKeys?: {
+    consoleLogs?: boolean;
+    networkRequests?: boolean;
+    webSocketLogs?: boolean;
+  };
+}
+
+type UploadArtifactKey = "consoleLogs" | "networkRequests" | "webSocketLogs";
+
+interface UploadArtifactChunkResponse {
+  ok: boolean;
+  chunk?: string;
+  nextOffset?: number;
+  totalLength?: number;
+  error?: string;
 }
 
 interface DriveFileDescriptor {
@@ -345,6 +360,49 @@ async function mapWithConcurrency<T, R>(
   return results;
 }
 
+async function createArtifactBlob(
+  sessionId: string,
+  key: UploadArtifactKey,
+  inlineValue: string | undefined,
+): Promise<Blob | null> {
+  if (inlineValue) {
+    return new Blob([inlineValue], { type: "application/json" });
+  }
+
+  const chunks: string[] = [];
+  let offset = 0;
+  let totalLength = 0;
+
+  while (true) {
+    const result = await chrome.runtime.sendMessage({
+      action: "GET_UPLOAD_ARTIFACT_CHUNK",
+      data: { sessionId, key, offset },
+    }) as UploadArtifactChunkResponse;
+
+    if (!result?.ok) {
+      throw new Error(result?.error || `Failed to load ${key} artifact.`);
+    }
+
+    const chunk = result.chunk || "";
+    totalLength = typeof result.totalLength === "number" ? result.totalLength : totalLength;
+
+    if (chunk) {
+      chunks.push(chunk);
+    }
+
+    offset = typeof result.nextOffset === "number" ? result.nextOffset : offset + chunk.length;
+    if (!chunk || offset >= totalLength) {
+      break;
+    }
+  }
+
+  if (chunks.length === 0 && totalLength === 0) {
+    return null;
+  }
+
+  return new Blob(chunks, { type: "application/json" });
+}
+
 async function uploadToGoogleDrive(
   data: GoogleDriveUploadData,
 ): Promise<{ ok: boolean; recordingUrl?: string; folderId?: string; indexFileId?: string; error?: string }> {
@@ -480,35 +538,45 @@ async function uploadToGoogleDrive(
       });
     });
 
-    if (data.consoleLogs) {
+    const consoleBlob = (data.artifactKeys?.consoleLogs || data.consoleLogs)
+      ? await createArtifactBlob(sessionId, "consoleLogs", data.consoleLogs)
+      : null;
+    const networkBlob = (data.artifactKeys?.networkRequests || data.networkRequests)
+      ? await createArtifactBlob(sessionId, "networkRequests", data.networkRequests)
+      : null;
+    const websocketBlob = (data.artifactKeys?.webSocketLogs || data.webSocketLogs)
+      ? await createArtifactBlob(sessionId, "webSocketLogs", data.webSocketLogs)
+      : null;
+
+    if (consoleBlob) {
       uploadItems.push({
         key: "console",
         kind: "console",
         label: "console.json",
         filename: "console.json",
-        blob: new Blob([data.consoleLogs], { type: "application/json" }),
+        blob: consoleBlob,
         required: false,
       });
     }
 
-    if (data.networkRequests) {
+    if (networkBlob) {
       uploadItems.push({
         key: "network",
         kind: "network",
         label: "network.json",
         filename: "network.json",
-        blob: new Blob([data.networkRequests], { type: "application/json" }),
+        blob: networkBlob,
         required: false,
       });
     }
 
-    if (data.webSocketLogs) {
+    if (websocketBlob) {
       uploadItems.push({
         key: "websocket",
         kind: "websocket",
         label: "websocket.json",
         filename: "websocket.json",
-        blob: new Blob([data.webSocketLogs], { type: "application/json" }),
+        blob: websocketBlob,
         required: false,
       });
     }
