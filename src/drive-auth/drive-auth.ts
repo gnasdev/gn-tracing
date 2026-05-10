@@ -1,6 +1,14 @@
 import type { MessageResponse } from "../types/messages";
 
-// UI Elements
+/**
+ * Google Drive auth landing page controller.
+ *
+ * The auth flow opens in a regular tab instead of the popup so the OAuth prompt
+ * cannot be interrupted by popup teardown. This page only reflects connection
+ * state and forwards connect/disconnect requests to the service worker.
+ */
+
+// UI elements
 const initialState = document.getElementById("initial-state")!;
 const loadingState = document.getElementById("loading-state")!;
 const successState = document.getElementById("success-state")!;

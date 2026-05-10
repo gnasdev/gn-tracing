@@ -2,8 +2,16 @@ import type { MessageResponse, UploadHistoryEntry, UploadSettings } from "../typ
 import {
   handleUploadHistoryAction,
   renderUploadHistoryList,
+  sortUploadHistoryNewestFirst,
 } from "../shared/upload-history-ui";
 
+/**
+ * Full upload-history page controller.
+ *
+ * The popup shows only the latest upload, while this page renders the complete
+ * locally stored history and delegates replay/copy/folder/delete actions through
+ * the same shared renderer used by the popup.
+ */
 const uploadHistoryList = document.getElementById("upload-history-list")!;
 const historySummary = document.getElementById("history-summary")!;
 const historyCount = document.getElementById("history-count")!;
@@ -29,7 +37,7 @@ function openExternalUrl(url: string): void {
 }
 
 function renderHistory(history: UploadHistoryEntry[]): void {
-  currentHistory = Array.isArray(history) ? history : [];
+  currentHistory = sortUploadHistoryNewestFirst(history);
   uploadHistoryList.innerHTML = renderUploadHistoryList(currentHistory);
   historyCount.textContent = String(currentHistory.length);
 

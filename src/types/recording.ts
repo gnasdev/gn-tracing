@@ -29,6 +29,13 @@ export interface PreviewEntry {
   value: ObjectPreview;
 }
 
+/**
+ * Recording artifact data models.
+ *
+ * These interfaces describe the serialized console, network, WebSocket, and
+ * source-map-enriched records that move from CDP collection into JSON artifacts
+ * and finally into the replay player.
+ */
 export interface StackFrame {
   functionName: string;
   url: string;

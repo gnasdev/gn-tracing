@@ -9,6 +9,14 @@ import type { SourceMapResolver } from "./sourcemap-resolver";
 
 const MAX_CONSOLE_ENTRY_SIZE = 32768;
 
+/**
+ * In-memory artifact buffer for the current recording.
+ *
+ * Nothing here is durable storage. The service worker uses this class to collect
+ * CDP-derived console/network/WebSocket entries, enrich them with source-map
+ * data at stop time, and serialize only the artifacts that actually contain
+ * entries for upload or replay.
+ */
 interface FinalizedRecordingArtifacts {
   consoleLogs?: string;
   networkRequests?: string;

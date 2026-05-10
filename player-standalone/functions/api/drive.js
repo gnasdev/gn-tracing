@@ -1,3 +1,9 @@
+/**
+ * Cloudflare Pages Function that proxies public Google Drive downloads.
+ *
+ * The standalone player uses same-origin requests to avoid Drive CORS/CORP
+ * restrictions when loading JSON artifacts and video parts from shared files.
+ */
 export async function onRequestGet(context) {
   const url = new URL(context.request.url);
   const fileId = url.searchParams.get("id");

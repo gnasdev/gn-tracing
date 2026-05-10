@@ -19,6 +19,7 @@ This module covers authentication, Google Drive upload, replay URL generation, b
 - Always return the Cloudflare-hosted standalone player URL at `https://tracing.gnas.dev/`.
 - Keep auth UI resilient to popup lifetime by using a dedicated auth page.
 - Keep standalone player deployable to Cloudflare Pages through a separate manual path outside the GitHub release workflow.
+- Keep Chrome self-hosted auto-update artifacts available through GitHub Release `latest/download` URLs by publishing a signed CRX and update manifest XML.
 - Keep replay player layout user-adjustable with a draggable splitter, persisted split percentage, and switchable horizontal/vertical pane orientation.
 - Allow the video pane to expand to an immersive tab-level mode inside the player surface without triggering OS/screen fullscreen.
 - Keep network response inspection readable with syntax-highlighted source views for JavaScript, HTML, CSS, and JSON payloads.
@@ -26,6 +27,7 @@ This module covers authentication, Google Drive upload, replay URL generation, b
 - Include recording-specific metadata in the player title so multiple open replay tabs remain distinguishable.
 - Show a usage/intro landing state when the player opens without replay query params, including GitHub and contribution guidance.
 - Surface GitHub and contribution entry points inside the extension popup, without exposing the fixed player host as popup UI.
+- Surface manual update checks inside the extension popup and report check status/results through toast messages.
 - Keep extension runtime state mirrored into a popup/auth snapshot without forcing a live Google Drive verification on every state write.
 - Recover popup-visible recording state after service-worker restart by reconciling the last session snapshot with the offscreen capture state when possible.
 
@@ -47,7 +49,9 @@ This module covers authentication, Google Drive upload, replay URL generation, b
 - the auth page is a first-class surface that can both start auth and react to service-worker state updates.
 - standalone player is not the system of record for assets; it mirrors `player/` runtime logic through the sync script and wrapper adapters.
 - release automation expects both npm workspaces to have committed lockfiles so GitHub Actions can run `npm ci` at the repo root and inside `player-standalone/`.
-- tag-based GitHub releases only build the extension and publish the zip artifact; they do not invoke Cloudflare deploy steps for the standalone player.
+- tag-based GitHub releases build the extension, publish a manual zip artifact, and publish self-hosted Chrome update artifacts (`gn-tracing-extension.crx` plus `updates.xml`); they do not invoke Cloudflare deploy steps for the standalone player.
+- extension auto-update uses `manifest.template.json` `update_url` pointing at `https://github.com/gnasdev/gn-tracing/releases/latest/download/updates.xml`, while the XML `codebase` points at `https://github.com/gnasdev/gn-tracing/releases/latest/download/gn-tracing-extension.crx`.
+- release CI must sign the CRX with the private key matching the committed manifest `key`; the expected extension id is `fomajjkcepcijpnghnkplinhibgonlpg`.
 - if video exceeds the upload limit, offscreen upload slices the final recording blob into ordered byte chunks and the player reassembles them locally before playback.
 - popup upload status must surface both aggregate transferred bytes/percent and per-file progress rows throughout the Drive upload flow.
 - player loading must surface both aggregate transferred bytes/percent and per-file progress rows for metadata, optional artifacts, manifest, and each video part.
@@ -68,8 +72,9 @@ This module covers authentication, Google Drive upload, replay URL generation, b
 - player title derives a short label from metadata URL plus recording timestamp and applies it to both the visible header and `document.title`.
 - opening the player with no query params should render onboarding/help content rather than the invalid-params error; malformed partial query strings still use the error state.
 - popup should provide direct links to the GitHub repository and a contribution surface so users can discover the project and help improve it, while auth status is revalidated on popup open instead of relying only on cached session state.
+- popup manual update checks should use Chrome runtime update checking and report `checking`, `update available`, `up to date`, `throttled`, and failure outcomes through the existing toast surface.
 - per-file progress labels should use artifact-level filenames or stable labels so parallel transfers remain debuggable without coupling copy to transient upload ordering.
-- popup should let the user configure an optional Google Drive parent folder by pasting either a folder id or a Google Drive folder link; blank means Drive root.
+- popup should let the user configure an optional Google Drive parent folder by entering `/folder/path`, pasting a folder id, or pasting a Google Drive folder link; blank means Drive root.
 - popup should expose recent upload history, and the same history should also sync into `gn-tracing-upload-history.json` inside the configured upload folder.
 - stopping a finished capture should auto-start the Drive upload when a valid Drive token is already available.
 - recording duration should exclude paused intervals, and popup controls should expose pause/resume separately from stop.
@@ -86,6 +91,7 @@ This module covers authentication, Google Drive upload, replay URL generation, b
 - local deploys can source root `.env` / `.env.example` with `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_PAGES_PROJECT`, `PLAYER_HOST_URL`, and `VITE_BASE_PATH`.
 - intro/empty-state copy should stay aligned between extension and standalone player shells so the hosted root URL behaves as a clear product landing page.
 - service-worker restart recovery is intentionally best-effort: heavy artifacts still live in memory/offscreen only, but popup state is reconstructed from session snapshot plus offscreen probe when the capture document is still alive.
+- Chrome self-hosted update support depends on a valid `CHROME_EXTENSION_PRIVATE_KEY` CI secret and a release asset set with stable names, because `releases/latest/download/...` redirects by asset name.
 
 ## 6. Relationships
 
@@ -93,12 +99,13 @@ This module covers authentication, Google Drive upload, replay URL generation, b
 - shares replay payload schema with built-in player and standalone player
 - depends on `shared/api-conventions` for Chrome identity + Drive API assumptions
 - exposes fixed player-host information to popup UX and release automation
+- shares release/update metadata with `manifest.template.json`, `.github/workflows/release.yml`, and `scripts/pack-release-crx.mjs`
 
 ## 7. Related Decisions
 
 - auth is moved out of the popup into `drive-auth.html` to avoid popup closure interrupting OAuth.
 - standalone replay distribution is standardized on Cloudflare Pages instead of popup-configured hosts.
-- tag release automation delegates only extension build/artifact packaging to root `package.json` scripts; standalone Cloudflare deploy is intentionally excluded from release CI.
+- tag release automation delegates extension zip, CRX signing, and Chrome update manifest generation to root `package.json` scripts; standalone Cloudflare deploy is intentionally excluded from release CI.
 - popup/auth surfaces consume a reduced runtime snapshot, while service worker/offscreen remain the capture engines; auth refresh is decoupled from snapshot persistence to avoid progress-time API chatter.
 - upload progress snapshots now flow from offscreen to popup as an aggregate-plus-items contract, while player loading keeps a local per-entry registry that renders both the overall bar and each artifact row.
 - replay links now resolve through a single uploaded recording index file id (`/<id>`), and the player fetches that index before loading metadata/log/video artifacts.

@@ -1,5 +1,10 @@
 /**
  * Drive Adapter - Handle folder/file loading from Google Drive in standalone mode
+ *
+ * The hosted player cannot fetch many Drive assets directly because browser
+ * CORS/CORP rules block media and JSON responses. The adapter routes downloads
+ * through same-origin endpoints when possible and exposes a stable window API to
+ * the shared player runtime.
  */
 
 import { getDriveDownloadUrl } from './extension-detector';

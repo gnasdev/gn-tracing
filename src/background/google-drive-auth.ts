@@ -5,8 +5,11 @@ const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file";
 const EDGE_ACCESS_TOKEN_KEY = "gn_tracing_edge_access_token";
 
 /**
- * Google Drive Auth using chrome.identity.getAuthToken()
- * No client_secret required - Chrome handles token management internally
+ * Google Drive auth facade for Chrome and Edge.
+ *
+ * Chrome can rely on `chrome.identity.getAuthToken()` token management. Edge
+ * needs an explicit web auth flow and local token cache, so this class keeps the
+ * browser-specific branches behind the same extension-facing API.
  */
 export class GoogleDriveAuth {
   private normalizeChromeToken(

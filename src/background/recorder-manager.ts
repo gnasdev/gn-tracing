@@ -1,4 +1,13 @@
 export class RecorderManager {
+  /**
+   * Owns the service-worker side of tab capture.
+   *
+   * The actual MediaRecorder lives in the offscreen document because MV3 service
+   * workers cannot hold DOM media objects. This manager only creates/reuses the
+   * offscreen document, forwards lifecycle commands, and waits briefly for the
+   * offscreen stop acknowledgement before allowing the service worker flow to
+   * continue.
+   */
   #offscreenCreated = false;
   #stopPromiseResolve: (() => void) | null = null;
   #stopTimeoutId: ReturnType<typeof setTimeout> | null = null;
@@ -41,7 +50,7 @@ export class RecorderManager {
     this.#activeSessionId = sessionId;
   }
 
-  async stopCapture(): Promise<void> {
+  async stopCapture(discard = false): Promise<void> {
     try {
       const stopPromise = new Promise<void>((resolve) => {
         this.#stopPromiseResolve = resolve;
@@ -54,7 +63,7 @@ export class RecorderManager {
 
       await chrome.runtime.sendMessage({
         target: "offscreen",
-        type: "STOP_CAPTURE",
+        type: discard ? "DISCARD_CAPTURE" : "STOP_CAPTURE",
       });
 
       await stopPromise;

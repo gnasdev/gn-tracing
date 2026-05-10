@@ -14,6 +14,10 @@ GN Tracing is designed for debugging and replaying real tab sessions without a b
 - popup and auth page as thin UI clients driven by service-worker-owned state
 - standalone player kept separate from extension packaging, but fed by the same uploaded artifacts
 
+## Code Comment Convention
+
+Source comments are written in English so runtime decisions, browser constraints, and shared data contracts remain readable across the whole codebase. Comments focus on why a boundary or lifecycle choice exists, especially around MV3 service-worker restarts, offscreen capture ownership, Chrome Debugger Protocol event ordering, Google Drive upload artifacts, player loading, and release packaging.
+
 ## Non-Functional Constraints
 
 - recording state is ephemeral and memory-backed

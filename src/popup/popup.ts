@@ -16,14 +16,25 @@ import {
   getVisibleUploadHistory,
   handleUploadHistoryAction,
   renderUploadHistoryList,
+  sortUploadHistoryNewestFirst,
 } from "../shared/upload-history-ui";
 
+/**
+ * Popup UI controller.
+ *
+ * The popup is disposable browser UI: it renders the latest persisted service
+ * worker state, sends user commands back to the worker, and keeps transient DOM
+ * details such as timers/toasts local. Durable recording truth must stay in the
+ * service worker because this window can close at any time.
+ */
 const GITHUB_REPO_URL = "https://github.com/gnasdev/gn-tracing";
 const GITHUB_ISSUES_URL = `${GITHUB_REPO_URL}/issues`;
 const SERVICE_STATE_KEY = "gn_tracing_state";
+const RELOAD_TOAST_KEY = "gn_tracing_reload_toast";
 
 const toggleBtn = document.getElementById("toggle-btn") as HTMLButtonElement;
 const pauseResumeBtn = document.getElementById("pause-resume-btn") as HTMLButtonElement;
+const removeRecordingBtn = document.getElementById("remove-recording-btn") as HTMLButtonElement;
 const reloadBtn = document.getElementById("reload-btn") as HTMLButtonElement;
 const statusBar = document.getElementById("status-bar")!;
 const timerEl = document.getElementById("timer")!;
@@ -40,15 +51,18 @@ const googleDriveDisconnectBtn = document.getElementById("google-drive-disconnec
 const googleDriveFolderInput = document.getElementById("google-drive-folder-input") as HTMLInputElement;
 const googleDriveFolderHint = document.getElementById("google-drive-folder-hint")!;
 const saveFolderBtn = document.getElementById("save-folder-btn") as HTMLButtonElement;
-const uploadHistoryList = document.getElementById("upload-history-list")!;
-const uploadHistoryMoreBtn = document.getElementById("upload-history-more-btn") as HTMLButtonElement;
+const popupUploadHistoryList = document.getElementById("popup-upload-history-list")!;
+const uploadHistoryPageBtn = document.getElementById("upload-history-page-btn") as HTMLButtonElement;
 
 const githubLinkBtn = document.getElementById("github-link-btn") as HTMLButtonElement;
 const contributeLinkBtn = document.getElementById("contribute-link-btn") as HTMLButtonElement;
+const checkUpdateBtn = document.getElementById("check-update-btn") as HTMLButtonElement;
 
 let timerInterval: ReturnType<typeof setInterval> | null = null;
+let timerRecording: RecordingStatus | null = null;
 let toastTimeout: ReturnType<typeof setTimeout> | null = null;
 let isEditingFolder = false;
+let currentUploadHistory: UploadHistoryEntry[] = [];
 
 function getEditIcon(): string {
   return `
@@ -109,17 +123,46 @@ function subscribeToStateChanges(callback: (state: PopupState) => void): () => v
   return () => chrome.storage.session.onChanged.removeListener(listener);
 }
 
-function startRecordingTimer(initialElapsedMs: number): void {
+function getLiveRecordingElapsedMs(recording: RecordingStatus, now = Date.now()): number {
+  const elapsedMs = Number.isFinite(recording.elapsedMs) ? recording.elapsedMs : 0;
+
+  if (recording.isPaused || !recording.isRecording) {
+    return Math.max(0, elapsedMs);
+  }
+
+  if (recording.startTime) {
+    const accumulatedPausedMs = Number.isFinite(recording.accumulatedPausedMs)
+      ? recording.accumulatedPausedMs
+      : 0;
+    const pausedDuration = recording.pausedAt ? Math.max(0, now - recording.pausedAt) : 0;
+    return Math.max(0, now - recording.startTime - accumulatedPausedMs - pausedDuration);
+  }
+
+  if (Number.isFinite(recording.elapsedUpdatedAt)) {
+    return Math.max(0, elapsedMs + Math.max(0, now - recording.elapsedUpdatedAt));
+  }
+
+  return Math.max(0, elapsedMs);
+}
+
+function updateTimerDisplay(): void {
+  if (!timerRecording) {
+    return;
+  }
+  timerEl.textContent = formatTime(getLiveRecordingElapsedMs(timerRecording));
+}
+
+function startRecordingTimer(recording: RecordingStatus): void {
   if (timerInterval) {
     clearInterval(timerInterval);
   }
-  const timerStart = Date.now() - initialElapsedMs;
-  timerInterval = setInterval(() => {
-    timerEl.textContent = formatTime(Date.now() - timerStart);
-  }, 1000);
+  timerRecording = recording;
+  updateTimerDisplay();
+  timerInterval = setInterval(updateTimerDisplay, 1000);
 }
 
 function stopRecordingTimer(): void {
+  timerRecording = null;
   if (!timerInterval) {
     return;
   }
@@ -156,7 +199,7 @@ function showSuccess(message: string): void {
   showToast(message);
 }
 
-function showToast(message: string): void {
+function showToast(message: string, durationMs = 1800): void {
   toastEl.textContent = message;
   toastEl.classList.remove("hidden");
   if (toastTimeout) {
@@ -165,7 +208,22 @@ function showToast(message: string): void {
   toastTimeout = setTimeout(() => {
     toastEl.classList.add("hidden");
     toastTimeout = null;
-  }, 1800);
+  }, durationMs);
+}
+
+function getUpdateCheckToastMessage(result: chrome.runtime.RequestUpdateCheckResult): string {
+  switch (result.status) {
+    case "update_available":
+      return result.version
+        ? `Update ${result.version} is available.`
+        : "An update is available.";
+    case "no_update":
+      return "GN Tracing is up to date.";
+    case "throttled":
+      return "Update check throttled. Try again later.";
+    default:
+      return "Update check finished.";
+  }
 }
 
 function getProgressStatusLabel(status: ProgressItemSnapshot["status"]): string {
@@ -381,6 +439,15 @@ function renderSessions(sessions: RecordingSessionSummary[] | undefined): void {
   }).join("");
 }
 
+function renderPopupUploadHistory(history: UploadHistoryEntry[] | undefined): void {
+  currentUploadHistory = sortUploadHistoryNewestFirst(history);
+  const { visibleItems, hiddenCount } = getVisibleUploadHistory(currentUploadHistory);
+  popupUploadHistoryList.innerHTML = [
+    renderUploadHistoryList(visibleItems),
+    hiddenCount > 0 ? `<div class="history-empty">${hiddenCount} older upload${hiddenCount === 1 ? "" : "s"} hidden.</div>` : "",
+  ].join("");
+}
+
 function updateGoogleDriveUI(isConnected: boolean): void {
   if (isConnected) {
     googleDriveStatus.textContent = "Connected";
@@ -401,18 +468,12 @@ function updateFolderHint(settings: UploadSettings | null): void {
   googleDriveFolderHint.textContent = `Resolved folder ID: ${settings.folderId}`;
 }
 
-function renderUploadHistory(history: UploadHistoryEntry[] | undefined): void {
-  const items = Array.isArray(history) ? history : [];
-  const { visibleItems, hiddenCount } = getVisibleUploadHistory(items);
-  uploadHistoryList.innerHTML = renderUploadHistoryList(visibleItems);
-  uploadHistoryMoreBtn.classList.toggle("hidden", hiddenCount === 0);
-}
-
 function updateRecordingUI(recording: RecordingStatus | null): void {
   if (recording?.isRecording) {
     toggleBtn.textContent = "Stop Recording";
     toggleBtn.className = "btn btn-stop";
     pauseResumeBtn.classList.remove("hidden");
+    removeRecordingBtn.classList.remove("hidden");
     pauseResumeBtn.textContent = recording.isPaused ? "Resume Recording" : "Pause Recording";
     statusBar.classList.remove("hidden");
     stats.classList.remove("hidden");
@@ -421,9 +482,12 @@ function updateRecordingUI(recording: RecordingStatus | null): void {
 
     if (recording.isPaused) {
       stopRecordingTimer();
-      timerEl.textContent = formatTime(recording.elapsedMs || 0);
-    } else if (!timerInterval) {
-      startRecordingTimer(recording.elapsedMs || 0);
+      timerEl.textContent = formatTime(getLiveRecordingElapsedMs(recording));
+    } else if (timerInterval) {
+      timerRecording = recording;
+      updateTimerDisplay();
+    } else {
+      startRecordingTimer(recording);
     }
     return;
   }
@@ -431,6 +495,7 @@ function updateRecordingUI(recording: RecordingStatus | null): void {
   toggleBtn.textContent = "Start Recording";
   toggleBtn.className = "btn btn-start";
   pauseResumeBtn.classList.add("hidden");
+  removeRecordingBtn.classList.add("hidden");
   statusBar.classList.add("hidden");
   stats.classList.add("hidden");
   stopRecordingTimer();
@@ -439,13 +504,13 @@ function updateRecordingUI(recording: RecordingStatus | null): void {
 function handleStateUpdate(state: PopupState): void {
   updateRecordingUI(state.recording);
   renderSessions(state.sessions);
+  renderPopupUploadHistory(state.uploadHistory);
   updateGoogleDriveUI(state.googleDrive.isConnected);
   if (!isEditingFolder) {
     googleDriveFolderInput.value = getFolderDisplayValue(state.settings.folderInput);
     setFolderEditingState(false);
   }
   updateFolderHint(state.settings);
-  renderUploadHistory(state.uploadHistory);
 }
 
 async function refreshGoogleDriveStatus(): Promise<void> {
@@ -510,7 +575,26 @@ pauseResumeBtn.addEventListener("click", async () => {
   }
 });
 
+removeRecordingBtn.addEventListener("click", async () => {
+  removeRecordingBtn.disabled = true;
+  errorMsg.classList.add("hidden");
+
+  try {
+    const result = await chrome.runtime.sendMessage({ action: "REMOVE_RECORDING" }) as MessageResponse;
+    if (!result.ok) {
+      showError(result.error || "Failed to remove recording");
+      return;
+    }
+    showToast("Recording removed.");
+  } catch (error) {
+    showError((error as Error).message);
+  } finally {
+    removeRecordingBtn.disabled = false;
+  }
+});
+
 reloadBtn.addEventListener("click", () => {
+  window.sessionStorage.setItem(RELOAD_TOAST_KEY, "1");
   window.location.reload();
 });
 
@@ -655,14 +739,14 @@ sessionList.addEventListener("click", async (event) => {
   }
 });
 
-uploadHistoryList.addEventListener("click", async (event) => {
-  await handleUploadHistoryAction(event.target as HTMLElement | null, {
+popupUploadHistoryList.addEventListener("click", async (event) => {
+  const handled = await handleUploadHistoryAction(event.target as HTMLElement | null, {
     openExternalUrl,
     copyLink: async (url, button) => {
       button.disabled = true;
       try {
         await navigator.clipboard.writeText(url);
-        showToast("Replay link copied.");
+        showSuccess("Replay link copied.");
       } catch (error) {
         showError((error as Error).message || "Failed to copy replay link");
       } finally {
@@ -676,31 +760,44 @@ uploadHistoryList.addEventListener("click", async (event) => {
           action: "DELETE_UPLOAD_HISTORY_ENTRY",
           data: { historyEntryId },
         }) as MessageResponse;
+
         if (!result.ok) {
           showError(result.error || "Failed to delete history item");
           button.disabled = false;
+          return;
         }
+
+        renderPopupUploadHistory(currentUploadHistory.filter((entry) => entry.id !== historyEntryId));
       } catch (error) {
         showError((error as Error).message);
         button.disabled = false;
       }
     },
   });
+
+  if (!handled) {
+    errorMsg.classList.add("hidden");
+  }
 });
 
-uploadHistoryMoreBtn.addEventListener("click", () => {
+uploadHistoryPageBtn.addEventListener("click", () => {
   chrome.tabs.create({
     url: chrome.runtime.getURL(HISTORY_PAGE_PATH),
   });
 });
 
 async function initPopup(): Promise<void> {
+  if (window.sessionStorage.getItem(RELOAD_TOAST_KEY)) {
+    window.sessionStorage.removeItem(RELOAD_TOAST_KEY);
+    showToast("Popup reloaded.");
+  }
+
   const initialState = await loadStateFromStorage();
   if (initialState) {
     handleStateUpdate(initialState);
   } else {
     renderSessions([]);
-    renderUploadHistory([]);
+    renderPopupUploadHistory([]);
   }
 
   try {
@@ -712,9 +809,9 @@ async function initPopup(): Promise<void> {
       googleDriveFolderInput.value = getFolderDisplayValue(settingsResult.settings.folderInput);
       setFolderEditingState(false);
       updateFolderHint(settingsResult.settings);
-      if (settingsResult.uploadHistory) {
-        renderUploadHistory(settingsResult.uploadHistory);
-      }
+    }
+    if (settingsResult.ok && Array.isArray(settingsResult.uploadHistory)) {
+      renderPopupUploadHistory(settingsResult.uploadHistory);
     }
   } catch {
     // Ignore worker warmup errors.
@@ -738,6 +835,20 @@ githubLinkBtn.addEventListener("click", () => {
 
 contributeLinkBtn.addEventListener("click", () => {
   openExternalUrl(GITHUB_ISSUES_URL);
+});
+
+checkUpdateBtn.addEventListener("click", async () => {
+  checkUpdateBtn.disabled = true;
+  showToast("Checking for updates...", 2400);
+
+  try {
+    const result = await chrome.runtime.requestUpdateCheck();
+    showToast(getUpdateCheckToastMessage(result), 3600);
+  } catch (error) {
+    showToast((error as Error).message || "Update check failed.", 3600);
+  } finally {
+    checkUpdateBtn.disabled = false;
+  }
 });
 
 void initPopup();

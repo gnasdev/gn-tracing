@@ -1,13 +1,27 @@
 import type { UploadHistoryEntry } from "../types/messages";
 
-export const POPUP_UPLOAD_HISTORY_LIMIT = 5;
+/**
+ * Shared upload-history rendering and action routing.
+ *
+ * Popup and history page use the same markup/action attributes so replay links,
+ * folder links, copy actions, and delete controls behave consistently across
+ * both extension surfaces.
+ */
+export const POPUP_UPLOAD_HISTORY_LIMIT = 1;
 export const HISTORY_PAGE_PATH = "history/history.html";
+
+export function sortUploadHistoryNewestFirst(
+  history: UploadHistoryEntry[] | undefined,
+): UploadHistoryEntry[] {
+  const items = Array.isArray(history) ? history : [];
+  return [...items].sort((left, right) => (right.uploadedAt || 0) - (left.uploadedAt || 0));
+}
 
 export function getVisibleUploadHistory(
   history: UploadHistoryEntry[] | undefined,
   limit = POPUP_UPLOAD_HISTORY_LIMIT,
 ): { visibleItems: UploadHistoryEntry[]; hiddenCount: number } {
-  const items = Array.isArray(history) ? history : [];
+  const items = sortUploadHistoryNewestFirst(history);
   return {
     visibleItems: items.slice(0, limit),
     hiddenCount: Math.max(0, items.length - limit),
@@ -15,7 +29,7 @@ export function getVisibleUploadHistory(
 }
 
 export function renderUploadHistoryList(items: UploadHistoryEntry[] | undefined): string {
-  const safeItems = Array.isArray(items) ? items : [];
+  const safeItems = sortUploadHistoryNewestFirst(items);
   if (safeItems.length === 0) {
     return `<div class="history-empty">No uploads yet.</div>`;
   }

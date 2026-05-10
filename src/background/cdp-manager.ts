@@ -9,6 +9,16 @@ import type {
   StackFrame,
 } from "../types/recording";
 
+/**
+ * Chrome Debugger Protocol collector.
+ *
+ * CdpManager attaches to the active tab, mirrors relevant CDP domains across
+ * child targets, buffers in-flight network/WebSocket state until complete, and
+ * sends finalized entries to StorageManager. Event ordering is intentionally
+ * defensive because CDP extra-info, body fetches, redirects, and target detach
+ * notifications can arrive out of the simple request lifecycle order.
+ */
+
 // CDP event param interfaces for the events we handle
 interface CdpRequestWillBeSentParams {
   requestId: string;

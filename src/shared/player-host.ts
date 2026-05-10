@@ -1,6 +1,13 @@
 declare const __APP_ENV__: string;
 declare const __PLAYER_LOCAL_PORT__: string;
 
+/**
+ * Centralized player URL builder.
+ *
+ * Production recordings always point at the hosted player, while development
+ * builds can target the local Vite player. Keeping this in one helper prevents
+ * popup/service-worker/offscreen code from drifting on replay URL shape.
+ */
 const APP_ENV = normalizeAppEnv(typeof __APP_ENV__ === "string" ? __APP_ENV__ : "production");
 const PLAYER_LOCAL_PORT = Number.parseInt(__PLAYER_LOCAL_PORT__ || "5173", 10) || 5173;
 const IS_DEVELOPMENT = APP_ENV === "development";

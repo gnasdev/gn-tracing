@@ -23,6 +23,7 @@
 
     <button id="toggle-btn" class="btn btn-start">Start Recording</button>
     <button id="pause-resume-btn" class="btn btn-secondary hidden" type="button">Pause Recording</button>
+    <button id="remove-recording-btn" class="btn btn-danger hidden" type="button">Remove Recording</button>
 
     <div id="stats" class="hidden">
       <div class="stat-row">
@@ -41,11 +42,21 @@
     </div>
 
     <div id="upload-history-section">
-      <div class="section-title">Upload History</div>
-      <div id="upload-history-list" class="history-list"></div>
-      <button id="upload-history-more-btn" class="btn btn-secondary history-more-btn hidden" type="button">
-        View more history items
-      </button>
+      <div class="section-title-row">
+        <div class="section-title">Latest Upload</div>
+        <button
+          id="upload-history-page-btn"
+          class="icon-btn history-page-btn"
+          type="button"
+          aria-label="Open history page"
+          title="Open history page"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M5 4h14v2H5V4Zm0 5h14v2H5V9Zm0 5h9v2H5v-2Zm0 5h9v2H5v-2Zm12.7-1.7-1.4-1.4L18.17 14H15v-2h6v6h-2v-3.17l-1.3 1.3Z" fill="currentColor"/>
+          </svg>
+        </button>
+      </div>
+      <div id="popup-upload-history-list" class="history-list"></div>
     </div>
 
     <div id="google-drive-section">
@@ -88,6 +99,7 @@
       <div class="community-actions">
         <button id="github-link-btn" class="btn btn-secondary" type="button">GitHub</button>
         <button id="contribute-link-btn" class="btn btn-secondary" type="button">Contribute</button>
+        <button id="check-update-btn" class="btn btn-secondary" type="button">Check Update</button>
       </div>
     </div>
 

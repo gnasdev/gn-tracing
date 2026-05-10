@@ -1,6 +1,10 @@
 /**
  * GN Tracing Player
- * Loads recording data from Google Drive and displays video synchronized with logs
+ * Loads recording data from Google Drive and displays video synchronized with logs.
+ *
+ * This file is shared by the extension player and the hosted standalone player.
+ * Keep environment-specific behavior behind adapter/config checks so both
+ * runtimes stay aligned when player assets are synced.
  */
 
 (function() {
@@ -30,6 +34,7 @@
   const MAX_RESPONSE_PREVIEW_CHARS = 40000;
   const DRIVE_CACHE_NAME = 'gn-tracing-drive-files-v1';
   const DRIVE_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+  const DYNAMIC_ROUTE_EXTENSIONS = new Set(['.html', '.htm', '.php', '.asp', '.aspx', '.jsp']);
 
   console.log('[GN Tracing Player] Mode:', IS_EXTENSION ? 'extension' : 'standalone');
 
@@ -501,10 +506,29 @@
     document.title = label ? `${label} | ${DEFAULT_PLAYER_TITLE}` : DEFAULT_PLAYER_TITLE;
   }
 
+  function getNetworkUrlExtension(url) {
+    try {
+      const pathname = new URL(url || '', 'http://x').pathname.toLowerCase();
+      const lastSegment = pathname.split('/').pop() || '';
+      const dot = lastSegment.lastIndexOf('.');
+      if (dot > 0 && dot < lastSegment.length - 1) {
+        return lastSegment.slice(dot);
+      }
+    } catch {}
+
+    return '';
+  }
+
+  function isFileLikeNetworkUrl(url) {
+    const ext = getNetworkUrlExtension(url);
+    if (!ext) return false;
+
+    return !DYNAMIC_ROUTE_EXTENSIONS.has(ext);
+  }
+
   function detectNetworkFilterFromUrlAndMime(url, mimeType) {
     const normalizedMimeType = String(mimeType || '').toLowerCase();
 
-    if (normalizedMimeType.includes('json')) return 'fetch';
     if (normalizedMimeType.includes('javascript') || normalizedMimeType.includes('ecmascript')) return 'js';
     if (normalizedMimeType.includes('css')) return 'css';
     if (normalizedMimeType.includes('html')) return 'doc';
@@ -513,10 +537,8 @@
     if (normalizedMimeType.startsWith('audio/') || normalizedMimeType.startsWith('video/')) return 'media';
 
     try {
-      const pathname = new URL(url || '', 'http://x').pathname.toLowerCase();
-      const dot = pathname.lastIndexOf('.');
-      if (dot !== -1) {
-        const ext = pathname.slice(dot);
+      const ext = getNetworkUrlExtension(url);
+      if (ext) {
         const extMap = {
           '.js': 'js', '.mjs': 'js', '.cjs': 'js', '.map': 'js',
           '.css': 'css',
@@ -524,10 +546,13 @@
           '.woff': 'font', '.woff2': 'font', '.ttf': 'font', '.eot': 'font', '.otf': 'font',
           '.mp4': 'media', '.webm': 'media', '.mp3': 'media', '.ogg': 'media', '.wav': 'media',
           '.html': 'doc', '.htm': 'doc', '.php': 'doc', '.asp': 'doc', '.aspx': 'doc', '.jsp': 'doc',
+          '.json': 'other', '.xml': 'other', '.txt': 'other', '.csv': 'other', '.pdf': 'other', '.zip': 'other',
         };
         if (extMap[ext]) return extMap[ext];
       }
     } catch {}
+
+    if (normalizedMimeType.includes('json')) return 'fetch';
 
     return null;
   }
@@ -541,6 +566,7 @@
     if (normalizedResourceType === 'xhr' || normalizedResourceType === 'fetch') {
       const detectedType = detectNetworkFilterFromUrlAndMime(url, mimeType);
       if (detectedType && detectedType !== 'doc') return detectedType;
+      if (isFileLikeNetworkUrl(url)) return 'other';
       return 'fetch';
     }
 

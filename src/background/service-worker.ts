@@ -15,6 +15,15 @@ import type {
   UploadSettings,
 } from "../types/messages";
 
+/**
+ * Service-worker coordinator for the MV3 extension.
+ *
+ * This file is the durable control plane for recording sessions: it owns popup
+ * state persistence, CDP collection, offscreen capture commands, Google Drive
+ * auth checks, upload history, and the message contracts that connect those
+ * browser surfaces. Keep comments here focused on lifecycle boundaries because
+ * MV3 service workers can restart between user actions.
+ */
 const storage = new StorageManager();
 const recorder = new RecorderManager();
 const cdp = new CdpManager(storage);
@@ -57,6 +66,7 @@ interface OffscreenCaptureState {
 interface UploadSettingsStore {
   folderInput: string;
   folderId: string | null;
+  folderPath: string[];
 }
 
 interface UploadHistoryFileMap {
@@ -68,6 +78,7 @@ interface UploadSuccessResult {
   recordingUrl?: string;
   folderId?: string;
   indexFileId?: string;
+  targetFolderId?: string | null;
 }
 
 type UploadArtifactKey = "consoleLogs" | "networkRequests" | "webSocketLogs";
@@ -103,6 +114,8 @@ let sessions: RecordingSessionSummary[] = [];
 let sessionArtifacts: Record<string, SessionArtifacts> = {};
 const activeUploadTasks = new Map<string, Promise<void>>();
 
+// Google Drive connectivity is cached separately from popup state so UI reloads
+// can show a stable snapshot while a background verification refreshes it.
 const googleDriveState = {
   isConnected: false,
   checkedAt: 0,
@@ -111,6 +124,7 @@ const googleDriveState = {
 let cachedUploadSettings: UploadSettingsStore = {
   folderInput: "",
   folderId: null,
+  folderPath: [],
 };
 let hasLoadedUploadSettings = false;
 let cachedUploadHistory: UploadHistoryEntry[] = [];
@@ -156,6 +170,10 @@ function sortSessions(items: RecordingSessionSummary[]): RecordingSessionSummary
   });
 }
 
+function sortUploadHistory(items: UploadHistoryEntry[]): UploadHistoryEntry[] {
+  return [...items].sort((left, right) => (right.uploadedAt || 0) - (left.uploadedAt || 0));
+}
+
 function getSession(sessionId: string): RecordingSessionSummary | undefined {
   return sessions.find((session) => session.id === sessionId);
 }
@@ -185,6 +203,8 @@ function patchSession(sessionId: string, patch: Partial<RecordingSessionSummary>
 }
 
 function getRecordingStatus(): RecordingStatus | null {
+  const now = Date.now();
+
   if (!activeRecording.sessionId && !activeRecording.isRecording && !activeRecording.isPaused) {
     return null;
   }
@@ -200,7 +220,10 @@ function getRecordingStatus(): RecordingStatus | null {
     startTime: activeRecording.startTime,
     stopTime: activeRecording.stopTime,
     tabUrl: activeRecording.tabUrl,
-    elapsedMs: getElapsedMs(),
+    elapsedMs: getElapsedMs(now),
+    elapsedUpdatedAt: now,
+    pausedAt: activeRecording.pausedAt,
+    accumulatedPausedMs: activeRecording.accumulatedPausedMs,
     consoleLogCount: storage.getConsoleLogCount(),
     networkRequestCount: storage.getNetworkEntryCount(),
   };
@@ -217,11 +240,15 @@ async function getUploadSettings(): Promise<UploadSettingsStore> {
     cachedUploadSettings = {
       folderInput: typeof stored?.folderInput === "string" ? stored.folderInput : "",
       folderId: typeof stored?.folderId === "string" ? stored.folderId : null,
+      folderPath: Array.isArray(stored?.folderPath)
+        ? stored.folderPath.filter((segment) => typeof segment === "string")
+        : [],
     };
   } catch {
     cachedUploadSettings = {
       folderInput: "",
       folderId: null,
+      folderPath: [],
     };
   }
 
@@ -243,7 +270,7 @@ async function getUploadHistory(): Promise<UploadHistoryEntry[]> {
   try {
     const result = await chrome.storage.local.get(STORAGE_KEY_HISTORY);
     const history = result[STORAGE_KEY_HISTORY];
-    cachedUploadHistory = Array.isArray(history) ? history as UploadHistoryEntry[] : [];
+    cachedUploadHistory = Array.isArray(history) ? sortUploadHistory(history as UploadHistoryEntry[]) : [];
   } catch {
     cachedUploadHistory = [];
   }
@@ -253,7 +280,7 @@ async function getUploadHistory(): Promise<UploadHistoryEntry[]> {
 }
 
 async function saveUploadHistory(history: UploadHistoryEntry[]): Promise<void> {
-  cachedUploadHistory = history.slice(0, MAX_UPLOAD_HISTORY_ITEMS);
+  cachedUploadHistory = sortUploadHistory(history).slice(0, MAX_UPLOAD_HISTORY_ITEMS);
   hasLoadedUploadHistory = true;
   await chrome.storage.local.set({
     [STORAGE_KEY_HISTORY]: cachedUploadHistory,
@@ -387,6 +414,8 @@ async function syncRuntimeState(): Promise<void> {
     activeRecording.startTime = persistedState.recording.startTime ?? null;
     activeRecording.stopTime = persistedState.recording.stopTime ?? null;
     activeRecording.tabUrl = persistedState.recording.tabUrl ?? null;
+    activeRecording.pausedAt = persistedState.recording.pausedAt ?? null;
+    activeRecording.accumulatedPausedMs = persistedState.recording.accumulatedPausedMs ?? 0;
   } else {
     resetActiveRecordingState();
   }
@@ -510,6 +539,8 @@ async function handleMessage(
       return pauseRecording();
     case "RESUME_RECORDING":
       return resumeRecording();
+    case "REMOVE_RECORDING":
+      return removeRecording();
     case "GET_STATUS":
       return getRecordingStatus();
     case "GET_SETTINGS":
@@ -763,6 +794,52 @@ async function resumeRecording(): Promise<MessageResponse> {
   }
 }
 
+async function removeRecording(): Promise<MessageResponse> {
+  if (!activeRecording.isRecording || !activeRecording.sessionId) {
+    return { ok: false, error: "No active recording to remove." };
+  }
+
+  const sessionId = activeRecording.sessionId;
+
+  try {
+    activeRecording.isRecording = false;
+    activeRecording.isPaused = false;
+    storage.setPaused(false);
+    cdp.setPaused(false);
+
+    await Promise.allSettled([
+      recorder.stopCapture(true),
+      cdp.detach(),
+    ]);
+
+    storage.clear();
+    cdp.releaseSourceMaps();
+    delete sessionArtifacts[sessionId];
+
+    chrome.action.setBadgeText({ text: "" });
+    chrome.alarms.clear("gn-tracing-keepalive");
+
+    resetActiveRecordingState();
+    await saveArtifactsToStorage();
+    await saveStateToStorage();
+
+    void chrome.runtime.sendMessage({
+      target: "offscreen",
+      type: "DELETE_SESSION_SNAPSHOT",
+      data: { sessionId },
+    }).catch(() => {});
+
+    return { ok: true };
+  } catch (error) {
+    resetActiveRecordingState();
+    storage.clear();
+    cdp.releaseSourceMaps();
+    await saveArtifactsToStorage();
+    await saveStateToStorage();
+    return { ok: false, error: (error as Error).message };
+  }
+}
+
 function normalizeRecordingUrl(recordingUrl: string | null | undefined): string | null {
   if (!recordingUrl) {
     return null;
@@ -972,16 +1049,17 @@ async function updateUploadSettingsFromMessage(
   const folderInput = typeof data?.folderInput === "string" ? data.folderInput : "";
   const parsed = parseGoogleDriveFolderInput(folderInput);
 
-  if (parsed.normalizedInput && !parsed.folderId) {
+  if (parsed.normalizedInput && !parsed.folderId && parsed.folderPath.length === 0) {
     return {
       ok: false,
-      error: "Invalid Google Drive folder input. Use a folder ID or a Google Drive folder link.",
+      error: "Invalid Google Drive folder input. Use /folder/path, a folder ID, or a Google Drive folder link.",
     };
   }
 
   const settings: UploadSettingsStore = {
     folderInput: parsed.normalizedInput,
     folderId: parsed.folderId,
+    folderPath: parsed.folderPath,
   };
   await saveUploadSettings(settings);
   await saveStateToStorage();
@@ -1073,6 +1151,7 @@ async function runSessionUpload(sessionId: string, authToken: string): Promise<v
         startTime: artifacts.startTime,
         authToken,
         targetFolderId: settings.folderId,
+        targetFolderPath: settings.folderPath,
       },
     }) as MessageResponse & Partial<UploadSuccessResult>;
 
@@ -1103,7 +1182,10 @@ async function runSessionUpload(sessionId: string, authToken: string): Promise<v
     }).catch(() => {});
 
     if (updatedSession) {
-      await persistUploadHistory(updatedSession, settings.folderId);
+      await persistUploadHistory(
+        updatedSession,
+        typeof result.targetFolderId === "string" ? result.targetFolderId : settings.folderId,
+      );
     }
   } catch (error) {
     patchSession(sessionId, {

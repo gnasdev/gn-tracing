@@ -1,12 +1,21 @@
 import type { ProgressItemSnapshot, ProgressItemStatus } from "../types/messages";
 import { buildExternalPlayerUrl } from "../shared/player-host";
 
+/**
+ * Offscreen document runtime for media capture and Google Drive uploads.
+ *
+ * MV3 service workers cannot own a MediaRecorder or long-lived MediaStream, so
+ * this document holds the active tab stream, final recording snapshots, and the
+ * upload pipeline. The service worker communicates with it through runtime
+ * messages and treats this file as the media/upload worker.
+ */
 let recorder: MediaRecorder | null = null;
 let activeChunks: Blob[] = [];
 let activeSessionId: string | null = null;
 let activeStream: MediaStream | null = null;
 let playbackAudioContext: AudioContext | null = null;
 let isCapturePaused = false;
+let shouldDiscardActiveCapture = false;
 
 interface SessionRecordingSnapshot {
   blob: Blob;
@@ -35,6 +44,7 @@ interface ZipData {
 interface GoogleDriveUploadData extends ZipData {
   authToken: string;
   targetFolderId?: string | null;
+  targetFolderPath?: string[];
   artifactKeys?: {
     consoleLogs?: boolean;
     networkRequests?: boolean;
@@ -118,6 +128,9 @@ interface UploadQueueItem {
 
 const MAX_DRIVE_UPLOAD_BYTES = 32 * 1024 * 1024;
 
+// The offscreen document exposes a small command surface to the service worker.
+// Keep message names stable with the service-worker caller because there is no
+// compile-time link between these runtime message payloads.
 chrome.runtime.onMessage.addListener((message: OffscreenIncomingMessage, _sender, sendResponse) => {
   if (message.target !== "offscreen") {
     return false;
@@ -135,6 +148,11 @@ chrome.runtime.onMessage.addListener((message: OffscreenIncomingMessage, _sender
 
     case "STOP_CAPTURE":
       stopCapture();
+      sendResponse({ ok: true });
+      return false;
+
+    case "DISCARD_CAPTURE":
+      discardCapture();
       sendResponse({ ok: true });
       return false;
 
@@ -193,6 +211,7 @@ function clearActiveCapture(): void {
   activeChunks = [];
   activeSessionId = null;
   isCapturePaused = false;
+  shouldDiscardActiveCapture = false;
 
   if (recorder) {
     recorder.ondataavailable = null;
@@ -252,6 +271,7 @@ async function startCapture(streamId: string, sessionId: string): Promise<void> 
   activeSessionId = sessionId;
   activeChunks = [];
   isCapturePaused = false;
+  shouldDiscardActiveCapture = false;
 
   recorder.ondataavailable = (event: BlobEvent) => {
     if (event.data.size > 0) {
@@ -263,7 +283,7 @@ async function startCapture(streamId: string, sessionId: string): Promise<void> 
     const completedSessionId = activeSessionId;
     const blob = new Blob(activeChunks, { type: finalMimeType });
 
-    if (completedSessionId && blob.size > 0) {
+    if (!shouldDiscardActiveCapture && completedSessionId && blob.size > 0) {
       sessionSnapshots.set(completedSessionId, {
         blob,
         mimeType: finalMimeType,
@@ -290,6 +310,15 @@ function stopCapture(): void {
   if (recorder && recorder.state !== "inactive") {
     recorder.stop();
   }
+}
+
+function discardCapture(): void {
+  shouldDiscardActiveCapture = true;
+  if (!recorder || recorder.state === "inactive") {
+    clearActiveCapture();
+    return;
+  }
+  stopCapture();
 }
 
 function pauseCapture(): void {
@@ -405,7 +434,7 @@ async function createArtifactBlob(
 
 async function uploadToGoogleDrive(
   data: GoogleDriveUploadData,
-): Promise<{ ok: boolean; recordingUrl?: string; folderId?: string; indexFileId?: string; error?: string }> {
+): Promise<{ ok: boolean; recordingUrl?: string; folderId?: string; indexFileId?: string; targetFolderId?: string | null; error?: string }> {
   const sessionId = String(data.sessionId || "");
   if (!sessionId) {
     return { ok: false, error: "Missing session id." };
@@ -460,6 +489,53 @@ async function uploadToGoogleDrive(
       const result = await response.json();
       await makeShareable(result.id);
       return result.id;
+    };
+
+    const findFolder = async (folderName: string, parentFolderId?: string | null): Promise<string | null> => {
+      const escapedName = folderName.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+      const parentQuery = parentFolderId ? `'${parentFolderId}' in parents` : "'root' in parents";
+      const query = [
+        "mimeType = 'application/vnd.google-apps.folder'",
+        "trashed = false",
+        `name = '${escapedName}'`,
+        parentQuery,
+      ].join(" and ");
+      const url = new URL("https://www.googleapis.com/drive/v3/files");
+      url.searchParams.set("fields", "files(id,name)");
+      url.searchParams.set("pageSize", "1");
+      url.searchParams.set("q", query);
+      url.searchParams.set("supportsAllDrives", "true");
+      url.searchParams.set("includeItemsFromAllDrives", "true");
+
+      const response = await fetch(url.toString(), {
+        headers: {
+          Authorization: `Bearer ${data.authToken}`,
+        },
+      });
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.error?.message || `Find folder failed with status ${response.status}`);
+      }
+
+      const result = await response.json().catch(() => ({}));
+      const folder = Array.isArray(result.files) ? result.files[0] : null;
+      return typeof folder?.id === "string" ? folder.id : null;
+    };
+
+    const resolveFolderPath = async (folderPath: string[] | undefined, parentFolderId?: string | null): Promise<string | null> => {
+      let currentParentId = parentFolderId || null;
+      const safePath = Array.isArray(folderPath)
+        ? folderPath.filter((segment) => typeof segment === "string" && segment.trim())
+        : [];
+
+      for (const rawSegment of safePath) {
+        const segment = rawSegment.trim();
+        const existingFolderId = await findFolder(segment, currentParentId);
+        currentParentId = existingFolderId || await createFolder(segment, currentParentId);
+      }
+
+      return currentParentId;
     };
 
     const uploadFile = async (
@@ -658,7 +734,8 @@ async function uploadToGoogleDrive(
     };
 
     emitProgress("Preparing upload...");
-    const folderId = await createFolder(baseName, data.targetFolderId);
+    const targetFolderId = await resolveFolderPath(data.targetFolderPath, data.targetFolderId);
+    const folderId = await createFolder(baseName, targetFolderId);
 
     const metadataItem = uploadItems.find((item) => item.kind === "metadata");
     if (metadataItem) {
@@ -845,7 +922,7 @@ async function uploadToGoogleDrive(
     emitProgress("Upload complete!");
 
     const recordingUrl = buildExternalPlayerUrl(indexFileId || "");
-    return { ok: true, recordingUrl, folderId, indexFileId: indexFileId || undefined };
+    return { ok: true, recordingUrl, folderId, indexFileId: indexFileId || undefined, targetFolderId };
   } catch (error) {
     console.error("[Google Drive Upload] Error:", error);
     return { ok: false, error: (error as Error).message };

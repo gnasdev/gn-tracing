@@ -10,6 +10,10 @@ const watch = process.argv.includes("--watch");
 const rawAppEnv = cliEnv || (watch ? "development" : "production");
 const appEnv = normalizeAppEnv(rawAppEnv);
 const playerLocalPort = process.env.PLAYER_LOCAL_PORT || "5173";
+
+// The root build emits the unpacked MV3 extension. Player assets are copied as
+// static files because the extension and hosted player intentionally share the
+// same browser runtime under `player/`.
 const commonOptions = {
   bundle: true,
   target: "chrome120",

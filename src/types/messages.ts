@@ -3,6 +3,7 @@ export type MessageAction =
   | "STOP_RECORDING"
   | "PAUSE_RECORDING"
   | "RESUME_RECORDING"
+  | "REMOVE_RECORDING"
   | "GET_STATUS"
   | "GET_SETTINGS"
   | "UPDATE_SETTINGS"
@@ -22,6 +23,7 @@ export type OffscreenMessageType =
   | "STOP_CAPTURE"
   | "PAUSE_CAPTURE"
   | "RESUME_CAPTURE"
+  | "DISCARD_CAPTURE"
   | "GET_CAPTURE_STATE"
   | "UPLOAD_TO_GOOGLE_DRIVE"
   | "DELETE_SESSION_SNAPSHOT"
@@ -53,6 +55,13 @@ export interface OffscreenMessage {
   data?: Record<string, unknown>;
 }
 
+/**
+ * Runtime message and UI-state contracts shared by popup, service worker,
+ * offscreen document, auth page, and history page.
+ *
+ * These types describe data crossing Chrome runtime message/storage boundaries,
+ * so changes should be made with every sender and receiver in mind.
+ */
 export interface MessageResponse {
   ok: boolean;
   error?: string;
@@ -90,6 +99,9 @@ export interface RecordingStatus {
   stopTime?: number | null;
   tabUrl?: string | null;
   elapsedMs: number;
+  elapsedUpdatedAt: number;
+  pausedAt: number | null;
+  accumulatedPausedMs: number;
   consoleLogCount: number;
   networkRequestCount: number;
 }

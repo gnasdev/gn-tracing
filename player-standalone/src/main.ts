@@ -2,6 +2,8 @@
  * Main entry point for standalone player
  */
 
+// Configure browser globals before importing the shared player runtime because
+// `player/player.js` reads them during startup.
 import { detectMode } from './extension-detector';
 import { setupDriveAdapter } from './drive-adapter';
 

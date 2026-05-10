@@ -1,6 +1,6 @@
 {
   "name": "gn-tracing",
-  "version": "1.0.0",
+  "version": "1.0.7",
   "private": true,
   "license": "GPL-3.0-or-later",
   "scripts": {
@@ -18,13 +18,15 @@
     "build:all": "npm run build && npm run player:sync && npm run player:build",
     "dist:all": "npm run dist && npm run player:sync && npm run player:dist",
     "release:build": "npm run dist",
-    "release:artifact": "sh -c 'zip -r \"gn-tracing-extension-${GITHUB_REF_NAME:-local}.zip\" dist'",
-    "release:ci": "npm run release:build && npm run release:artifact",
+    "release:zip": "sh -c 'zip -r \"gn-tracing-extension-${GITHUB_REF_NAME:-local}.zip\" dist'",
+    "release:crx": "node scripts/pack-release-crx.mjs",
+    "release:ci": "npm run release:build && npm run release:zip && npm run release:crx",
     "watch:all": "concurrently 'npm run watch' 'npm run player:dev'"
   },
   "devDependencies": {
     "@types/chrome": "^0.0.287",
     "concurrently": "^8.2.2",
+    "crx3": "^2.0.0",
     "esbuild": "^0.24.0",
     "typescript": "^5.7.0"
   }

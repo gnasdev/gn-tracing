@@ -6,6 +6,9 @@ for (let i = 0; i < BASE64.length; i++) {
   charToInt[BASE64.charCodeAt(i)] = i;
 }
 
+// Source maps encode generated-to-original locations as base64 VLQ deltas.
+// Decoding keeps running state per line, so the parser mirrors the source map v3
+// format instead of treating each segment as absolute coordinates.
 function decodeVLQ(str: string, offset: number): { value: number; next: number } {
   let value = 0;
   let shift = 0;
@@ -78,6 +81,14 @@ interface ParsedMap {
 }
 
 export class SourceMapResolver {
+  /**
+   * Minimal source-map resolver used during stop-time enrichment.
+   *
+   * It stores parsed maps by generated script URL and resolves the closest
+   * mapping segment at or before the generated column. The implementation stays
+   * intentionally small because recordings only need line/column/source labels,
+   * not full source-map consumer features.
+   */
   #maps = new Map<string, ParsedMap>();
 
   addMap(scriptUrl: string, raw: SourceMapRaw): void {

@@ -31,4 +31,4 @@
 - `offscreen` -> Google Drive APIs: recording-folder creation, multipart uploads, chunked video upload, and sharing permissions
 - `offscreen` -> Cloudflare Pages standalone player URL generation with direct artifact file ID query params (`videos`, `metadata`, optional `console`, `network`, `websocket`)
 - `standalone player` -> same-origin `/api/drive?id=<file-id>` proxy for Drive artifact fetches during replay
-- `release workflow` -> root `package.json` scripts: extension build and artifact packaging only; standalone player deploy stays manual via `player-standalone/deploy.sh`
+- `release workflow` -> root `package.json` scripts: extension build, manual zip packaging, self-hosted Chrome CRX signing, and update manifest generation; standalone player deploy stays manual via `player-standalone/deploy.sh`
