@@ -13,7 +13,7 @@ This module covers authentication, Google Drive upload, replay URL generation, b
 ## 2. Functional & Non-Functional Requirements
 
 - Allow the user to connect/disconnect Google Drive without relying on a backend.
-- Upload each recording into a dedicated Google Drive folder and return a shareable replay URL keyed by direct artifact file IDs.
+- Upload each recording into a dedicated Google Drive folder and return a shareable replay URL keyed by the uploaded `recording-index.json` file ID.
 - Split recorded video into `<= 32 MB` parts before upload when needed.
 - Upload Google Drive artifacts with bounded parallelism instead of strictly serial transfer.
 - Always return the Cloudflare-hosted standalone player URL at `https://tracing.gnas.dev/`.
@@ -33,10 +33,12 @@ This module covers authentication, Google Drive upload, replay URL generation, b
 ## 3. Data Models & APIs
 
 - `GoogleDriveAuth.getAuthToken()` returns a usable token or `null`.
-- upload creates one Drive folder per recording containing `metadata.json`, `manifest.json`, optional log JSON files, and one or more `video.part-XXX.webm` files.
+- upload creates one Drive folder per recording containing `metadata.json`, `manifest.json`, `recording-index.json`, optional log JSON files, and one or more `video.part-XXX.webm` files.
 - `manifest.json` is the storage layout source of truth; it records schema version, folder ID, video mime type/parts, and which optional artifacts exist.
-- replay links now use `?videos=<video-file-id[,more-video-file-ids]>&metadata=<file-id>` plus optional `console`, `network`, and `websocket` query params.
-- standalone player loads artifacts directly from the file IDs in the query string and does not require Drive folder listing or a Drive API key for replay.
+- `recording-index.json` is the public replay entrypoint; it stores the manifest, metadata, optional artifact, and video-part file IDs needed by the player.
+- replay links use a single recording index file ID path, for example `https://tracing.gnas.dev/<index-file-id>`.
+- the player also retains a legacy direct-file query parser for debugging or older links that still pass `videos`, `metadata`, `console`, `network`, and `websocket` params.
+- standalone player loads the index first, then loads artifacts directly from the file IDs listed by that index and does not require Drive folder listing or a Drive API key for replay.
 - standalone player proxies artifact downloads through a same-origin Cloudflare Pages Function at `/api/drive` to avoid browser CORS/CORP failures against public Google Drive download hosts.
 
 ## 4. Business Rules
@@ -51,7 +53,7 @@ This module covers authentication, Google Drive upload, replay URL generation, b
 - tag-based GitHub releases build the extension and publish `gn-tracing-extension-${tag}.zip` for manual unpacked installation; they do not publish CRX/update XML artifacts or invoke Cloudflare deploy steps for the standalone player.
 - if video exceeds the upload limit, offscreen upload slices the final recording blob into ordered byte chunks and the player reassembles them locally before playback.
 - popup upload status must surface both aggregate transferred bytes/percent and per-file progress rows throughout the Drive upload flow.
-- player loading must surface both aggregate transferred bytes/percent and per-file progress rows for metadata, optional artifacts, manifest, and each video part.
+- player loading must surface both aggregate transferred bytes/percent and per-file progress rows for the recording index, metadata, optional artifacts, manifest, and each video part.
 - upload progress now measures artifact payload bytes rather than raw multipart HTTP body bytes so aggregate totals match the recording artifacts shown to the user.
 - service worker must re-hydrate Google Drive auth status on startup/install so popup state stays correct after extension reloads.
 - service worker now treats Google Drive connectivity as a separately refreshed cache; snapshot persistence reuses the cached auth state instead of calling Drive on every progress event.
@@ -59,7 +61,7 @@ This module covers authentication, Google Drive upload, replay URL generation, b
 - upload byte totals should exclude optional artifacts that were skipped after failure so aggregate progress reaches the true final total.
 - when optional upload artifacts fail after partial transfer, the denominator now drops only by the remaining unsent payload bytes so aggregate progress stays monotonic.
 - player loading now ignores unknown-size responses until their final blob size is known, preventing the progress bar from briefly reaching 100% and then dropping once video totals are introduced.
-- upload hard-fails when folder creation, metadata, manifest, or any video part upload fails; console/network/websocket uploads are best-effort and omitted from the manifest when they fail.
+- upload hard-fails when folder creation, metadata, manifest, recording index, or any video part upload fails; console/network/websocket uploads are best-effort and omitted from the manifest/index when they fail.
 - player loading must surface transferred bytes and percent while downloading artifacts, and video part downloads should run in parallel rather than sequentially.
 - player layout preferences are stored per-origin in `localStorage` under a single player UI state entry and restored on load.
 - pane resize is clamped to keep both panes visible; the same persisted percent is reused when switching between horizontal and vertical layout modes.
@@ -104,25 +106,5 @@ This module covers authentication, Google Drive upload, replay URL generation, b
 - tag release automation delegates production extension build and zip packaging to root `package.json` scripts; standalone Cloudflare deploy is intentionally excluded from release CI.
 - popup/auth surfaces consume a reduced runtime snapshot, while service worker/offscreen remain the capture engines; auth refresh is decoupled from snapshot persistence to avoid progress-time API chatter.
 - upload progress snapshots now flow from offscreen to popup as an aggregate-plus-items contract, while player loading keeps a local per-entry registry that renders both the overall bar and each artifact row.
-- replay links now resolve through a single uploaded recording index file id (`/<id>`), and the player fetches that index before loading metadata/log/video artifacts.
+- replay links resolve through a single uploaded recording index file ID (`/<id>`), and the player fetches that index before loading metadata/log/video artifacts.
 - player artifact downloads now use a one-day client-side cache, and the standalone Drive proxy also advertises one-day cacheability.
-
-## 8. Changelog
-
-- `2026-04-23`: Network response detail now supports syntax highlighting for JavaScript/HTML/CSS/JSON and adds inline preview panels for HTML, media, and JSON payloads.
-- `2026-04-23`: Popup no longer shows the fixed player host, now revalidates Google Drive auth on open, and service-worker startup/install also refreshes auth state so connected UI stays in sync after reloads.
-- `2026-04-23`: Extension runtime now persists a phase-based popup snapshot, resets stale upload results before new recordings, avoids Drive auth verification on every snapshot write, and probes offscreen capture state during service-worker startup to recover recording visibility after MV3 restarts.
-- `2026-04-23`: Popup upload and player loading now keep the aggregate progress bar but also render per-file rows with label, status, percent, and transferred bytes for each artifact/video part.
-- `2026-04-23`: Upload total bytes now shrink when optional artifacts are skipped so aggregate byte progress remains accurate even while per-file progress stays visible.
-- `2026-04-23`: Upload byte progress now scales multipart transfer events back to artifact payload bytes, optional upload failures no longer make percent jump backward, and player loading no longer treats unknown-size metadata downloads as fully-known totals mid-transfer.
-- `2026-04-23`: Player root without params now shows an intro/how-to-use screen with GitHub CTA, and the popup now includes GitHub plus contribution CTAs.
-- `2026-04-23`: Player title now includes a short metadata-derived label so users can distinguish recordings when multiple replay tabs are open.
-- `2026-04-23`: Replay player now supports draggable pane resizing, persisted layout percent in `localStorage`, horizontal/vertical orientation switching, and in-tab immersive video expansion in both extension and standalone shells.
-- `2026-04-23`: Drive upload now runs with bounded parallelism and byte-level popup progress; player loading now reports byte-level progress and downloads video parts in parallel.
-- `2026-04-23`: Upload keeps folder-scoped Drive storage and `manifest.json`, but replay links now pass direct artifact file IDs via `videos`, `metadata`, `console`, `network`, and `websocket`; standalone playback no longer depends on folder listing.
-- `2026-04-23`: Standalone playback now routes Drive artifact downloads through a same-origin Pages Function proxy to avoid `Failed to fetch` errors from browser CORS/CORP enforcement.
-- `2026-04-23`: Tag-based release CI no longer deploys the standalone player to Cloudflare; it only builds and publishes the extension artifact, while player deploy stays manual.
-- `2026-04-23`: Replay links were fixed to `https://tracing.gnas.dev/` and standalone deployment was standardized on Cloudflare Pages tag releases.
-- `2026-04-23`: Local Cloudflare Pages deploy was executed after provisioning project `gn-tracing-player`; root env files now carry deploy variables for the player release flow.
-- `2026-04-24`: Popup now supports configurable Drive parent folders, persisted upload history with Drive JSON sync, automatic upload on stop when connected, and pause/resume capture controls.
-- `2026-04-23`: Initial spec extracted from current implementation.

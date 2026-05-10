@@ -17,9 +17,15 @@
 ## Recording State Models
 
 - `RecordingStatus`
-  tracks `isRecording`, active `tabId`, `startTime`, console/network counters, and `hasRecording`.
+  tracks active phase, pause state, tab/session IDs, elapsed time excluding paused intervals, source tab URL, and live console/network counters.
+- `RecordingSessionSummary`
+  tracks finished local/upload session status, local snapshot availability, progress, generated replay URL, Drive folder/index IDs, and errors.
 - `UploadState`
   tracks in-flight upload progress, status message, generated recording URL, and error.
+- `UploadSettings`
+  tracks the optional Drive target folder input and resolved folder ID.
+- `UploadHistoryEntry`
+  tracks recent uploaded replay links, Drive folder IDs, target folder scope, source page URL, and duration for popup/history UI.
 
 ## Capture Payload Models
 
@@ -38,7 +44,9 @@
 - Edge token fallback is stored in `chrome.storage.local`
 - console/network/WebSocket capture payloads stay in memory only for the active post-recording flow and are cleared after a successful Google Drive upload
 - Google Drive replay storage remains folder-scoped: each upload creates one folder with `metadata.json`, `manifest.json`, optional log JSON files, and ordered `video.part-XXX.webm` chunks
+- every upload also writes `recording-index.json`, which is the public replay entrypoint referenced by the hosted player URL
 - the offscreen recorded video blob is retained only until upload completes successfully; after that the blob and recorder references are released
 - source-map caches are temporary enrichment helpers and are discarded immediately after stored console/network artifacts are resolved
-- replay links identify a recording by explicit Drive file IDs: `videos=<comma-separated-video-part-ids>`, `metadata=<file-id>`, and optional `console`, `network`, `websocket`
+- replay links identify a recording by the single recording index file ID path, while legacy query-param replay links can still be parsed by the player for compatibility
 - standalone replay resolves those file IDs through the same-origin `/api/drive?id=<file-id>` proxy on Cloudflare Pages instead of browser-direct Drive fetches
+- upload history is stored in `chrome.storage.local` and synced as `gn-tracing-upload-history.json` per Drive target folder scope when Drive auth is available

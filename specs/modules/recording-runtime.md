@@ -18,19 +18,22 @@ The service worker is the orchestration boundary. It owns session state, starts/
 - Start recording only when no active recording exists.
 - Reject `chrome://` tabs.
 - Capture media, console logs, network traffic, and WebSocket frames for the same tab session.
+- Support pause/resume during capture and compute recording duration excluding paused intervals.
 - Preserve popup UX even when the popup closes by mirroring state into session storage.
 - Tolerate partial teardown failures by settling recorder/CDP shutdown independently.
 
 ## 3. Data Models & APIs
 
-- consumes `MessageAction.START_RECORDING`, `STOP_RECORDING`, `GET_STATUS`, `GET_UPLOAD_STATE`
+- consumes `MessageAction.START_RECORDING`, `STOP_RECORDING`, `PAUSE_RECORDING`, `RESUME_RECORDING`, `REMOVE_RECORDING`, `DELETE_SESSION`, `GET_STATUS`, `GET_UPLOAD_STATE`
 - persists mirrored UI state under `gn_tracing_state`
-- uses `RecorderManager.hasRecording` as the gate for post-recording upload availability
+- models the active lifecycle with `RecordingPhase` values `idle`, `recording`, `paused`, and `interrupted`
+- models completed local/upload sessions with `RecordingSessionSummary` values `recorded`, `uploading`, `uploaded`, and `failed`
 - uses `StorageManager` as the in-memory sink for console/network/WebSocket entries
 
 ## 4. Business Rules
 
 - `START_RECORDING` clears prior captured data before a new session begins.
+- `PAUSE_RECORDING` and `RESUME_RECORDING` are delegated to the offscreen document so `MediaRecorder` state and elapsed-time accounting stay aligned.
 - service worker marks the extension badge with `REC` while recording is active.
 - `chrome.alarms` keepalive is created at 0.4 minutes and cleared after stop.
 - source maps are flushed before debugger detach, then applied to stored console/network initiator data, and the resolver cache is released immediately after enrichment completes.
@@ -38,6 +41,7 @@ The service worker is the orchestration boundary. It owns session state, starts/
 - offscreen stop waits on a recording-complete signal with a 3 second safety timeout.
 - large console payloads are truncated to 32 KB per entry before storage.
 - successful Google Drive upload is treated as the end of the in-memory artifact lifecycle: service worker capture buffers are cleared and the offscreen recorded video blob is released, while upload result state remains available for popup UX.
+- stopping a finished capture can auto-start upload when Google Drive is already connected, while the completed session remains removable from popup/history state.
 
 ## 5. Constraints & Assumptions
 
@@ -57,8 +61,3 @@ The service worker is the orchestration boundary. It owns session state, starts/
 
 - MV3 media capture is offloaded to an offscreen document instead of the service worker.
 - UI clients are intentionally thin and state is centralized in the service worker.
-
-## 8. Changelog
-
-- `2026-04-23`: Memory-retention cleanup now releases source-map caches after enrichment, compacts settled source-map fetch tracking during recording, and clears in-memory artifacts plus offscreen video blob after successful Google Drive upload.
-- `2026-04-23`: Initial spec extracted from current implementation.

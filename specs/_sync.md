@@ -1,24 +1,17 @@
 # Spec Sync
 
-- **Head Commit**: `20ff17c26155a6f5aece7748f9f18d016f774506`
-- **Spec Status**: synced to current HEAD architecture snapshot on 2026-04-23 and refreshed for the current working tree after adding a no-param player intro/usage landing state, popup GitHub/contribution CTAs, startup auth/state hardening, aggregate-plus-per-file upload/load progress, zip-only extension release packaging, and the English source comment convention while replay player layout controls, network response preview/highlighting, metadata-derived tab titles, and standalone player CI boundaries remain documented
-- **Notes**:
-  - `specs/` was initialized in this snapshot because the repository previously had no spec directory.
-  - The sync target reflects current source architecture, not an older clean-tree baseline.
-  - Replay storage uses one Google Drive folder per recording plus `manifest.json` and ordered `video.part-XXX.webm` files; replay URLs expose explicit artifact file IDs instead of `folderId`, and standalone playback downloads them through the Pages `/api/drive` proxy.
-  - Player hosting is fixed to `https://tracing.gnas.dev/`; popup UI only displays that host and no longer supports editable player-host configuration.
-  - Replay player UI now supports draggable pane resizing, persisted split percentage in `localStorage`, horizontal/vertical orientation switching, and an immersive in-tab video mode that hides the log pane instead of entering screen fullscreen.
-  - Network detail in the replay player now derives response presentation from mime type and file extension, syntax-highlights JavaScript/HTML/CSS/JSON bodies, and renders inline preview panels for HTML, JSON, and base64-backed media responses.
-  - Player title now derives a compact label from replay metadata URL plus record time and applies it to both the visible header and browser tab title for easier multi-tab differentiation.
-  - Opening the player host root without replay params now shows an intro/how-to-use screen with a GitHub CTA instead of the invalid-params error; partial malformed query strings still use the error state.
-  - Extension popup exposes GitHub and contribution CTAs without showing the fixed player host, and popup auth state is revalidated against the service worker so reloads do not leave Google Drive status stale.
-  - Service worker now refreshes persisted popup state on startup/install, caches Google Drive connectivity separately from popup snapshot persistence, and probes the offscreen capture document to recover recording visibility after runtime restarts when the media buffer is still alive.
-  - Popup/runtime state now uses an explicit recording phase model so a stale replay URL no longer reappears when a new recording starts.
-  - Upload and player load progress now keep the aggregate byte bar but also expose per-file rows with label, status, percent, and size for each artifact/video part; built-in player and standalone wrapper markup must stay aligned for that loading list.
-  - Upload progress now normalizes multipart transfer events back to artifact payload bytes, optional artifact failures preserve monotonic aggregate progress, and player loading waits for final blob sizes when `content-length` is unknown so progress no longer spikes to 100% before video totals are known.
-  - Google Drive upload now transfers artifacts with bounded parallelism, keeps `manifest.json` as the final required upload after artifact IDs are known, and reports aggregate uploaded bytes plus percent through popup state updates.
-  - Player loading still fans out artifact fetches in parallel, but video parts now download concurrently too and the loading screen shows transferred bytes plus percent.
-  - Release automation is tag-driven via `.github/workflows/release.yml` and root `package.json` scripts; it publishes only the manual unpacked-extension zip while `player-standalone/deploy.sh` remains outside release CI.
-  - Release CI also depends on a committed `player-standalone/package-lock.json`; ignoring that lockfile breaks the nested `npm ci` step on GitHub Actions.
-  - Recording runtime now releases source-map caches after stop-time enrichment, compacts source-map fetch tracking as promises settle, and clears in-memory artifacts after successful Google Drive upload.
-  - Source comments now use English across runtime boundaries, browser API constraints, shared message/data contracts, player loading, and release packaging.
+## Meta
+
+- Synced commit: `71780ea47ad7d5d89cdeed8145757afb5d193917`
+- Synced at: `2026-05-10T14:44:45Z`
+- Scope: extension recording runtime, Google Drive upload/replay, standalone player, release/developer docs, and specs tree
+- Status: synced
+- Known unsynced: Không có
+
+## Current Snapshot
+
+Specs describe the current architecture where GN Tracing records one Chromium tab, captures DevTools evidence in memory, uploads the finished session to Google Drive, and opens a hosted replay at `https://tracing.gnas.dev/<recording-index-file-id>`.
+
+Replay storage is folder-scoped. Each upload writes `metadata.json`, `manifest.json`, `recording-index.json`, optional log artifacts, and ordered `video.part-XXX.webm` files. The recording index is the public entrypoint for the player; direct-file query params remain only as a legacy parser path.
+
+The popup and history surfaces expose configurable Drive target folders, pause/resume, auto-upload when connected, per-file upload progress, and recent upload history synced to Drive when auth is available. Release automation remains tag-driven and publishes only the manual unpacked-extension zip.
