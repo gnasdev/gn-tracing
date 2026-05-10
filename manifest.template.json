@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "gn-tracing",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "description": "Record tab video, console logs, and network requests for debugging",
   "update_url": "https://github.com/gnasdev/gn-tracing/releases/latest/download/updates.xml",
   "permissions": [
