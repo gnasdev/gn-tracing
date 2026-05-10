@@ -205,6 +205,7 @@ Current release artifact behavior:
 - `manifest.template.json` includes an `update_url` pointing at `https://github.com/gnasdev/gn-tracing/releases/latest/download/updates.xml`
 - `updates.xml` points Chrome to `https://github.com/gnasdev/gn-tracing/releases/latest/download/gn-tracing-extension.crx`
 - release CI requires a `CHROME_EXTENSION_PRIVATE_KEY` repository secret that matches the public `key` committed in `manifest.template.json`; otherwise the CRX app id will not match the installed extension id
+- changing the manifest `key` changes the Chrome extension id, so the matching private key must be preserved outside the repository and mirrored into the GitHub Actions secret before tagging a release
 
 ## Testing checklist
 

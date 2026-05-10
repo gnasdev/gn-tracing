@@ -51,7 +51,7 @@ This module covers authentication, Google Drive upload, replay URL generation, b
 - release automation expects both npm workspaces to have committed lockfiles so GitHub Actions can run `npm ci` at the repo root and inside `player-standalone/`.
 - tag-based GitHub releases build the extension, publish a manual zip artifact, and publish self-hosted Chrome update artifacts (`gn-tracing-extension.crx` plus `updates.xml`); they do not invoke Cloudflare deploy steps for the standalone player.
 - extension auto-update uses `manifest.template.json` `update_url` pointing at `https://github.com/gnasdev/gn-tracing/releases/latest/download/updates.xml`, while the XML `codebase` points at `https://github.com/gnasdev/gn-tracing/releases/latest/download/gn-tracing-extension.crx`.
-- release CI must sign the CRX with the private key matching the committed manifest `key`; the expected extension id is `fomajjkcepcijpnghnkplinhibgonlpg`.
+- release CI must sign the CRX with the private key matching the committed manifest `key`; the expected extension id is `ilocoilhmbgadleccifnpblnkkdnennk`.
 - if video exceeds the upload limit, offscreen upload slices the final recording blob into ordered byte chunks and the player reassembles them locally before playback.
 - popup upload status must surface both aggregate transferred bytes/percent and per-file progress rows throughout the Drive upload flow.
 - player loading must surface both aggregate transferred bytes/percent and per-file progress rows for metadata, optional artifacts, manifest, and each video part.

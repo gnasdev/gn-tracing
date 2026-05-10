@@ -20,6 +20,7 @@
   - Player loading still fans out artifact fetches in parallel, but video parts now download concurrently too and the loading screen shows transferred bytes plus percent.
   - Release automation is tag-driven via `.github/workflows/release.yml` and root `package.json` scripts; it publishes a manual zip plus self-hosted Chrome update artifacts (`gn-tracing-extension.crx` and `updates.xml`) while `player-standalone/deploy.sh` remains outside release CI.
   - Chrome self-hosted update URLs use GitHub `releases/latest/download/...`: the built manifest points to `updates.xml`, and the update manifest points to the stable CRX asset name for the latest release.
+  - CRX signing currently expects the manifest public key for extension id `ilocoilhmbgadleccifnpblnkkdnennk`, with the matching private key stored in GitHub Actions secret `CHROME_EXTENSION_PRIVATE_KEY`.
   - Release CI also depends on a committed `player-standalone/package-lock.json`; ignoring that lockfile breaks the nested `npm ci` step on GitHub Actions.
   - Recording runtime now releases source-map caches after stop-time enrichment, compacts source-map fetch tracking as promises settle, and clears in-memory artifacts after successful Google Drive upload.
   - Source comments now use English across runtime boundaries, browser API constraints, shared message/data contracts, player loading, and release packaging.
