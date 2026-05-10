@@ -1,7 +1,7 @@
 # Spec Sync
 
 - **Head Commit**: `20ff17c26155a6f5aece7748f9f18d016f774506`
-- **Spec Status**: synced to current HEAD architecture snapshot on 2026-04-23 and refreshed for the current working tree after adding a no-param player intro/usage landing state, popup GitHub/contribution/update-check CTAs, startup auth/state hardening, aggregate-plus-per-file upload/load progress, self-hosted Chrome auto-update release artifacts, and the English source comment convention while replay player layout controls, network response preview/highlighting, metadata-derived tab titles, and standalone player CI boundaries remain documented
+- **Spec Status**: synced to current HEAD architecture snapshot on 2026-04-23 and refreshed for the current working tree after adding a no-param player intro/usage landing state, popup GitHub/contribution CTAs, startup auth/state hardening, aggregate-plus-per-file upload/load progress, zip-only extension release packaging, and the English source comment convention while replay player layout controls, network response preview/highlighting, metadata-derived tab titles, and standalone player CI boundaries remain documented
 - **Notes**:
   - `specs/` was initialized in this snapshot because the repository previously had no spec directory.
   - The sync target reflects current source architecture, not an older clean-tree baseline.
@@ -11,16 +11,14 @@
   - Network detail in the replay player now derives response presentation from mime type and file extension, syntax-highlights JavaScript/HTML/CSS/JSON bodies, and renders inline preview panels for HTML, JSON, and base64-backed media responses.
   - Player title now derives a compact label from replay metadata URL plus record time and applies it to both the visible header and browser tab title for easier multi-tab differentiation.
   - Opening the player host root without replay params now shows an intro/how-to-use screen with a GitHub CTA instead of the invalid-params error; partial malformed query strings still use the error state.
-  - Extension popup now exposes GitHub, contribution, and manual update-check CTAs without showing the fixed player host; update-check status and results render through toast messages, and popup auth state is revalidated against the service worker so reloads do not leave Google Drive status stale.
+  - Extension popup exposes GitHub and contribution CTAs without showing the fixed player host, and popup auth state is revalidated against the service worker so reloads do not leave Google Drive status stale.
   - Service worker now refreshes persisted popup state on startup/install, caches Google Drive connectivity separately from popup snapshot persistence, and probes the offscreen capture document to recover recording visibility after runtime restarts when the media buffer is still alive.
   - Popup/runtime state now uses an explicit recording phase model so a stale replay URL no longer reappears when a new recording starts.
   - Upload and player load progress now keep the aggregate byte bar but also expose per-file rows with label, status, percent, and size for each artifact/video part; built-in player and standalone wrapper markup must stay aligned for that loading list.
   - Upload progress now normalizes multipart transfer events back to artifact payload bytes, optional artifact failures preserve monotonic aggregate progress, and player loading waits for final blob sizes when `content-length` is unknown so progress no longer spikes to 100% before video totals are known.
   - Google Drive upload now transfers artifacts with bounded parallelism, keeps `manifest.json` as the final required upload after artifact IDs are known, and reports aggregate uploaded bytes plus percent through popup state updates.
   - Player loading still fans out artifact fetches in parallel, but video parts now download concurrently too and the loading screen shows transferred bytes plus percent.
-  - Release automation is tag-driven via `.github/workflows/release.yml` and root `package.json` scripts; it publishes a manual zip plus self-hosted Chrome update artifacts (`gn-tracing-extension.crx` and `updates.xml`) while `player-standalone/deploy.sh` remains outside release CI.
-  - Chrome self-hosted update URLs use GitHub `releases/latest/download/...`: the built manifest points to `updates.xml`, and the update manifest points to the stable CRX asset name for the latest release.
-  - CRX signing currently expects the manifest public key for extension id `ilocoilhmbgadleccifnpblnkkdnennk`, with the matching private key stored in GitHub Actions secret `CHROME_EXTENSION_PRIVATE_KEY`.
+  - Release automation is tag-driven via `.github/workflows/release.yml` and root `package.json` scripts; it publishes only the manual unpacked-extension zip while `player-standalone/deploy.sh` remains outside release CI.
   - Release CI also depends on a committed `player-standalone/package-lock.json`; ignoring that lockfile breaks the nested `npm ci` step on GitHub Actions.
   - Recording runtime now releases source-map caches after stop-time enrichment, compacts source-map fetch tracking as promises settle, and clears in-memory artifacts after successful Google Drive upload.
   - Source comments now use English across runtime boundaries, browser API constraints, shared message/data contracts, player loading, and release packaging.

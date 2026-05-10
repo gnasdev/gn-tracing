@@ -200,12 +200,9 @@ Current release artifact behavior:
 
 - `npm run release:build` builds the extension with the production environment
 - `npm run release:zip` zips the `dist/` directory for manual unpacked-extension distribution
-- `npm run release:crx` signs `dist/` as `gn-tracing-extension.crx` and generates `updates.xml`
-- the GitHub release publishes `gn-tracing-extension-${tag}.zip`, `gn-tracing-extension.crx`, and `updates.xml`
-- `manifest.template.json` includes an `update_url` pointing at `https://github.com/gnasdev/gn-tracing/releases/latest/download/updates.xml`
-- `updates.xml` points Chrome to `https://github.com/gnasdev/gn-tracing/releases/latest/download/gn-tracing-extension.crx`
-- release CI requires a `CHROME_EXTENSION_PRIVATE_KEY` repository secret that matches the public `key` committed in `manifest.template.json`; otherwise the CRX app id will not match the installed extension id
-- changing the manifest `key` changes the Chrome extension id, so the matching private key must be preserved outside the repository and mirrored into the GitHub Actions secret before tagging a release
+- `npm run release:ci` builds the production extension and creates only the manual install zip
+- the GitHub release publishes `gn-tracing-extension-${tag}.zip`
+- releases do not publish `.crx` or `updates.xml`; install by extracting the zip and loading the `dist/` folder as an unpacked extension
 
 ## Testing checklist
 

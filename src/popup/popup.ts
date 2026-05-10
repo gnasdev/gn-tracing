@@ -56,7 +56,6 @@ const uploadHistoryPageBtn = document.getElementById("upload-history-page-btn") 
 
 const githubLinkBtn = document.getElementById("github-link-btn") as HTMLButtonElement;
 const contributeLinkBtn = document.getElementById("contribute-link-btn") as HTMLButtonElement;
-const checkUpdateBtn = document.getElementById("check-update-btn") as HTMLButtonElement;
 
 let timerInterval: ReturnType<typeof setInterval> | null = null;
 let timerRecording: RecordingStatus | null = null;
@@ -209,21 +208,6 @@ function showToast(message: string, durationMs = 1800): void {
     toastEl.classList.add("hidden");
     toastTimeout = null;
   }, durationMs);
-}
-
-function getUpdateCheckToastMessage(result: chrome.runtime.RequestUpdateCheckResult): string {
-  switch (result.status) {
-    case "update_available":
-      return result.version
-        ? `Update ${result.version} is available.`
-        : "An update is available.";
-    case "no_update":
-      return "GN Tracing is up to date.";
-    case "throttled":
-      return "Update check throttled. Try again later.";
-    default:
-      return "Update check finished.";
-  }
 }
 
 function getProgressStatusLabel(status: ProgressItemSnapshot["status"]): string {
@@ -835,20 +819,6 @@ githubLinkBtn.addEventListener("click", () => {
 
 contributeLinkBtn.addEventListener("click", () => {
   openExternalUrl(GITHUB_ISSUES_URL);
-});
-
-checkUpdateBtn.addEventListener("click", async () => {
-  checkUpdateBtn.disabled = true;
-  showToast("Checking for updates...", 2400);
-
-  try {
-    const result = await chrome.runtime.requestUpdateCheck();
-    showToast(getUpdateCheckToastMessage(result), 3600);
-  } catch (error) {
-    showToast((error as Error).message || "Update check failed.", 3600);
-  } finally {
-    checkUpdateBtn.disabled = false;
-  }
 });
 
 void initPopup();
