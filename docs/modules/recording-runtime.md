@@ -1,5 +1,31 @@
+---
+title: "Recording Runtime"
+description: "Current MV3 recording orchestration, capture lifecycle, and popup state model."
+type: module
+status: active
+tags: ["recording", "mv3", "runtime"]
+source_paths:
+  - "src/background/service-worker.ts"
+  - "src/background/recorder-manager.ts"
+  - "src/background/cdp-manager.ts"
+  - "src/background/storage-manager.ts"
+  - "src/offscreen/offscreen.ts"
+  - "src/popup/popup.ts"
+related:
+  - "./drive-and-player.md"
+  - "../shared/data-models.md"
+  - "../shared/api-conventions.md"
+---
+
 # Recording Runtime
-- **Meta**: Status `Active`, Version `0.1.0`, Compliance `Documented`
+
+## Meta
+
+- Trạng thái: active
+- Phạm vi: recording lifecycle, CDP capture, offscreen media capture, service-worker state, and popup state rendering
+- Nguồn code: `src/background/service-worker.ts`, `src/background/recorder-manager.ts`, `src/background/cdp-manager.ts`, `src/background/storage-manager.ts`, `src/offscreen/offscreen.ts`, `src/popup/popup.ts`
+- Tuân thủ: Documented
+- Links: [Drive And Player](./drive-and-player.md), [Shared Data Models](../shared/data-models.md), [API Conventions](../shared/api-conventions.md)
 
 ## 1. Overview
 
@@ -20,6 +46,7 @@ The service worker is the orchestration boundary. It owns session state, starts/
 - Capture media, console logs, network traffic, and WebSocket frames for the same tab session.
 - Support pause/resume during capture and compute recording duration excluding paused intervals.
 - Preserve popup UX even when the popup closes by mirroring state into session storage.
+- Hide capture controls and the capture queue from the popup until Google Drive is connected.
 - Tolerate partial teardown failures by settling recorder/CDP shutdown independently.
 
 ## 3. Data Models & APIs
@@ -42,6 +69,7 @@ The service worker is the orchestration boundary. It owns session state, starts/
 - large console payloads are truncated to 32 KB per entry before storage.
 - successful Google Drive upload is treated as the end of the in-memory artifact lifecycle: service worker capture buffers are cleared and the offscreen recorded video blob is released, while upload result state remains available for popup UX.
 - stopping a finished capture can auto-start upload when Google Drive is already connected, while the completed session remains removable from popup/history state.
+- popup capture controls are gated by the cached Google Drive auth state; service worker upload commands still validate a live Drive token before uploading.
 
 ## 5. Constraints & Assumptions
 

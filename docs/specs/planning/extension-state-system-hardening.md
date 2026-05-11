@@ -166,8 +166,8 @@
 ### Step 6. Spec and graph sync
 
 - Cập nhật:
-  - `specs/modules/drive-and-player.md`
-  - `specs/_sync.md`
+  - `docs/modules/drive-and-player.md`
+  - `docs/_sync.md`
 - Rebuild `graphify-out/` sau khi sửa code.
 
 ## Risks / Decisions To Confirm During Implementation

@@ -1,4 +1,16 @@
-# GN Tracing Specs Overview
+---
+title: "GN Tracing Docs Overview"
+description: "High-level scope and guardrails for the GN Tracing knowledge base."
+type: architecture
+status: active
+tags: ["overview", "gn-tracing"]
+related:
+  - "./modules/recording-runtime.md"
+  - "./modules/drive-and-player.md"
+  - "./shared/project-context.md"
+---
+
+# GN Tracing Docs Overview
 
 - **Status**: Active
 - **Version**: 0.1.0
@@ -28,7 +40,7 @@ GN Tracing is a Chrome/Edge Manifest V3 extension for capturing a browser tab se
 
 ## Current Scope Guard
 
-The current codebase is centered on session capture and replay distribution. New specs should stay within:
+The current codebase is centered on session capture and replay distribution. New docs should stay within:
 - browser capture/runtime behavior
 - upload/share flows
 - player hosting and playback integration

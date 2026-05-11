@@ -1,7 +1,24 @@
+---
+title: "Project Context"
+description: "Shared product and architectural context for GN Tracing."
+type: shared
+status: active
+tags: ["context", "architecture"]
+related:
+  - "../overview.md"
+  - "../modules/recording-runtime.md"
+  - "../modules/drive-and-player.md"
+---
+
 # Project Context
 
-- **Status**: Active
-- **Version**: 0.1.0
+## Meta
+
+- Trạng thái: active
+- Phạm vi: product context, architectural shape, comment convention, and non-functional constraints
+- Nguồn code: `src/`, `player/`, `player-standalone/`
+- Tuân thủ: Không áp dụng
+- Links: [Overview](../overview.md), [Recording Runtime](../modules/recording-runtime.md), [Drive And Player](../modules/drive-and-player.md)
 
 ## Product Context
 

@@ -4,18 +4,6 @@
   "description": "Standalone player for GN Tracing recordings",
   "license": "GPL-3.0-or-later",
   "type": "module",
-  "scripts": {
-    "dev": "vite --port 5173",
-    "watch": "vite --port 5173",
-    "build": "tsc && vite build --mode development",
-    "dist": "tsc && vite build --mode production",
-    "build:cloudflare": "sh -c 'VITE_BASE_PATH=\"${VITE_BASE_PATH:-/}\" npm run dist'",
-    "preview": "vite preview",
-    "typecheck": "tsc --noEmit",
-    "sync:player": "node scripts/sync-player.js",
-    "deploy": "./deploy.sh",
-    "deploy:cloudflare": "./deploy.sh"
-  },
   "devDependencies": {
     "typescript": "~5.9.3",
     "vite": "^7.3.1"

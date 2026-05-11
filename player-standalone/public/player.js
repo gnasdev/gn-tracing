@@ -34,6 +34,8 @@
   const MAX_RESPONSE_PREVIEW_CHARS = 40000;
   const DRIVE_CACHE_NAME = 'gn-tracing-drive-files-v1';
   const DRIVE_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+  const DRIVE_CACHE_MAX_BYTES = 5 * 1024 * 1024;
+  const VIDEO_DOWNLOAD_CONCURRENCY = 4;
   const DYNAMIC_ROUTE_EXTENSIONS = new Set(['.html', '.htm', '.php', '.asp', '.aspx', '.jsp']);
 
   console.log('[GN Tracing Player] Mode:', IS_EXTENSION ? 'extension' : 'standalone');
@@ -1258,9 +1260,31 @@
     return `https://drive.usercontent.google.com/download?id=${fileId}&export=download`;
   }
 
-  async function fetchDriveFileWithCache(fileId) {
+  async function mapWithConcurrency(items, concurrency, worker) {
+    if (!Array.isArray(items) || items.length === 0) {
+      return [];
+    }
+
+    const results = new Array(items.length);
+    let nextIndex = 0;
+
+    async function runWorker() {
+      while (nextIndex < items.length) {
+        const currentIndex = nextIndex;
+        nextIndex += 1;
+        results[currentIndex] = await worker(items[currentIndex], currentIndex);
+      }
+    }
+
+    await Promise.all(
+      Array.from({ length: Math.min(Math.max(1, concurrency), items.length) }, () => runWorker())
+    );
+    return results;
+  }
+
+  async function fetchDriveFileWithCache(fileId, options = {}) {
     const url = getDownloadUrl(fileId);
-    if (typeof caches === 'undefined') {
+    if (options.cache === false || typeof caches === 'undefined') {
       return fetch(url);
     }
 
@@ -1276,14 +1300,19 @@
     try {
       const networkResponse = await fetch(url);
       if (networkResponse.ok) {
-        const blob = await networkResponse.clone().blob();
-        const headers = new Headers(networkResponse.headers);
-        headers.set('x-gn-cached-at', String(Date.now()));
-        await cache.put(url, new Response(blob, {
-          status: networkResponse.status,
-          statusText: networkResponse.statusText,
-          headers,
-        }));
+        const contentLength = Number(networkResponse.headers.get('content-length')) || 0;
+        const maxCacheBytes = Number.isFinite(options.maxCacheBytes) ? options.maxCacheBytes : DRIVE_CACHE_MAX_BYTES;
+
+        if (contentLength > 0 && contentLength <= maxCacheBytes) {
+          const blob = await networkResponse.clone().blob();
+          const headers = new Headers(networkResponse.headers);
+          headers.set('x-gn-cached-at', String(Date.now()));
+          await cache.put(url, new Response(blob, {
+            status: networkResponse.status,
+            statusText: networkResponse.statusText,
+            headers,
+          }));
+        }
       }
       return networkResponse;
     } catch (error) {
@@ -1295,7 +1324,10 @@
   }
 
   async function downloadFile(fileId, options = {}) {
-    const response = await fetchDriveFileWithCache(fileId);
+    const response = await fetchDriveFileWithCache(fileId, {
+      cache: options.cache,
+      maxCacheBytes: options.maxCacheBytes,
+    });
 
     if (!response.ok) {
       throw new Error(`Failed to download file ${fileId}`);
@@ -1446,10 +1478,11 @@
     files.forEach((file, index) => {
       registerLoadingEntry(`video:${index}`, `video.part-${String(index).padStart(3, '0')}.webm`, 'video');
     });
-    const blobs = await Promise.all(files.map((file, index) =>
+    const blobs = await mapWithConcurrency(files, VIDEO_DOWNLOAD_CONCURRENCY, (file, index) =>
       downloadFileAsBlob(
         file.id,
         {
+          cache: false,
           onProgress: createLoadingProgressReporter(
             `video:${index}`,
             'video',
@@ -1466,7 +1499,7 @@
         });
         return blob;
       })
-    ));
+    );
 
     const combinedType = mimeType || blobs[0]?.type || 'video/webm';
     return new Blob(blobs, { type: combinedType });

@@ -1,7 +1,19 @@
-# Specs Index
+---
+title: "Docs Index"
+description: "Navigation map for the GN Tracing knowledge base."
+type: index
+status: active
+tags: ["docs", "index"]
+related:
+  - "./overview.md"
+  - "./_sync.md"
+---
+
+# Docs Index
 
 ## Core Docs
 
+- [README.md](./README.md)
 - [overview.md](./overview.md)
 - [shared/project-context.md](./shared/project-context.md)
 - [shared/data-models.md](./shared/data-models.md)
@@ -31,4 +43,4 @@
 - `offscreen` -> Google Drive APIs: recording-folder creation, multipart uploads, chunked video upload, and sharing permissions
 - `offscreen` -> Cloudflare Pages standalone player URL generation with one recording index file ID path (`/<id>`)
 - `standalone player` -> same-origin `/api/drive?id=<file-id>` proxy for Drive artifact fetches during replay
-- `release workflow` -> root `package.json` scripts: extension build and manual zip packaging with OAuth/extension identity from repository secrets; standalone player deploy stays manual via `player-standalone/deploy.sh`
+- `release workflow` -> root `Taskfile.yml`: extension build and manual zip packaging with OAuth/extension identity from repository secrets; standalone player deploy stays manual via `player-standalone/deploy.sh`

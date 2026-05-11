@@ -1,7 +1,27 @@
+---
+title: "Shared Data Models"
+description: "Shared message, recording state, capture payload, storage, and replay data models."
+type: shared
+status: active
+tags: ["data-models", "messages", "recording"]
+source_paths:
+  - "src/types/messages.ts"
+  - "src/types/recording.ts"
+related:
+  - "./api-conventions.md"
+  - "../modules/recording-runtime.md"
+  - "../modules/drive-and-player.md"
+---
+
 # Shared Data Models
 
-- **Status**: Active
-- **Version**: 0.1.0
+## Meta
+
+- Trạng thái: active
+- Phạm vi: message envelopes, recording state, upload state, capture payloads, and replay storage semantics
+- Nguồn code: `src/types/messages.ts`, `src/types/recording.ts`
+- Tuân thủ: Không áp dụng
+- Links: [API Conventions](./api-conventions.md), [Recording Runtime](../modules/recording-runtime.md), [Drive And Player](../modules/drive-and-player.md)
 
 ## Messaging Models
 

@@ -129,7 +129,16 @@ interface UploadQueueItem {
   index?: number;
 }
 
+interface UploadedQueueItem {
+  item: UploadQueueItem;
+  fileId: string;
+}
+
 const MAX_DRIVE_UPLOAD_BYTES = 32 * 1024 * 1024;
+const DRIVE_UPLOAD_CONCURRENCY = 4;
+const DRIVE_PERMISSION_CONCURRENCY = 4;
+const UPLOAD_PROGRESS_THROTTLE_MS = 250;
+const UPLOAD_PROGRESS_MIN_DELTA = 0.5;
 
 // The offscreen document exposes a small command surface to the service worker.
 // Keep message names stable with the service-worker caller because there is no
@@ -598,7 +607,6 @@ async function uploadToGoogleDrive(
       });
 
       onProgress?.(blob.size, blob.size);
-      await makeShareable(result.id);
       return result.id;
     };
 
@@ -675,6 +683,8 @@ async function uploadToGoogleDrive(
     const uploadedBytesByKey = new Map<string, number>();
     const totalBytesByKey = new Map<string, number>();
     const progressStatusByKey = new Map<string, ProgressItemStatus>();
+    let lastProgressSentAt = 0;
+    let lastProgressPercent = -1;
 
     for (const item of uploadItems) {
       totalBytesByKey.set(item.key, item.blob.size);
@@ -718,11 +728,19 @@ async function uploadToGoogleDrive(
       return snapshots;
     };
 
-    const emitProgress = (message: string): void => {
+    const emitProgress = (message: string, force = false): void => {
       const uploadedBytes = Array.from(uploadedBytesByKey.values()).reduce((sum, value) => sum + value, 0);
       const percent = totalUploadBytes > 0
         ? clampPercent((uploadedBytes / totalUploadBytes) * 100)
         : completedSteps >= totalSteps ? 100 : 0;
+      const nowMs = Date.now();
+
+      if (!force && nowMs - lastProgressSentAt < UPLOAD_PROGRESS_THROTTLE_MS && Math.abs(percent - lastProgressPercent) < UPLOAD_PROGRESS_MIN_DELTA) {
+        return;
+      }
+
+      lastProgressSentAt = nowMs;
+      lastProgressPercent = percent;
 
       sendProgress({
         sessionId,
@@ -783,10 +801,11 @@ async function uploadToGoogleDrive(
     let networkFileId: string | null = null;
     let websocketFileId: string | null = null;
     let metadataFileId: string | null = null;
+    const uploadedFiles: UploadedQueueItem[] = [];
 
-    await mapWithConcurrency(uploadItems, 3, async (item) => {
+    await mapWithConcurrency(uploadItems, DRIVE_UPLOAD_CONCURRENCY, async (item) => {
       progressStatusByKey.set(item.key, "uploading");
-      emitProgress("Uploading recording...");
+      emitProgress("Uploading recording...", true);
 
       try {
         const fileId = await uploadFile(item.filename, item.blob, folderId, (loaded, total) => {
@@ -795,9 +814,32 @@ async function uploadToGoogleDrive(
         });
 
         uploadedBytesByKey.set(item.key, item.blob.size);
+        uploadedFiles.push({ item, fileId });
+      } catch (error) {
+        completedSteps += 1;
+
+        if (item.required) {
+          progressStatusByKey.set(item.key, "failed");
+          emitProgress("Uploading recording...", true);
+          throw error;
+        }
+
+        const alreadyLoaded = Math.max(0, uploadedBytesByKey.get(item.key) || 0);
+        const remainingBytes = Math.max(0, item.blob.size - alreadyLoaded);
+        uploadedBytesByKey.set(item.key, alreadyLoaded);
+        totalUploadBytes = Math.max(0, totalUploadBytes - remainingBytes);
+        totalBytesByKey.set(item.key, alreadyLoaded);
+        progressStatusByKey.set(item.key, "skipped");
+        emitProgress("Uploading recording...", true);
+        console.warn(`[Google Drive Upload] Skipped optional ${item.filename}:`, error);
+      }
+    });
+
+    await mapWithConcurrency(uploadedFiles, DRIVE_PERMISSION_CONCURRENCY, async ({ item, fileId }) => {
+      try {
+        await makeShareable(fileId);
         progressStatusByKey.set(item.key, "uploaded");
         completedSteps += 1;
-        emitProgress("Uploading recording...");
 
         switch (item.kind) {
           case "video":
@@ -824,23 +866,20 @@ async function uploadToGoogleDrive(
             metadataFileId = fileId;
             break;
         }
+
+        emitProgress("Uploading recording...", true);
       } catch (error) {
         completedSteps += 1;
 
         if (item.required) {
           progressStatusByKey.set(item.key, "failed");
-          emitProgress("Uploading recording...");
+          emitProgress("Uploading recording...", true);
           throw error;
         }
 
-        const alreadyLoaded = Math.max(0, uploadedBytesByKey.get(item.key) || 0);
-        const remainingBytes = Math.max(0, item.blob.size - alreadyLoaded);
-        uploadedBytesByKey.set(item.key, alreadyLoaded);
-        totalUploadBytes = Math.max(0, totalUploadBytes - remainingBytes);
-        totalBytesByKey.set(item.key, alreadyLoaded);
         progressStatusByKey.set(item.key, "skipped");
-        emitProgress("Uploading recording...");
-        console.warn(`[Google Drive Upload] Skipped optional ${item.filename}:`, error);
+        emitProgress("Uploading recording...", true);
+        console.warn(`[Google Drive Upload] Could not share optional ${item.filename}:`, error);
       }
     });
 
@@ -874,15 +913,17 @@ async function uploadToGoogleDrive(
         uploadedBytesByKey.set("manifest", Math.min(loaded, total || manifestBlob.size));
         emitProgress("Uploading recording...");
       });
+      await makeShareable(manifestFileId);
     } catch (error) {
       progressStatusByKey.set("manifest", "failed");
-      emitProgress("Uploading recording...");
+      emitProgress("Uploading recording...", true);
       throw error;
     }
 
     uploadedBytesByKey.set("manifest", manifestBlob.size);
     progressStatusByKey.set("manifest", "uploaded");
     completedSteps += 1;
+    emitProgress("Uploading recording...", true);
 
     const recordingIndex: RecordingIndex = {
       schemaVersion: 1,
@@ -913,16 +954,17 @@ async function uploadToGoogleDrive(
         uploadedBytesByKey.set("index", Math.min(loaded, total || indexBlob.size));
         emitProgress("Uploading recording index...");
       });
+      await makeShareable(indexFileId);
     } catch (error) {
       progressStatusByKey.set("index", "failed");
-      emitProgress("Uploading recording index...");
+      emitProgress("Uploading recording index...", true);
       throw error;
     }
 
     uploadedBytesByKey.set("index", indexBlob.size);
     progressStatusByKey.set("index", "uploaded");
     completedSteps += 1;
-    emitProgress("Upload complete!");
+    emitProgress("Upload complete!", true);
 
     const recordingUrl = buildExternalPlayerUrl(indexFileId || "");
     return { ok: true, recordingUrl, folderId, indexFileId: indexFileId || undefined, targetFolderId };

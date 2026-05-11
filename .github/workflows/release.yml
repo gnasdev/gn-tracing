@@ -34,8 +34,11 @@ jobs:
         run: npm ci
         working-directory: player-standalone
 
+      - name: Setup Task
+        uses: go-task/setup-task@v2
+
       - name: Run release flow
-        run: npm run release:ci
+        run: task release:ci
         env:
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
           CHROME_EXTENSION_ID: ${{ secrets.CHROME_EXTENSION_ID }}

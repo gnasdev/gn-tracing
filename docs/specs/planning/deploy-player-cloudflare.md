@@ -69,9 +69,9 @@ Thêm GitHub Actions trigger theo tag, ví dụ `v*`, gồm:
 - `src/types/messages.ts`
 - `src/background/service-worker.ts`
 - `README.md`
-- `specs/modules/drive-and-player.md`
-- `specs/shared/data-models.md`
-- `specs/_sync.md`
+- `docs/modules/drive-and-player.md`
+- `docs/shared/data-models.md`
+- `docs/_sync.md`
 
 ## 5. Secret Handling Plan
 

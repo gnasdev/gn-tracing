@@ -26,7 +26,7 @@
 - `player/player.css`
 - `player-standalone/public/*` qua sync script
 - `src/types/messages.ts`
-- specs liên quan trong `specs/modules/drive-and-player.md` và `specs/_sync.md`
+- docs liên quan trong `docs/modules/drive-and-player.md` và `docs/_sync.md`
 
 ## Goals
 
@@ -132,10 +132,10 @@
 
 ### Step 6. Spec sync
 
-- Cập nhật `specs/modules/drive-and-player.md`:
+- Cập nhật `docs/modules/drive-and-player.md`:
   - progress aggregate + per-file coexist
   - current “generic-only progress copy” rule phải bị thay thế
-- Cập nhật `specs/_sync.md`
+- Cập nhật `docs/_sync.md`
 - Rebuild `graphify-out/`
 
 ## Risks

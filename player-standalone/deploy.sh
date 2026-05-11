@@ -20,10 +20,10 @@ if [ -z "${CLOUDFLARE_API_TOKEN:-}" ] || [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]; th
 fi
 
 echo "Syncing player assets..."
-npm run sync:player
+task -d .. player:sync
 
 echo "Building standalone player..."
-npm run build:cloudflare
+task -d .. player:build:cloudflare
 
 echo "Publishing dist/ to project ${PROJECT_NAME}..."
 npx wrangler pages deploy dist --project-name="${PROJECT_NAME}"

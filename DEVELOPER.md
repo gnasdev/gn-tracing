@@ -78,42 +78,42 @@ cd player-standalone
 npm install
 ```
 
-### Useful scripts
+### Useful tasks
 
 From the repository root:
 
 ```bash
-npm run build
-npm run dist
-npm run watch
-npm run typecheck
-npm run build:all
-npm run dist:all
-npm run watch:all
+task build
+task dist
+task watch
+task typecheck
+task build:all
+task dist:all
+task watch:all
 ```
 
 What they do:
 
-- `npm run build`: build the extension into `dist/` with the development environment
-- `npm run dist`: build the extension into `dist/` with the production environment
-- `npm run watch`: rebuild the extension on source changes
-- `npm run typecheck`: run root TypeScript checks
-- `npm run build:all`: build the extension and standalone player with the development environment
-- `npm run dist:all`: build the extension and standalone player with the production environment
-- `npm run watch:all`: run extension watch and standalone player dev mode together
+- `task build`: build the extension into `dist/` with the development environment
+- `task dist`: build the extension into `dist/` with the production environment
+- `task watch`: rebuild the extension on source changes
+- `task typecheck`: run root TypeScript checks
+- `task build:all`: build the extension and standalone player with the development environment
+- `task dist:all`: build the extension and standalone player with the production environment
+- `task watch:all`: run extension watch and standalone player dev mode together
 
-From `player-standalone/`:
+Standalone player tasks from the repository root:
 
 ```bash
-npm run dev
-npm run build
-npm run dist
-npm run typecheck
+task player:dev
+task player:build
+task player:dist
+task player:typecheck
 ```
 
 ## Loading the extension locally
 
-1. Run `npm run build`.
+1. Run `task build`.
 2. Open `chrome://extensions` or `edge://extensions`.
 3. Turn on `Developer mode`.
 4. Click `Load unpacked`.
@@ -127,7 +127,7 @@ The extension and the standalone player intentionally share player assets.
 
 - `player/` is the source of truth for the player runtime used by the extension build.
 - `player-standalone/scripts/sync-player.js` copies `player/` assets into `player-standalone/public/`.
-- `npm run player:sync` should be run before building or deploying the standalone player when player assets have changed.
+- `task player:sync` should be run before building or deploying the standalone player when player assets have changed.
 
 The root build uses `esbuild.config.mjs` to:
 
@@ -195,13 +195,13 @@ Release is tag-driven.
 1. Commit and push changes to `main`.
 2. Create and push a tag matching `v*`, for example `v1.0.4`.
 3. GitHub Actions runs `.github/workflows/release.yml`.
-4. The workflow installs dependencies, runs `npm run release:ci`, and publishes a GitHub release.
+4. The workflow installs dependencies, sets up Task, runs `task release:ci`, and publishes a GitHub release.
 
 Current release artifact behavior:
 
-- `npm run release:build` builds the extension with the production environment
-- `npm run release:zip` zips the `dist/` directory for manual unpacked-extension distribution
-- `npm run release:ci` builds the production extension and creates only the manual install zip
+- `task release:build` builds the extension with the production environment
+- `task release:zip` zips the `dist/` directory for manual unpacked-extension distribution
+- `task release:ci` builds the production extension and creates only the manual install zip
 - the GitHub release publishes `gn-tracing-extension-${tag}.zip`
 - releases do not publish `.crx` or `updates.xml`; install by extracting the zip and loading the `dist/` folder as an unpacked extension
 
@@ -227,4 +227,4 @@ Before shipping changes, verify the parts you touched:
 ## Related docs
 
 - [README](./README.md)
-- [Specs overview](./specs/overview.md)
+- [Docs overview](./docs/overview.md)

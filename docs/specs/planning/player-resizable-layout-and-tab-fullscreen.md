@@ -4,7 +4,7 @@
 
 - Requested scope is limited to the replay player UI under `player/*`, with synced standalone assets under `player-standalone/public/*`.
 - Current player layout is a fixed 2-column grid with no persisted layout preferences, no draggable splitter, and no container-level fullscreen mode.
-- `specs/_sync.md` is behind current HEAD and must be refreshed when implementation lands.
+- `docs/_sync.md` is behind current HEAD and must be refreshed when implementation lands.
 
 ## Goals
 
@@ -52,8 +52,8 @@
 ### 5. Standalone sync and specs
 
 - Run `player-standalone/scripts/sync-player.js` after updating `player/*`.
-- Refresh `specs/modules/drive-and-player.md` with the new persisted player layout/fullscreen behavior.
-- Refresh `specs/_sync.md` to current HEAD snapshot after code/spec updates.
+- Refresh `docs/modules/drive-and-player.md` with the new persisted player layout/fullscreen behavior.
+- Refresh `docs/_sync.md` to current HEAD snapshot after code/spec updates.
 - Rebuild `graphify-out/` graph after code edits per repo instruction.
 
 ## Risks / Checks

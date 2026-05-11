@@ -44,6 +44,7 @@ const timerEl = document.getElementById("timer")!;
 const stats = document.getElementById("stats")!;
 const consoleCount = document.getElementById("console-count")!;
 const networkCount = document.getElementById("network-count")!;
+const sessionQueueSection = document.getElementById("session-queue-section")!;
 const sessionList = document.getElementById("session-list")!;
 const errorMsg = document.getElementById("error-msg")!;
 const toastEl = document.getElementById("toast")!;
@@ -447,6 +448,22 @@ function updateGoogleDriveUI(isConnected: boolean): void {
   }
 }
 
+function setCaptureUiVisibility(isVisible: boolean): void {
+  toggleBtn.classList.toggle("hidden", !isVisible);
+  sessionQueueSection.classList.toggle("hidden", !isVisible);
+
+  if (isVisible) {
+    return;
+  }
+
+  pauseResumeBtn.classList.add("hidden");
+  removeRecordingBtn.classList.add("hidden");
+  statusBar.classList.add("hidden");
+  stats.classList.add("hidden");
+  sessionList.innerHTML = "";
+  stopRecordingTimer();
+}
+
 function updateFolderHint(settings: UploadSettings | null): void {
   if (!settings || !settings.folderId) {
     googleDriveFolderHint.textContent = "Using your Google Drive root folder.";
@@ -489,10 +506,16 @@ function updateRecordingUI(recording: RecordingStatus | null): void {
 }
 
 function handleStateUpdate(state: PopupState): void {
-  updateRecordingUI(state.recording);
-  renderSessions(state.sessions);
+  const isGoogleDriveConnected = state.googleDrive.isConnected;
+  updateGoogleDriveUI(isGoogleDriveConnected);
+  setCaptureUiVisibility(isGoogleDriveConnected);
+
+  if (isGoogleDriveConnected) {
+    updateRecordingUI(state.recording);
+    renderSessions(state.sessions);
+  }
+
   renderPopupUploadHistory(state.uploadHistory);
-  updateGoogleDriveUI(state.googleDrive.isConnected);
   if (!isEditingFolder) {
     googleDriveFolderInput.value = getFolderDisplayValue(state.settings.folderInput);
     setFolderEditingState(false);
@@ -521,6 +544,11 @@ toggleBtn.addEventListener("click", async () => {
 
   try {
     const currentState = await loadStateFromStorage();
+    if (!currentState?.googleDrive.isConnected) {
+      showError("Connect Google Drive before recording.");
+      return;
+    }
+
     const isRecording = currentState?.recording?.isRecording ?? false;
 
     if (isRecording) {

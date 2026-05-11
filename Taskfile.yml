@@ -1,0 +1,119 @@
+version: "3"
+
+tasks:
+  build:
+    desc: Build the extension into dist with the development environment.
+    cmds:
+      - node esbuild.config.mjs --env development
+
+  dist:
+    desc: Build the extension into dist with the production environment.
+    cmds:
+      - node esbuild.config.mjs --env production
+
+  watch:
+    desc: Watch and rebuild extension sources.
+    cmds:
+      - node esbuild.config.mjs --watch
+
+  typecheck:
+    desc: Run root TypeScript checks.
+    cmds:
+      - npx tsc --noEmit
+
+  player:sync:
+    desc: Sync shared player assets into the standalone player.
+    dir: player-standalone
+    cmds:
+      - node scripts/sync-player.js
+
+  player:dev:
+    desc: Run the standalone player dev server.
+    dir: player-standalone
+    cmds:
+      - npm exec -- vite --port 5173
+
+  player:watch:
+    desc: Run the standalone player dev server.
+    dir: player-standalone
+    cmds:
+      - npm exec -- vite --port 5173
+
+  player:build:
+    desc: Build the standalone player with the development environment.
+    dir: player-standalone
+    cmds:
+      - npm exec -- tsc
+      - npm exec -- vite build --mode development
+
+  player:dist:
+    desc: Build the standalone player with the production environment.
+    dir: player-standalone
+    cmds:
+      - npm exec -- tsc
+      - npm exec -- vite build --mode production
+
+  player:build:cloudflare:
+    desc: Build the standalone player for Cloudflare Pages.
+    env:
+      VITE_BASE_PATH: '{{.VITE_BASE_PATH | default "/"}}'
+    cmds:
+      - task: player:dist
+
+  player:preview:
+    desc: Preview the built standalone player.
+    dir: player-standalone
+    cmds:
+      - npm exec -- vite preview
+
+  player:typecheck:
+    desc: Run standalone player TypeScript checks.
+    dir: player-standalone
+    cmds:
+      - npm exec -- tsc --noEmit
+
+  player:deploy:
+    desc: Deploy the standalone player to Cloudflare Pages.
+    dir: player-standalone
+    cmds:
+      - ./deploy.sh
+
+  player:deploy:cloudflare:
+    desc: Deploy the standalone player to Cloudflare Pages.
+    cmds:
+      - task: player:deploy
+
+  build:all:
+    desc: Build the extension and standalone player with development settings.
+    cmds:
+      - task: build
+      - task: player:sync
+      - task: player:build
+
+  dist:all:
+    desc: Build the extension and standalone player with production settings.
+    cmds:
+      - task: dist
+      - task: player:sync
+      - task: player:dist
+
+  release:build:
+    desc: Build the production extension release artifact.
+    cmds:
+      - task: dist
+
+  release:zip:
+    desc: Zip the built extension for a GitHub release.
+    cmds:
+      - sh -c 'zip -r "gn-tracing-extension-${GITHUB_REF_NAME:-local}.zip" dist'
+
+  release:ci:
+    desc: Run the CI release flow.
+    cmds:
+      - task: release:build
+      - task: release:zip
+
+  watch:all:
+    desc: Watch extension sources and run the standalone player dev server.
+    cmds:
+      - npx concurrently 'task watch' 'task player:dev'

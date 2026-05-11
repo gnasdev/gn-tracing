@@ -1,7 +1,28 @@
+---
+title: "API Conventions"
+description: "Shared internal message and external platform API conventions."
+type: shared
+status: active
+tags: ["api", "messages", "platform"]
+source_paths:
+  - "src/types/messages.ts"
+  - "src/background/service-worker.ts"
+  - "src/offscreen/offscreen.ts"
+related:
+  - "./data-models.md"
+  - "../modules/recording-runtime.md"
+  - "../modules/drive-and-player.md"
+---
+
 # API Conventions
 
-- **Status**: Active
-- **Version**: 0.1.0
+## Meta
+
+- Trạng thái: active
+- Phạm vi: internal message contracts and external browser/Drive/Cloudflare APIs
+- Nguồn code: `src/types/messages.ts`, `src/background/service-worker.ts`, `src/offscreen/offscreen.ts`
+- Tuân thủ: Không áp dụng
+- Links: [Shared Data Models](./data-models.md), [Recording Runtime](../modules/recording-runtime.md), [Drive And Player](../modules/drive-and-player.md)
 
 ## Internal Message Contracts
 

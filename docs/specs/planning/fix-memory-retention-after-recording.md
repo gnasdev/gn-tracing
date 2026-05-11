@@ -73,7 +73,7 @@ Loại bỏ các điểm giữ memory quá vòng đời cần thiết trong flow
    - upload sau stop vẫn dùng được blob
    - clear storage không làm hỏng upload state UI
    - source-map flush vẫn complete trước detach/cleanup
-6. Cập nhật specs liên quan nếu lifecycle retention rules thay đổi đáng kể.
+6. Cập nhật docs liên quan nếu lifecycle retention rules thay đổi đáng kể.
 7. Rebuild graph theo rule của repo.
 
 ## 6. Risks

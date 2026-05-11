@@ -37,6 +37,6 @@ Each recording folder contains:
 
 ## 5. Related Docs
 
-- [Drive And Player](../modules/drive-and-player.md)
-- [Shared Data Models](../shared/data-models.md)
-- [API Conventions](../shared/api-conventions.md)
+- [Drive And Player](../../modules/drive-and-player.md)
+- [Shared Data Models](../../shared/data-models.md)
+- [API Conventions](../../shared/api-conventions.md)
