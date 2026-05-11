@@ -6,6 +6,9 @@
 This module covers authentication, Google Drive upload, replay URL generation, built-in player assets, and the optional standalone player:
 - `src/background/google-drive-auth.ts`
 - `src/drive-auth/drive-auth.ts`
+- `esbuild.config.mjs`
+- `manifest.template.json`
+- `.github/workflows/release.yml`
 - `player/*`
 - `player-standalone/*`
 - fixed replay host wiring in `src/offscreen/offscreen.ts`, `src/shared/player-host.ts`, and popup display in `src/popup/popup.ts`
@@ -13,6 +16,7 @@ This module covers authentication, Google Drive upload, replay URL generation, b
 ## 2. Functional & Non-Functional Requirements
 
 - Allow the user to connect/disconnect Google Drive without relying on a backend.
+- Keep Google OAuth client id and Chrome extension identity configurable through local `.env` values and GitHub repository secrets.
 - Upload each recording into a dedicated Google Drive folder and return a shareable replay URL keyed by the uploaded `recording-index.json` file ID.
 - Split recorded video into `<= 32 MB` parts before upload when needed.
 - Upload Google Drive artifacts with bounded parallelism instead of strictly serial transfer.
@@ -33,6 +37,8 @@ This module covers authentication, Google Drive upload, replay URL generation, b
 ## 3. Data Models & APIs
 
 - `GoogleDriveAuth.getAuthToken()` returns a usable token or `null`.
+- extension builds inject `GOOGLE_CLIENT_ID` into `GoogleDriveAuth` and `dist/manifest.json` from `.env`, environment variables, or release workflow secrets.
+- `manifest.template.json` is the manifest source of truth; build-time substitution writes the OAuth client id and Chrome extension public key into `dist/manifest.json`.
 - upload creates one Drive folder per recording containing `metadata.json`, `manifest.json`, `recording-index.json`, optional log JSON files, and one or more `video.part-XXX.webm` files.
 - `manifest.json` is the storage layout source of truth; it records schema version, folder ID, video mime type/parts, and which optional artifacts exist.
 - `recording-index.json` is the public replay entrypoint; it stores the manifest, metadata, optional artifact, and video-part file IDs needed by the player.
@@ -44,13 +50,14 @@ This module covers authentication, Google Drive upload, replay URL generation, b
 ## 4. Business Rules
 
 - Chrome uses `chrome.identity.getAuthToken`; Edge uses `launchWebAuthFlow` and stores a verified access token locally.
+- Chrome OAuth identity is configured by `GOOGLE_CLIENT_ID`, `CHROME_EXTENSION_ID`, and `CHROME_EXTENSION_PUBLIC_KEY`; the build validates that the configured extension id matches the public key before writing `dist/manifest.json`.
 - disconnect always attempts revocation but returns a success-style response even when the token is already invalid.
 - every recording folder is made world-readable, and each uploaded Drive file is also made world-readable before being referenced by the player.
 - replay links always target the full Cloudflare Pages player host URL directly.
 - the auth page is a first-class surface that can both start auth and react to service-worker state updates.
 - standalone player is not the system of record for assets; it mirrors `player/` runtime logic through the sync script and wrapper adapters.
 - release automation expects both npm workspaces to have committed lockfiles so GitHub Actions can run `npm ci` at the repo root and inside `player-standalone/`.
-- tag-based GitHub releases build the extension and publish `gn-tracing-extension-${tag}.zip` for manual unpacked installation; they do not publish CRX/update XML artifacts or invoke Cloudflare deploy steps for the standalone player.
+- tag-based GitHub releases build the extension with repository secrets `GOOGLE_CLIENT_ID`, `CHROME_EXTENSION_ID`, `CHROME_EXTENSION_PUBLIC_KEY`, and `CHROME_EXTENSION_PRIVATE_KEY`, then publish `gn-tracing-extension-${tag}.zip` for manual unpacked installation; they do not publish CRX/update XML artifacts or invoke Cloudflare deploy steps for the standalone player.
 - if video exceeds the upload limit, offscreen upload slices the final recording blob into ordered byte chunks and the player reassembles them locally before playback.
 - popup upload status must surface both aggregate transferred bytes/percent and per-file progress rows throughout the Drive upload flow.
 - player loading must surface both aggregate transferred bytes/percent and per-file progress rows for the recording index, metadata, optional artifacts, manifest, and each video part.
@@ -83,6 +90,7 @@ This module covers authentication, Google Drive upload, replay URL generation, b
 - standalone mode depends only on direct public file download behavior for the artifact IDs embedded in the replay URL.
 - standalone mode assumes the Cloudflare Pages deployment includes the `/api/drive` proxy function so the browser never fetches Drive artifacts cross-origin.
 - extension build and standalone player build are separate pipelines.
+- local extension builds may use `.env` for `GOOGLE_CLIENT_ID`, `CHROME_EXTENSION_ID`, `CHROME_EXTENSION_PUBLIC_KEY`, and `CHROME_EXTENSION_PRIVATE_KEY`; the public key controls the unpacked extension id used by Google OAuth.
 - built-in player HTML and standalone wrapper HTML must stay markup-compatible because only `player.css` and `player.js` are synced automatically into `player-standalone/public/`; loading-state markup changes still require manual updates in `player-standalone/index.html`.
 - response preview intentionally stays dependency-free and lightweight; syntax highlighting is implemented in local player runtime helpers rather than external libraries.
 - manual Cloudflare Pages deployment expects project `gn-tracing-player`, root base path `/`, and secrets `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID`.

@@ -16,7 +16,7 @@
 - `chrome.debugger`
   enables `Network`, `Runtime`, `Log`, and best-effort `Debugger` domains.
 - `chrome.identity`
-  primary auth mechanism for Chrome; Edge uses `launchWebAuthFlow` plus locally stored access token fallback.
+  primary auth mechanism for Chrome; Edge uses `launchWebAuthFlow` plus locally stored access token fallback. OAuth builds require a matching `GOOGLE_CLIENT_ID`, `CHROME_EXTENSION_ID`, and `CHROME_EXTENSION_PUBLIC_KEY` so the generated manifest identity matches the Google Cloud OAuth client configuration.
 - Google Drive REST APIs
   used for token verification, multipart upload, permission creation, and token revocation.
 - Cloudflare Pages Function `/api/drive?id=<file-id>`
