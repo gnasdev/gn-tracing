@@ -6,6 +6,8 @@ set -euo pipefail
 
 PROJECT_NAME="${CLOUDFLARE_PAGES_PROJECT:-gn-tracing-player}"
 PLAYER_HOST_URL="${PLAYER_HOST_URL:-https://tracing.gnas.dev/}"
+VITE_BASE_PATH="${VITE_BASE_PATH:-/}"
+export VITE_BASE_PATH
 
 echo "Deploying GN Tracing Player to Cloudflare Pages..."
 
