@@ -1,3 +1,6 @@
+/**
+ * Main extension service worker for recording, state, upload, and message routing.
+ */
 import { RecorderManager } from "./recorder-manager";
 import { CdpManager } from "./cdp-manager";
 import { StorageManager } from "./storage-manager";

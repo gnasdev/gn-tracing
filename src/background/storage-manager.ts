@@ -1,3 +1,6 @@
+/**
+ * Buffers captured artifacts for a single recording session in memory.
+ */
 import type {
   ConsoleEntry,
   NetworkEntry,

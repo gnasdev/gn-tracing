@@ -1,3 +1,6 @@
+/**
+ * Captures Chrome Debugger Protocol events for recording replay artifacts.
+ */
 import { SourceMapResolver } from "./sourcemap-resolver";
 import type { StorageManager } from "./storage-manager";
 import type {

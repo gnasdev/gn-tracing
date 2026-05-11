@@ -1,3 +1,6 @@
+/**
+ * Runs tab media capture and Google Drive upload work in an offscreen document.
+ */
 import type { ProgressItemSnapshot, ProgressItemStatus } from "../types/messages";
 import { buildExternalPlayerUrl } from "../shared/player-host";
 

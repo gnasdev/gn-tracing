@@ -1,3 +1,6 @@
+/**
+ * Controls the standalone Google Drive auth confirmation page.
+ */
 import type { MessageResponse } from "../types/messages";
 
 /**

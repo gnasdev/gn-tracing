@@ -1,3 +1,6 @@
+/**
+ * Renders and manages the full upload history page.
+ */
 import type { MessageResponse, UploadHistoryEntry, UploadSettings } from "../types/messages";
 import {
   handleUploadHistoryAction,

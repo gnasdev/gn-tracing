@@ -1,3 +1,6 @@
+/**
+ * Shared renderer and click handling helpers for upload-history lists.
+ */
 import type { UploadHistoryEntry } from "../types/messages";
 
 /**

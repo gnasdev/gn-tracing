@@ -14,12 +14,12 @@
   ],
   "host_permissions": ["<all_urls>"],
   "oauth2": {
-    "client_id": "95916347176-ulk25djm5l4g6ebq7vftjik8iv9a11vf.apps.googleusercontent.com",
+    "client_id": "{{GOOGLE_CLIENT_ID}}",
     "scopes": [
       "https://www.googleapis.com/auth/drive.file"
     ]
   },
-  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAjKgPycvXNERyLeTaHrIHdLKqcznl3wTBNxFBlqFx0MJ/2e8FHQAo+sNRyOBNvnejlm/U77qhPxHXho0IPC/MZtCIv4JHJiFSTbjQAgPZiGdva/In8NywFT/oyi0PqyVuL3lT2MeV7SiHA67P0sKqAXQXh+pHW7c+RpXC20ZQEK4bkKPQVxZCmbbhC5JSOP7zI97Ee/u3RoON9c3BHiACBAcCD0SQTsbbO71juA2QKM+sVNByYjCyRVDlW+J/eWTsfIN7HdJoxZvtSl2kU2fNyHH9uWtWLgE90Tdig7hVX+dnFcVdXmqcktl4XYgF3Xo6iJn4mem8tEu2UB3CXIwxywIDAQAB",
+  "key": "{{CHROME_EXTENSION_PUBLIC_KEY}}",
   "background": {
     "service_worker": "background/service-worker.js",
     "type": "module"

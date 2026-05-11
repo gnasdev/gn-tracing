@@ -1,5 +1,8 @@
 /**
- * Main entry point for standalone player
+ * Main entry point for standalone player.
+ *
+ * It installs the hosted-player configuration and Drive adapter before loading
+ * the shared player runtime.
  */
 
 // Configure browser globals before importing the shared player runtime because

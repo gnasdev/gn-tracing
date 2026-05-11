@@ -1,3 +1,6 @@
+/**
+ * Message contracts shared between extension UIs, service worker, and offscreen runtime.
+ */
 export type MessageAction =
   | "START_RECORDING"
   | "STOP_RECORDING"

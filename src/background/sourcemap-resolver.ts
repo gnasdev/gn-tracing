@@ -1,3 +1,6 @@
+/**
+ * Resolves generated stack frames back to original source locations.
+ */
 import type { SourceMapRaw, ResolvedLocation } from "../types/recording";
 
 const BASE64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";

@@ -205,6 +205,12 @@ Current release artifact behavior:
 - the GitHub release publishes `gn-tracing-extension-${tag}.zip`
 - releases do not publish `.crx` or `updates.xml`; install by extracting the zip and loading the `dist/` folder as an unpacked extension
 
+Release builds read the OAuth and extension identity from repository secrets:
+`GOOGLE_CLIENT_ID`, `CHROME_EXTENSION_ID`, `CHROME_EXTENSION_PUBLIC_KEY`, and
+`CHROME_EXTENSION_PRIVATE_KEY`. Local builds can provide the same names in
+`.env`; the build validates that `CHROME_EXTENSION_ID` matches the public key
+before writing `dist/manifest.json`.
+
 ## Testing checklist
 
 There is no full automated test suite yet, so manual verification matters.

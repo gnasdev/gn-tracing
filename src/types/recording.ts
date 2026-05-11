@@ -1,3 +1,6 @@
+/**
+ * Recording artifact models used by capture, storage, upload, and replay flows.
+ */
 export interface SerializedRemoteObject {
   type: string;
   subtype?: string;

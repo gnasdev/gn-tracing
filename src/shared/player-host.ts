@@ -1,3 +1,6 @@
+/**
+ * Chooses the replay player host for extension and development builds.
+ */
 declare const __APP_ENV__: string;
 declare const __PLAYER_LOCAL_PORT__: string;
 

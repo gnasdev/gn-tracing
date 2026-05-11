@@ -1,3 +1,6 @@
+/**
+ * Coordinates offscreen-document recording lifecycle from the service worker.
+ */
 export class RecorderManager {
   /**
    * Owns the service-worker side of tab capture.

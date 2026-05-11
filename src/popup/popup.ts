@@ -1,3 +1,6 @@
+/**
+ * Drives the extension popup UI and service-worker message interactions.
+ */
 import type {
   MessageResponse,
   PopupState,

@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+#
+# Deploys the hosted GN Tracing replay player to Cloudflare Pages.
 
 set -euo pipefail
 

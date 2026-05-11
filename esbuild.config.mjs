@@ -1,10 +1,23 @@
+/**
+ * Builds the Manifest V3 extension and copies the static replay player assets.
+ *
+ * The root package owns extension bundling; the standalone player has its own
+ * Vite build under `player-standalone/`.
+ */
 import * as esbuild from "esbuild";
+import crypto from "crypto";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const GOOGLE_CLIENT_ID = "95916347176-ulk25djm5l4g6ebq7vftjik8iv9a11vf.apps.googleusercontent.com";
+const envVars = loadEnvFile(path.resolve(__dirname, ".env"));
+const DEFAULT_GOOGLE_CLIENT_ID = "95916347176-ulk25djm5l4g6ebq7vftjik8iv9a11vf.apps.googleusercontent.com";
+const DEFAULT_CHROME_EXTENSION_PUBLIC_KEY = "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAjDxBQBIrG2c71RP7pfCDOIDtdcgHOTv4DFIXpFgH96fFdK7AQJ5jIgCfH5GR5+8EVgzFVk6MzJL6qjxIzJrB9APYHDpjeV64izWJIiwL6JOGBh10HqUWSPLu1dj/ccjJLmmxcBJRp4Dq5/MnKnKrLfuFyHtQMlB9jNXcozgAPBLiVD03FM7xgnf5AtMAXjjONhCaJT8eLkBEqlXk0NztNosUOy99i6TOro8ZXAM9Wlr1RlaL9iw/V62CDWC2AVYn3bD8pM42cf9vdaVfAYHfftp8T3V+sN2WZ0N0sZaYl6YoahAoXUQ9audQMQgSIX7cY0GAqsbcY/gQTiyDTtEuawIDAQAB";
+const googleClientId = getConfigValue("GOOGLE_CLIENT_ID", DEFAULT_GOOGLE_CLIENT_ID);
+const chromeExtensionPublicKey = getConfigValue("CHROME_EXTENSION_PUBLIC_KEY", DEFAULT_CHROME_EXTENSION_PUBLIC_KEY);
+const chromeExtensionPrivateKey = getConfigValue("CHROME_EXTENSION_PRIVATE_KEY");
+const chromeExtensionId = getConfigValue("CHROME_EXTENSION_ID", getChromeExtensionId(chromeExtensionPublicKey));
 const cliEnv = getCliArgValue("--env");
 const watch = process.argv.includes("--watch");
 const rawAppEnv = cliEnv || (watch ? "development" : "production");
@@ -21,9 +34,78 @@ const commonOptions = {
   minify: false,
   define: {
     __APP_ENV__: JSON.stringify(appEnv),
+    __GOOGLE_CLIENT_ID__: JSON.stringify(googleClientId),
     __PLAYER_LOCAL_PORT__: JSON.stringify(playerLocalPort),
   },
 };
+
+function loadEnvFile(envPath) {
+  if (!fs.existsSync(envPath)) {
+    return {};
+  }
+
+  const envVars = {};
+  const envContent = fs.readFileSync(envPath, "utf-8");
+  for (const line of envContent.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) {
+      continue;
+    }
+
+    const separatorIndex = trimmed.indexOf("=");
+    if (separatorIndex === -1) {
+      continue;
+    }
+
+    const key = trimmed.slice(0, separatorIndex).trim();
+    const value = normalizeEnvValue(trimmed.slice(separatorIndex + 1).trim());
+    if (key) {
+      envVars[key] = value;
+    }
+  }
+
+  return envVars;
+}
+
+function normalizeEnvValue(value) {
+  const isQuoted =
+    (value.startsWith('"') && value.endsWith('"')) ||
+    (value.startsWith("'") && value.endsWith("'"));
+  const normalized = isQuoted ? value.slice(1, -1) : value;
+  return normalized.replace(/\\n/g, "\n");
+}
+
+function getConfigValue(name, fallback = "") {
+  return envVars[name] || process.env[name] || fallback;
+}
+
+function getChromeExtensionId(publicKey) {
+  const keyBytes = Buffer.from(publicKey, "base64");
+  const hash = crypto.createHash("sha256").update(keyBytes).digest();
+  return Array.from(hash.subarray(0, 16), (byte) =>
+    byte
+      .toString(16)
+      .padStart(2, "0")
+      .replace(/[0-9a-f]/g, (char) => String.fromCharCode("a".charCodeAt(0) + Number.parseInt(char, 16))),
+  ).join("");
+}
+
+function validateChromeExtensionIdentity() {
+  if (!chromeExtensionPublicKey) {
+    throw new Error("CHROME_EXTENSION_PUBLIC_KEY is required to generate manifest.json.");
+  }
+
+  if (chromeExtensionPrivateKey && !chromeExtensionPrivateKey.includes("PRIVATE KEY")) {
+    console.warn("CHROME_EXTENSION_PRIVATE_KEY is set but does not look like a PEM private key.");
+  }
+
+  const derivedExtensionId = getChromeExtensionId(chromeExtensionPublicKey);
+  if (chromeExtensionId !== derivedExtensionId) {
+    throw new Error(
+      `CHROME_EXTENSION_ID (${chromeExtensionId}) does not match CHROME_EXTENSION_PUBLIC_KEY (${derivedExtensionId}).`,
+    );
+  }
+}
 
 function normalizeAppEnv(value) {
   const normalized = String(value || "").trim().toLowerCase();
@@ -81,9 +163,12 @@ function generateManifest(outputPath) {
     return;
   }
 
+  validateChromeExtensionIdentity();
+
   const template = fs
     .readFileSync(templatePath, "utf-8")
-    .replace(/{{GOOGLE_CLIENT_ID}}/g, GOOGLE_CLIENT_ID);
+    .replace(/{{GOOGLE_CLIENT_ID}}/g, googleClientId)
+    .replace(/{{CHROME_EXTENSION_PUBLIC_KEY}}/g, chromeExtensionPublicKey);
 
   fs.writeFileSync(manifestPath, template, "utf-8");
   console.log("✓ manifest.json generated");

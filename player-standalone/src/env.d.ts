@@ -1,3 +1,6 @@
+/**
+ * Ambient Vite and window globals used by the standalone player build.
+ */
 /// <reference types="vite/client" />
 
 interface GNTracingConfig {

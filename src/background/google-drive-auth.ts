@@ -1,6 +1,11 @@
+/**
+ * Handles browser-specific Google Drive OAuth token acquisition for uploads.
+ */
 import type { MessageResponse } from "../types/messages";
 
-const GOOGLE_CLIENT_ID = "95916347176-ulk25djm5l4g6ebq7vftjik8iv9a11vf.apps.googleusercontent.com";
+declare const __GOOGLE_CLIENT_ID__: string;
+
+const GOOGLE_CLIENT_ID = __GOOGLE_CLIENT_ID__;
 const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file";
 const EDGE_ACCESS_TOKEN_KEY = "gn_tracing_edge_access_token";
 
@@ -115,6 +120,10 @@ export class GoogleDriveAuth {
   async launchOAuthFlow(): Promise<MessageResponse> {
     if (this.isEdgeBrowser()) {
       try {
+        if (!GOOGLE_CLIENT_ID) {
+          return { ok: false, error: "Google OAuth client id is not configured. Set GOOGLE_CLIENT_ID and rebuild." };
+        }
+
         const redirectUri = chrome.identity.getRedirectURL();
         const authUrl =
           "https://accounts.google.com/o/oauth2/v2/auth" +

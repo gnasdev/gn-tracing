@@ -1,3 +1,9 @@
+/**
+ * Vite configuration for the hosted standalone replay player.
+ *
+ * Development mode also provides a Drive download proxy so local replay testing
+ * exercises the same same-origin path used by Cloudflare Pages.
+ */
 import { defineConfig } from 'vite';
 import path from 'path';
 import { fileURLToPath } from 'url';

@@ -1,3 +1,6 @@
+/**
+ * Normalizes Google Drive folder inputs pasted or typed by users.
+ */
 export interface ParsedGoogleDriveFolderInput {
   rawInput: string;
   normalizedInput: string;
