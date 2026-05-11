@@ -10,8 +10,8 @@ tags: ["docs", "sync"]
 
 ## Meta
 
-- Synced commit: `64627e3 + working tree`
-- Synced at: `2026-05-11T03:27:43Z`
+- Synced commit: `94ce3b5`
+- Synced at: `2026-05-11T03:30:06Z`
 - Scope: extension recording runtime, Google Drive OAuth identity, upload/replay transfer performance, standalone player, Taskfile command runner, release/developer docs, and docs tree
 - Status: synced
 - Known unsynced: Không có
