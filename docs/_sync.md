@@ -12,7 +12,7 @@ tags: ["docs", "sync"]
 
 - Synced commit: `HEAD`
 - Synced at: `2026-05-12T00:00:00+07:00`
-- Scope: Chrome Web Store readiness, capture privacy settings, Drive share-permission hardening, manifest permissions, Store validation task, and compliance docs
+- Scope: Chrome Web Store readiness, capture privacy settings, Drive share-permission hardening, manifest permissions, Store validation task, compliance docs, and planning-doc cleanup
 - Status: synced
 - Known unsynced: Không có
 
