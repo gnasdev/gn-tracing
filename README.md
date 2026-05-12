@@ -10,6 +10,24 @@ It captures:
 - WebSocket activity
 - an optional Google Drive upload with a replay link
 
+## Screenshots
+
+### Extension popup
+
+![GN Tracing popup recording controls](./store-assets/screenshots/01-popup-recording-controls.png)
+
+### Privacy and Drive settings
+
+![GN Tracing privacy and Drive settings](./store-assets/screenshots/02-popup-privacy-and-drive-settings.png)
+
+### Replay player
+
+![GN Tracing replay inspector](./store-assets/screenshots/04-player-replay-inspector.png)
+
+### Upload history
+
+![GN Tracing upload history page](./store-assets/screenshots/05-upload-history-page.png)
+
 ## When to use it
 
 Use GN Tracing when a bug is easier to show than explain, especially when engineers need more than a screen recording.
