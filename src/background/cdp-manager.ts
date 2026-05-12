@@ -194,6 +194,26 @@ interface CdpRawStackTrace {
   description?: string;
 }
 
+interface CaptureSettings {
+  captureRequestBodies: boolean;
+  captureResponseBodies: boolean;
+  captureWebSocketFrames: boolean;
+}
+
+const REDACTED_VALUE = "[redacted by GN Tracing]";
+const SENSITIVE_HEADER_PATTERNS = [
+  "authorization",
+  "cookie",
+  "token",
+  "secret",
+  "api-key",
+  "apikey",
+  "x-api-key",
+  "x-auth",
+  "x-csrf",
+  "x-xsrf",
+];
+
 export class CdpManager {
   #tabId: number | null = null;
   #pendingRequests = new Map<string, PendingNetworkRequest>();
@@ -211,6 +231,11 @@ export class CdpManager {
   #sourceMapResolver = new SourceMapResolver();
   #sourceMapFetches = new Set<Promise<void>>();
   #isPaused = false;
+  #captureSettings: CaptureSettings = {
+    captureRequestBodies: false,
+    captureResponseBodies: false,
+    captureWebSocketFrames: false,
+  };
 
   constructor(storage: StorageManager) {
     this.#storage = storage;
@@ -289,6 +314,14 @@ export class CdpManager {
 
   setPaused(isPaused: boolean): void {
     this.#isPaused = isPaused;
+  }
+
+  setCaptureSettings(settings: CaptureSettings): void {
+    this.#captureSettings = {
+      captureRequestBodies: Boolean(settings.captureRequestBodies),
+      captureResponseBodies: Boolean(settings.captureResponseBodies),
+      captureWebSocketFrames: Boolean(settings.captureWebSocketFrames),
+    };
   }
 
   #handleDetach(source: chrome.debugger.Debuggee, _reason: string): void {
@@ -419,12 +452,12 @@ export class CdpManager {
           url: existing.entry.url,
           status: params.redirectResponse.status,
           statusText: params.redirectResponse.statusText,
-          headers: params.redirectResponse.headers,
+          headers: this.#redactHeaders(params.redirectResponse.headers) || {},
         });
         existing.entry.url = params.request.url;
         existing.entry.method = params.request.method;
-        existing.entry.requestHeaders = params.request.headers;
-        existing.entry.postData = params.request.postData ?? null;
+        existing.entry.requestHeaders = this.#redactHeaders(params.request.headers);
+        existing.entry.postData = this.#captureSettings.captureRequestBodies ? params.request.postData ?? null : null;
         existing.entry.timestamp = params.timestamp;
         existing.entry.wallTime = params.wallTime;
         this.#applyPendingRequestMetadata(key, existing.entry);
@@ -436,9 +469,9 @@ export class CdpManager {
       requestId: params.requestId,
       url: params.request.url,
       method: params.request.method,
-      requestHeaders: params.request.headers,
+      requestHeaders: this.#redactHeaders(params.request.headers),
       requestHeadersExtra: null,
-      postData: params.request.postData ?? null,
+      postData: this.#captureSettings.captureRequestBodies ? params.request.postData ?? null : null,
       timestamp: params.timestamp,
       wallTime: params.wallTime,
       initiator: params.initiator,
@@ -462,7 +495,7 @@ export class CdpManager {
     this.#applyPendingRequestMetadata(key, entry);
     this.#pendingRequests.set(key, { sessionId: this.#getSessionId(source), entry });
 
-    if (params.request.hasPostData && !params.request.postData) {
+    if (this.#captureSettings.captureRequestBodies && params.request.hasPostData && !params.request.postData) {
       void this.#fetchPostData(source, params.requestId);
     }
   }
@@ -471,10 +504,11 @@ export class CdpManager {
     const key = this.#requestKey(source, params.requestId);
     if (params.headers) {
       const existing = this.#pendingRequests.get(key);
+      const redactedHeaders = this.#redactHeaders(params.headers) || {};
       if (existing) {
-        existing.entry.requestHeadersExtra = params.headers;
+        existing.entry.requestHeadersExtra = redactedHeaders;
       } else {
-        this.#pendingRequestExtraInfo.set(key, params.headers);
+        this.#pendingRequestExtraInfo.set(key, redactedHeaders);
       }
     }
   }
@@ -500,7 +534,7 @@ export class CdpManager {
     if (entry) {
       entry.entry.status = params.response.status;
       entry.entry.statusText = params.response.statusText;
-      entry.entry.responseHeaders = params.response.headers;
+      entry.entry.responseHeaders = this.#redactHeaders(params.response.headers);
       entry.entry.mimeType = params.response.mimeType;
       entry.entry.timing = params.response.timing ?? null;
       entry.entry.protocol = params.response.protocol ?? null;
@@ -510,15 +544,16 @@ export class CdpManager {
 
   #onResponseReceivedExtraInfo(source: chrome.debugger.Debuggee, params: CdpResponseReceivedExtraInfoParams): void {
     const key = this.#requestKey(source, params.requestId);
+    const redactedHeaders = params.headers ? this.#redactHeaders(params.headers) || undefined : undefined;
     const existing = this.#pendingRequests.get(key);
     if (existing) {
-      existing.entry.responseHeadersExtra = params.headers ?? null;
+      existing.entry.responseHeadersExtra = redactedHeaders ?? null;
       if ((existing.entry.status == null || existing.entry.status === 0) && typeof params.statusCode === "number") {
         existing.entry.status = params.statusCode;
       }
     } else {
       this.#pendingResponseExtraInfo.set(key, {
-        headers: params.headers,
+        headers: redactedHeaders,
         statusCode: params.statusCode,
       });
     }
@@ -526,11 +561,12 @@ export class CdpManager {
 
   #onResponseReceivedEarlyHints(source: chrome.debugger.Debuggee, params: CdpResponseReceivedEarlyHintsParams): void {
     const key = this.#requestKey(source, params.requestId);
+    const redactedHeaders = params.headers ? this.#redactHeaders(params.headers) || undefined : undefined;
     const existing = this.#pendingRequests.get(key);
     if (existing) {
-      existing.entry.earlyHintsHeaders = params.headers ?? null;
-    } else if (params.headers) {
-      this.#pendingEarlyHints.set(key, params.headers);
+      existing.entry.earlyHintsHeaders = redactedHeaders ?? null;
+    } else if (redactedHeaders) {
+      this.#pendingEarlyHints.set(key, redactedHeaders);
     }
   }
 
@@ -563,6 +599,7 @@ export class CdpManager {
   }
 
   #shouldFetchBody(entry: NetworkEntry): boolean {
+    if (!this.#captureSettings.captureResponseBodies) return false;
     if (!entry.mimeType) return false;
     if (entry.encodedDataLength > 1024 * 1024) return false;
 
@@ -644,7 +681,7 @@ export class CdpManager {
         direction: "sent",
         timestamp: params.timestamp,
         opcode: params.response.opcode,
-        payloadData: params.response.payloadData,
+        payloadData: this.#captureSettings.captureWebSocketFrames ? params.response.payloadData : REDACTED_VALUE,
       });
     }
   }
@@ -659,7 +696,7 @@ export class CdpManager {
         direction: "received",
         timestamp: params.timestamp,
         opcode: params.response.opcode,
-        payloadData: params.response.payloadData,
+        payloadData: this.#captureSettings.captureWebSocketFrames ? params.response.payloadData : REDACTED_VALUE,
       });
     }
   }
@@ -673,6 +710,24 @@ export class CdpManager {
       }
       this.#pendingWebSockets.delete(this.#requestKey(source, params.requestId));
     }
+  }
+
+  #redactHeaders(headers: Record<string, string> | null | undefined): Record<string, string> | null {
+    if (!headers) {
+      return null;
+    }
+
+    return Object.fromEntries(
+      Object.entries(headers).map(([name, value]) => [
+        name,
+        this.#isSensitiveHeaderName(name) ? REDACTED_VALUE : value,
+      ]),
+    );
+  }
+
+  #isSensitiveHeaderName(name: string): boolean {
+    const normalized = name.trim().toLowerCase();
+    return SENSITIVE_HEADER_PATTERNS.some((pattern) => normalized.includes(pattern));
   }
 
   // ════════════════════════════════════════════

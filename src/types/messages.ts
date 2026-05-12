@@ -144,6 +144,9 @@ export interface UploadState {
 export interface UploadSettings {
   folderInput: string;
   folderId: string | null;
+  captureRequestBodies: boolean;
+  captureResponseBodies: boolean;
+  captureWebSocketFrames: boolean;
 }
 
 export interface UploadHistoryEntry {

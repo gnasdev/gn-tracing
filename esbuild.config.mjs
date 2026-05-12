@@ -12,16 +12,23 @@ import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const envVars = loadEnvFile(path.resolve(__dirname, ".env"));
-const DEFAULT_GOOGLE_CLIENT_ID = "95916347176-ulk25djm5l4g6ebq7vftjik8iv9a11vf.apps.googleusercontent.com";
-const DEFAULT_CHROME_EXTENSION_PUBLIC_KEY = "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAjDxBQBIrG2c71RP7pfCDOIDtdcgHOTv4DFIXpFgH96fFdK7AQJ5jIgCfH5GR5+8EVgzFVk6MzJL6qjxIzJrB9APYHDpjeV64izWJIiwL6JOGBh10HqUWSPLu1dj/ccjJLmmxcBJRp4Dq5/MnKnKrLfuFyHtQMlB9jNXcozgAPBLiVD03FM7xgnf5AtMAXjjONhCaJT8eLkBEqlXk0NztNosUOy99i6TOro8ZXAM9Wlr1RlaL9iw/V62CDWC2AVYn3bD8pM42cf9vdaVfAYHfftp8T3V+sN2WZ0N0sZaYl6YoahAoXUQ9audQMQgSIX7cY0GAqsbcY/gQTiyDTtEuawIDAQAB";
-const googleClientId = getConfigValue("GOOGLE_CLIENT_ID", DEFAULT_GOOGLE_CLIENT_ID);
-const chromeExtensionPublicKey = getConfigValue("CHROME_EXTENSION_PUBLIC_KEY", DEFAULT_CHROME_EXTENSION_PUBLIC_KEY);
-const chromeExtensionPrivateKey = getConfigValue("CHROME_EXTENSION_PRIVATE_KEY");
-const chromeExtensionId = getConfigValue("CHROME_EXTENSION_ID", getChromeExtensionId(chromeExtensionPublicKey));
 const cliEnv = getCliArgValue("--env");
 const watch = process.argv.includes("--watch");
 const rawAppEnv = cliEnv || (watch ? "development" : "production");
 const appEnv = normalizeAppEnv(rawAppEnv);
+const isProductionBuild = appEnv === "production";
+const DEFAULT_GOOGLE_CLIENT_ID = "95916347176-ulk25djm5l4g6ebq7vftjik8iv9a11vf.apps.googleusercontent.com";
+const DEFAULT_CHROME_EXTENSION_PUBLIC_KEY = "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAjDxBQBIrG2c71RP7pfCDOIDtdcgHOTv4DFIXpFgH96fFdK7AQJ5jIgCfH5GR5+8EVgzFVk6MzJL6qjxIzJrB9APYHDpjeV64izWJIiwL6JOGBh10HqUWSPLu1dj/ccjJLmmxcBJRp4Dq5/MnKnKrLfuFyHtQMlB9jNXcozgAPBLiVD03FM7xgnf5AtMAXjjONhCaJT8eLkBEqlXk0NztNosUOy99i6TOro8ZXAM9Wlr1RlaL9iw/V62CDWC2AVYn3bD8pM42cf9vdaVfAYHfftp8T3V+sN2WZ0N0sZaYl6YoahAoXUQ9audQMQgSIX7cY0GAqsbcY/gQTiyDTtEuawIDAQAB";
+const googleClientId = getConfigValue("GOOGLE_CLIENT_ID", isProductionBuild ? "" : DEFAULT_GOOGLE_CLIENT_ID);
+const chromeExtensionPublicKey = getConfigValue(
+  "CHROME_EXTENSION_PUBLIC_KEY",
+  isProductionBuild ? "" : DEFAULT_CHROME_EXTENSION_PUBLIC_KEY,
+);
+const chromeExtensionPrivateKey = getConfigValue("CHROME_EXTENSION_PRIVATE_KEY");
+const chromeExtensionId = getConfigValue(
+  "CHROME_EXTENSION_ID",
+  chromeExtensionPublicKey ? getChromeExtensionId(chromeExtensionPublicKey) : "",
+);
 const playerLocalPort = process.env.PLAYER_LOCAL_PORT || "5173";
 
 // The root build emits the unpacked MV3 extension. Player assets are copied as
@@ -30,7 +37,7 @@ const playerLocalPort = process.env.PLAYER_LOCAL_PORT || "5173";
 const commonOptions = {
   bundle: true,
   target: "chrome120",
-  sourcemap: true,
+  sourcemap: !isProductionBuild,
   minify: false,
   define: {
     __APP_ENV__: JSON.stringify(appEnv),
@@ -79,6 +86,10 @@ function getConfigValue(name, fallback = "") {
   return envVars[name] || process.env[name] || fallback;
 }
 
+function hasConfigValue(name) {
+  return Boolean(envVars[name] || process.env[name]);
+}
+
 function getChromeExtensionId(publicKey) {
   const keyBytes = Buffer.from(publicKey, "base64");
   const hash = crypto.createHash("sha256").update(keyBytes).digest();
@@ -91,6 +102,14 @@ function getChromeExtensionId(publicKey) {
 }
 
 function validateChromeExtensionIdentity() {
+  if (isProductionBuild && !googleClientId) {
+    throw new Error("GOOGLE_CLIENT_ID is required for production builds.");
+  }
+
+  if (isProductionBuild && !hasConfigValue("CHROME_EXTENSION_ID")) {
+    throw new Error("CHROME_EXTENSION_ID is required for production builds.");
+  }
+
   if (!chromeExtensionPublicKey) {
     throw new Error("CHROME_EXTENSION_PUBLIC_KEY is required to generate manifest.json.");
   }

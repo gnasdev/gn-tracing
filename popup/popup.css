@@ -178,6 +178,16 @@ h1 {
   color: #fff;
 }
 
+.capture-disclosure {
+  padding: 10px;
+  border: 1px solid #33446d;
+  border-radius: 8px;
+  background: #101a33;
+  color: #c7d2fe;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
 #session-queue-section {
   border-top: 1px solid #16213e;
   padding-top: 12px;
@@ -496,6 +506,29 @@ h1 {
   font-size: 11px;
   color: #8d99ae;
   line-height: 1.4;
+}
+
+#capture-privacy-section {
+  border-top: 1px solid #16213e;
+  padding-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.privacy-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #dbe4ff;
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+.privacy-toggle input {
+  width: 14px;
+  height: 14px;
+  accent-color: #4361ee;
 }
 
 #upload-history-section {

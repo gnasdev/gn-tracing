@@ -1,19 +1,18 @@
 {
   "manifest_version": 3,
   "name": "gn-tracing",
-  "version": "1.0.0",
+  "version": "1.0.11",
+  "minimum_chrome_version": "120",
   "description": "Record tab video, console logs, and network requests for debugging",
   "permissions": [
     "tabCapture",
     "offscreen",
     "debugger",
     "activeTab",
-    "downloads",
     "storage",
     "alarms",
     "identity"
   ],
-  "host_permissions": ["<all_urls>"],
   "oauth2": {
     "client_id": "95916347176-ulk25djm5l4g6ebq7vftjik8iv9a11vf.apps.googleusercontent.com",
     "scopes": [
@@ -22,7 +21,7 @@
   },
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAjDxBQBIrG2c71RP7pfCDOIDtdcgHOTv4DFIXpFgH96fFdK7AQJ5jIgCfH5GR5+8EVgzFVk6MzJL6qjxIzJrB9APYHDpjeV64izWJIiwL6JOGBh10HqUWSPLu1dj/ccjJLmmxcBJRp4Dq5/MnKnKrLfuFyHtQMlB9jNXcozgAPBLiVD03FM7xgnf5AtMAXjjONhCaJT8eLkBEqlXk0NztNosUOy99i6TOro8ZXAM9Wlr1RlaL9iw/V62CDWC2AVYn3bD8pM42cf9vdaVfAYHfftp8T3V+sN2WZ0N0sZaYl6YoahAoXUQ9audQMQgSIX7cY0GAqsbcY/gQTiyDTtEuawIDAQAB",
   "background": {
-    "service_worker": "dist/background/service-worker.js",
+    "service_worker": "background/service-worker.js",
     "type": "module"
   },
   "action": {
@@ -37,11 +36,5 @@
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
-  },
-  "web_accessible_resources": [
-    {
-      "resources": ["dist/player/*", "dist/lib/*", "player/icons/*", "drive-auth/*", "dist/drive-auth/*"],
-      "matches": ["<all_urls>"]
-    }
-  ]
+  }
 }

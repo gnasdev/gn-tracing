@@ -40,6 +40,7 @@ GN Tracing works well for:
 - Network activity captured through Chrome DevTools Protocol
 - WebSocket connections and frames
 - Source-map-resolved locations where available, to make stack traces easier to inspect
+- Sensitive request/response headers are redacted by default. Request bodies, response bodies, and WebSocket message payloads are captured only when enabled in the popup privacy settings.
 
 ## What the player shows
 
@@ -58,8 +59,8 @@ The player can:
 
 - GN Tracing records one tab at a time.
 - `chrome://` pages cannot be recorded.
-- Response bodies are only captured for supported text-based content types.
-- Large response bodies are not always stored. The current network body capture limit is about `1 MB` per response body.
+- Response bodies are captured only when enabled and only for supported text-based content types.
+- Large response bodies are not always stored. When response body capture is enabled, the current network body capture limit is about `1 MB` per response body.
 - Recording data stays in the extension runtime until it is uploaded. If the extension runtime restarts, an unfinished local recording may be interrupted.
 
 ## Install

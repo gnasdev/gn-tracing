@@ -23,6 +23,9 @@
     </div>
 
     <button id="toggle-btn" class="btn btn-start">Start Recording</button>
+    <div id="capture-disclosure" class="capture-disclosure">
+      Records the selected tab video, console logs, network metadata, and redacted headers. Uploaded replay files are readable by link.
+    </div>
     <button id="pause-resume-btn" class="btn btn-secondary hidden" type="button">Pause Recording</button>
     <button id="remove-recording-btn" class="btn btn-danger hidden" type="button">Remove Recording</button>
 
@@ -88,6 +91,23 @@
         </div>
         <div id="google-drive-folder-hint" class="setting-hint">Using your Google Drive root folder.</div>
       </div>
+    </div>
+
+    <div id="capture-privacy-section">
+      <div class="section-title">Capture Privacy</div>
+      <label class="privacy-toggle">
+        <input id="capture-request-bodies-input" type="checkbox">
+        <span>Request bodies</span>
+      </label>
+      <label class="privacy-toggle">
+        <input id="capture-response-bodies-input" type="checkbox">
+        <span>Response bodies</span>
+      </label>
+      <label class="privacy-toggle">
+        <input id="capture-websocket-frames-input" type="checkbox">
+        <span>WebSocket messages</span>
+      </label>
+      <div class="setting-hint">Sensitive headers are always redacted before upload.</div>
     </div>
 
     <div id="community-section">

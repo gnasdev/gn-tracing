@@ -70,6 +70,9 @@ interface UploadSettingsStore {
   folderInput: string;
   folderId: string | null;
   folderPath: string[];
+  captureRequestBodies: boolean;
+  captureResponseBodies: boolean;
+  captureWebSocketFrames: boolean;
 }
 
 interface UploadHistoryFileMap {
@@ -128,6 +131,9 @@ let cachedUploadSettings: UploadSettingsStore = {
   folderInput: "",
   folderId: null,
   folderPath: [],
+  captureRequestBodies: false,
+  captureResponseBodies: false,
+  captureWebSocketFrames: false,
 };
 let hasLoadedUploadSettings = false;
 let cachedUploadHistory: UploadHistoryEntry[] = [];
@@ -246,12 +252,18 @@ async function getUploadSettings(): Promise<UploadSettingsStore> {
       folderPath: Array.isArray(stored?.folderPath)
         ? stored.folderPath.filter((segment) => typeof segment === "string")
         : [],
+      captureRequestBodies: Boolean(stored?.captureRequestBodies),
+      captureResponseBodies: Boolean(stored?.captureResponseBodies),
+      captureWebSocketFrames: Boolean(stored?.captureWebSocketFrames),
     };
   } catch {
     cachedUploadSettings = {
       folderInput: "",
       folderId: null,
       folderPath: [],
+      captureRequestBodies: false,
+      captureResponseBodies: false,
+      captureWebSocketFrames: false,
     };
   }
 
@@ -317,6 +329,9 @@ function getSettingsSnapshot(settings: UploadSettingsStore): UploadSettings {
   return {
     folderInput: settings.folderInput,
     folderId: settings.folderId,
+    captureRequestBodies: settings.captureRequestBodies,
+    captureResponseBodies: settings.captureResponseBodies,
+    captureWebSocketFrames: settings.captureWebSocketFrames,
   };
 }
 
@@ -624,6 +639,7 @@ async function startRecording(tabId: number): Promise<MessageResponse> {
   }
 
   try {
+    const settings = await getUploadSettings();
     const tab = await chrome.tabs.get(tabId);
     if (tab.url && tab.url.startsWith("chrome://")) {
       return { ok: false, error: "Cannot record chrome:// pages. Please open a regular webpage." };
@@ -643,6 +659,11 @@ async function startRecording(tabId: number): Promise<MessageResponse> {
     storage.beginSession();
     storage.setPaused(false);
     cdp.setPaused(false);
+    cdp.setCaptureSettings({
+      captureRequestBodies: settings.captureRequestBodies,
+      captureResponseBodies: settings.captureResponseBodies,
+      captureWebSocketFrames: settings.captureWebSocketFrames,
+    });
 
     await Promise.all([
       cdp.attach(tabId),
@@ -1049,8 +1070,15 @@ async function deleteSession(data: Record<string, unknown> | undefined): Promise
 async function updateUploadSettingsFromMessage(
   data: Record<string, unknown> | undefined,
 ): Promise<MessageResponse & { settings?: UploadSettings }> {
-  const folderInput = typeof data?.folderInput === "string" ? data.folderInput : "";
-  const parsed = parseGoogleDriveFolderInput(folderInput);
+  const existingSettings = await getUploadSettings();
+  const hasFolderInput = typeof data?.folderInput === "string";
+  const parsed = hasFolderInput
+    ? parseGoogleDriveFolderInput(data.folderInput as string)
+    : {
+        normalizedInput: existingSettings.folderInput,
+        folderId: existingSettings.folderId,
+        folderPath: existingSettings.folderPath,
+      };
 
   if (parsed.normalizedInput && !parsed.folderId && parsed.folderPath.length === 0) {
     return {
@@ -1063,6 +1091,15 @@ async function updateUploadSettingsFromMessage(
     folderInput: parsed.normalizedInput,
     folderId: parsed.folderId,
     folderPath: parsed.folderPath,
+    captureRequestBodies: typeof data?.captureRequestBodies === "boolean"
+      ? data.captureRequestBodies
+      : existingSettings.captureRequestBodies,
+    captureResponseBodies: typeof data?.captureResponseBodies === "boolean"
+      ? data.captureResponseBodies
+      : existingSettings.captureResponseBodies,
+    captureWebSocketFrames: typeof data?.captureWebSocketFrames === "boolean"
+      ? data.captureWebSocketFrames
+      : existingSettings.captureWebSocketFrames,
   };
   await saveUploadSettings(settings);
   await saveStateToStorage();

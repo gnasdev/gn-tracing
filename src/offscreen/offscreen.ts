@@ -463,7 +463,7 @@ async function uploadToGoogleDrive(
 
   try {
     const makeShareable = async (fileId: string): Promise<void> => {
-      await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}/permissions`, {
+      const response = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}/permissions`, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${data.authToken}`,
@@ -474,6 +474,11 @@ async function uploadToGoogleDrive(
           role: "reader",
         }),
       });
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.error?.message || `Share permission failed with status ${response.status}`);
+      }
     };
 
     const createFolder = async (folderName: string, parentFolderId?: string | null): Promise<string> => {

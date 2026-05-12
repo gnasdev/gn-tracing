@@ -48,11 +48,12 @@ flowchart LR
 - Network requests and responses collected through CDP
 - WebSocket connections and frames
 - Source-map-enhanced locations when source maps can be resolved before finalization
+- Sensitive request/response headers are redacted by default. Request bodies, response bodies, and WebSocket message payloads are opt-in popup privacy settings.
 
 Important implementation details:
 
-- Response bodies are fetched only for supported text-like content types.
-- The current response body capture limit is about `1 MB` per response.
+- Response bodies are fetched only when enabled and only for supported text-like content types.
+- The current response body capture limit is about `1 MB` per response when body capture is enabled.
 - Recording payloads are kept in memory, not persisted to durable local storage.
 - If the extension runtime restarts mid-session, an in-memory recording or upload can be interrupted.
 

@@ -21,6 +21,8 @@ related:
 - [modules/recording-runtime.md](./modules/recording-runtime.md)
 - [modules/drive-and-player.md](./modules/drive-and-player.md)
 - [compliance/_summary.md](./compliance/_summary.md)
+- [compliance/privacy-policy.md](./compliance/privacy-policy.md)
+- [compliance/chrome-web-store-submission.md](./compliance/chrome-web-store-submission.md)
 - [_sync.md](./_sync.md)
 
 ## Dependency Map
@@ -43,4 +45,4 @@ related:
 - `offscreen` -> Google Drive APIs: recording-folder creation, multipart uploads, chunked video upload, and sharing permissions
 - `offscreen` -> Cloudflare Pages standalone player URL generation with one recording index file ID path (`/<id>`)
 - `standalone player` -> same-origin `/api/drive?id=<file-id>` proxy for Drive artifact fetches during replay
-- `release workflow` -> root `Taskfile.yml`: extension build and manual zip packaging with OAuth/extension identity from repository secrets; standalone player deploy stays manual via `player-standalone/deploy.sh`
+- `release workflow` -> root `Taskfile.yml`: extension build, Store package checks, and zip packaging with OAuth/extension identity from repository secrets; standalone player deploy stays manual via `player-standalone/deploy.sh`

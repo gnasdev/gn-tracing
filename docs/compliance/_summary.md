@@ -8,6 +8,8 @@ related:
   - "../modules/recording-runtime.md"
   - "../modules/drive-and-player.md"
   - "../shared/data-models.md"
+  - "./privacy-policy.md"
+  - "./chrome-web-store-submission.md"
 ---
 
 # Compliance Summary
@@ -18,7 +20,7 @@ related:
 - Phạm vi: documentation coverage and orphan-risk summary
 - Nguồn code: `src/`, `player/`, `player-standalone/`
 - Tuân thủ: Không áp dụng
-- Links: [Recording Runtime](../modules/recording-runtime.md), [Drive And Player](../modules/drive-and-player.md), [Shared Data Models](../shared/data-models.md)
+- Links: [Recording Runtime](../modules/recording-runtime.md), [Drive And Player](../modules/drive-and-player.md), [Shared Data Models](../shared/data-models.md), [Privacy Policy](./privacy-policy.md), [Chrome Web Store Submission](./chrome-web-store-submission.md)
 
 ## Coverage
 
@@ -26,10 +28,12 @@ related:
 - `drive-and-player`: auth, upload, replay URL generation, and standalone player documented
 - release/deploy flow: covered through `drive-and-player`, `shared/api-conventions`, `_index.md`, and `README.md`
 - shared message/data contracts documented
+- Chrome Web Store readiness docs now cover privacy policy language, permission justifications, data usage disclosures, remote code notes, and reviewer test instructions
 
 ## Current Gaps
 
 - built-in player rendering internals are grouped under `drive-and-player` rather than documented as a separate module
+- privacy policy still needs to be published at a stable public URL before Store submission
 
 ## Orphan Risk
 

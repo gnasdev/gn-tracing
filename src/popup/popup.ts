@@ -55,6 +55,9 @@ const googleDriveDisconnectBtn = document.getElementById("google-drive-disconnec
 const googleDriveFolderInput = document.getElementById("google-drive-folder-input") as HTMLInputElement;
 const googleDriveFolderHint = document.getElementById("google-drive-folder-hint")!;
 const saveFolderBtn = document.getElementById("save-folder-btn") as HTMLButtonElement;
+const captureRequestBodiesInput = document.getElementById("capture-request-bodies-input") as HTMLInputElement;
+const captureResponseBodiesInput = document.getElementById("capture-response-bodies-input") as HTMLInputElement;
+const captureWebSocketFramesInput = document.getElementById("capture-websocket-frames-input") as HTMLInputElement;
 const popupUploadHistoryList = document.getElementById("popup-upload-history-list")!;
 const uploadHistoryPageBtn = document.getElementById("upload-history-page-btn") as HTMLButtonElement;
 
@@ -66,6 +69,7 @@ let timerRecording: RecordingStatus | null = null;
 let toastTimeout: ReturnType<typeof setTimeout> | null = null;
 let isEditingFolder = false;
 let currentUploadHistory: UploadHistoryEntry[] = [];
+let currentSettings: UploadSettings | null = null;
 
 function getEditIcon(): string {
   return `
@@ -472,6 +476,13 @@ function updateFolderHint(settings: UploadSettings | null): void {
   googleDriveFolderHint.textContent = `Resolved folder ID: ${settings.folderId}`;
 }
 
+function updateCapturePrivacyUI(settings: UploadSettings | null): void {
+  currentSettings = settings;
+  captureRequestBodiesInput.checked = Boolean(settings?.captureRequestBodies);
+  captureResponseBodiesInput.checked = Boolean(settings?.captureResponseBodies);
+  captureWebSocketFramesInput.checked = Boolean(settings?.captureWebSocketFrames);
+}
+
 function updateRecordingUI(recording: RecordingStatus | null): void {
   if (recording?.isRecording) {
     toggleBtn.textContent = "Stop Recording";
@@ -521,6 +532,7 @@ function handleStateUpdate(state: PopupState): void {
     setFolderEditingState(false);
   }
   updateFolderHint(state.settings);
+  updateCapturePrivacyUI(state.settings);
 }
 
 async function refreshGoogleDriveStatus(): Promise<void> {
@@ -667,6 +679,60 @@ saveFolderBtn.addEventListener("click", async () => {
   } finally {
     saveFolderBtn.disabled = false;
   }
+});
+
+async function saveCapturePrivacySettings(): Promise<void> {
+  const previousSettings = currentSettings;
+  const inputs = [
+    captureRequestBodiesInput,
+    captureResponseBodiesInput,
+    captureWebSocketFramesInput,
+  ];
+  inputs.forEach((input) => {
+    input.disabled = true;
+  });
+  errorMsg.classList.add("hidden");
+
+  try {
+    const result = await chrome.runtime.sendMessage({
+      action: "UPDATE_SETTINGS",
+      data: {
+        captureRequestBodies: captureRequestBodiesInput.checked,
+        captureResponseBodies: captureResponseBodiesInput.checked,
+        captureWebSocketFrames: captureWebSocketFramesInput.checked,
+      },
+    }) as MessageResponse & { settings?: UploadSettings };
+
+    if (!result.ok) {
+      updateCapturePrivacyUI(previousSettings);
+      showError(result.error || "Failed to save capture privacy settings");
+      return;
+    }
+
+    if (result.settings) {
+      updateCapturePrivacyUI(result.settings);
+      showToast("Capture privacy saved.");
+    }
+  } catch (error) {
+    updateCapturePrivacyUI(previousSettings);
+    showError((error as Error).message);
+  } finally {
+    inputs.forEach((input) => {
+      input.disabled = false;
+    });
+  }
+}
+
+captureRequestBodiesInput.addEventListener("change", () => {
+  void saveCapturePrivacySettings();
+});
+
+captureResponseBodiesInput.addEventListener("change", () => {
+  void saveCapturePrivacySettings();
+});
+
+captureWebSocketFramesInput.addEventListener("change", () => {
+  void saveCapturePrivacySettings();
 });
 
 sessionList.addEventListener("click", async (event) => {
@@ -824,6 +890,7 @@ async function initPopup(): Promise<void> {
       googleDriveFolderInput.value = getFolderDisplayValue(settingsResult.settings.folderInput);
       setFolderEditingState(false);
       updateFolderHint(settingsResult.settings);
+      updateCapturePrivacyUI(settingsResult.settings);
     }
     if (settingsResult.ok && Array.isArray(settingsResult.uploadHistory)) {
       renderPopupUploadHistory(settingsResult.uploadHistory);

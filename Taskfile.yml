@@ -113,6 +113,22 @@ tasks:
       - task: release:build
       - task: release:zip
 
+  store:check:
+    desc: Validate the production extension package before Chrome Web Store upload.
+    cmds:
+      - npx tsc --noEmit
+      - npm audit --omit=dev
+      - task: player:typecheck
+      - sh -c 'cd player-standalone && npm audit'
+      - task: dist
+      - node scripts/check-store-package.mjs
+
+  store:zip:
+    desc: Build, validate, and zip the Chrome Web Store package.
+    cmds:
+      - task: store:check
+      - sh -c 'rm -f gn-tracing-store.zip && cd dist && zip -r ../gn-tracing-store.zip .'
+
   watch:all:
     desc: Watch extension sources and run the standalone player dev server.
     cmds:
