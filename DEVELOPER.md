@@ -1,231 +1,142 @@
 # Developer Guide
 
-This document is for contributors working on the GN Tracing codebase. The main [README](./README.md) stays user-facing; this guide focuses on architecture, local development, and release mechanics.
+This guide is for contributors working on GN Tracing. The main [README](./README.md) stays user-facing; this file keeps the developer notes short and practical.
 
-## Repository map
+## Project Map
 
-- `src/background/`: MV3 service worker and capture orchestration
-- `src/offscreen/`: offscreen document for tab recording and Google Drive upload
-- `src/popup/`: popup UI for recording, auth, and upload state
+- `src/background/`: MV3 service worker, session orchestration, Chrome Debugger Protocol capture
+- `src/offscreen/`: tab media recording and Google Drive upload work
+- `src/popup/`: extension popup UI and capture controls
 - `src/drive-auth/`: Google Drive auth page opened in a normal tab
-- `src/history/`: full upload-history page controller
-- `src/shared/`: shared helpers such as player host URL building, Drive folder parsing, and upload-history UI
-- `src/types/`: shared message and recording types
-- `player/`: source of the in-extension player assets
-- `player-standalone/`: hosted standalone player app for replay links
-- `dist/`: built unpacked extension output
-- `.github/workflows/release.yml`: tag-based GitHub release workflow
+- `src/history/`: upload history page
+- `src/shared/`: shared Drive, player URL, and history helpers
+- `src/types/`: shared message and recording contracts
+- `player/`: player assets used by the extension build
+- `player-standalone/`: hosted replay player app
+- `dist/`: generated unpacked extension output
+- `docs/`: architecture, module, compliance, and sync notes
 
-## Core runtime model
+## Runtime Shape
 
-GN Tracing is a Manifest V3 extension. The capture flow is split across three runtime surfaces:
+GN Tracing is a Manifest V3 extension with three main surfaces:
 
-1. Popup
-   The popup starts and stops recording, shows lightweight live stats, and lets the user connect Google Drive or upload a finished capture.
-
-2. Service worker
-   The service worker coordinates the session. It attaches Chrome Debugger Protocol to the active tab, tracks runtime state, syncs state into `chrome.storage.session`, and brokers messages between the popup and offscreen document.
-
-3. Offscreen document
-   The offscreen document owns media capture and upload work. It records the tab stream with `MediaRecorder`, stores the captured blob in memory, uploads artifacts to Google Drive, and emits upload progress back to the service worker and popup.
-
-At a high level:
+1. The popup starts and stops recording, shows state, and exposes Drive/upload controls.
+2. The service worker coordinates capture, attaches CDP to the active tab, and stores live UI state in `chrome.storage.session`.
+3. The offscreen document records tab media, uploads artifacts to Google Drive, and reports progress.
 
 ```mermaid
 flowchart LR
-  Popup["Popup UI"] --> SW["Service Worker"]
+  Popup["Popup"] --> SW["Service worker"]
   SW --> CDP["Chrome Debugger Protocol"]
-  SW --> Offscreen["Offscreen Document"]
-  SW --> SessionState["chrome.storage.session"]
+  SW --> Offscreen["Offscreen document"]
+  SW --> Session["chrome.storage.session"]
   Offscreen --> Drive["Google Drive"]
-  Drive --> Player["Hosted Player<br/>tracing.gnas.dev"]
+  Drive --> Player["tracing.gnas.dev"]
 ```
 
-## What gets captured
+## Setup
 
-- Tab video and tab audio via `MediaRecorder`
-- Console API events and runtime exceptions
-- Network requests and responses collected through CDP
-- WebSocket connections and frames
-- Source-map-enhanced locations when source maps can be resolved before finalization
-- Sensitive request/response headers are redacted by default. Request bodies, response bodies, and WebSocket message payloads are opt-in popup privacy settings.
-
-Important implementation details:
-
-- Response bodies are fetched only when enabled and only for supported text-like content types.
-- The current response body capture limit is about `1 MB` per response when body capture is enabled.
-- Recording payloads are kept in memory, not persisted to durable local storage.
-- If the extension runtime restarts mid-session, an in-memory recording or upload can be interrupted.
-
-## Local development
-
-### Requirements
+Requirements:
 
 - Node.js 18+
 - Chrome or Edge
+- Task, if you want to use the documented `task` commands
 
-### Install dependencies
-
-Root extension app:
+Install dependencies:
 
 ```bash
 npm install
+cd player-standalone
+npm install
+```
+
+## Common Commands
+
+From the repository root:
+
+```bash
+task build          # Build extension into dist/ for development
+task dist           # Build extension into dist/ for production
+task watch          # Rebuild extension on source changes
+task typecheck      # Type-check root extension code
+task build:all      # Build extension and standalone player
+task dist:all       # Production build for extension and player
+task watch:all      # Extension watch plus player dev server
 ```
 
 Standalone player:
 
 ```bash
-cd player-standalone
-npm install
-```
-
-### Useful tasks
-
-From the repository root:
-
-```bash
-task build
-task dist
-task watch
-task typecheck
-task build:all
-task dist:all
-task watch:all
-```
-
-What they do:
-
-- `task build`: build the extension into `dist/` with the development environment
-- `task dist`: build the extension into `dist/` with the production environment
-- `task watch`: rebuild the extension on source changes
-- `task typecheck`: run root TypeScript checks
-- `task build:all`: build the extension and standalone player with the development environment
-- `task dist:all`: build the extension and standalone player with the production environment
-- `task watch:all`: run extension watch and standalone player dev mode together
-
-Standalone player tasks from the repository root:
-
-```bash
 task player:dev
+task player:sync
 task player:build
 task player:dist
 task player:typecheck
 ```
 
-## Loading the extension locally
+## Load Locally
 
 1. Run `task build`.
 2. Open `chrome://extensions` or `edge://extensions`.
-3. Turn on `Developer mode`.
+3. Enable `Developer mode`.
 4. Click `Load unpacked`.
-5. Select the repository `dist/` folder.
+5. Select this repository's `dist/` folder.
 
-When you update extension code, rebuild and reload the unpacked extension.
+Rebuild and reload the unpacked extension after source changes.
 
-## Build and asset sync model
+## Upload And Replay Model
 
-The extension and the standalone player intentionally share player assets.
+After upload, GN Tracing creates a Drive folder with recording artifacts such as `metadata.json`, `manifest.json`, `recording-index.json`, optional log files, and ordered `video.part-XXX.webm` files.
 
-- `player/` is the source of truth for the player runtime used by the extension build.
-- `player-standalone/scripts/sync-player.js` copies `player/` assets into `player-standalone/public/`.
-- `task player:sync` should be run before building or deploying the standalone player when player assets have changed.
+The public replay URL uses the recording index file ID:
 
-The root build uses `esbuild.config.mjs` to:
+```text
+https://tracing.gnas.dev/<recording-index-file-id>
+```
 
-- bundle service worker and UI entry points
-- generate `dist/manifest.json` from `manifest.template.json`
-- copy static popup, auth, icon, and player assets into `dist/`
+The hosted player loads that index first, then fetches the referenced artifacts through the Cloudflare Pages Drive proxy.
 
-## Google Drive replay model
+## Development Notes
 
-After a successful upload:
+- Preserve message contracts across popup, service worker, and offscreen code unless all participants are updated together.
+- Treat MV3 service worker restarts as normal. UI state should recover from `chrome.storage.session` and runtime checks.
+- Keep user-facing docs aligned with the current flow: record, stop, upload to Google Drive, open replay link.
+- Run `task player:sync` before building or deploying the standalone player when `player/` changes.
+- If manifest permissions, auth, Drive upload, or player loading changes, manually verify the affected browser flow.
+- Keep source comments in English and focused on runtime boundaries, browser API constraints, async lifecycle, or non-obvious contracts.
 
-- the offscreen document creates a Drive folder
-- video is uploaded in parts when needed
-- `metadata.json` is generated during upload
-- optional artifacts such as `console.json`, `network.json`, and `websocket.json` are uploaded when present
-- `manifest.json` describes the artifact layout and video parts
-- `recording-index.json` stores the Drive file IDs the player needs to start replay
-- all uploaded files are made readable by link
-- the extension generates a replay URL using `https://tracing.gnas.dev/<recording-index-file-id>`
-- recent uploads are stored locally and synced as `gn-tracing-upload-history.json` inside each configured Drive target folder when auth is available
+## Release
 
-The hosted player loads the recording index first, then downloads metadata, optional logs, manifest, and video parts through the Cloudflare Pages `/api/drive?id=<file-id>` proxy. It still accepts legacy direct-file query params for older links and debugging:
+Releases are tag-driven through `.github/workflows/release.yml`.
 
-- `videos`
-- `metadata`
-- `console`
-- `network`
-- `websocket`
+1. Commit changes to `main`.
+2. Push a tag matching `v*`, for example `v1.0.4`.
+3. GitHub Actions runs `task release:ci`.
+4. The release publishes `gn-tracing-extension-${tag}.zip`.
 
-Those legacy links are generated only by older builds; contributors normally should not construct replay links by hand unless debugging the player directly.
+Production release builds use repository secrets for extension identity and OAuth:
 
-## Main code paths to know
+- `GOOGLE_CLIENT_ID`
+- `CHROME_EXTENSION_ID`
+- `CHROME_EXTENSION_PUBLIC_KEY`
+- `CHROME_EXTENSION_PRIVATE_KEY`
 
-### Recording lifecycle
+Local production builds can provide the same names in `.env`.
 
-- `src/popup/popup.ts`: user actions and popup rendering
-- `src/background/service-worker.ts`: start/stop orchestration and persisted popup state
-- `src/background/recorder-manager.ts`: service-worker-side recording state flags
-- `src/offscreen/offscreen.ts`: actual media capture and upload implementation
+## Store Package Check
 
-### Debug signal collection
+Before Chrome Web Store upload, run:
 
-- `src/background/cdp-manager.ts`: CDP attach, event handling, source map fetching, and network/body capture
-- `src/background/storage-manager.ts`: in-memory console/network/WebSocket storage and export
+```bash
+task store:check
+task store:zip
+```
 
-### Replay
+`task store:check` type-checks the extension and player, runs production build validation, and checks the generated store package.
 
-- `player/player.js`: main player runtime
-- `player/player.html`: player shell and intro state
-- `player-standalone/src/`: standalone player bootstrapping and Drive adapter setup
+## Useful Docs
 
-## Working safely in this codebase
-
-- Preserve message contracts across popup, service worker, and offscreen unless you update all participants together.
-- Be careful with MV3 lifecycle assumptions. Service workers can restart, so UI state should continue to derive from `chrome.storage.session` and runtime probing.
-- Keep user-facing claims aligned with the actual upload and replay flow. The current primary user flow is `record -> stop -> upload to Google Drive -> open replay link`.
-- If you change player assets in `player/`, sync and rebuild the standalone player before considering the work complete.
-- If you change manifest permissions, auth flow, or Drive behavior, test in both Chrome and Edge where possible.
-- Keep source comments in English. Comments should explain runtime boundaries, browser API constraints, async lifecycle decisions, or non-obvious data contracts; avoid restating straightforward assignments or DOM wiring.
-
-## Release flow
-
-Release is tag-driven.
-
-1. Commit and push changes to `main`.
-2. Create and push a tag matching `v*`, for example `v1.0.4`.
-3. GitHub Actions runs `.github/workflows/release.yml`.
-4. The workflow installs dependencies, sets up Task, runs `task release:ci`, and publishes a GitHub release.
-
-Current release artifact behavior:
-
-- `task release:build` builds the extension with the production environment
-- `task release:zip` zips the `dist/` directory for manual unpacked-extension distribution
-- `task release:ci` builds the production extension and creates only the manual install zip
-- the GitHub release publishes `gn-tracing-extension-${tag}.zip`
-- releases do not publish `.crx` or `updates.xml`; install by extracting the zip and loading the `dist/` folder as an unpacked extension
-
-Release builds read the OAuth and extension identity from repository secrets:
-`GOOGLE_CLIENT_ID`, `CHROME_EXTENSION_ID`, `CHROME_EXTENSION_PUBLIC_KEY`, and
-`CHROME_EXTENSION_PRIVATE_KEY`. Local builds can provide the same names in
-`.env`; the build validates that `CHROME_EXTENSION_ID` matches the public key
-before writing `dist/manifest.json`.
-
-## Testing checklist
-
-There is no full automated test suite yet, so manual verification matters.
-
-Before shipping changes, verify the parts you touched:
-
-- start and stop recording on a normal page
-- popup state recovery after reopening the popup
-- Google Drive connect and disconnect flow
-- upload progress and final replay link generation
-- replay loading in the hosted player
-- player search, filters, and expanded detail views if player code changed
-
-## Related docs
-
-- [README](./README.md)
 - [Docs overview](./docs/overview.md)
+- [Recording runtime](./docs/modules/recording-runtime.md)
+- [Drive and player](./docs/modules/drive-and-player.md)
+- [Chrome Web Store notes](./docs/compliance/chrome-web-store-submission.md)

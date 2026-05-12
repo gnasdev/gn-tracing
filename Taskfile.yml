@@ -129,6 +129,28 @@ tasks:
       - task: store:check
       - sh -c 'rm -f gn-tracing-store.zip && cd dist && zip -r ../gn-tracing-store.zip .'
 
+  store:status:
+    desc: Fetch the Chrome Web Store item status through the official API.
+    cmds:
+      - node scripts/chrome-webstore.mjs status
+
+  store:upload:
+    desc: Upload the Chrome Web Store zip through the official API.
+    cmds:
+      - node scripts/chrome-webstore.mjs upload --zip gn-tracing-store.zip
+
+  store:publish:
+    desc: Submit the uploaded Chrome Web Store item for review.
+    cmds:
+      - node scripts/chrome-webstore.mjs publish
+
+  store:release:
+    desc: Build, validate, upload, and submit the Chrome Web Store release.
+    cmds:
+      - task: store:zip
+      - task: store:upload
+      - task: store:publish
+
   watch:all:
     desc: Watch extension sources and run the standalone player dev server.
     cmds:

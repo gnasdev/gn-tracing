@@ -3,10 +3,14 @@
   "version": "1.0.12",
   "private": true,
   "license": "GPL-3.0-or-later",
+  "scripts": {
+    "store:assets": "node scripts/generate-store-assets.mjs"
+  },
   "devDependencies": {
     "@types/chrome": "^0.0.287",
     "concurrently": "^8.2.2",
     "esbuild": "^0.24.0",
+    "sharp": "^0.34.5",
     "typescript": "^5.7.0"
   }
 }
