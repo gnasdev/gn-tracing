@@ -12,8 +12,13 @@ related:
 
 # GN Tracing Docs Overview
 
-- **Status**: Active
-- **Version**: 0.1.0
+## Meta
+
+- Trạng thái: active
+- Phạm vi: product scope, documentation boundaries, and architecture guardrails
+- Nguồn code: `src/`, `popup/`, `offscreen/`, `drive-auth/`, `player/`, `player-standalone/`
+- Tuân thủ: Không áp dụng
+- Links: [Recording Runtime](./modules/recording-runtime.md), [Drive And Player](./modules/drive-and-player.md), [Project Context](./shared/project-context.md)
 
 ## Goal
 

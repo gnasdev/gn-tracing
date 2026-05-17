@@ -24,7 +24,7 @@ related:
 - Trạng thái: active
 - Phạm vi: recording lifecycle, CDP capture, offscreen media capture, service-worker state, and popup state rendering
 - Nguồn code: `src/background/service-worker.ts`, `src/background/recorder-manager.ts`, `src/background/cdp-manager.ts`, `src/background/storage-manager.ts`, `src/offscreen/offscreen.ts`, `src/popup/popup.ts`
-- Tuân thủ: Documented
+- Tuân thủ: Không áp dụng
 - Links: [Drive And Player](./drive-and-player.md), [Shared Data Models](../shared/data-models.md), [API Conventions](../shared/api-conventions.md)
 
 ## 1. Overview

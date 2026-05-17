@@ -8,9 +8,18 @@ related:
   - "./privacy-policy.md"
   - "../modules/recording-runtime.md"
   - "../modules/drive-and-player.md"
+  - "../shared/api-conventions.md"
 ---
 
 # Chrome Web Store Submission Notes
+
+## Meta
+
+- Trạng thái: active
+- Phạm vi: Chrome Web Store listing, permission, data-use, remote-code, and reviewer submission notes
+- Nguồn code: `manifest.template.json`, `Taskfile.yml`, `scripts/check-store-package.mjs`, `scripts/chrome-webstore.mjs`
+- Tuân thủ: Chrome Web Store submission
+- Links: [Privacy Policy](./privacy-policy.md), [Recording Runtime](../modules/recording-runtime.md), [Drive And Player](../modules/drive-and-player.md), [API Conventions](../shared/api-conventions.md)
 
 This document is the working checklist for submitting GN Tracing to the Chrome Web Store.
 

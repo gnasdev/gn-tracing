@@ -28,7 +28,7 @@ related:
 - `drive-and-player`: auth, upload, replay URL generation, and standalone player documented
 - release/deploy flow: covered through `drive-and-player`, `shared/api-conventions`, `_index.md`, and `README.md`
 - shared message/data contracts documented
-- Chrome Web Store readiness docs now cover privacy policy language, permission justifications, data usage disclosures, remote code notes, and reviewer test instructions
+- Chrome Web Store readiness docs cover privacy policy language, permission justifications, data usage disclosures, remote code notes, and reviewer test instructions
 
 ## Current Gaps
 

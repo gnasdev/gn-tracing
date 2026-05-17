@@ -10,9 +10,9 @@ tags: ["docs", "sync"]
 
 ## Meta
 
-- Synced commit: `HEAD`
-- Synced at: `2026-05-12T00:00:00+07:00`
-- Scope: Chrome Web Store readiness, capture privacy settings, Drive share-permission hardening, manifest permissions, Store validation task, compliance docs, and planning-doc cleanup
+- Synced commit: `1a1e99489f04f49b87b8af9e58fa1a6941ba3e80`
+- Synced at: `2026-05-17T17:22:46+07:00`
+- Scope: docs tree normalization, metadata consistency, internal link checks, compliance docs, module references, and sync metadata
 - Status: synced
 - Known unsynced: Không có
 

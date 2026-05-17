@@ -9,6 +9,8 @@ source_paths:
   - "src/drive-auth/drive-auth.ts"
   - "src/offscreen/offscreen.ts"
   - "src/shared/player-host.ts"
+  - "Taskfile.yml"
+  - "DEVELOPER.md"
   - "player"
   - "player-standalone"
 related:
@@ -24,7 +26,7 @@ related:
 - Trạng thái: active
 - Phạm vi: Google Drive auth, folder upload, replay URL generation, release packaging, and built-in/standalone player integration
 - Nguồn code: `src/background/google-drive-auth.ts`, `src/drive-auth/drive-auth.ts`, `src/offscreen/offscreen.ts`, `src/shared/player-host.ts`, `player/`, `player-standalone/`
-- Tuân thủ: Documented
+- Tuân thủ: Không áp dụng
 - Links: [Recording Runtime](./recording-runtime.md), [Shared Data Models](../shared/data-models.md), [API Conventions](../shared/api-conventions.md)
 
 ## 1. Overview
@@ -34,7 +36,8 @@ This module covers authentication, Google Drive upload, replay URL generation, b
 - `src/drive-auth/drive-auth.ts`
 - `esbuild.config.mjs`
 - `manifest.template.json`
-- `.github/workflows/release.yml`
+- `Taskfile.yml`
+- `DEVELOPER.md`
 - `player/*`
 - `player-standalone/*`
 - fixed replay host wiring in `src/offscreen/offscreen.ts`, `src/shared/player-host.ts`, and popup display in `src/popup/popup.ts`
@@ -84,20 +87,20 @@ This module covers authentication, Google Drive upload, replay URL generation, b
 - replay links always target the full Cloudflare Pages player host URL directly.
 - the auth page is a first-class surface that can both start auth and react to service-worker state updates.
 - standalone player is not the system of record for assets; it mirrors `player/` runtime logic through the sync script and wrapper adapters.
-- release automation expects both npm workspaces to have committed lockfiles so GitHub Actions can run `npm ci` at the repo root and inside `player-standalone/`, then uses `Taskfile.yml` for build, zip, and deploy commands.
+- release automation expects both npm workspaces to have committed lockfiles and delegates build, zip, Store validation, and deploy commands to `Taskfile.yml`.
 - tag-based GitHub releases build the extension with repository secrets `GOOGLE_CLIENT_ID`, `CHROME_EXTENSION_ID`, `CHROME_EXTENSION_PUBLIC_KEY`, and `CHROME_EXTENSION_PRIVATE_KEY`, then publish `gn-tracing-extension-${tag}.zip` for manual unpacked installation; they do not publish CRX/update XML artifacts or invoke Cloudflare deploy steps for the standalone player.
 - if video exceeds the upload limit, offscreen upload slices the final recording blob into ordered byte chunks and the player reassembles them locally before playback.
 - popup upload status must surface both aggregate transferred bytes/percent and per-file progress rows throughout the Drive upload flow.
 - player loading must surface both aggregate transferred bytes/percent and per-file progress rows for the recording index, metadata, optional artifacts, manifest, and each video part.
-- upload progress now measures artifact payload bytes rather than raw multipart HTTP body bytes so aggregate totals match the recording artifacts shown to the user.
+- upload progress measures artifact payload bytes rather than raw multipart HTTP body bytes so aggregate totals match the recording artifacts shown to the user.
 - upload progress updates are throttled between transfer events, while queued/uploading/uploaded/skipped/failed state changes are emitted immediately.
 - upload file transfers run with bounded concurrency, and Drive sharing permission creation no longer occupies the file upload worker slot.
 - service worker must re-hydrate Google Drive auth status on startup/install so popup state stays correct after extension reloads.
-- service worker now treats Google Drive connectivity as a separately refreshed cache; snapshot persistence reuses the cached auth state instead of calling Drive on every progress event.
-- popup-visible recording lifecycle is now explicit via phases (`idle`, `recording`, `recorded`, `uploading`, `interrupted`) so stale upload results do not override an active recording session.
+- service worker treats Google Drive connectivity as a separately refreshed cache; snapshot persistence reuses the cached auth state instead of calling Drive on every progress event.
+- popup-visible recording lifecycle is explicit via phases (`idle`, `recording`, `recorded`, `uploading`, `interrupted`) so stale upload results do not override an active recording session.
 - upload byte totals should exclude optional artifacts that were skipped after failure so aggregate progress reaches the true final total.
-- when optional upload artifacts fail after partial transfer, the denominator now drops only by the remaining unsent payload bytes so aggregate progress stays monotonic.
-- player loading now ignores unknown-size responses until their final blob size is known, preventing the progress bar from briefly reaching 100% and then dropping once video totals are introduced.
+- when optional upload artifacts fail after partial transfer, the denominator drops only by the remaining unsent payload bytes so aggregate progress stays monotonic.
+- player loading ignores unknown-size responses until their final blob size is known, preventing the progress bar from briefly reaching 100% and then dropping once video totals are introduced.
 - upload hard-fails when folder creation, metadata, manifest, recording index, or any video part upload fails; console/network/websocket uploads are best-effort and omitted from the manifest/index when they fail.
 - player loading must surface transferred bytes and percent while downloading artifacts, and video part downloads run with bounded parallelism rather than unbounded `Promise.all`.
 - player layout preferences are stored per-origin in `localStorage` under a single player UI state entry and restored on load.
@@ -135,7 +138,7 @@ This module covers authentication, Google Drive upload, replay URL generation, b
 - shares replay payload schema with built-in player and standalone player
 - depends on `shared/api-conventions` for Chrome identity + Drive API assumptions
 - exposes fixed player-host information to popup UX and release automation
-- shares release packaging metadata with `manifest.template.json`, `.github/workflows/release.yml`, and root `package.json` scripts
+- shares release packaging metadata with `manifest.template.json`, `Taskfile.yml`, `DEVELOPER.md`, and root `package.json` scripts
 
 ## 7. Related Decisions
 
@@ -143,6 +146,6 @@ This module covers authentication, Google Drive upload, replay URL generation, b
 - standalone replay distribution is standardized on Cloudflare Pages instead of popup-configured hosts.
 - tag release automation delegates production extension build and zip packaging to root `package.json` scripts; standalone Cloudflare deploy is intentionally excluded from release CI.
 - popup/auth surfaces consume a reduced runtime snapshot, while service worker/offscreen remain the capture engines; auth refresh is decoupled from snapshot persistence to avoid progress-time API chatter.
-- upload progress snapshots now flow from offscreen to popup as an aggregate-plus-items contract, while player loading keeps a local per-entry registry that renders both the overall bar and each artifact row.
+- upload progress snapshots flow from offscreen to popup as an aggregate-plus-items contract, while player loading keeps a local per-entry registry that renders both the overall bar and each artifact row.
 - replay links resolve through a single uploaded recording index file ID (`/<id>`), and the player fetches that index before loading metadata/log/video artifacts.
-- player artifact downloads now use a one-day client-side cache, and the standalone Drive proxy also advertises one-day cacheability.
+- player artifact downloads use a one-day client-side cache, and the standalone Drive proxy also advertises one-day cacheability.
