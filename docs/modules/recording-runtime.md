@@ -45,23 +45,22 @@ The service worker is the orchestration boundary. It owns session state, starts/
 - Reject `chrome://` tabs.
 - Capture media, console logs, network traffic, and WebSocket frames for the same tab session.
 - Redact sensitive header values by default and capture request bodies, response bodies, or WebSocket payload text only when the user enables those privacy options.
-- Support pause/resume during capture and compute recording duration excluding paused intervals.
+- Compute recording duration as elapsed wall-clock time between start and stop.
 - Preserve popup UX even when the popup closes by mirroring state into session storage.
 - Hide capture controls and the capture queue from the popup until Google Drive is connected.
 - Tolerate partial teardown failures by settling recorder/CDP shutdown independently.
 
 ## 3. Data Models & APIs
 
-- consumes `MessageAction.START_RECORDING`, `STOP_RECORDING`, `PAUSE_RECORDING`, `RESUME_RECORDING`, `REMOVE_RECORDING`, `DELETE_SESSION`, `GET_STATUS`, `GET_UPLOAD_STATE`
+- consumes `MessageAction.START_RECORDING`, `STOP_RECORDING`, `REMOVE_RECORDING`, `DELETE_SESSION`, `GET_STATUS`, `GET_UPLOAD_STATE`
 - persists mirrored UI state under `gn_tracing_state`
-- models the active lifecycle with `RecordingPhase` values `idle`, `recording`, `paused`, and `interrupted`
+- models the active lifecycle with `RecordingPhase` values `idle`, `recording`, and `interrupted`
 - models completed local/upload sessions with `RecordingSessionSummary` values `recorded`, `uploading`, `uploaded`, and `failed`
 - uses `StorageManager` as the in-memory sink for console/network/WebSocket entries
 
 ## 4. Business Rules
 
 - `START_RECORDING` clears prior captured data before a new session begins.
-- `PAUSE_RECORDING` and `RESUME_RECORDING` are delegated to the offscreen document so `MediaRecorder` state and elapsed-time accounting stay aligned.
 - service worker marks the extension badge with `REC` while recording is active.
 - `chrome.alarms` keepalive is created at 0.4 minutes and cleared after stop.
 - source maps are flushed before debugger detach, then applied to stored console/network initiator data, and the resolver cache is released immediately after enrichment completes.

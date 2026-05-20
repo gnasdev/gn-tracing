@@ -13,6 +13,9 @@
     "alarms",
     "identity"
   ],
+  "host_permissions": [
+    "https://api.github.com/"
+  ],
   "oauth2": {
     "client_id": "{{GOOGLE_CLIENT_ID}}",
     "scopes": [

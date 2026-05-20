@@ -155,32 +155,39 @@ function renderHistoryActionButton(params: {
 
 function getReplayIcon(): string {
   return `
-    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-      <path d="M8 6.82v10.36c0 .79.87 1.27 1.54.84l8.14-5.18a1 1 0 0 0 0-1.68L9.54 5.98A1 1 0 0 0 8 6.82Z" fill="currentColor"/>
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="9"/>
+      <path d="m10 8 6 4-6 4V8Z" fill="currentColor" stroke="none"/>
     </svg>
   `;
 }
 
 function getCopyIcon(): string {
   return `
-    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-      <path d="M9 9a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2V9Zm-5 4V6a2 2 0 0 1 2-2h7v2H6v7H4Z" fill="currentColor"/>
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="9" y="7" width="11" height="13" rx="2"/>
+      <path d="M5 15H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1"/>
     </svg>
   `;
 }
 
 function getFolderIcon(): string {
   return `
-    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-      <path d="M3 7a2 2 0 0 1 2-2h4.17c.53 0 1.04.21 1.41.59l1.83 1.82c.19.19.44.29.71.29H19a2 2 0 0 1 2 2v1H3V7Zm0 5h18l-1.6 6.4A2 2 0 0 1 17.46 20H6.54a2 2 0 0 1-1.94-1.6L3 12Z" fill="currentColor"/>
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M3 7h7l2 2h9v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"/>
+      <path d="M3 7V5a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v2"/>
     </svg>
   `;
 }
 
 function getDeleteIcon(): string {
   return `
-    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-      <path d="M9 3h6l1 2h4v2H4V5h4l1-2Zm1 7h2v7h-2v-7Zm4 0h2v7h-2v-7ZM7 10h2v7H7v-7Zm-1 10a2 2 0 0 1-2-2V8h16v10a2 2 0 0 1-2 2H6Z" fill="currentColor"/>
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M4 7h16"/>
+      <path d="M10 11v6"/>
+      <path d="M14 11v6"/>
+      <path d="M6 7l1 14h10l1-14"/>
+      <path d="M9 7V4h6v3"/>
     </svg>
   `;
 }

@@ -5,6 +5,10 @@
   box-sizing: border-box;
 }
 
+html {
+  width: 320px;
+}
+
 body {
   width: 320px;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -15,16 +19,43 @@ body {
 
 #app {
   position: relative;
+  /* Chrome extension popups can report a tiny initial 100vh during sizing. */
+  max-height: 600px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
   padding: 16px;
   display: flex;
   flex-direction: column;
   gap: 12px;
 }
 
+#app::-webkit-scrollbar {
+  width: 8px;
+}
+
+#app::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+#app::-webkit-scrollbar-thumb {
+  border: 2px solid #1a1a2e;
+  border-radius: 999px;
+  background: #3a4a70;
+}
+
 #header {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 12px;
+}
+
+.app-brand {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .header-actions {
@@ -33,13 +64,26 @@ body {
   gap: 8px;
 }
 
-h1 {
+.app-logo {
+  width: 34px;
+  height: 34px;
+  display: block;
+  border-radius: 9px;
+}
+
+.app-title {
+  min-width: 0;
+  overflow: hidden;
+  color: #f6f8ff;
   font-size: 15px;
-  font-weight: 600;
-  color: #fff;
+  font-weight: 700;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .icon-btn {
+  position: relative;
   width: 28px;
   height: 28px;
   display: inline-flex;
@@ -57,10 +101,30 @@ h1 {
   background: #1d2a4d;
 }
 
+.icon-btn:disabled {
+  cursor: default;
+  opacity: 0.65;
+}
+
 .icon-btn svg {
   width: 14px;
   height: 14px;
   display: block;
+}
+
+.icon-btn.is-loading svg {
+  opacity: 0;
+}
+
+.icon-btn.is-loading::after {
+  content: "";
+  position: absolute;
+  width: 13px;
+  height: 13px;
+  border: 2px solid rgba(238, 242, 255, 0.28);
+  border-top-color: #eef2ff;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
 }
 
 #status-bar {
@@ -94,15 +158,35 @@ h1 {
   padding: 10px;
   border: none;
   border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
   transition: background 0.15s;
 }
 
+.btn svg {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+}
+
 .btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.recording-actions {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+.recording-actions.is-recording {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .btn-start {
@@ -115,12 +199,12 @@ h1 {
 }
 
 .btn-stop {
-  background: #ef233c;
+  background: #16a34a;
   color: #fff;
 }
 
 .btn-stop:hover:not(:disabled) {
-  background: #d90429;
+  background: #15803d;
 }
 
 .btn-danger {
@@ -178,12 +262,7 @@ h1 {
   color: #fff;
 }
 
-.header-popover {
-  position: absolute;
-  top: 50px;
-  right: 16px;
-  left: 16px;
-  z-index: 10;
+.expandable-section {
   padding: 10px;
   border: 1px solid #33446d;
   border-radius: 8px;
@@ -191,52 +270,31 @@ h1 {
   color: #c7d2fe;
   font-size: 11px;
   line-height: 1.45;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
-  margin-bottom: 1rem;
 }
 
-.header-popover::before {
-  content: "";
-  position: absolute;
-  top: -6px;
-  right: 46px;
-  width: 10px;
-  height: 10px;
-  border-top: 1px solid #33446d;
-  border-left: 1px solid #33446d;
-  background: #101a33;
-  transform: rotate(45deg);
+.expandable-section summary {
+  color: #fff;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  list-style-position: inside;
 }
 
 .capture-disclosure {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
   color: #c7d2fe;
   font-size: 11px;
   line-height: 1.45;
 }
 
-.capture-disclosure-copy {
-  color: #c7d2fe;
-}
-
-.settings-panel {
+.capture-disclosure[open],
+.settings-panel[open] {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  max-height: 470px;
-  overflow: auto;
 }
 
-.settings-panel::before {
-  right: 10px;
-}
-
-.settings-panel-title {
-  color: #fff;
-  font-size: 12px;
-  font-weight: 700;
+.capture-disclosure-copy {
+  color: #c7d2fe;
 }
 
 .settings-section {
@@ -710,20 +768,48 @@ h1 {
 }
 
 .toast {
-  position: absolute;
-  top: 12px;
-  right: 12px;
-  max-width: 180px;
+  position: fixed;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: calc(100% - 32px);
   padding: 8px 10px;
   border: 1px solid #1f5f4e;
   border-radius: 8px;
   background: rgba(22, 56, 40, 0.96);
   color: #d1fae5;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-size: 11px;
   font-weight: 600;
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.28);
-  pointer-events: none;
   z-index: 10;
+}
+
+.toast-close-btn {
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: #a7f3d0;
+  cursor: pointer;
+}
+
+.toast-close-btn:hover {
+  background: rgba(209, 250, 229, 0.12);
+}
+
+.toast-close-btn svg {
+  width: 12px;
+  height: 12px;
+  display: block;
 }
 
 #community-section {
@@ -823,6 +909,12 @@ h1 {
 .btn-link:hover {
   background: #16213e;
   color: #e0e0e0;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .hidden {

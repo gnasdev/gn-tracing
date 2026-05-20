@@ -75,20 +75,6 @@ export class RecorderManager {
     }
   }
 
-  async pauseCapture(): Promise<void> {
-    await chrome.runtime.sendMessage({
-      target: "offscreen",
-      type: "PAUSE_CAPTURE",
-    });
-  }
-
-  async resumeCapture(): Promise<void> {
-    await chrome.runtime.sendMessage({
-      target: "offscreen",
-      type: "RESUME_CAPTURE",
-    });
-  }
-
   onRecordingComplete(sessionId?: string): void {
     if (this.#activeSessionId && sessionId && sessionId !== this.#activeSessionId) {
       return;

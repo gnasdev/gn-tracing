@@ -4,12 +4,11 @@
 export type MessageAction =
   | "START_RECORDING"
   | "STOP_RECORDING"
-  | "PAUSE_RECORDING"
-  | "RESUME_RECORDING"
   | "REMOVE_RECORDING"
   | "GET_STATUS"
   | "GET_SETTINGS"
   | "UPDATE_SETTINGS"
+  | "CHECK_FOR_UPDATE"
   | "DELETE_UPLOAD_HISTORY_ENTRY"
   | "DELETE_SESSION"
   | "GOOGLE_DRIVE_CONNECT"
@@ -24,8 +23,6 @@ export type MessageAction =
 export type OffscreenMessageType =
   | "START_CAPTURE"
   | "STOP_CAPTURE"
-  | "PAUSE_CAPTURE"
-  | "RESUME_CAPTURE"
   | "DISCARD_CAPTURE"
   | "GET_CAPTURE_STATE"
   | "UPLOAD_TO_GOOGLE_DRIVE"
@@ -35,7 +32,6 @@ export type OffscreenMessageType =
 export type RecordingPhase =
   | "idle"
   | "recording"
-  | "paused"
   | "interrupted";
 
 export type RecordingSessionPhase =
@@ -72,6 +68,13 @@ export interface MessageResponse {
   url?: string;
   recordingUrl?: string;
   token?: string | null;
+  update?: UpdateCheckResult;
+}
+
+export interface UpdateCheckResult {
+  currentVersion: string;
+  latestVersion: string;
+  isUpdateAvailable: boolean;
 }
 
 export type ProgressItemStatus =
@@ -96,15 +99,12 @@ export interface RecordingStatus {
   phase: RecordingPhase;
   sessionId: string | null;
   isRecording: boolean;
-  isPaused: boolean;
   tabId: number | null;
   startTime: number | null;
   stopTime?: number | null;
   tabUrl?: string | null;
   elapsedMs: number;
   elapsedUpdatedAt: number;
-  pausedAt: number | null;
-  accumulatedPausedMs: number;
   consoleLogCount: number;
   networkRequestCount: number;
 }

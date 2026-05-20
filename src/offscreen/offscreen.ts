@@ -17,7 +17,6 @@ let activeChunks: Blob[] = [];
 let activeSessionId: string | null = null;
 let activeStream: MediaStream | null = null;
 let playbackAudioContext: AudioContext | null = null;
-let isCapturePaused = false;
 let shouldDiscardActiveCapture = false;
 
 interface SessionRecordingSnapshot {
@@ -137,16 +136,6 @@ chrome.runtime.onMessage.addListener((message: OffscreenIncomingMessage, _sender
       sendResponse({ ok: true });
       return false;
 
-    case "PAUSE_CAPTURE":
-      pauseCapture();
-      sendResponse({ ok: true });
-      return false;
-
-    case "RESUME_CAPTURE":
-      resumeCapture();
-      sendResponse({ ok: true });
-      return false;
-
     case "DELETE_SESSION_SNAPSHOT":
       deleteSessionSnapshot(String(message.data?.sessionId || ""));
       sendResponse({ ok: true });
@@ -156,7 +145,6 @@ chrome.runtime.onMessage.addListener((message: OffscreenIncomingMessage, _sender
       sendResponse({
         ok: true,
         isRecording: Boolean(recorder && recorder.state !== "inactive"),
-        isPaused: isCapturePaused,
         activeSessionId,
         snapshotSessionIds: Array.from(sessionSnapshots.keys()),
       });
@@ -191,7 +179,6 @@ function clampPercent(value: number): number {
 function clearActiveCapture(): void {
   activeChunks = [];
   activeSessionId = null;
-  isCapturePaused = false;
   shouldDiscardActiveCapture = false;
 
   if (recorder) {
@@ -251,7 +238,6 @@ async function startCapture(streamId: string, sessionId: string): Promise<void> 
   activeStream = stream;
   activeSessionId = sessionId;
   activeChunks = [];
-  isCapturePaused = false;
   shouldDiscardActiveCapture = false;
 
   recorder.ondataavailable = (event: BlobEvent) => {
@@ -300,20 +286,6 @@ function discardCapture(): void {
     return;
   }
   stopCapture();
-}
-
-function pauseCapture(): void {
-  if (recorder && recorder.state === "recording") {
-    recorder.pause();
-    isCapturePaused = true;
-  }
-}
-
-function resumeCapture(): void {
-  if (recorder && recorder.state === "paused") {
-    recorder.resume();
-    isCapturePaused = false;
-  }
 }
 
 function deleteSessionSnapshot(sessionId: string): void {

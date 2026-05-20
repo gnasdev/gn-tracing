@@ -37,13 +37,10 @@ void googleAuth.initialize();
 interface ActiveRecordingState {
   sessionId: string | null;
   isRecording: boolean;
-  isPaused: boolean;
   tabId: number | null;
   startTime: number | null;
   stopTime: number | null;
   tabUrl: string | null;
-  pausedAt: number | null;
-  accumulatedPausedMs: number;
 }
 
 interface SessionArtifacts {
@@ -61,7 +58,6 @@ interface PersistedPopupState extends PopupState {}
 interface OffscreenCaptureState {
   ok: boolean;
   isRecording?: boolean;
-  isPaused?: boolean;
   activeSessionId?: string | null;
   snapshotSessionIds?: string[];
 }
@@ -103,17 +99,15 @@ const STORAGE_KEY_HISTORY_FILES = "gn_tracing_upload_history_files";
 const UPLOAD_HISTORY_FILENAME = "gn-tracing-upload-history.json";
 const MAX_UPLOAD_HISTORY_ITEMS = 100;
 const UPLOAD_ARTIFACT_CHUNK_CHARS = 1024 * 1024;
+const GITHUB_LATEST_RELEASE_URL = "https://api.github.com/repos/gnasdev/gn-tracing/releases/latest";
 
 const activeRecording: ActiveRecordingState = {
   sessionId: null,
   isRecording: false,
-  isPaused: false,
   tabId: null,
   startTime: null,
   stopTime: null,
   tabUrl: null,
-  pausedAt: null,
-  accumulatedPausedMs: 0,
 };
 
 let sessions: RecordingSessionSummary[] = [];
@@ -154,20 +148,16 @@ function getElapsedMs(now = Date.now()): number {
   if (!activeRecording.startTime) {
     return 0;
   }
-  const pausedDuration = activeRecording.pausedAt ? Math.max(0, now - activeRecording.pausedAt) : 0;
-  return Math.max(0, now - activeRecording.startTime - activeRecording.accumulatedPausedMs - pausedDuration);
+  return Math.max(0, now - activeRecording.startTime);
 }
 
 function resetActiveRecordingState(): void {
   activeRecording.sessionId = null;
   activeRecording.isRecording = false;
-  activeRecording.isPaused = false;
   activeRecording.tabId = null;
   activeRecording.startTime = null;
   activeRecording.stopTime = null;
   activeRecording.tabUrl = null;
-  activeRecording.pausedAt = null;
-  activeRecording.accumulatedPausedMs = 0;
   recorder.clearActiveSession();
 }
 
@@ -214,25 +204,20 @@ function patchSession(sessionId: string, patch: Partial<RecordingSessionSummary>
 function getRecordingStatus(): RecordingStatus | null {
   const now = Date.now();
 
-  if (!activeRecording.sessionId && !activeRecording.isRecording && !activeRecording.isPaused) {
+  if (!activeRecording.sessionId && !activeRecording.isRecording) {
     return null;
   }
 
   return {
-    phase: activeRecording.isRecording
-      ? (activeRecording.isPaused ? "paused" : "recording")
-      : "idle",
+    phase: activeRecording.isRecording ? "recording" : "idle",
     sessionId: activeRecording.sessionId,
     isRecording: activeRecording.isRecording,
-    isPaused: activeRecording.isPaused,
     tabId: activeRecording.tabId,
     startTime: activeRecording.startTime,
     stopTime: activeRecording.stopTime,
     tabUrl: activeRecording.tabUrl,
     elapsedMs: getElapsedMs(now),
     elapsedUpdatedAt: now,
-    pausedAt: activeRecording.pausedAt,
-    accumulatedPausedMs: activeRecording.accumulatedPausedMs,
     consoleLogCount: storage.getConsoleLogCount(),
     networkRequestCount: storage.getNetworkEntryCount(),
   };
@@ -444,13 +429,10 @@ async function syncRuntimeState(): Promise<void> {
   if (persistedState?.recording) {
     activeRecording.sessionId = persistedState.recording.sessionId ?? null;
     activeRecording.isRecording = Boolean(persistedState.recording.isRecording);
-    activeRecording.isPaused = Boolean(persistedState.recording.isPaused);
     activeRecording.tabId = persistedState.recording.tabId ?? null;
     activeRecording.startTime = persistedState.recording.startTime ?? null;
     activeRecording.stopTime = persistedState.recording.stopTime ?? null;
     activeRecording.tabUrl = persistedState.recording.tabUrl ?? null;
-    activeRecording.pausedAt = persistedState.recording.pausedAt ?? null;
-    activeRecording.accumulatedPausedMs = persistedState.recording.accumulatedPausedMs ?? 0;
   } else {
     resetActiveRecordingState();
   }
@@ -462,11 +444,8 @@ async function syncRuntimeState(): Promise<void> {
     resetActiveRecordingState();
   } else {
     activeRecording.isRecording = Boolean(offscreenState.isRecording);
-    activeRecording.isPaused = Boolean(offscreenState.isPaused);
     activeRecording.sessionId = offscreenState.activeSessionId ?? activeRecording.sessionId;
     recorder.hydrateActiveSession(activeRecording.sessionId);
-    storage.setPaused(activeRecording.isPaused);
-    cdp.setPaused(activeRecording.isPaused);
   }
 
   sessions = sortSessions(sessions.map((session) => {
@@ -570,10 +549,6 @@ async function handleMessage(
       return startRecording(message.tabId || 0);
     case "STOP_RECORDING":
       return stopRecording();
-    case "PAUSE_RECORDING":
-      return pauseRecording();
-    case "RESUME_RECORDING":
-      return resumeRecording();
     case "REMOVE_RECORDING":
       return removeRecording();
     case "GET_STATUS":
@@ -582,6 +557,8 @@ async function handleMessage(
       return getPopupSettingsResponse();
     case "UPDATE_SETTINGS":
       return updateUploadSettingsFromMessage(message.data);
+    case "CHECK_FOR_UPDATE":
+      return checkForExtensionUpdate();
     case "DELETE_UPLOAD_HISTORY_ENTRY":
       return deleteUploadHistoryEntry(message.data);
     case "DELETE_SESSION":
@@ -621,6 +598,76 @@ async function handleMessage(
     default:
       return { ok: false, error: "Unknown action" };
   }
+}
+
+async function checkForExtensionUpdate(): Promise<MessageResponse> {
+  try {
+    const currentVersion = chrome.runtime.getManifest().version;
+    const response = await fetch(GITHUB_LATEST_RELEASE_URL, {
+      headers: {
+        Accept: "application/vnd.github+json",
+      },
+      cache: "no-store",
+    });
+
+    if (!response.ok) {
+      return { ok: false, error: `GitHub release check failed (${response.status}).` };
+    }
+
+    const latestRelease = await response.json() as { tag_name?: unknown; name?: unknown };
+    const latestVersion = normalizeReleaseVersion(
+      typeof latestRelease.tag_name === "string"
+        ? latestRelease.tag_name
+        : typeof latestRelease.name === "string"
+          ? latestRelease.name
+          : "",
+    );
+
+    if (!latestVersion) {
+      return { ok: false, error: "Latest GitHub release does not include a valid version." };
+    }
+
+    const comparison = compareVersions(currentVersion, latestVersion);
+    const update = {
+      currentVersion,
+      latestVersion,
+      isUpdateAvailable: comparison < 0,
+    };
+    if (comparison < 0) {
+      return { ok: true, message: `Update ${latestVersion} is available. Current ${currentVersion}.`, update };
+    }
+    if (comparison > 0) {
+      return { ok: true, message: `Current ${currentVersion} is newer than GitHub release ${latestVersion}.`, update };
+    }
+    return { ok: true, message: `GN Tracing is up to date (${currentVersion}).`, update };
+  } catch (error) {
+    return { ok: false, error: (error as Error).message };
+  }
+}
+
+function normalizeReleaseVersion(version: string): string {
+  const normalized = version.trim().replace(/^v/i, "");
+  return /^\d+(?:\.\d+){0,2}(?:[-+][0-9A-Za-z.-]+)?$/.test(normalized) ? normalized : "";
+}
+
+function compareVersions(currentVersion: string, latestVersion: string): number {
+  const currentParts = parseVersionParts(currentVersion);
+  const latestParts = parseVersionParts(latestVersion);
+  for (let index = 0; index < Math.max(currentParts.length, latestParts.length); index += 1) {
+    const currentPart = currentParts[index] || 0;
+    const latestPart = latestParts[index] || 0;
+    if (currentPart !== latestPart) {
+      return currentPart > latestPart ? 1 : -1;
+    }
+  }
+  return 0;
+}
+
+function parseVersionParts(version: string): number[] {
+  return normalizeReleaseVersion(version)
+    .split(/[.-]/)
+    .slice(0, 3)
+    .map((part) => Number.parseInt(part, 10) || 0);
 }
 
 function getUploadArtifactChunk(data: Record<string, unknown> | undefined): UploadArtifactChunkResponse {
@@ -665,17 +712,12 @@ async function startRecording(tabId: number): Promise<MessageResponse> {
     const sessionId = createSessionId();
     activeRecording.sessionId = sessionId;
     activeRecording.isRecording = false;
-    activeRecording.isPaused = false;
     activeRecording.tabId = tabId;
     activeRecording.startTime = Date.now();
     activeRecording.stopTime = null;
     activeRecording.tabUrl = tab.url ?? null;
-    activeRecording.pausedAt = null;
-    activeRecording.accumulatedPausedMs = 0;
 
     storage.beginSession();
-    storage.setPaused(false);
-    cdp.setPaused(false);
     cdp.setCaptureSettings({
       captureRequestBodies: settings.captureRequestBodies,
       captureResponseBodies: settings.captureResponseBodies,
@@ -725,16 +767,8 @@ async function stopRecording(): Promise<MessageResponse> {
   const tabUrl = activeRecording.tabUrl;
 
   try {
-    if (activeRecording.pausedAt) {
-      activeRecording.accumulatedPausedMs += Math.max(0, stopTime - activeRecording.pausedAt);
-      activeRecording.pausedAt = null;
-    }
-
     activeRecording.isRecording = false;
-    activeRecording.isPaused = false;
     activeRecording.stopTime = stopTime;
-    storage.setPaused(false);
-    cdp.setPaused(false);
 
     await cdp.flushSourceMaps();
     await Promise.allSettled([
@@ -749,7 +783,7 @@ async function stopRecording(): Promise<MessageResponse> {
       consoleLogs: finalizedArtifacts.consoleLogs,
       networkRequests: finalizedArtifacts.networkRequests,
       webSocketLogs: finalizedArtifacts.webSocketLogs,
-      duration: startTime ? Math.max(0, stopTime - startTime - activeRecording.accumulatedPausedMs) : 0,
+      duration: startTime ? Math.max(0, stopTime - startTime) : 0,
       url: tabUrl || "",
       startTime,
       stopTime,
@@ -796,45 +830,6 @@ async function stopRecording(): Promise<MessageResponse> {
   }
 }
 
-async function pauseRecording(): Promise<MessageResponse> {
-  if (!activeRecording.isRecording || activeRecording.isPaused) {
-    return { ok: false, error: "Recording is not active" };
-  }
-
-  try {
-    await recorder.pauseCapture();
-    activeRecording.isPaused = true;
-    activeRecording.pausedAt = Date.now();
-    storage.setPaused(true);
-    cdp.setPaused(true);
-    await saveStateToStorage();
-    return { ok: true };
-  } catch (error) {
-    return { ok: false, error: (error as Error).message };
-  }
-}
-
-async function resumeRecording(): Promise<MessageResponse> {
-  if (!activeRecording.isRecording || !activeRecording.isPaused) {
-    return { ok: false, error: "Recording is not paused" };
-  }
-
-  try {
-    await recorder.resumeCapture();
-    if (activeRecording.pausedAt) {
-      activeRecording.accumulatedPausedMs += Math.max(0, Date.now() - activeRecording.pausedAt);
-    }
-    activeRecording.isPaused = false;
-    activeRecording.pausedAt = null;
-    storage.setPaused(false);
-    cdp.setPaused(false);
-    await saveStateToStorage();
-    return { ok: true };
-  } catch (error) {
-    return { ok: false, error: (error as Error).message };
-  }
-}
-
 async function removeRecording(): Promise<MessageResponse> {
   if (!activeRecording.isRecording || !activeRecording.sessionId) {
     return { ok: false, error: "No active recording to remove." };
@@ -844,9 +839,6 @@ async function removeRecording(): Promise<MessageResponse> {
 
   try {
     activeRecording.isRecording = false;
-    activeRecording.isPaused = false;
-    storage.setPaused(false);
-    cdp.setPaused(false);
 
     await Promise.allSettled([
       recorder.stopCapture(true),

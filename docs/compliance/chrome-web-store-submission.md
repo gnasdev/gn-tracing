@@ -43,7 +43,7 @@ GN Tracing records a user-selected browser tab and packages the video, console l
 
 `identity` is required for Google Drive OAuth sign-in and token management.
 
-GN Tracing does not request broad `host_permissions` in the Store manifest. The user-selected active tab, `debugger`, and `tabCapture` permissions provide the access needed for the active recording flow.
+GN Tracing does not request broad `host_permissions` in the Store manifest. The user-selected active tab, `debugger`, and `tabCapture` permissions provide the access needed for the active recording flow. The manifest includes `https://api.github.com/` only so the popup can compare the installed version with the latest GitHub release when the user clicks Check for update.
 
 ## Data Usage Answers
 

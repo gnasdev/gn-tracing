@@ -37,7 +37,7 @@ related:
 ## Recording State Models
 
 - `RecordingStatus`
-  tracks active phase, pause state, tab/session IDs, elapsed time excluding paused intervals, source tab URL, and live console/network counters.
+  tracks active phase, tab/session IDs, elapsed recording time, source tab URL, and live console/network counters.
 - `RecordingSessionSummary`
   tracks finished local/upload session status, local snapshot availability, progress, generated replay URL, Drive folder/index IDs, and errors.
 - `UploadState`

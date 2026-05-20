@@ -115,7 +115,7 @@ This module covers authentication, Google Drive upload, replay URL generation, b
 - popup should let the user configure an optional Google Drive parent folder by entering `/folder/path`, pasting a folder id, or pasting a Google Drive folder link; blank means Drive root.
 - popup should expose recent upload history, and the same history should also sync into `gn-tracing-upload-history.json` inside the configured upload folder.
 - stopping a finished capture should auto-start the Drive upload when a valid Drive token is already available.
-- recording duration should exclude paused intervals, and popup controls should expose pause/resume separately from stop.
+- popup recording controls expose start, stop, and remove actions; stop and remove are grouped together while a recording is active.
 
 ## 5. Constraints & Assumptions
 

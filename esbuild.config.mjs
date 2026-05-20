@@ -19,6 +19,8 @@ const appEnv = normalizeAppEnv(rawAppEnv);
 const isProductionBuild = appEnv === "production";
 const DEFAULT_GOOGLE_CLIENT_ID = "95916347176-ulk25djm5l4g6ebq7vftjik8iv9a11vf.apps.googleusercontent.com";
 const DEFAULT_CHROME_EXTENSION_PUBLIC_KEY = "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAjDxBQBIrG2c71RP7pfCDOIDtdcgHOTv4DFIXpFgH96fFdK7AQJ5jIgCfH5GR5+8EVgzFVk6MzJL6qjxIzJrB9APYHDpjeV64izWJIiwL6JOGBh10HqUWSPLu1dj/ccjJLmmxcBJRp4Dq5/MnKnKrLfuFyHtQMlB9jNXcozgAPBLiVD03FM7xgnf5AtMAXjjONhCaJT8eLkBEqlXk0NztNosUOy99i6TOro8ZXAM9Wlr1RlaL9iw/V62CDWC2AVYn3bD8pM42cf9vdaVfAYHfftp8T3V+sN2WZ0N0sZaYl6YoahAoXUQ9audQMQgSIX7cY0GAqsbcY/gQTiyDTtEuawIDAQAB";
+const packageJson = JSON.parse(fs.readFileSync(path.resolve(__dirname, "package.json"), "utf-8"));
+const packageVersion = typeof packageJson.version === "string" ? packageJson.version : "";
 const googleClientId = getConfigValue("GOOGLE_CLIENT_ID", isProductionBuild ? "" : DEFAULT_GOOGLE_CLIENT_ID);
 const chromeExtensionPublicKey = getConfigValue(
   "CHROME_EXTENSION_PUBLIC_KEY",
@@ -202,9 +204,11 @@ function generateManifest(outputPath) {
     .readFileSync(templatePath, "utf-8")
     .replace(/{{GOOGLE_CLIENT_ID}}/g, googleClientId)
     .replace(/{{CHROME_EXTENSION_PUBLIC_KEY}}/g, chromeExtensionPublicKey);
+  const manifest = JSON.parse(template);
+  manifest.version = packageVersion || manifest.version;
 
   fs.mkdirSync(path.dirname(manifestPath), { recursive: true });
-  fs.writeFileSync(manifestPath, template, "utf-8");
+  fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf-8");
   console.log("✓ manifest.json generated");
 }
 

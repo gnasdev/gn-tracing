@@ -230,7 +230,6 @@ export class CdpManager {
   #boundDetachHandler: (source: chrome.debugger.Debuggee, reason: string) => void;
   #sourceMapResolver = new SourceMapResolver();
   #sourceMapFetches = new Set<Promise<void>>();
-  #isPaused = false;
   #captureSettings: CaptureSettings = {
     captureRequestBodies: false,
     captureResponseBodies: false,
@@ -268,7 +267,6 @@ export class CdpManager {
     this.#attachedSessions.clear();
     this.#sourceMapResolver.clear();
     this.#sourceMapFetches.clear();
-    this.#isPaused = false;
 
     await chrome.debugger.attach({ tabId }, "1.3");
     this.#attached = true;
@@ -309,11 +307,6 @@ export class CdpManager {
     this.#attachedSessions.clear();
 
     this.#attached = false;
-    this.#isPaused = false;
-  }
-
-  setPaused(isPaused: boolean): void {
-    this.#isPaused = isPaused;
   }
 
   setCaptureSettings(settings: CaptureSettings): void {
@@ -440,9 +433,6 @@ export class CdpManager {
   }
 
   #onRequestWillBeSent(source: chrome.debugger.Debuggee, params: CdpRequestWillBeSentParams): void {
-    if (this.#isPaused) {
-      return;
-    }
     const key = this.#requestKey(source, params.requestId);
     if (params.redirectResponse) {
       const existing = this.#pendingRequests.get(key);
@@ -656,9 +646,6 @@ export class CdpManager {
   // ════════════════════════════════════════════
 
   #onWebSocketCreated(source: chrome.debugger.Debuggee, params: CdpWebSocketCreatedParams): void {
-    if (this.#isPaused) {
-      return;
-    }
     this.#pendingWebSockets.set(this.#requestKey(source, params.requestId), {
       sessionId: this.#getSessionId(source),
       entry: {
@@ -672,9 +659,6 @@ export class CdpManager {
   }
 
   #onWebSocketFrameSent(source: chrome.debugger.Debuggee, params: CdpWebSocketFrameParams): void {
-    if (this.#isPaused) {
-      return;
-    }
     const ws = this.#pendingWebSockets.get(this.#requestKey(source, params.requestId));
     if (ws) {
       ws.entry.frames.push({
@@ -687,9 +671,6 @@ export class CdpManager {
   }
 
   #onWebSocketFrameReceived(source: chrome.debugger.Debuggee, params: CdpWebSocketFrameParams): void {
-    if (this.#isPaused) {
-      return;
-    }
     const ws = this.#pendingWebSockets.get(this.#requestKey(source, params.requestId));
     if (ws) {
       ws.entry.frames.push({
@@ -705,9 +686,7 @@ export class CdpManager {
     const ws = this.#pendingWebSockets.get(this.#requestKey(source, params.requestId));
     if (ws) {
       ws.entry.closed = true;
-      if (!this.#isPaused) {
-        this.#storage.addWebSocketEntry(ws.entry);
-      }
+      this.#storage.addWebSocketEntry(ws.entry);
       this.#pendingWebSockets.delete(this.#requestKey(source, params.requestId));
     }
   }
@@ -735,9 +714,6 @@ export class CdpManager {
   // ════════════════════════════════════════════
 
   #onConsoleAPICalled(params: CdpConsoleAPICalledParams): void {
-    if (this.#isPaused) {
-      return;
-    }
     const entry: ConsoleEntry = {
       source: "console-api",
       level: this.#mapConsoleType(params.type),
@@ -750,9 +726,6 @@ export class CdpManager {
   }
 
   #onExceptionThrown(params: CdpExceptionThrownParams): void {
-    if (this.#isPaused) {
-      return;
-    }
     const details = params.exceptionDetails || {};
     const entry: ConsoleEntry = {
       source: "exception",
@@ -772,9 +745,6 @@ export class CdpManager {
   }
 
   #onLogEntryAdded(params: CdpLogEntryAddedParams): void {
-    if (this.#isPaused) {
-      return;
-    }
     const logEntry = params.entry || {};
     const entry: ConsoleEntry = {
       source: "browser",

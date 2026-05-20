@@ -32,24 +32,14 @@ export class StorageManager {
   #consoleLogs: ConsoleEntry[] = [];
   #networkEntries: NetworkEntry[] = [];
   #webSocketEntries: WebSocketEntry[] = [];
-  #isPaused = false;
 
   beginSession(): void {
     this.#consoleLogs = [];
     this.#networkEntries = [];
     this.#webSocketEntries = [];
-    this.#isPaused = false;
-  }
-
-  setPaused(isPaused: boolean): void {
-    this.#isPaused = isPaused;
   }
 
   addConsoleEntry(entry: ConsoleEntry): void {
-    if (this.#isPaused) {
-      return;
-    }
-
     const serialized = JSON.stringify(entry.args || entry.message);
     if (serialized && serialized.length > MAX_CONSOLE_ENTRY_SIZE) {
       if (entry.args) {
@@ -63,16 +53,10 @@ export class StorageManager {
   }
 
   addNetworkEntry(entry: NetworkEntry): void {
-    if (this.#isPaused) {
-      return;
-    }
     this.#networkEntries.push(entry);
   }
 
   addWebSocketEntry(entry: WebSocketEntry): void {
-    if (this.#isPaused) {
-      return;
-    }
     this.#webSocketEntries.push(entry);
   }
 

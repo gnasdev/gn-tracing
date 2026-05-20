@@ -35,14 +35,12 @@ const GITHUB_ISSUES_URL = `${GITHUB_REPO_URL}/issues`;
 const SERVICE_STATE_KEY = "gn_tracing_state";
 const RELOAD_TOAST_KEY = "gn_tracing_reload_toast";
 
+const recordingActions = document.getElementById("recording-actions")!;
 const toggleBtn = document.getElementById("toggle-btn") as HTMLButtonElement;
-const pauseResumeBtn = document.getElementById("pause-resume-btn") as HTMLButtonElement;
 const removeRecordingBtn = document.getElementById("remove-recording-btn") as HTMLButtonElement;
 const reloadBtn = document.getElementById("reload-btn") as HTMLButtonElement;
-const captureDisclosureBtn = document.getElementById("capture-disclosure-btn") as HTMLButtonElement;
-const captureDisclosure = document.getElementById("capture-disclosure")!;
-const settingsBtn = document.getElementById("settings-btn") as HTMLButtonElement;
-const settingsPanel = document.getElementById("settings-panel")!;
+const checkUpdateBtn = document.getElementById("check-update-btn") as HTMLButtonElement;
+const settingsPanel = document.getElementById("settings-panel") as HTMLDetailsElement;
 const mainGoogleDriveSlot = document.getElementById("main-google-drive-slot")!;
 const settingsGoogleDriveSlot = document.getElementById("settings-google-drive-slot")!;
 const statusBar = document.getElementById("status-bar")!;
@@ -54,6 +52,8 @@ const sessionQueueSection = document.getElementById("session-queue-section")!;
 const sessionList = document.getElementById("session-list")!;
 const errorMsg = document.getElementById("error-msg")!;
 const toastEl = document.getElementById("toast")!;
+const toastMessageEl = document.getElementById("toast-message")!;
+const toastCloseBtn = document.getElementById("toast-close-btn") as HTMLButtonElement;
 
 const googleDriveSection = document.getElementById("google-drive-section")!;
 const googleDriveStatus = document.getElementById("google-drive-status")!;
@@ -78,44 +78,34 @@ let isEditingFolder = false;
 let currentUploadHistory: UploadHistoryEntry[] = [];
 const pendingDeletedHistoryIds = new Set<string>();
 let currentSettings: UploadSettings | null = null;
+let activeUpdateCheckRequestId: string | null = null;
 
-function setCaptureDisclosureOpen(isOpen: boolean): void {
-  captureDisclosure.classList.toggle("hidden", !isOpen);
-  captureDisclosureBtn.setAttribute("aria-expanded", String(isOpen));
-  if (isOpen) {
-    setSettingsPanelOpen(false);
+function closeSettingsSection(): void {
+  if (settingsPanel.open) {
+    settingsPanel.open = false;
   }
-}
-
-function setSettingsPanelOpen(isOpen: boolean): void {
-  settingsPanel.classList.toggle("hidden", !isOpen);
-  settingsBtn.setAttribute("aria-expanded", String(isOpen));
-  if (isOpen) {
-    updateCapturePrivacyUI(currentSettings);
-    setCaptureDisclosureOpen(false);
-  } else if (isEditingFolder) {
+  if (isEditingFolder) {
     googleDriveFolderInput.value = getFolderDisplayValue(currentSettings?.folderInput);
     setFolderEditingState(false);
   }
 }
 
-function closeHeaderPopovers(): void {
-  setCaptureDisclosureOpen(false);
-  setSettingsPanelOpen(false);
-}
-
 function getEditIcon(): string {
   return `
-    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-      <path d="m4 15.75 9.81-9.81 4.25 4.25L8.25 20H4v-4.25Zm11.23-11.23a1 1 0 0 1 1.41 0l2.83 2.83a1 1 0 0 1 0 1.41l-.71.71-4.24-4.24.71-.71Z" fill="currentColor"/>
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M4 20h4l10.5-10.5a2.1 2.1 0 0 0-3-3L5 17v3Z"/>
+      <path d="m14 7 3 3"/>
     </svg>
   `;
 }
 
 function getSaveIcon(): string {
   return `
-    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-      <path d="M5 4h11l3 3v13H5V4Zm2 0v5h8V4H7Zm0 9v5h10v-5H7Z" fill="currentColor"/>
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M5 5h11l3 3v11H5V5Z"/>
+      <path d="M8 5v5h7"/>
+      <path d="M8 15h8"/>
+      <path d="M8 18h5"/>
     </svg>
   `;
 }
@@ -166,16 +156,12 @@ function subscribeToStateChanges(callback: (state: PopupState) => void): () => v
 function getLiveRecordingElapsedMs(recording: RecordingStatus, now = Date.now()): number {
   const elapsedMs = Number.isFinite(recording.elapsedMs) ? recording.elapsedMs : 0;
 
-  if (recording.isPaused || !recording.isRecording) {
+  if (!recording.isRecording) {
     return Math.max(0, elapsedMs);
   }
 
   if (recording.startTime) {
-    const accumulatedPausedMs = Number.isFinite(recording.accumulatedPausedMs)
-      ? recording.accumulatedPausedMs
-      : 0;
-    const pausedDuration = recording.pausedAt ? Math.max(0, now - recording.pausedAt) : 0;
-    return Math.max(0, now - recording.startTime - accumulatedPausedMs - pausedDuration);
+    return Math.max(0, now - recording.startTime);
   }
 
   if (Number.isFinite(recording.elapsedUpdatedAt)) {
@@ -240,15 +226,74 @@ function showSuccess(message: string): void {
 }
 
 function showToast(message: string, durationMs = 1800): void {
-  toastEl.textContent = message;
+  toastMessageEl.textContent = message;
   toastEl.classList.remove("hidden");
   if (toastTimeout) {
     clearTimeout(toastTimeout);
   }
   toastTimeout = setTimeout(() => {
-    toastEl.classList.add("hidden");
-    toastTimeout = null;
+    hideToast();
   }, durationMs);
+}
+
+function hideToast(): void {
+  toastEl.classList.add("hidden");
+  if (toastTimeout) {
+    clearTimeout(toastTimeout);
+    toastTimeout = null;
+  }
+}
+
+function setUpdateCheckLoading(isLoading: boolean): void {
+  checkUpdateBtn.classList.toggle("is-loading", isLoading);
+  checkUpdateBtn.disabled = isLoading;
+  checkUpdateBtn.setAttribute("aria-busy", String(isLoading));
+}
+
+function finishManualUpdateCheck(): void {
+  activeUpdateCheckRequestId = null;
+  setUpdateCheckLoading(false);
+}
+
+function checkForUpdate(options: { notifyAlways?: boolean } = {}): void {
+  const requestId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const notifyAlways = Boolean(options.notifyAlways);
+  if (options.notifyAlways) {
+    activeUpdateCheckRequestId = requestId;
+    setUpdateCheckLoading(true);
+  }
+
+  // Keep update checks on the request/response channel so MV3 does not drop a
+  // fire-and-forget fetch when the service worker becomes idle.
+  void chrome.runtime.sendMessage({
+    action: "CHECK_FOR_UPDATE",
+  }).then((result: MessageResponse) => {
+    handleUpdateCheckResult(result, requestId, notifyAlways);
+  }).catch((error: Error) => {
+    if (activeUpdateCheckRequestId === requestId) {
+      finishManualUpdateCheck();
+    }
+    if (notifyAlways) {
+      showToast(error.message || "Failed to check for updates.");
+    }
+  });
+}
+
+function handleUpdateCheckResult(result: MessageResponse, requestId: string, notifyAlways: boolean): void {
+  if (activeUpdateCheckRequestId === requestId) {
+    finishManualUpdateCheck();
+  }
+
+  if (!result.ok) {
+    if (notifyAlways) {
+      showToast(result.error || "Failed to check for updates.");
+    }
+    return;
+  }
+
+  if (result.update?.isUpdateAvailable || notifyAlways) {
+    showToast(result.message || "Update check complete.");
+  }
 }
 
 function renderSessionActionButton(params: {
@@ -274,40 +319,50 @@ function renderSessionActionButton(params: {
 
 function getUploadIcon(): string {
   return `
-    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-      <path d="M12 3 7.5 7.5l1.41 1.41L11 6.83V16h2V6.83l2.09 2.08 1.41-1.41L12 3Zm-7 14h14v4H5v-4Z" fill="currentColor"/>
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 16V4"/>
+      <path d="m7 9 5-5 5 5"/>
+      <path d="M5 18h14"/>
+      <path d="M7 21h10"/>
     </svg>
   `;
 }
 
 function getReplayIcon(): string {
   return `
-    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-      <path d="M8 6.82v10.36c0 .79.87 1.27 1.54.84l8.14-5.18a1 1 0 0 0 0-1.68L9.54 5.98A1 1 0 0 0 8 6.82Z" fill="currentColor"/>
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="9"/>
+      <path d="m10 8 6 4-6 4V8Z" fill="currentColor" stroke="none"/>
     </svg>
   `;
 }
 
 function getFolderIcon(): string {
   return `
-    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-      <path d="M3 7a2 2 0 0 1 2-2h4.17c.53 0 1.04.21 1.41.59l1.83 1.82c.19.19.44.29.71.29H19a2 2 0 0 1 2 2v1H3V7Zm0 5h18l-1.6 6.4A2 2 0 0 1 17.46 20H6.54a2 2 0 0 1-1.94-1.6L3 12Z" fill="currentColor"/>
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M3 7h7l2 2h9v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"/>
+      <path d="M3 7V5a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v2"/>
     </svg>
   `;
 }
 
 function getCopyIcon(): string {
   return `
-    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-      <path d="M9 9a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2V9Zm-5 4V6a2 2 0 0 1 2-2h7v2H6v7H4Z" fill="currentColor"/>
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="9" y="7" width="11" height="13" rx="2"/>
+      <path d="M5 15H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1"/>
     </svg>
   `;
 }
 
 function getDeleteIcon(): string {
   return `
-    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-      <path d="M9 3h6l1 2h4v2H4V5h4l1-2Zm1 7h2v7h-2v-7Zm4 0h2v7h-2v-7ZM7 10h2v7H7v-7Zm-1 10a2 2 0 0 1-2-2V8h16v10a2 2 0 0 1-2 2H6Z" fill="currentColor"/>
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M4 7h16"/>
+      <path d="M10 11v6"/>
+      <path d="M14 11v6"/>
+      <path d="M6 7l1 14h10l1-14"/>
+      <path d="M9 7V4h6v3"/>
     </svg>
   `;
 }
@@ -465,14 +520,13 @@ function updateGoogleDriveUI(isConnected: boolean): void {
 }
 
 function setCaptureUiVisibility(isVisible: boolean): void {
-  toggleBtn.classList.toggle("hidden", !isVisible);
+  recordingActions.classList.toggle("hidden", !isVisible);
   sessionQueueSection.classList.toggle("hidden", !isVisible);
 
   if (isVisible) {
     return;
   }
 
-  pauseResumeBtn.classList.add("hidden");
   removeRecordingBtn.classList.add("hidden");
   statusBar.classList.add("hidden");
   stats.classList.add("hidden");
@@ -495,22 +549,41 @@ function updateCapturePrivacyUI(settings: UploadSettings | null): void {
   captureWebSocketFramesInput.checked = Boolean(settings?.captureWebSocketFrames);
 }
 
+function getStartRecordingIcon(): string {
+  return `
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="7"/>
+      <circle cx="12" cy="12" r="3" fill="currentColor" stroke="none"/>
+    </svg>
+  `;
+}
+
+function getStopRecordingIcon(): string {
+  return `
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M7 7h10v10H7z"/>
+      <path d="M17 12h2.5A2.5 2.5 0 0 1 22 14.5V17"/>
+      <path d="m19 15 3 2-3 2"/>
+    </svg>
+  `;
+}
+
+function setButtonLabel(button: HTMLButtonElement, icon: string, label: string): void {
+  button.innerHTML = `${icon}<span>${escapeHtml(label)}</span>`;
+}
+
 function updateRecordingUI(recording: RecordingStatus | null): void {
   if (recording?.isRecording) {
-    toggleBtn.textContent = "Stop Recording";
+    setButtonLabel(toggleBtn, getStopRecordingIcon(), "Stop & Upload");
     toggleBtn.className = "btn btn-stop";
-    pauseResumeBtn.classList.remove("hidden");
+    recordingActions.classList.add("is-recording");
     removeRecordingBtn.classList.remove("hidden");
-    pauseResumeBtn.textContent = recording.isPaused ? "Resume Recording" : "Pause Recording";
     statusBar.classList.remove("hidden");
     stats.classList.remove("hidden");
     consoleCount.textContent = String(recording.consoleLogCount || 0);
     networkCount.textContent = String(recording.networkRequestCount || 0);
 
-    if (recording.isPaused) {
-      stopRecordingTimer();
-      timerEl.textContent = formatTime(getLiveRecordingElapsedMs(recording));
-    } else if (timerInterval) {
+    if (timerInterval) {
       timerRecording = recording;
       updateTimerDisplay();
     } else {
@@ -519,9 +592,9 @@ function updateRecordingUI(recording: RecordingStatus | null): void {
     return;
   }
 
-  toggleBtn.textContent = "Start Recording";
+  setButtonLabel(toggleBtn, getStartRecordingIcon(), "Start Recording");
   toggleBtn.className = "btn btn-start";
-  pauseResumeBtn.classList.add("hidden");
+  recordingActions.classList.remove("is-recording");
   removeRecordingBtn.classList.add("hidden");
   statusBar.classList.add("hidden");
   stats.classList.add("hidden");
@@ -601,26 +674,6 @@ toggleBtn.addEventListener("click", async () => {
   }
 });
 
-pauseResumeBtn.addEventListener("click", async () => {
-  pauseResumeBtn.disabled = true;
-  errorMsg.classList.add("hidden");
-
-  try {
-    const currentState = await loadStateFromStorage();
-    const isPaused = currentState?.recording?.isPaused ?? false;
-    const result = await chrome.runtime.sendMessage({
-      action: isPaused ? "RESUME_RECORDING" : "PAUSE_RECORDING",
-    }) as MessageResponse;
-    if (!result.ok) {
-      showError(result.error || "Recording control failed");
-    }
-  } catch (error) {
-    showError((error as Error).message);
-  } finally {
-    pauseResumeBtn.disabled = false;
-  }
-});
-
 removeRecordingBtn.addEventListener("click", async () => {
   removeRecordingBtn.disabled = true;
   errorMsg.classList.add("hidden");
@@ -642,6 +695,14 @@ removeRecordingBtn.addEventListener("click", async () => {
 reloadBtn.addEventListener("click", () => {
   window.sessionStorage.setItem(RELOAD_TOAST_KEY, "1");
   window.location.reload();
+});
+
+toastCloseBtn.addEventListener("click", () => {
+  hideToast();
+});
+
+checkUpdateBtn.addEventListener("click", () => {
+  checkForUpdate({ notifyAlways: true });
 });
 
 googleDriveConnectBtn.addEventListener("click", () => {
@@ -839,35 +900,19 @@ sessionList.addEventListener("click", async (event) => {
   }
 });
 
-captureDisclosureBtn.addEventListener("click", (event) => {
-  event.stopPropagation();
-  setCaptureDisclosureOpen(captureDisclosure.classList.contains("hidden"));
-});
-
-settingsBtn.addEventListener("click", (event) => {
-  event.stopPropagation();
-  setSettingsPanelOpen(settingsPanel.classList.contains("hidden"));
-});
-
-document.addEventListener("click", (event) => {
-  const target = event.target as Node | null;
-  if (
-    target &&
-    (
-      captureDisclosure.contains(target) ||
-      captureDisclosureBtn.contains(target) ||
-      settingsPanel.contains(target) ||
-      settingsBtn.contains(target)
-    )
-  ) {
-    return;
+settingsPanel.addEventListener("toggle", () => {
+  if (settingsPanel.open) {
+    updateCapturePrivacyUI(currentSettings);
+  } else if (isEditingFolder) {
+    googleDriveFolderInput.value = getFolderDisplayValue(currentSettings?.folderInput);
+    setFolderEditingState(false);
   }
-  closeHeaderPopovers();
 });
 
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
-    closeHeaderPopovers();
+    closeSettingsSection();
+    hideToast();
   }
 });
 
@@ -932,7 +977,10 @@ uploadHistoryPageBtn.addEventListener("click", () => {
   });
 });
 
-chrome.runtime.onMessage.addListener((message: { action?: string; state?: PopupState }) => {
+chrome.runtime.onMessage.addListener((message: {
+  action?: string;
+  state?: PopupState;
+}) => {
   if (message.action !== "POPUP_STATE_UPDATED" || !message.state) {
     return false;
   }
@@ -974,6 +1022,7 @@ async function initPopup(): Promise<void> {
   }
 
   await refreshGoogleDriveStatus();
+  checkForUpdate();
 
   const unsubscribe = subscribeToStateChanges((state) => {
     handleStateUpdate(state);
