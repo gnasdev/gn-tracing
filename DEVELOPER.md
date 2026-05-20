@@ -112,7 +112,7 @@ Releases are tag-driven through `.github/workflows/release.yml`.
 1. Commit changes to `main`.
 2. Push a tag matching `v*`, for example `v1.0.4`.
 3. GitHub Actions runs `task release:ci`.
-4. The release publishes `gn-tracing-extension-${tag}.zip`.
+4. The release publishes `gn-tracing-extension-${tag}.zip`, which extracts to `gn-tracing-extension-${tag}/`.
 
 Production release builds use repository secrets for extension identity and OAuth:
 

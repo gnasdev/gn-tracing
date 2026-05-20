@@ -88,7 +88,7 @@ This module covers authentication, Google Drive upload, replay URL generation, b
 - the auth page is a first-class surface that can both start auth and react to service-worker state updates.
 - standalone player is not the system of record for assets; it mirrors `player/` runtime logic through the sync script and wrapper adapters.
 - release automation expects both npm workspaces to have committed lockfiles and delegates build, zip, Store validation, and deploy commands to `Taskfile.yml`.
-- tag-based GitHub releases build the extension with repository secrets `GOOGLE_CLIENT_ID`, `CHROME_EXTENSION_ID`, `CHROME_EXTENSION_PUBLIC_KEY`, and `CHROME_EXTENSION_PRIVATE_KEY`, then publish `gn-tracing-extension-${tag}.zip` for manual unpacked installation; they do not publish CRX/update XML artifacts or invoke Cloudflare deploy steps for the standalone player.
+- tag-based GitHub releases build the extension with repository secrets `GOOGLE_CLIENT_ID`, `CHROME_EXTENSION_ID`, `CHROME_EXTENSION_PUBLIC_KEY`, and `CHROME_EXTENSION_PRIVATE_KEY`, then publish `gn-tracing-extension-${tag}.zip` containing `gn-tracing-extension-${tag}/` for manual unpacked installation; they do not publish CRX/update XML artifacts or invoke Cloudflare deploy steps for the standalone player.
 - if video exceeds the upload limit, offscreen upload slices the final recording blob into ordered byte chunks and the player reassembles them locally before playback.
 - popup upload status must surface both aggregate transferred bytes/percent and per-file progress rows throughout the Drive upload flow.
 - player loading must surface both aggregate transferred bytes/percent and per-file progress rows for the recording index, metadata, optional artifacts, manifest, and each video part.
@@ -130,7 +130,7 @@ This module covers authentication, Google Drive upload, replay URL generation, b
 - local deploys can source root `.env` / `.env.example` with `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_PAGES_PROJECT`, `PLAYER_HOST_URL`, and `VITE_BASE_PATH`.
 - intro/empty-state copy should stay aligned between extension and standalone player shells so the hosted root URL behaves as a clear product landing page.
 - service-worker restart recovery is intentionally best-effort: heavy artifacts still live in memory/offscreen only, but popup state is reconstructed from session snapshot plus offscreen probe when the capture document is still alive.
-- Manual extension installation depends on users extracting the release zip and loading the built `dist/` folder through Chrome or Edge developer mode.
+- Manual extension installation depends on users extracting the release zip and loading the built `gn-tracing-extension-v<version>/` folder through Chrome or Edge developer mode.
 
 ## 6. Relationships
 

@@ -105,7 +105,12 @@ tasks:
   release:zip:
     desc: Zip the built extension for a GitHub release.
     cmds:
-      - sh -c 'zip -r "gn-tracing-extension-${GITHUB_REF_NAME:-local}.zip" dist'
+      - |
+        release_name="gn-tracing-extension-${GITHUB_REF_NAME:-local}"
+        trap 'rm -rf "$release_name"' EXIT
+        rm -rf "$release_name" "$release_name.zip"
+        cp -R dist "$release_name"
+        zip -r "$release_name.zip" "$release_name"
 
   release:ci:
     desc: Run the CI release flow.

@@ -60,7 +60,7 @@ GN Tracing is distributed as a packaged release from this repository.
 3. Open `chrome://extensions` or `edge://extensions`.
 4. Turn on `Developer mode`.
 5. Click `Load unpacked`.
-6. Select the extracted `dist/` folder.
+6. Select the extracted `gn-tracing-extension-v<version>/` folder.
 
 ## Replay Links
 
