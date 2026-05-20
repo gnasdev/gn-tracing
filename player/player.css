@@ -91,8 +91,9 @@ body {
 .loading-progress-item {
   position: relative;
   overflow: hidden;
-  padding: 10px 12px;
-  border-radius: 10px;
+  height: 10px;
+  padding: 0;
+  border-radius: 999px;
   border: 1px solid var(--gh-border);
   background: rgba(255, 255, 255, 0.03);
 }
@@ -102,6 +103,7 @@ body {
   position: absolute;
   inset: 0;
   width: var(--item-progress, 0%);
+  border-radius: inherit;
   background: linear-gradient(90deg, rgba(96, 165, 250, 0.26), rgba(59, 130, 246, 0.12));
   transition: width 0.2s ease;
 }

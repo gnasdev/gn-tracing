@@ -39,6 +39,12 @@ const toggleBtn = document.getElementById("toggle-btn") as HTMLButtonElement;
 const pauseResumeBtn = document.getElementById("pause-resume-btn") as HTMLButtonElement;
 const removeRecordingBtn = document.getElementById("remove-recording-btn") as HTMLButtonElement;
 const reloadBtn = document.getElementById("reload-btn") as HTMLButtonElement;
+const captureDisclosureBtn = document.getElementById("capture-disclosure-btn") as HTMLButtonElement;
+const captureDisclosure = document.getElementById("capture-disclosure")!;
+const settingsBtn = document.getElementById("settings-btn") as HTMLButtonElement;
+const settingsPanel = document.getElementById("settings-panel")!;
+const mainGoogleDriveSlot = document.getElementById("main-google-drive-slot")!;
+const settingsGoogleDriveSlot = document.getElementById("settings-google-drive-slot")!;
 const statusBar = document.getElementById("status-bar")!;
 const timerEl = document.getElementById("timer")!;
 const stats = document.getElementById("stats")!;
@@ -49,6 +55,7 @@ const sessionList = document.getElementById("session-list")!;
 const errorMsg = document.getElementById("error-msg")!;
 const toastEl = document.getElementById("toast")!;
 
+const googleDriveSection = document.getElementById("google-drive-section")!;
 const googleDriveStatus = document.getElementById("google-drive-status")!;
 const googleDriveConnectBtn = document.getElementById("google-drive-connect-btn") as HTMLButtonElement;
 const googleDriveDisconnectBtn = document.getElementById("google-drive-disconnect-btn") as HTMLButtonElement;
@@ -69,7 +76,33 @@ let timerRecording: RecordingStatus | null = null;
 let toastTimeout: ReturnType<typeof setTimeout> | null = null;
 let isEditingFolder = false;
 let currentUploadHistory: UploadHistoryEntry[] = [];
+const pendingDeletedHistoryIds = new Set<string>();
 let currentSettings: UploadSettings | null = null;
+
+function setCaptureDisclosureOpen(isOpen: boolean): void {
+  captureDisclosure.classList.toggle("hidden", !isOpen);
+  captureDisclosureBtn.setAttribute("aria-expanded", String(isOpen));
+  if (isOpen) {
+    setSettingsPanelOpen(false);
+  }
+}
+
+function setSettingsPanelOpen(isOpen: boolean): void {
+  settingsPanel.classList.toggle("hidden", !isOpen);
+  settingsBtn.setAttribute("aria-expanded", String(isOpen));
+  if (isOpen) {
+    updateCapturePrivacyUI(currentSettings);
+    setCaptureDisclosureOpen(false);
+  } else if (isEditingFolder) {
+    googleDriveFolderInput.value = getFolderDisplayValue(currentSettings?.folderInput);
+    setFolderEditingState(false);
+  }
+}
+
+function closeHeaderPopovers(): void {
+  setCaptureDisclosureOpen(false);
+  setSettingsPanelOpen(false);
+}
 
 function getEditIcon(): string {
   return `
@@ -218,42 +251,6 @@ function showToast(message: string, durationMs = 1800): void {
   }, durationMs);
 }
 
-function getProgressStatusLabel(status: ProgressItemSnapshot["status"]): string {
-  switch (status) {
-    case "queued":
-      return "Queued";
-    case "uploading":
-      return "Uploading";
-    case "uploaded":
-      return "Uploaded";
-    case "failed":
-      return "Failed";
-    case "skipped":
-      return "Skipped";
-    default:
-      return status;
-  }
-}
-
-function getProgressItemVisual(status: ProgressItemSnapshot["status"]): {
-  statusClass: string;
-  fillPercent: number;
-} {
-  switch (status) {
-    case "uploaded":
-      return { statusClass: "is-success", fillPercent: 100 };
-    case "failed":
-      return { statusClass: "is-failed", fillPercent: 100 };
-    case "skipped":
-      return { statusClass: "is-skipped", fillPercent: 100 };
-    case "uploading":
-      return { statusClass: "is-active", fillPercent: -1 };
-    case "queued":
-    default:
-      return { statusClass: "is-queued", fillPercent: 0 };
-  }
-}
-
 function renderSessionActionButton(params: {
   action: string;
   label: string;
@@ -315,28 +312,32 @@ function getDeleteIcon(): string {
   `;
 }
 
-function renderProgressItems(items: ProgressItemSnapshot[] | undefined): string {
+function renderProgressItems(
+  items: ProgressItemSnapshot[] | undefined,
+  fallbackProgress = 0,
+): string {
   const safeItems = Array.isArray(items) ? items : [];
-  return safeItems.map((item) => {
-    const totalBytes = Math.max(0, item.totalBytes || 0);
-    const loadedBytes = Math.max(0, item.loadedBytes || 0);
-    const percent = totalBytes > 0 ? Math.max(0, Math.min(100, item.percent || 0)) : 0;
-    const visual = getProgressItemVisual(item.status);
-    const fillPercent = visual.fillPercent >= 0 ? visual.fillPercent : percent;
-    const percentLabel = totalBytes > 0 ? `${percent.toFixed(1)}%` : "—";
-    return `
-      <div class="progress-item ${visual.statusClass}" style="--item-progress:${fillPercent}%;">
-        <div class="progress-item-header">
-          <span class="progress-item-label">${escapeHtml(item.label)}</span>
-          <span class="progress-item-status">${escapeHtml(getProgressStatusLabel(item.status))}</span>
-        </div>
-        <div class="progress-item-meta">
-          <span>${percentLabel}</span>
-          <span>${formatBytes(loadedBytes)} / ${formatBytes(totalBytes)}</span>
-        </div>
-      </div>
-    `;
-  }).join("");
+  const totalBytes = safeItems.reduce((sum, item) => sum + Math.max(0, item.totalBytes || 0), 0);
+  const loadedBytes = safeItems.reduce((sum, item) => {
+    const total = Math.max(0, item.totalBytes || 0);
+    const loaded = Math.max(0, item.loadedBytes || 0);
+    return sum + (total > 0 ? Math.min(loaded, total) : loaded);
+  }, 0);
+  const percent = totalBytes > 0
+    ? Math.max(0, Math.min(100, (loadedBytes / totalBytes) * 100))
+    : Math.max(0, Math.min(100, fallbackProgress || 0));
+  const hasFailed = safeItems.some((item) => item.status === "failed");
+  const allFinished = safeItems.length > 0 && safeItems.every((item) => item.status === "uploaded" || item.status === "skipped");
+  const statusClass = hasFailed ? "is-failed" : allFinished ? "is-success" : "is-active";
+  const fillPercent = hasFailed || allFinished ? 100 : percent;
+
+  return `
+    <div
+      class="progress-item ${statusClass}"
+      style="--item-progress:${fillPercent}%;"
+      aria-label="Progress ${percent.toFixed(1)}%"
+    ></div>
+  `;
 }
 
 function getSessionStatusLabel(session: RecordingSessionSummary): string {
@@ -386,7 +387,7 @@ function renderSessions(sessions: RecordingSessionSummary[] | undefined): void {
           <div class="session-item-progress">
             <div class="session-progress-meta">${escapeHtml(session.message || "Waiting to upload")}</div>
             <div class="session-progress-summary">${formatBytes(session.uploadedBytes)} / ${formatBytes(session.totalBytes)} (${session.progress.toFixed(1)}%)</div>
-            <div class="progress-items">${renderProgressItems(session.items)}</div>
+            <div class="progress-items">${renderProgressItems(session.items, session.progress)}</div>
           </div>
         ` : ""}
         <div class="session-item-actions">
@@ -432,7 +433,13 @@ function renderSessions(sessions: RecordingSessionSummary[] | undefined): void {
 }
 
 function renderPopupUploadHistory(history: UploadHistoryEntry[] | undefined): void {
-  currentUploadHistory = sortUploadHistoryNewestFirst(history);
+  const sortedHistory = sortUploadHistoryNewestFirst(history);
+  for (const historyEntryId of Array.from(pendingDeletedHistoryIds)) {
+    if (!sortedHistory.some((entry) => entry.id === historyEntryId)) {
+      pendingDeletedHistoryIds.delete(historyEntryId);
+    }
+  }
+  currentUploadHistory = sortedHistory.filter((entry) => !pendingDeletedHistoryIds.has(entry.id));
   const { visibleItems, hiddenCount } = getVisibleUploadHistory(currentUploadHistory);
   popupUploadHistoryList.innerHTML = [
     renderUploadHistoryList(visibleItems),
@@ -441,6 +448,11 @@ function renderPopupUploadHistory(history: UploadHistoryEntry[] | undefined): vo
 }
 
 function updateGoogleDriveUI(isConnected: boolean): void {
+  const targetSlot = isConnected ? settingsGoogleDriveSlot : mainGoogleDriveSlot;
+  if (googleDriveSection.parentElement !== targetSlot) {
+    targetSlot.appendChild(googleDriveSection);
+  }
+
   if (isConnected) {
     googleDriveStatus.textContent = "Connected";
     googleDriveConnectBtn.classList.add("hidden");
@@ -533,6 +545,13 @@ function handleStateUpdate(state: PopupState): void {
   }
   updateFolderHint(state.settings);
   updateCapturePrivacyUI(state.settings);
+}
+
+async function refreshPopupFromStorage(): Promise<void> {
+  const state = await loadStateFromStorage();
+  if (state) {
+    handleStateUpdate(state);
+  }
 }
 
 async function refreshGoogleDriveStatus(): Promise<void> {
@@ -820,6 +839,38 @@ sessionList.addEventListener("click", async (event) => {
   }
 });
 
+captureDisclosureBtn.addEventListener("click", (event) => {
+  event.stopPropagation();
+  setCaptureDisclosureOpen(captureDisclosure.classList.contains("hidden"));
+});
+
+settingsBtn.addEventListener("click", (event) => {
+  event.stopPropagation();
+  setSettingsPanelOpen(settingsPanel.classList.contains("hidden"));
+});
+
+document.addEventListener("click", (event) => {
+  const target = event.target as Node | null;
+  if (
+    target &&
+    (
+      captureDisclosure.contains(target) ||
+      captureDisclosureBtn.contains(target) ||
+      settingsPanel.contains(target) ||
+      settingsBtn.contains(target)
+    )
+  ) {
+    return;
+  }
+  closeHeaderPopovers();
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") {
+    closeHeaderPopovers();
+  }
+});
+
 popupUploadHistoryList.addEventListener("click", async (event) => {
   const handled = await handleUploadHistoryAction(event.target as HTMLElement | null, {
     openExternalUrl,
@@ -835,23 +886,37 @@ popupUploadHistoryList.addEventListener("click", async (event) => {
       }
     },
     deleteHistoryEntry: async (historyEntryId, button) => {
+      const previousHistory = currentUploadHistory;
+      pendingDeletedHistoryIds.add(historyEntryId);
+      renderPopupUploadHistory(previousHistory);
       button.disabled = true;
       try {
         const result = await chrome.runtime.sendMessage({
           action: "DELETE_UPLOAD_HISTORY_ENTRY",
           data: { historyEntryId },
-        }) as MessageResponse;
+        }) as MessageResponse & { state?: PopupState; uploadHistory?: UploadHistoryEntry[] };
 
         if (!result.ok) {
+          pendingDeletedHistoryIds.delete(historyEntryId);
+          renderPopupUploadHistory(previousHistory);
           showError(result.error || "Failed to delete history item");
-          button.disabled = false;
           return;
         }
 
-        renderPopupUploadHistory(currentUploadHistory.filter((entry) => entry.id !== historyEntryId));
+        if (result.state) {
+          handleStateUpdate(result.state);
+        } else {
+          renderPopupUploadHistory(
+            Array.isArray(result.uploadHistory)
+              ? result.uploadHistory
+              : currentUploadHistory.filter((entry) => entry.id !== historyEntryId),
+          );
+          void refreshPopupFromStorage();
+        }
       } catch (error) {
+        pendingDeletedHistoryIds.delete(historyEntryId);
+        renderPopupUploadHistory(previousHistory);
         showError((error as Error).message);
-        button.disabled = false;
       }
     },
   });
@@ -865,6 +930,15 @@ uploadHistoryPageBtn.addEventListener("click", () => {
   chrome.tabs.create({
     url: chrome.runtime.getURL(HISTORY_PAGE_PATH),
   });
+});
+
+chrome.runtime.onMessage.addListener((message: { action?: string; state?: PopupState }) => {
+  if (message.action !== "POPUP_STATE_UPDATED" || !message.state) {
+    return false;
+  }
+
+  handleStateUpdate(message.state);
+  return false;
 });
 
 async function initPopup(): Promise<void> {

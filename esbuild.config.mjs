@@ -30,6 +30,20 @@ const chromeExtensionId = getConfigValue(
   chromeExtensionPublicKey ? getChromeExtensionId(chromeExtensionPublicKey) : "",
 );
 const playerLocalPort = process.env.PLAYER_LOCAL_PORT || "5173";
+const STATIC_ASSET_ENTRIES = [
+  { type: "text", src: "popup/popup.html", dest: "dist/popup/popup.html" },
+  { type: "file", src: "popup/popup.css", dest: "dist/popup/popup.css" },
+  { type: "text", src: "history/history.html", dest: "dist/history/history.html" },
+  { type: "file", src: "history/history.css", dest: "dist/history/history.css" },
+  { type: "text", src: "offscreen/offscreen.html", dest: "dist/offscreen/offscreen.html" },
+  { type: "text", src: "drive-auth/drive-auth.html", dest: "dist/drive-auth/drive-auth.html" },
+  { type: "dir", src: "icons", dest: "dist/icons" },
+  { type: "file", src: "player/player.html", dest: "dist/player/player.html" },
+  { type: "file", src: "player/player.css", dest: "dist/player/player.css" },
+  { type: "file", src: "player/player.js", dest: "dist/player/player.js" },
+  { type: "dir", src: "player/icons", dest: "dist/player/icons" },
+];
+const staticAssetWatchers = [];
 
 // The root build emits the unpacked MV3 extension. Player assets are copied as
 // static files because the extension and hosted player intentionally share the
@@ -189,6 +203,7 @@ function generateManifest(outputPath) {
     .replace(/{{GOOGLE_CLIENT_ID}}/g, googleClientId)
     .replace(/{{CHROME_EXTENSION_PUBLIC_KEY}}/g, chromeExtensionPublicKey);
 
+  fs.mkdirSync(path.dirname(manifestPath), { recursive: true });
   fs.writeFileSync(manifestPath, template, "utf-8");
   console.log("✓ manifest.json generated");
 }
@@ -219,32 +234,110 @@ async function build() {
 
   if (watch) {
     await Promise.all([swCtx.watch(), uiCtx.watch()]);
-    generateManifest("dist/manifest.json");
-    copyStaticAssets();
+    syncExtensionAssets();
+    watchExtensionAssets();
     console.log("Watching extension sources...");
     return;
   }
 
   await Promise.all([swCtx.rebuild(), uiCtx.rebuild()]);
   await Promise.all([swCtx.dispose(), uiCtx.dispose()]);
-  generateManifest("dist/manifest.json");
-  copyStaticAssets();
+  syncExtensionAssets();
 
   console.log("Extension built.");
 }
 
 function copyStaticAssets() {
-  copyTextFile("popup/popup.html", "dist/popup/popup.html");
-  copyFile("popup/popup.css", "dist/popup/popup.css");
-  copyTextFile("history/history.html", "dist/history/history.html");
-  copyFile("history/history.css", "dist/history/history.css");
-  copyTextFile("offscreen/offscreen.html", "dist/offscreen/offscreen.html");
-  copyTextFile("drive-auth/drive-auth.html", "dist/drive-auth/drive-auth.html");
-  copyDir("icons", "dist/icons");
-  copyFile("player/player.html", "dist/player/player.html");
-  copyFile("player/player.css", "dist/player/player.css");
-  copyFile("player/player.js", "dist/player/player.js");
-  copyDir("player/icons", "dist/player/icons");
+  for (const entry of STATIC_ASSET_ENTRIES) {
+    if (entry.type === "text") {
+      copyTextFile(entry.src, entry.dest);
+    } else if (entry.type === "dir") {
+      copyDir(entry.src, entry.dest);
+    } else {
+      copyFile(entry.src, entry.dest);
+    }
+  }
+}
+
+function syncExtensionAssets() {
+  generateManifest("dist/manifest.json");
+  copyStaticAssets();
+}
+
+function watchExtensionAssets() {
+  let debounceTimer;
+  let lastAssetSignature = getStaticAssetSignature();
+  const watchedPaths = new Set([
+    path.resolve(__dirname, "manifest.template.json"),
+    ...STATIC_ASSET_ENTRIES.flatMap((entry) => getWatchedAssetPaths(path.resolve(__dirname, entry.src))),
+  ]);
+
+  const syncAfterChange = () => {
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
+      try {
+        const nextAssetSignature = getStaticAssetSignature();
+        if (nextAssetSignature === lastAssetSignature) {
+          return;
+        }
+
+        lastAssetSignature = nextAssetSignature;
+        syncExtensionAssets();
+        console.log("✓ static extension assets copied");
+      } catch (error) {
+        console.error(error);
+      }
+    }, 300);
+  };
+
+  for (const watchedPath of watchedPaths) {
+    try {
+      staticAssetWatchers.push(fs.watch(watchedPath, syncAfterChange));
+    } catch (error) {
+      console.warn(`Could not watch ${path.relative(__dirname, watchedPath)}: ${error.message}`);
+    }
+  }
+}
+
+function getWatchedAssetPaths(assetPath) {
+  if (!fs.existsSync(assetPath)) {
+    return [];
+  }
+
+  const stat = fs.statSync(assetPath);
+  if (!stat.isDirectory()) {
+    return [path.dirname(assetPath), assetPath];
+  }
+
+  const paths = [assetPath];
+  for (const entry of fs.readdirSync(assetPath, { withFileTypes: true })) {
+    const entryPath = path.join(assetPath, entry.name);
+    if (entry.isDirectory()) {
+      paths.push(...getWatchedAssetPaths(entryPath));
+    } else {
+      paths.push(entryPath);
+    }
+  }
+
+  return paths;
+}
+
+function getStaticAssetSignature() {
+  const assetPaths = [
+    path.resolve(__dirname, "manifest.template.json"),
+    ...STATIC_ASSET_ENTRIES.flatMap((entry) => getWatchedAssetPaths(path.resolve(__dirname, entry.src))),
+  ];
+
+  return assetPaths
+    .map((assetPath) => {
+      try {
+        const stat = fs.statSync(assetPath);
+        return `${assetPath}:${stat.mtimeMs}:${stat.size}`;
+      } catch {
+        return `${assetPath}:missing`;
+      }
+    })
+    .join("|");
 }
 
 build().catch((e) => {

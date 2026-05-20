@@ -15,17 +15,98 @@
             <path d="M12 6a6 6 0 1 1-5.65 8H4.26A8 8 0 1 0 6 7.76V5H2v4h2.76A7.97 7.97 0 0 1 12 6Z" fill="currentColor"/>
           </svg>
         </button>
+        <button
+          id="capture-disclosure-btn"
+          class="icon-btn"
+          type="button"
+          aria-label="About GN Tracing"
+          aria-expanded="false"
+          aria-controls="capture-disclosure"
+          title="About GN Tracing"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M11 10h2v7h-2v-7Zm0-3h2v2h-2V7Zm1-5a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm0 18a8 8 0 1 1 0-16 8 8 0 0 1 0 16Z" fill="currentColor"/>
+          </svg>
+        </button>
+        <button
+          id="settings-btn"
+          class="icon-btn"
+          type="button"
+          aria-label="Open settings"
+          aria-expanded="false"
+          aria-controls="settings-panel"
+          title="Settings"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M19.43 12.98c.04-.32.07-.65.07-.98s-.02-.66-.07-.98l2.11-1.65-2-3.46-2.49 1a7.2 7.2 0 0 0-1.69-.98L15 3.25h-4l-.36 2.68c-.6.24-1.17.56-1.69.98l-2.49-1-2 3.46 2.11 1.65c-.04.32-.07.65-.07.98s.02.66.07.98l-2.11 1.65 2 3.46 2.49-1c.52.4 1.08.74 1.69.98L11 20.75h4l.36-2.68c.6-.24 1.17-.56 1.69-.98l2.49 1 2-3.46-2.11-1.65ZM13 15.5A3.5 3.5 0 1 1 13 8a3.5 3.5 0 0 1 0 7.5Z" fill="currentColor"/>
+          </svg>
+        </button>
         <div id="status-bar" class="hidden">
           <span id="recording-indicator"></span>
           <span id="timer">00:00</span>
         </div>
       </div>
     </div>
+    <div id="capture-disclosure" class="header-popover capture-disclosure hidden" role="dialog" aria-label="About GN Tracing">
+      <div class="capture-disclosure-copy">
+        Records the selected tab video, console logs, network metadata, and redacted headers. Uploaded replay files are readable by link.
+      </div>
+      <div id="community-section">
+        <div class="community-copy">
+          <div class="community-title">Help improve GN Tracing</div>
+          <p class="community-text">
+            Star the repo, report bugs, or open a PR if you want to make the player and recorder better.
+          </p>
+        </div>
+        <div class="community-actions">
+          <button id="github-link-btn" class="btn btn-secondary" type="button">GitHub</button>
+          <button id="contribute-link-btn" class="btn btn-secondary" type="button">Contribute</button>
+        </div>
+      </div>
+    </div>
+    <div id="settings-panel" class="header-popover settings-panel hidden" role="dialog" aria-label="Settings">
+      <div class="settings-panel-title">Settings</div>
+      <div id="settings-google-drive-slot"></div>
+      <div id="upload-folder-section" class="settings-section">
+        <label for="google-drive-folder-input" class="setting-label">Upload Folder</label>
+        <div class="folder-input-row">
+          <input
+            id="google-drive-folder-input"
+            type="text"
+            value="/"
+            placeholder="Folder ID or Drive link"
+            autocomplete="off"
+            disabled
+          >
+          <button
+            id="save-folder-btn"
+            class="btn btn-secondary btn-small folder-edit-btn"
+            type="button"
+            aria-label="Edit upload folder"
+            title="Edit upload folder"
+          ></button>
+        </div>
+        <div id="google-drive-folder-hint" class="setting-hint">Using your Google Drive root folder.</div>
+      </div>
+      <div id="capture-privacy-section" class="settings-section">
+        <div class="section-title">Capture Privacy</div>
+        <label class="privacy-toggle">
+          <input id="capture-request-bodies-input" type="checkbox">
+          <span>Request bodies</span>
+        </label>
+        <label class="privacy-toggle">
+          <input id="capture-response-bodies-input" type="checkbox">
+          <span>Response bodies</span>
+        </label>
+        <label class="privacy-toggle">
+          <input id="capture-websocket-frames-input" type="checkbox">
+          <span>WebSocket messages</span>
+        </label>
+        <div class="setting-hint">Sensitive headers are always redacted before upload.</div>
+      </div>
+    </div>
 
     <button id="toggle-btn" class="btn btn-start">Start Recording</button>
-    <div id="capture-disclosure" class="capture-disclosure">
-      Records the selected tab video, console logs, network metadata, and redacted headers. Uploaded replay files are readable by link.
-    </div>
     <button id="pause-resume-btn" class="btn btn-secondary hidden" type="button">Pause Recording</button>
     <button id="remove-recording-btn" class="btn btn-danger hidden" type="button">Remove Recording</button>
 
@@ -44,6 +125,8 @@
       <div class="section-title">Capture Queue</div>
       <div id="session-list" class="session-list"></div>
     </div>
+
+    <div id="main-google-drive-slot"></div>
 
     <div id="upload-history-section">
       <div class="section-title-row">
@@ -69,57 +152,6 @@
         <div id="google-drive-status">Not connected</div>
         <button id="google-drive-connect-btn" class="btn btn-small">Connect</button>
         <button id="google-drive-disconnect-btn" class="btn btn-small hidden">Disconnect</button>
-      </div>
-      <div class="settings-stack">
-        <label for="google-drive-folder-input" class="setting-label">Upload Folder</label>
-        <div class="folder-input-row">
-          <input
-            id="google-drive-folder-input"
-            type="text"
-            value="/"
-            placeholder="Folder ID or Drive link"
-            autocomplete="off"
-            disabled
-          >
-          <button
-            id="save-folder-btn"
-            class="btn btn-secondary btn-small folder-edit-btn"
-            type="button"
-            aria-label="Edit upload folder"
-            title="Edit upload folder"
-          ></button>
-        </div>
-        <div id="google-drive-folder-hint" class="setting-hint">Using your Google Drive root folder.</div>
-      </div>
-    </div>
-
-    <div id="capture-privacy-section">
-      <div class="section-title">Capture Privacy</div>
-      <label class="privacy-toggle">
-        <input id="capture-request-bodies-input" type="checkbox">
-        <span>Request bodies</span>
-      </label>
-      <label class="privacy-toggle">
-        <input id="capture-response-bodies-input" type="checkbox">
-        <span>Response bodies</span>
-      </label>
-      <label class="privacy-toggle">
-        <input id="capture-websocket-frames-input" type="checkbox">
-        <span>WebSocket messages</span>
-      </label>
-      <div class="setting-hint">Sensitive headers are always redacted before upload.</div>
-    </div>
-
-    <div id="community-section">
-      <div class="community-copy">
-        <div class="community-title">Help improve GN Tracing</div>
-        <p class="community-text">
-          Star the repo, report bugs, or open a PR if you want to make the player and recorder better.
-        </p>
-      </div>
-      <div class="community-actions">
-        <button id="github-link-btn" class="btn btn-secondary" type="button">GitHub</button>
-        <button id="contribute-link-btn" class="btn btn-secondary" type="button">Contribute</button>
       </div>
     </div>
 

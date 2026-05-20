@@ -91,23 +91,6 @@ interface RecordingManifest {
   };
 }
 
-interface RecordingIndex {
-  schemaVersion: number;
-  folderId: string;
-  manifestFileId: string;
-  metadataFileId: string;
-  artifacts: {
-    consoleFileId?: string;
-    networkFileId?: string;
-    websocketFileId?: string;
-  };
-  video: {
-    mimeType: string;
-    totalBytes: number;
-    partFileIds: string[];
-  };
-}
-
 interface UploadProgressSnapshot {
   sessionId: string;
   step: number;
@@ -119,26 +102,12 @@ interface UploadProgressSnapshot {
   items: ProgressItemSnapshot[];
 }
 
-interface UploadQueueItem {
-  key: string;
-  kind: "video" | "console" | "network" | "websocket" | "metadata";
-  label: string;
-  filename: string;
-  blob: Blob;
-  required: boolean;
-  index?: number;
-}
-
-interface UploadedQueueItem {
-  item: UploadQueueItem;
-  fileId: string;
-}
-
 const MAX_DRIVE_UPLOAD_BYTES = 32 * 1024 * 1024;
-const DRIVE_UPLOAD_CONCURRENCY = 4;
-const DRIVE_PERMISSION_CONCURRENCY = 4;
 const UPLOAD_PROGRESS_THROTTLE_MS = 250;
 const UPLOAD_PROGRESS_MIN_DELTA = 0.5;
+const ZIP_LOCAL_FILE_HEADER_SIGNATURE = 0x04034b50;
+const ZIP_CENTRAL_DIRECTORY_SIGNATURE = 0x02014b50;
+const ZIP_END_OF_CENTRAL_DIRECTORY_SIGNATURE = 0x06054b50;
 
 // The offscreen document exposes a small command surface to the service worker.
 // Keep message names stable with the service-worker caller because there is no
@@ -369,38 +338,6 @@ function splitBlobIntoParts(blob: Blob, maxChunkSize: number): Blob[] {
   return parts;
 }
 
-async function mapWithConcurrency<T, R>(
-  items: T[],
-  concurrency: number,
-  worker: (item: T, index: number) => Promise<R>,
-): Promise<R[]> {
-  if (items.length === 0) {
-    return [];
-  }
-
-  const results = new Array<R>(items.length);
-  let nextIndex = 0;
-
-  const runWorker = async (): Promise<void> => {
-    while (true) {
-      const currentIndex = nextIndex;
-      nextIndex += 1;
-
-      if (currentIndex >= items.length) {
-        return;
-      }
-
-      results[currentIndex] = await worker(items[currentIndex], currentIndex);
-    }
-  };
-
-  await Promise.all(
-    Array.from({ length: Math.min(Math.max(1, concurrency), items.length) }, () => runWorker()),
-  );
-
-  return results;
-}
-
 async function createArtifactBlob(
   sessionId: string,
   key: UploadArtifactKey,
@@ -442,6 +379,118 @@ async function createArtifactBlob(
   }
 
   return new Blob(chunks, { type: "application/json" });
+}
+
+function makeCrc32Table(): Uint32Array {
+  const table = new Uint32Array(256);
+  for (let i = 0; i < table.length; i += 1) {
+    let value = i;
+    for (let bit = 0; bit < 8; bit += 1) {
+      value = (value & 1) ? (0xedb88320 ^ (value >>> 1)) : (value >>> 1);
+    }
+    table[i] = value >>> 0;
+  }
+  return table;
+}
+
+const CRC32_TABLE = makeCrc32Table();
+
+function calculateCrc32(bytes: Uint8Array): number {
+  let crc = 0xffffffff;
+  for (const byte of bytes) {
+    crc = CRC32_TABLE[(crc ^ byte) & 0xff] ^ (crc >>> 8);
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function writeUint16(view: DataView, offset: number, value: number): void {
+  view.setUint16(offset, value, true);
+}
+
+function writeUint32(view: DataView, offset: number, value: number): void {
+  view.setUint32(offset, value >>> 0, true);
+}
+
+function createZipTimestamp(date: Date): { time: number; date: number } {
+  const year = Math.max(1980, date.getFullYear());
+  const time = (date.getHours() << 11) | (date.getMinutes() << 5) | Math.floor(date.getSeconds() / 2);
+  const dosDate = ((year - 1980) << 9) | ((date.getMonth() + 1) << 5) | date.getDate();
+  return { time, date: dosDate };
+}
+
+// Write a dependency-free ZIP package using the store method so the static player
+// can unzip recordings without adding a bundled compression library.
+async function createZipBlob(entries: Array<{ name: string; blob: Blob }>, modifiedAt = new Date()): Promise<Blob> {
+  const encoder = new TextEncoder();
+  const chunks: BlobPart[] = [];
+  const centralDirectory: ArrayBuffer[] = [];
+  const timestamp = createZipTimestamp(modifiedAt);
+  let offset = 0;
+
+  for (const entry of entries) {
+    const safeName = entry.name.replace(/^\/+/, "");
+    if (!safeName || safeName.includes("..")) {
+      throw new Error(`Invalid zip entry name: ${entry.name}`);
+    }
+
+    const nameBytes = encoder.encode(safeName);
+    const bytes = new Uint8Array(await entry.blob.arrayBuffer());
+    const crc32 = calculateCrc32(bytes);
+    const localHeader = new ArrayBuffer(30 + nameBytes.length);
+    const localView = new DataView(localHeader);
+
+    writeUint32(localView, 0, ZIP_LOCAL_FILE_HEADER_SIGNATURE);
+    writeUint16(localView, 4, 20);
+    writeUint16(localView, 6, 0x0800);
+    writeUint16(localView, 8, 0);
+    writeUint16(localView, 10, timestamp.time);
+    writeUint16(localView, 12, timestamp.date);
+    writeUint32(localView, 14, crc32);
+    writeUint32(localView, 18, bytes.length);
+    writeUint32(localView, 22, bytes.length);
+    writeUint16(localView, 26, nameBytes.length);
+    writeUint16(localView, 28, 0);
+    new Uint8Array(localHeader, 30).set(nameBytes);
+    chunks.push(localHeader, bytes);
+
+    const centralHeader = new ArrayBuffer(46 + nameBytes.length);
+    const centralView = new DataView(centralHeader);
+    writeUint32(centralView, 0, ZIP_CENTRAL_DIRECTORY_SIGNATURE);
+    writeUint16(centralView, 4, 20);
+    writeUint16(centralView, 6, 20);
+    writeUint16(centralView, 8, 0x0800);
+    writeUint16(centralView, 10, 0);
+    writeUint16(centralView, 12, timestamp.time);
+    writeUint16(centralView, 14, timestamp.date);
+    writeUint32(centralView, 16, crc32);
+    writeUint32(centralView, 20, bytes.length);
+    writeUint32(centralView, 24, bytes.length);
+    writeUint16(centralView, 28, nameBytes.length);
+    writeUint16(centralView, 30, 0);
+    writeUint16(centralView, 32, 0);
+    writeUint16(centralView, 34, 0);
+    writeUint16(centralView, 36, 0);
+    writeUint32(centralView, 38, 0);
+    writeUint32(centralView, 42, offset);
+    new Uint8Array(centralHeader, 46).set(nameBytes);
+    centralDirectory.push(centralHeader);
+
+    offset += localHeader.byteLength + bytes.length;
+  }
+
+  const centralDirectorySize = centralDirectory.reduce((sum, part) => sum + part.byteLength, 0);
+  const endRecord = new ArrayBuffer(22);
+  const endView = new DataView(endRecord);
+  writeUint32(endView, 0, ZIP_END_OF_CENTRAL_DIRECTORY_SIGNATURE);
+  writeUint16(endView, 4, 0);
+  writeUint16(endView, 6, 0);
+  writeUint16(endView, 8, entries.length);
+  writeUint16(endView, 10, entries.length);
+  writeUint32(endView, 12, centralDirectorySize);
+  writeUint32(endView, 16, offset);
+  writeUint16(endView, 20, 0);
+
+  return new Blob([...chunks, ...centralDirectory, endRecord], { type: "application/zip" });
 }
 
 async function uploadToGoogleDrive(
@@ -561,6 +610,71 @@ async function uploadToGoogleDrive(
       parentId: string,
       onProgress?: (loaded: number, total: number) => void,
     ): Promise<string> => {
+      // A single recording package can be much larger than the old split parts,
+      // so large zips use Drive's resumable media upload path.
+      if (blob.size > MAX_DRIVE_UPLOAD_BYTES) {
+        const sessionResponse = await fetch(
+          "https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id&supportsAllDrives=true",
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${data.authToken}`,
+              "Content-Type": "application/json",
+              "X-Upload-Content-Type": blob.type || "application/octet-stream",
+              "X-Upload-Content-Length": String(blob.size),
+            },
+            body: JSON.stringify({
+              name: filename,
+              parents: [parentId],
+            }),
+          },
+        );
+
+        if (!sessionResponse.ok) {
+          const error = await sessionResponse.json().catch(() => ({}));
+          throw new Error(error.error?.message || `Start resumable upload failed with status ${sessionResponse.status}`);
+        }
+
+        const uploadUrl = sessionResponse.headers.get("Location");
+        if (!uploadUrl) {
+          throw new Error("Drive did not return a resumable upload URL");
+        }
+
+        const result = await new Promise<{ id: string }>((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.open("PUT", uploadUrl);
+          xhr.setRequestHeader("Content-Type", blob.type || "application/octet-stream");
+          xhr.upload.addEventListener("progress", (event) => {
+            const loaded = event.lengthComputable && event.total > 0
+              ? Math.min(blob.size, Math.round((event.loaded / event.total) * blob.size))
+              : Math.min(event.loaded, blob.size);
+            onProgress?.(loaded, blob.size);
+          });
+
+          xhr.onerror = () => reject(new Error("Upload failed due to a network error"));
+          xhr.onload = () => {
+            let payload: { id?: string; error?: { message?: string } } = {};
+            try {
+              payload = xhr.responseText ? JSON.parse(xhr.responseText) : {};
+            } catch {
+              payload = {};
+            }
+
+            if (xhr.status < 200 || xhr.status >= 300 || !payload.id) {
+              reject(new Error(payload.error?.message || `Upload failed with status ${xhr.status}`));
+              return;
+            }
+
+            resolve({ id: payload.id });
+          };
+
+          xhr.send(blob);
+        });
+
+        onProgress?.(blob.size, blob.size);
+        return result.id;
+      }
+
       const formData = new FormData();
       formData.append(
         "metadata",
@@ -616,125 +730,30 @@ async function uploadToGoogleDrive(
     };
 
     const videoParts = splitBlobIntoParts(snapshot.blob, MAX_DRIVE_UPLOAD_BYTES);
-    const uploadItems: UploadQueueItem[] = [];
-
-    videoParts.forEach((part, index) => {
-      uploadItems.push({
-        key: `video:${index}`,
-        kind: "video",
-        label: `video.part-${String(index).padStart(3, "0")}.webm`,
-        filename: `video.part-${String(index).padStart(3, "0")}.webm`,
-        blob: part,
-        required: true,
-        index,
-      });
-    });
-
-    const consoleBlob = (data.artifactKeys?.consoleLogs || data.consoleLogs)
-      ? await createArtifactBlob(sessionId, "consoleLogs", data.consoleLogs)
-      : null;
-    const networkBlob = (data.artifactKeys?.networkRequests || data.networkRequests)
-      ? await createArtifactBlob(sessionId, "networkRequests", data.networkRequests)
-      : null;
-    const websocketBlob = (data.artifactKeys?.webSocketLogs || data.webSocketLogs)
-      ? await createArtifactBlob(sessionId, "webSocketLogs", data.webSocketLogs)
-      : null;
-
-    if (consoleBlob) {
-      uploadItems.push({
-        key: "console",
-        kind: "console",
-        label: "console.json",
-        filename: "console.json",
-        blob: consoleBlob,
-        required: false,
-      });
-    }
-
-    if (networkBlob) {
-      uploadItems.push({
-        key: "network",
-        kind: "network",
-        label: "network.json",
-        filename: "network.json",
-        blob: networkBlob,
-        required: false,
-      });
-    }
-
-    if (websocketBlob) {
-      uploadItems.push({
-        key: "websocket",
-        kind: "websocket",
-        label: "websocket.json",
-        filename: "websocket.json",
-        blob: websocketBlob,
-        required: false,
-      });
-    }
-
-    uploadItems.push({
-      key: "metadata",
-      kind: "metadata",
-      label: "metadata.json",
-      filename: "metadata.json",
-      blob: new Blob([], { type: "application/json" }),
-      required: true,
-    });
-
-    let totalUploadBytes = uploadItems.reduce((sum, item) => sum + item.blob.size, 0);
-    const totalSteps = 1 + uploadItems.length + 2;
+    const totalSteps = 3;
     let completedSteps = 0;
-    const uploadedBytesByKey = new Map<string, number>();
-    const totalBytesByKey = new Map<string, number>();
-    const progressStatusByKey = new Map<string, ProgressItemStatus>();
+    let totalUploadBytes = 0;
+    let uploadedBytes = 0;
+    let packageStatus: ProgressItemStatus = "queued";
     let lastProgressSentAt = 0;
     let lastProgressPercent = -1;
-
-    for (const item of uploadItems) {
-      totalBytesByKey.set(item.key, item.blob.size);
-      progressStatusByKey.set(item.key, "queued");
-    }
-    totalBytesByKey.set("manifest", 0);
-    progressStatusByKey.set("manifest", "queued");
-    totalBytesByKey.set("index", 0);
-    progressStatusByKey.set("index", "queued");
+    const zipFilename = `${baseName}.zip`;
 
     const buildProgressItems = (): ProgressItemSnapshot[] => {
-      const snapshots = uploadItems.map((item) => {
-        const totalBytes = Math.max(0, totalBytesByKey.get(item.key) || item.blob.size);
-        const loadedBytes = Math.max(0, uploadedBytesByKey.get(item.key) || 0);
-        return {
-          key: item.key,
-          label: item.label,
-          status: progressStatusByKey.get(item.key) || "queued",
-          loadedBytes,
-          totalBytes,
-          percent: totalBytes > 0 ? clampPercent((Math.min(loadedBytes, totalBytes) / totalBytes) * 100) : 0,
-        };
-      });
-
-      for (const staticItem of [
-        { key: "manifest", label: "manifest.json" },
-        { key: "index", label: "recording-index.json" },
-      ]) {
-        const totalBytes = Math.max(0, totalBytesByKey.get(staticItem.key) || 0);
-        const loadedBytes = Math.max(0, uploadedBytesByKey.get(staticItem.key) || 0);
-        snapshots.push({
-          key: staticItem.key,
-          label: staticItem.label,
-          status: progressStatusByKey.get(staticItem.key) || "queued",
-          loadedBytes,
-          totalBytes,
-          percent: totalBytes > 0 ? clampPercent((Math.min(loadedBytes, totalBytes) / totalBytes) * 100) : 0,
-        });
-      }
-
-      return snapshots;
+      const percent = totalUploadBytes > 0
+        ? clampPercent((Math.min(uploadedBytes, totalUploadBytes) / totalUploadBytes) * 100)
+        : 0;
+      return [{
+        key: "recording-zip",
+        label: zipFilename,
+        status: packageStatus,
+        loadedBytes: uploadedBytes,
+        totalBytes: totalUploadBytes,
+        percent,
+      }];
     };
 
     const emitProgress = (message: string, force = false): void => {
-      const uploadedBytes = Array.from(uploadedBytesByKey.values()).reduce((sum, value) => sum + value, 0);
       const percent = totalUploadBytes > 0
         ? clampPercent((uploadedBytes / totalUploadBytes) * 100)
         : completedSteps >= totalSteps ? 100 : 0;
@@ -762,217 +781,141 @@ async function uploadToGoogleDrive(
     emitProgress("Preparing upload...");
     const targetFolderId = await resolveFolderPath(data.targetFolderPath, data.targetFolderId);
     const folderId = await createFolder(baseName, targetFolderId);
-
-    const metadataItem = uploadItems.find((item) => item.kind === "metadata");
-    if (metadataItem) {
-      metadataItem.blob = new Blob(
-        [
-          JSON.stringify(
-            {
-              timestamp: new Date().toISOString(),
-              duration: data.duration,
-              url: data.url,
-              startTime: data.startTime,
-              extension: "gn-tracing",
-              version: "1.0.0",
-              storage: {
-                provider: "google-drive",
-                folderId,
-              },
-              video: {
-                mimeType: snapshot.mimeType,
-                totalBytes: snapshot.blob.size,
-                partCount: videoParts.length,
-              },
-            },
-            null,
-            2,
-          ),
-        ],
-        { type: "application/json" },
-      );
-      totalUploadBytes = uploadItems.reduce((sum, item) => sum + item.blob.size, 0);
-      totalBytesByKey.set("metadata", metadataItem.blob.size);
-    }
-
     completedSteps += 1;
-    emitProgress("Uploading recording...");
 
-    const uploadedVideoParts: DriveFileDescriptor[] = [];
+    packageStatus = "uploading";
+    emitProgress("Packaging recording...", true);
+
+    const consoleBlob = (data.artifactKeys?.consoleLogs || data.consoleLogs)
+      ? await createArtifactBlob(sessionId, "consoleLogs", data.consoleLogs)
+      : null;
+    const networkBlob = (data.artifactKeys?.networkRequests || data.networkRequests)
+      ? await createArtifactBlob(sessionId, "networkRequests", data.networkRequests)
+      : null;
+    const websocketBlob = (data.artifactKeys?.webSocketLogs || data.webSocketLogs)
+      ? await createArtifactBlob(sessionId, "webSocketLogs", data.webSocketLogs)
+      : null;
+
     const artifacts: RecordingManifest["artifacts"] = {
       metadata: "metadata.json",
+      ...(consoleBlob ? { console: "console.json" } : {}),
+      ...(networkBlob ? { network: "network.json" } : {}),
+      ...(websocketBlob ? { websocket: "websocket.json" } : {}),
     };
-    let consoleFileId: string | null = null;
-    let networkFileId: string | null = null;
-    let websocketFileId: string | null = null;
-    let metadataFileId: string | null = null;
-    const uploadedFiles: UploadedQueueItem[] = [];
-
-    await mapWithConcurrency(uploadItems, DRIVE_UPLOAD_CONCURRENCY, async (item) => {
-      progressStatusByKey.set(item.key, "uploading");
-      emitProgress("Uploading recording...", true);
-
-      try {
-        const fileId = await uploadFile(item.filename, item.blob, folderId, (loaded, total) => {
-          uploadedBytesByKey.set(item.key, Math.min(loaded, total || item.blob.size));
-          emitProgress("Uploading recording...");
-        });
-
-        uploadedBytesByKey.set(item.key, item.blob.size);
-        uploadedFiles.push({ item, fileId });
-      } catch (error) {
-        completedSteps += 1;
-
-        if (item.required) {
-          progressStatusByKey.set(item.key, "failed");
-          emitProgress("Uploading recording...", true);
-          throw error;
-        }
-
-        const alreadyLoaded = Math.max(0, uploadedBytesByKey.get(item.key) || 0);
-        const remainingBytes = Math.max(0, item.blob.size - alreadyLoaded);
-        uploadedBytesByKey.set(item.key, alreadyLoaded);
-        totalUploadBytes = Math.max(0, totalUploadBytes - remainingBytes);
-        totalBytesByKey.set(item.key, alreadyLoaded);
-        progressStatusByKey.set(item.key, "skipped");
-        emitProgress("Uploading recording...", true);
-        console.warn(`[Google Drive Upload] Skipped optional ${item.filename}:`, error);
-      }
-    });
-
-    await mapWithConcurrency(uploadedFiles, DRIVE_PERMISSION_CONCURRENCY, async ({ item, fileId }) => {
-      try {
-        await makeShareable(fileId);
-        progressStatusByKey.set(item.key, "uploaded");
-        completedSteps += 1;
-
-        switch (item.kind) {
-          case "video":
-            uploadedVideoParts[item.index || 0] = {
-              id: fileId,
-              name: item.filename,
-              size: item.blob.size,
+    const videoDescriptors: DriveFileDescriptor[] = videoParts.map((part, index) => ({
+      id: `video.part-${String(index).padStart(3, "0")}.webm`,
+      name: `video.part-${String(index).padStart(3, "0")}.webm`,
+      size: part.size,
+      mimeType: snapshot.mimeType,
+    }));
+    const metadataBlob = new Blob(
+      [
+        JSON.stringify(
+          {
+            timestamp: new Date().toISOString(),
+            duration: data.duration,
+            url: data.url,
+            startTime: data.startTime,
+            extension: "gn-tracing",
+            version: "1.0.0",
+            storage: {
+              provider: "google-drive",
+              folderId,
+              package: zipFilename,
+            },
+            video: {
               mimeType: snapshot.mimeType,
-            };
-            break;
-          case "console":
-            consoleFileId = fileId;
-            artifacts.console = item.filename;
-            break;
-          case "network":
-            networkFileId = fileId;
-            artifacts.network = item.filename;
-            break;
-          case "websocket":
-            websocketFileId = fileId;
-            artifacts.websocket = item.filename;
-            break;
-          case "metadata":
-            metadataFileId = fileId;
-            break;
-        }
-
-        emitProgress("Uploading recording...", true);
-      } catch (error) {
-        completedSteps += 1;
-
-        if (item.required) {
-          progressStatusByKey.set(item.key, "failed");
-          emitProgress("Uploading recording...", true);
-          throw error;
-        }
-
-        progressStatusByKey.set(item.key, "skipped");
-        emitProgress("Uploading recording...", true);
-        console.warn(`[Google Drive Upload] Could not share optional ${item.filename}:`, error);
-      }
-    });
-
-    if (!metadataFileId) {
-      throw new Error("Metadata upload did not return a file ID");
-    }
-
+              totalBytes: snapshot.blob.size,
+              partCount: videoParts.length,
+            },
+          },
+          null,
+          2,
+        ),
+      ],
+      { type: "application/json" },
+    );
     const manifest: RecordingManifest = {
       schemaVersion: 1,
       folderId,
       video: {
         mimeType: snapshot.mimeType,
         totalBytes: snapshot.blob.size,
-        parts: uploadedVideoParts.map((part) => ({
+        parts: videoDescriptors.map((part) => ({
           name: part.name,
           size: part.size || 0,
         })),
       },
       artifacts,
     };
-
     const manifestBlob = new Blob([JSON.stringify(manifest, null, 2)], { type: "application/json" });
-    totalUploadBytes += manifestBlob.size;
-    totalBytesByKey.set("manifest", manifestBlob.size);
-    progressStatusByKey.set("manifest", "uploading");
-    emitProgress("Uploading recording...");
-
-    let manifestFileId: string | null = null;
-    try {
-      manifestFileId = await uploadFile("manifest.json", manifestBlob, folderId, (loaded, total) => {
-        uploadedBytesByKey.set("manifest", Math.min(loaded, total || manifestBlob.size));
-        emitProgress("Uploading recording...");
-      });
-      await makeShareable(manifestFileId);
-    } catch (error) {
-      progressStatusByKey.set("manifest", "failed");
-      emitProgress("Uploading recording...", true);
-      throw error;
-    }
-
-    uploadedBytesByKey.set("manifest", manifestBlob.size);
-    progressStatusByKey.set("manifest", "uploaded");
-    completedSteps += 1;
-    emitProgress("Uploading recording...", true);
-
-    const recordingIndex: RecordingIndex = {
-      schemaVersion: 1,
+    const recordingIndex = {
+      schemaVersion: 2,
       folderId,
-      manifestFileId: manifestFileId || "",
-      metadataFileId,
+      package: {
+        filename: zipFilename,
+        format: "zip",
+      },
+      manifestPath: "manifest.json",
+      metadataPath: "metadata.json",
       artifacts: {
-        ...(consoleFileId ? { consoleFileId } : {}),
-        ...(networkFileId ? { networkFileId } : {}),
-        ...(websocketFileId ? { websocketFileId } : {}),
+        ...(consoleBlob ? { consolePath: "console.json" } : {}),
+        ...(networkBlob ? { networkPath: "network.json" } : {}),
+        ...(websocketBlob ? { websocketPath: "websocket.json" } : {}),
       },
       video: {
         mimeType: snapshot.mimeType,
         totalBytes: snapshot.blob.size,
-        partFileIds: uploadedVideoParts.map((part) => part.id),
+        partPaths: videoDescriptors.map((part) => part.name),
       },
     };
-
     const indexBlob = new Blob([JSON.stringify(recordingIndex, null, 2)], { type: "application/json" });
-    totalUploadBytes += indexBlob.size;
-    totalBytesByKey.set("index", indexBlob.size);
-    progressStatusByKey.set("index", "uploading");
-    emitProgress("Uploading recording index...");
+    const zipEntries: Array<{ name: string; blob: Blob }> = [
+      { name: "recording-index.json", blob: indexBlob },
+      { name: "manifest.json", blob: manifestBlob },
+      { name: "metadata.json", blob: metadataBlob },
+      ...videoParts.map((blob, index) => ({
+        name: `video.part-${String(index).padStart(3, "0")}.webm`,
+        blob,
+      })),
+    ];
 
-    let indexFileId: string | null = null;
+    if (consoleBlob) {
+      zipEntries.push({ name: "console.json", blob: consoleBlob });
+    }
+    if (networkBlob) {
+      zipEntries.push({ name: "network.json", blob: networkBlob });
+    }
+    if (websocketBlob) {
+      zipEntries.push({ name: "websocket.json", blob: websocketBlob });
+    }
+
+    const zipBlob = await createZipBlob(zipEntries, now);
+    totalUploadBytes = zipBlob.size;
+    completedSteps += 1;
+    uploadedBytes = 0;
+    emitProgress("Uploading recording package...", true);
+
+    let zipFileId: string | null = null;
     try {
-      indexFileId = await uploadFile("recording-index.json", indexBlob, folderId, (loaded, total) => {
-        uploadedBytesByKey.set("index", Math.min(loaded, total || indexBlob.size));
-        emitProgress("Uploading recording index...");
+      zipFileId = await uploadFile(zipFilename, zipBlob, folderId, (loaded, total) => {
+        uploadedBytes = Math.min(loaded, total || zipBlob.size);
+        emitProgress("Uploading recording package...");
       });
-      await makeShareable(indexFileId);
+      await makeShareable(zipFileId);
     } catch (error) {
-      progressStatusByKey.set("index", "failed");
-      emitProgress("Uploading recording index...", true);
+      packageStatus = "failed";
+      emitProgress("Uploading recording package...", true);
       throw error;
     }
 
-    uploadedBytesByKey.set("index", indexBlob.size);
-    progressStatusByKey.set("index", "uploaded");
+    uploadedBytes = zipBlob.size;
+    packageStatus = "uploaded";
     completedSteps += 1;
     emitProgress("Upload complete!", true);
 
-    const recordingUrl = buildExternalPlayerUrl(indexFileId || "");
-    return { ok: true, recordingUrl, folderId, indexFileId: indexFileId || undefined, targetFolderId };
+    const recordingUrl = buildExternalPlayerUrl(zipFileId || "");
+    return { ok: true, recordingUrl, folderId, indexFileId: zipFileId || undefined, targetFolderId };
   } catch (error) {
     console.error("[Google Drive Upload] Error:", error);
     return { ok: false, error: (error as Error).message };

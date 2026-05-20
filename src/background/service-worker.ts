@@ -373,25 +373,42 @@ async function refreshGoogleDriveState(): Promise<void> {
   googleDriveState.checkedAt = Date.now();
 }
 
-async function saveStateToStorage(): Promise<void> {
+async function buildPopupState(): Promise<PopupState> {
+  const [settings, uploadHistory] = await Promise.all([
+    getUploadSettings(),
+    getUploadHistory(),
+  ]);
+  return {
+    recording: getRecordingStatus(),
+    sessions: sortSessions(sessions),
+    googleDrive: {
+      isConnected: googleDriveState.isConnected,
+    },
+    settings: getSettingsSnapshot(settings),
+    uploadHistory,
+  };
+}
+
+async function saveStateToStorage(): Promise<PopupState | null> {
   try {
-    const [settings, uploadHistory] = await Promise.all([
-      getUploadSettings(),
-      getUploadHistory(),
-    ]);
-    const popupState: PopupState = {
-      recording: getRecordingStatus(),
-      sessions: sortSessions(sessions),
-      googleDrive: {
-        isConnected: googleDriveState.isConnected,
-      },
-      settings: getSettingsSnapshot(settings),
-      uploadHistory,
-    };
+    const popupState = await buildPopupState();
     await chrome.storage.session.set({ [STORAGE_KEY_STATE]: popupState });
+    return popupState;
   } catch {
     // Ignore storage errors.
+    return null;
   }
+}
+
+function notifyPopupStateUpdated(state: PopupState | null): void {
+  if (!state) {
+    return;
+  }
+  void chrome.runtime.sendMessage({
+    target: "popup",
+    action: "POPUP_STATE_UPDATED",
+    state,
+  }).catch(() => {});
 }
 
 async function probeOffscreenCaptureState(): Promise<OffscreenCaptureState | null> {
@@ -503,7 +520,7 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 });
 
 chrome.runtime.onMessage.addListener((message: ServiceWorkerMessage, sender, sendResponse) => {
-  if (message.target === "offscreen") {
+  if (message.target && message.target !== "service-worker") {
     return false;
   }
 
@@ -995,6 +1012,7 @@ async function persistUploadHistory(session: RecordingSessionSummary, targetFold
 
   const history = [entry, ...(await getUploadHistory())].slice(0, MAX_UPLOAD_HISTORY_ITEMS);
   await saveUploadHistory(history);
+  notifyPopupStateUpdated(await saveStateToStorage());
 
   const authToken = await googleAuth.getAuthToken();
   if (!authToken) {
@@ -1010,7 +1028,7 @@ async function persistUploadHistory(session: RecordingSessionSummary, targetFold
 
 async function deleteUploadHistoryEntry(
   data: Record<string, unknown> | undefined,
-): Promise<MessageResponse> {
+): Promise<MessageResponse & { state?: PopupState; uploadHistory?: UploadHistoryEntry[] }> {
   const historyEntryId = typeof data?.historyEntryId === "string" ? data.historyEntryId : "";
   if (!historyEntryId) {
     return { ok: false, error: "Missing history entry id." };
@@ -1023,6 +1041,7 @@ async function deleteUploadHistoryEntry(
   }
 
   await saveUploadHistory(nextHistory);
+  notifyPopupStateUpdated(await saveStateToStorage());
 
   const authToken = await googleAuth.getAuthToken();
   if (authToken) {
@@ -1033,8 +1052,9 @@ async function deleteUploadHistoryEntry(
     }
   }
 
-  await saveStateToStorage();
-  return { ok: true };
+  const popupState = await saveStateToStorage();
+  notifyPopupStateUpdated(popupState);
+  return { ok: true, state: popupState || undefined, uploadHistory: nextHistory };
 }
 
 async function deleteSession(data: Record<string, unknown> | undefined): Promise<MessageResponse> {
@@ -1234,6 +1254,6 @@ async function runSessionUpload(sessionId: string, authToken: string): Promise<v
       message: "",
     });
   } finally {
-    await saveStateToStorage();
+    notifyPopupStateUpdated(await saveStateToStorage());
   }
 }

@@ -87,6 +87,7 @@
 
   // Recording files from Drive
   let recordingFiles = {
+    packageId: null,
     indexId: null,
     folderId: null,
     manifest: null,
@@ -257,34 +258,7 @@
       elements.loadingProgressText.textContent = `${formatBytes(uploadedBytes)} / ${formatBytes(totalBytes)} (${percent.toFixed(1)}%)`;
     }
     if (elements.loadingProgressList) {
-      elements.loadingProgressList.innerHTML = progressEntries.map((entry) => {
-        const percentValue = entry.total > 0
-          ? Math.max(0, Math.min(100, (Math.min(entry.loaded, entry.total) / entry.total) * 100))
-          : 0;
-        const entryPercent = entry.total > 0 ? `${percentValue.toFixed(1)}%` : '—';
-        const statusText = String(entry.status || 'Queued');
-        const statusKey = statusText.toLowerCase();
-        const statusClass = statusKey === 'loaded'
-          ? 'is-success'
-          : statusKey === 'failed'
-            ? 'is-failed'
-            : statusKey === 'loading'
-              ? 'is-active'
-              : 'is-queued';
-        const fillPercent = statusKey === 'loaded' || statusKey === 'failed' ? 100 : percentValue;
-        return `
-          <div class="loading-progress-item ${statusClass}" style="--item-progress:${fillPercent}%;">
-            <div class="loading-progress-item-header">
-              <span class="loading-progress-item-label">${entry.label}</span>
-              <span class="loading-progress-item-status">${statusText}</span>
-            </div>
-            <div class="loading-progress-item-meta">
-              <span>${entryPercent}</span>
-              <span>${formatBytes(entry.loaded)} / ${formatBytes(entry.total)}</span>
-            </div>
-          </div>
-        `;
-      }).join('');
+      elements.loadingProgressList.innerHTML = '';
     }
   }
 
@@ -1383,6 +1357,118 @@
     return response.blob();
   }
 
+  async function hasZipSignature(blob) {
+    if (!blob || blob.size < 4) {
+      return false;
+    }
+    const bytes = new Uint8Array(await blob.slice(0, 4).arrayBuffer());
+    return bytes[0] === 0x50 && bytes[1] === 0x4b && bytes[2] === 0x03 && bytes[3] === 0x04;
+  }
+
+  async function parseJsonBlob(blob, label) {
+    try {
+      return JSON.parse(await blob.text());
+    } catch (error) {
+      throw new Error(`Invalid JSON in ${label || 'recording artifact'}`);
+    }
+  }
+
+  async function unzipStoredPackage(blob) {
+    // GN Tracing writes ZIP entries with the store method, which keeps the
+    // player dependency-free while still producing a standard .zip file.
+    const buffer = await blob.arrayBuffer();
+    const bytes = new Uint8Array(buffer);
+    const view = new DataView(buffer);
+    const decoder = new TextDecoder();
+    const eocdSignature = 0x06054b50;
+    const centralSignature = 0x02014b50;
+    const localSignature = 0x04034b50;
+    let eocdOffset = -1;
+
+    for (let offset = bytes.length - 22; offset >= Math.max(0, bytes.length - 65557); offset -= 1) {
+      if (view.getUint32(offset, true) === eocdSignature) {
+        eocdOffset = offset;
+        break;
+      }
+    }
+
+    if (eocdOffset < 0) {
+      throw new Error('Invalid recording package. Zip directory was not found.');
+    }
+
+    const entryCount = view.getUint16(eocdOffset + 10, true);
+    let centralOffset = view.getUint32(eocdOffset + 16, true);
+    const entries = new Map();
+
+    for (let index = 0; index < entryCount; index += 1) {
+      if (view.getUint32(centralOffset, true) !== centralSignature) {
+        throw new Error('Invalid recording package. Central directory is corrupt.');
+      }
+
+      const compressionMethod = view.getUint16(centralOffset + 10, true);
+      const compressedSize = view.getUint32(centralOffset + 20, true);
+      const uncompressedSize = view.getUint32(centralOffset + 24, true);
+      const fileNameLength = view.getUint16(centralOffset + 28, true);
+      const extraLength = view.getUint16(centralOffset + 30, true);
+      const commentLength = view.getUint16(centralOffset + 32, true);
+      const localHeaderOffset = view.getUint32(centralOffset + 42, true);
+      const nameStart = centralOffset + 46;
+      const name = decoder.decode(bytes.subarray(nameStart, nameStart + fileNameLength));
+
+      if (compressionMethod !== 0) {
+        throw new Error(`Unsupported recording package compression for ${name}`);
+      }
+      if (compressedSize !== uncompressedSize) {
+        throw new Error(`Invalid recording package size for ${name}`);
+      }
+      if (view.getUint32(localHeaderOffset, true) !== localSignature) {
+        throw new Error(`Invalid recording package entry ${name}`);
+      }
+
+      const localNameLength = view.getUint16(localHeaderOffset + 26, true);
+      const localExtraLength = view.getUint16(localHeaderOffset + 28, true);
+      const dataStart = localHeaderOffset + 30 + localNameLength + localExtraLength;
+      const dataEnd = dataStart + uncompressedSize;
+      if (dataEnd > bytes.length) {
+        throw new Error(`Recording package entry ${name} is truncated`);
+      }
+
+      if (name && !name.endsWith('/')) {
+        entries.set(name, new Blob([bytes.slice(dataStart, dataEnd)]));
+      }
+
+      centralOffset += 46 + fileNameLength + extraLength + commentLength;
+    }
+
+    return entries;
+  }
+
+  function getPackageEntry(entries, name, required = true) {
+    const entry = entries.get(name);
+    if (!entry && required) {
+      throw new Error(`Recording package is missing ${name}`);
+    }
+    return entry || null;
+  }
+
+  async function loadJsonDescriptor(file, label, options = {}) {
+    if (file?.json) {
+      return file.json;
+    }
+    if (file?.blob) {
+      return parseJsonBlob(file.blob, label);
+    }
+    return downloadFileAsJson(file.id, options);
+  }
+
+  async function loadBlobDescriptor(file, options = {}) {
+    if (file?.blob) {
+      options.onProgress?.({ loaded: file.blob.size, total: file.blob.size });
+      return file.blob;
+    }
+    return downloadFileAsBlob(file.id, options);
+  }
+
   function buildDirectRecordingFiles(urlParams) {
     const parseFileId = value => {
       if (typeof value !== 'string') {
@@ -1440,19 +1526,63 @@
   }
 
   async function loadRecordingFilesFromIndex(indexId) {
-    registerLoadingEntry('index', 'recording-index.json', 'other');
-    const indexJson = await downloadFileAsJson(
+    registerLoadingEntry('package', 'recording.zip', 'other');
+    const packageBlob = await downloadFileAsBlob(
       indexId,
       {
-        onProgress: createLoadingProgressReporter('index', 'other', 'recording-index.json')
+        cache: false,
+        onProgress: createLoadingProgressReporter('package', 'other', 'recording.zip')
       }
     );
-    markLoadingEntryLoaded('index', 'recording-index.json', 'other');
+    markLoadingEntryLoaded('package', 'recording.zip', 'other');
+
+    if (await hasZipSignature(packageBlob)) {
+      const entries = await unzipStoredPackage(packageBlob);
+      const indexJson = await parseJsonBlob(getPackageEntry(entries, 'recording-index.json'), 'recording-index.json');
+      const manifestJson = await parseJsonBlob(getPackageEntry(entries, indexJson.manifestPath || 'manifest.json'), 'manifest.json');
+      const metadataPath = indexJson.metadataPath || manifestJson?.artifacts?.metadata || 'metadata.json';
+      const videoPartPaths = Array.isArray(indexJson?.video?.partPaths) && indexJson.video.partPaths.length
+        ? indexJson.video.partPaths
+        : (Array.isArray(manifestJson?.video?.parts) ? manifestJson.video.parts.map(part => part.name).filter(Boolean) : []);
+      const consoleEntry = manifestJson?.artifacts?.console
+        ? getPackageEntry(entries, manifestJson.artifacts.console, false)
+        : null;
+      const networkEntry = manifestJson?.artifacts?.network
+        ? getPackageEntry(entries, manifestJson.artifacts.network, false)
+        : null;
+      const websocketEntry = manifestJson?.artifacts?.websocket
+        ? getPackageEntry(entries, manifestJson.artifacts.websocket, false)
+        : null;
+
+      const resolved = {
+        packageId: indexId,
+        indexId: null,
+        folderId: typeof indexJson?.folderId === 'string' ? indexJson.folderId : null,
+        manifest: { json: manifestJson, video: manifestJson.video },
+        metadata: { blob: getPackageEntry(entries, metadataPath) },
+        console: consoleEntry ? { blob: consoleEntry } : null,
+        network: networkEntry ? { blob: networkEntry } : null,
+        websocket: websocketEntry ? { blob: websocketEntry } : null,
+        videoParts: videoPartPaths.map(path => ({
+          name: path,
+          blob: getPackageEntry(entries, path)
+        })),
+      };
+
+      if (!resolved.metadata || resolved.videoParts.length === 0) {
+        throw new Error('Invalid recording package. Missing metadata or video parts.');
+      }
+
+      return resolved;
+    }
+
+    const indexJson = await parseJsonBlob(packageBlob, 'recording-index.json');
 
     const videoPartFileIds = Array.isArray(indexJson?.video?.partFileIds)
       ? indexJson.video.partFileIds.filter(Boolean)
       : [];
     const resolved = {
+      packageId: null,
       indexId,
       folderId: typeof indexJson?.folderId === 'string' ? indexJson.folderId : null,
       manifest: indexJson?.manifestFileId ? { id: indexJson.manifestFileId } : null,
@@ -1476,17 +1606,17 @@
     }
 
     files.forEach((file, index) => {
-      registerLoadingEntry(`video:${index}`, `video.part-${String(index).padStart(3, '0')}.webm`, 'video');
+      registerLoadingEntry(`video:${index}`, file.name || `video.part-${String(index).padStart(3, '0')}.webm`, 'video');
     });
     const blobs = await mapWithConcurrency(files, VIDEO_DOWNLOAD_CONCURRENCY, (file, index) =>
-      downloadFileAsBlob(
-        file.id,
+      loadBlobDescriptor(
+        file,
         {
           cache: false,
           onProgress: createLoadingProgressReporter(
             `video:${index}`,
             'video',
-            `video.part-${String(index).padStart(3, '0')}.webm`
+            file.name || `video.part-${String(index).padStart(3, '0')}.webm`
           )
         }
       ).then((blob) => {
@@ -1494,7 +1624,7 @@
           loaded: blob.size,
           total: blob.size,
           group: 'video',
-          label: `video.part-${String(index).padStart(3, '0')}.webm`,
+          label: file.name || `video.part-${String(index).padStart(3, '0')}.webm`,
           status: 'Loaded'
         });
         return blob;
@@ -1519,7 +1649,9 @@
   async function loadRecordingData() {
     try {
       resetLoadingProgress('Loading recording...');
-      if (recordingFiles.indexId) {
+      if (recordingFiles.packageId) {
+        registerLoadingEntry('package', 'recording.zip', 'other', 'Loaded');
+      } else if (recordingFiles.indexId) {
         registerLoadingEntry('index', 'recording-index.json', 'other', 'Loaded');
       }
       registerLoadingEntry('metadata', 'metadata.json', 'other');
@@ -1534,8 +1666,9 @@
       }
 
       // Load metadata first (needed for processing other data)
-      const metadataJson = await downloadFileAsJson(
-        recordingFiles.metadata.id,
+      const metadataJson = await loadJsonDescriptor(
+        recordingFiles.metadata,
+        'metadata.json',
         {
           onProgress: createLoadingProgressReporter('metadata', 'other', 'metadata.json')
         }
@@ -1559,8 +1692,9 @@
         }) : Promise.resolve(),
 
         // Load console logs
-        recordingFiles.console ? downloadFileAsJson(
-        recordingFiles.console.id,
+        recordingFiles.console ? loadJsonDescriptor(
+        recordingFiles.console,
+        'console.json',
         {
           onProgress: createLoadingProgressReporter('console', 'other', 'console.json')
         }
@@ -1576,8 +1710,9 @@
         }) : Promise.resolve(),
 
         // Load network logs
-        recordingFiles.network ? downloadFileAsJson(
-        recordingFiles.network.id,
+        recordingFiles.network ? loadJsonDescriptor(
+        recordingFiles.network,
+        'network.json',
         {
           onProgress: createLoadingProgressReporter('network', 'other', 'network.json')
         }
@@ -1647,8 +1782,9 @@
         }) : Promise.resolve(),
 
         // Load WebSocket logs
-        recordingFiles.websocket ? downloadFileAsJson(
-        recordingFiles.websocket.id,
+        recordingFiles.websocket ? loadJsonDescriptor(
+        recordingFiles.websocket,
+        'websocket.json',
         {
           onProgress: createLoadingProgressReporter('websocket', 'other', 'websocket.json')
         }
@@ -2662,7 +2798,7 @@
     const hasParams = Array.from(urlParams.keys()).length > 0;
 
     if (replayRecordingId) {
-      resetLoadingProgress('Loading recording index...');
+      resetLoadingProgress('Loading recording package...');
       recordingFiles = await loadRecordingFilesFromIndex(replayRecordingId);
       await loadRecordingFromFiles();
     } else if (videos && metadataFileId) {

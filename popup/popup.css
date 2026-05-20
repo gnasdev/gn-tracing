@@ -178,7 +178,12 @@ h1 {
   color: #fff;
 }
 
-.capture-disclosure {
+.header-popover {
+  position: absolute;
+  top: 50px;
+  right: 16px;
+  left: 16px;
+  z-index: 10;
   padding: 10px;
   border: 1px solid #33446d;
   border-radius: 8px;
@@ -186,6 +191,65 @@ h1 {
   color: #c7d2fe;
   font-size: 11px;
   line-height: 1.45;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  margin-bottom: 1rem;
+}
+
+.header-popover::before {
+  content: "";
+  position: absolute;
+  top: -6px;
+  right: 46px;
+  width: 10px;
+  height: 10px;
+  border-top: 1px solid #33446d;
+  border-left: 1px solid #33446d;
+  background: #101a33;
+  transform: rotate(45deg);
+}
+
+.capture-disclosure {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  color: #c7d2fe;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.capture-disclosure-copy {
+  color: #c7d2fe;
+}
+
+.settings-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 470px;
+  overflow: auto;
+}
+
+.settings-panel::before {
+  right: 10px;
+}
+
+.settings-panel-title {
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid #233255;
+}
+
+#main-google-drive-slot:empty,
+#settings-google-drive-slot:empty {
+  display: none;
 }
 
 #session-queue-section {
@@ -351,9 +415,10 @@ h1 {
 .progress-item {
   position: relative;
   overflow: hidden;
-  padding: 8px;
+  min-height: 10px;
+  padding: 0;
   border: 1px solid #2a3a5c;
-  border-radius: 8px;
+  border-radius: 999px;
   background: #16213e;
 }
 
@@ -362,6 +427,7 @@ h1 {
   position: absolute;
   inset: 0;
   width: var(--item-progress, 0%);
+  border-radius: inherit;
   background: linear-gradient(90deg, rgba(96, 165, 250, 0.26), rgba(59, 130, 246, 0.14));
   transition: width 0.2s ease;
 }
@@ -425,8 +491,13 @@ h1 {
 }
 
 #google-drive-section {
-  border-top: 1px solid #16213e;
-  padding-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid #2a3a5c;
+  border-radius: 8px;
+  background: #16213e;
 }
 
 .setting-row {
@@ -447,13 +518,6 @@ h1 {
   padding: 4px 8px;
   font-size: 11px;
   width: auto;
-}
-
-.settings-stack {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-top: 10px;
 }
 
 .setting-label {
@@ -506,14 +570,6 @@ h1 {
   font-size: 11px;
   color: #8d99ae;
   line-height: 1.4;
-}
-
-#capture-privacy-section {
-  border-top: 1px solid #16213e;
-  padding-top: 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
 }
 
 .privacy-toggle {
@@ -670,10 +726,9 @@ h1 {
   z-index: 10;
 }
 
-/* Player Config Section */
 #community-section {
-  border-top: 1px solid #16213e;
-  padding-top: 12px;
+  border-top: 1px solid #233255;
+  padding-top: 10px;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -699,7 +754,7 @@ h1 {
 
 .community-actions {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
 }
 
