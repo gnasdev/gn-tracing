@@ -10,11 +10,11 @@ tags: ["docs", "sync"]
 
 ## Meta
 
-- Synced commit: `54411a0f93861605daf4bdd72f1a6cad3ad64f7d`
-- Synced at: `2026-05-21T12:26:33+07:00`
-- Scope: source-map-enriched console source previews, replay player rendering, Drive confirmation handling for standalone replay downloads, OAuth Drive API media downloads for extension replay, shared recording payload models, and docs index
-- Status: partially-synced
-- Known unsynced: Worktree contains uncommitted popup update-check changes outside the player/Drive/source-preview scope.
+- Synced commit: `6e2ee8e6d2436607749e1d93b36ae85e6ed81b92`
+- Synced at: `2026-05-21T13:31:14+07:00`
+- Scope: source-map-enriched console source previews, replay player rendering, hardened Drive confirmation handling for standalone replay downloads, OAuth Drive API media downloads for extension replay, popup update-check controls, shared recording payload models, and docs index
+- Status: synced
+- Known unsynced: Không có
 
 ## Current Snapshot
 
@@ -24,6 +24,6 @@ Replay storage is package-scoped. Each upload writes one `gn-tracing-*.zip` dire
 
 Console replay artifacts can include bounded source snippets derived from sourcemap `sourcesContent` at capture stop time. The player renders those snippets in console detail views without fetching original sourcemaps or application source files during replay. When source content is unavailable, replay falls back to the resolved source file, line, column, and stack labels.
 
-Replay downloads can use Google Drive API `files.get?alt=media` with the current in-memory OAuth token when the player runs in the extension context. Hosted standalone replay keeps `/api/drive` as the no-token fallback; that proxy resolves Google Drive's large-file confirmation page before streaming artifact bytes to the browser. If Drive still returns HTML instead of a zip package or legacy JSON index, the player reports the download-page mismatch instead of parsing the response as `recording-index.json`.
+Replay downloads can use Google Drive API `files.get?alt=media` with the current in-memory OAuth token when the player runs in the extension context. Hosted standalone replay keeps `/api/drive` as the no-token fallback; that proxy resolves Google Drive's large-file confirmation pages, including form-based confirmation pages, before streaming artifact bytes to the browser. If Drive still returns HTML instead of a zip package or legacy JSON index, the proxy returns a non-cacheable error and the player removes stale cached HTML before retrying network downloads.
 
 The popup and history surfaces expose configurable Drive target folders, optional zip password settings, start/stop/remove recording controls, auto-upload when connected, capture privacy toggles, per-file upload progress, and recent upload history stored only in local extension storage. Popup capture controls and the capture queue are hidden until Drive is connected. Production extension builds require explicit OAuth/extension identity, and Store package validation runs through `Taskfile.yml`.
