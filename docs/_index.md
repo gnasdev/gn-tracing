@@ -26,6 +26,8 @@ related:
 - [compliance/chrome-web-store-submission.md](./compliance/chrome-web-store-submission.md)
 - [specs/planning/upload-recording-as-zip.md](./specs/planning/upload-recording-as-zip.md)
 - [specs/planning/password-protected-recording-zip.md](./specs/planning/password-protected-recording-zip.md)
+- [specs/planning/native-zip-password-protection.md](./specs/planning/native-zip-password-protection.md)
+- [specs/planning/reduce-network-log-capture-volume.md](./specs/planning/reduce-network-log-capture-volume.md)
 - [specs/planning/drive-api-alt-media-player-download.md](./specs/planning/drive-api-alt-media-player-download.md)
 - [specs/planning/player-console-sourcemap-source-preview.md](./specs/planning/player-console-sourcemap-source-preview.md)
 - [_sync.md](./_sync.md)
@@ -50,7 +52,7 @@ related:
 - `service-worker` -> `cdp-manager`: console/network/WebSocket capture
 - `service-worker` -> `recorder-manager` -> `offscreen`: tab media recording lifecycle
 - `service-worker` -> `chrome.storage.session`: state fan-out to popup and auth page
-- `offscreen` -> Google Drive APIs: target-folder resolution/creation, optional password-based package encryption, zip package upload, and sharing permissions
+- `offscreen` -> Google Drive APIs: target-folder resolution/creation, compact/DEFLATE zip package creation, optional ZIP password entry protection, package upload, and sharing permissions
 - `offscreen` -> Cloudflare Pages standalone player URL generation with one recording zip file ID path (`/<id>`)
 - `extension player` -> Google Drive API `files.get?alt=media` with the current OAuth token for Drive package fetches when available
 - `standalone player` -> same-origin `/api/drive?id=<file-id>` proxy for Drive package fetches when no OAuth token is available; password-protected packages are decrypted in-browser after user unlock

@@ -62,7 +62,7 @@ The extension package does not load remote executable JavaScript. Extension page
 1. Install the packaged `dist/` extension.
 2. Open a normal test page such as `https://example.com/`.
 3. Open the extension popup and connect Google Drive.
-4. Confirm the popup shows the capture disclosure and privacy toggles. Request bodies, response bodies, and WebSocket messages are off by default.
+4. Confirm the popup shows the capture disclosure and privacy toggles. Request bodies, response bodies, and WebSocket messages are on by default and can be disabled before recording.
 5. Start recording, interact with the page, then stop recording.
 6. Wait for upload to complete.
 7. Open the replay link and confirm the player shows the video and captured artifacts.

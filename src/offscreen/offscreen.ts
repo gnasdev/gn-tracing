@@ -108,12 +108,11 @@ const UPLOAD_PROGRESS_MIN_DELTA = 0.5;
 const ZIP_LOCAL_FILE_HEADER_SIGNATURE = 0x04034b50;
 const ZIP_CENTRAL_DIRECTORY_SIGNATURE = 0x02014b50;
 const ZIP_END_OF_CENTRAL_DIRECTORY_SIGNATURE = 0x06054b50;
-const ZIP_ENCRYPTION_PAYLOAD_PATH = "encrypted-payload.bin";
-const ZIP_ENCRYPTION_ALGORITHM = "AES-GCM";
-const ZIP_ENCRYPTION_KDF = "PBKDF2-SHA-256";
-const ZIP_ENCRYPTION_ITERATIONS = 250_000;
-const ZIP_ENCRYPTION_SALT_BYTES = 16;
-const ZIP_ENCRYPTION_IV_BYTES = 12;
+const ZIP_FLAG_ENCRYPTED = 0x0001;
+const ZIP_FLAG_UTF8 = 0x0800;
+const ZIP_METHOD_STORE = 0;
+const ZIP_METHOD_DEFLATE = 8;
+const ZIP_CRYPTO_HEADER_BYTES = 12;
 
 // The offscreen document exposes a small command surface to the service worker.
 // Keep message names stable with the service-worker caller because there is no
@@ -377,9 +376,13 @@ const CRC32_TABLE = makeCrc32Table();
 function calculateCrc32(bytes: Uint8Array): number {
   let crc = 0xffffffff;
   for (const byte of bytes) {
-    crc = CRC32_TABLE[(crc ^ byte) & 0xff] ^ (crc >>> 8);
+    crc = updateCrc32Value(crc, byte);
   }
   return (crc ^ 0xffffffff) >>> 0;
+}
+
+function updateCrc32Value(crc: number, byte: number): number {
+  return (CRC32_TABLE[(crc ^ byte) & 0xff] ^ (crc >>> 8)) >>> 0;
 }
 
 function writeUint16(view: DataView, offset: number, value: number): void {
@@ -397,13 +400,89 @@ function createZipTimestamp(date: Date): { time: number; date: number } {
   return { time, date: dosDate };
 }
 
-// Write a dependency-free ZIP package using the store method so the static player
-// can unzip recordings without adding a bundled compression library.
-async function createZipBlob(entries: Array<{ name: string; blob: Blob }>, modifiedAt = new Date()): Promise<Blob> {
+function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+}
+
+function createZipCryptoKeys(password: string): [number, number, number] {
+  const keys: [number, number, number] = [0x12345678, 0x23456789, 0x34567890];
+  for (const byte of new TextEncoder().encode(password)) {
+    updateZipCryptoKeys(keys, byte);
+  }
+  return keys;
+}
+
+function updateZipCryptoKeys(keys: [number, number, number], byte: number): void {
+  keys[0] = updateCrc32Value(keys[0], byte);
+  keys[1] = (Math.imul((keys[1] + (keys[0] & 0xff)) >>> 0, 134775813) + 1) >>> 0;
+  keys[2] = updateCrc32Value(keys[2], keys[1] >>> 24);
+}
+
+function getZipCryptoByte(keys: [number, number, number]): number {
+  const temp = (keys[2] | 2) >>> 0;
+  return (Math.imul(temp, temp ^ 1) >>> 8) & 0xff;
+}
+
+function encryptZipCryptoByte(keys: [number, number, number], plainByte: number): number {
+  const encryptedByte = plainByte ^ getZipCryptoByte(keys);
+  updateZipCryptoKeys(keys, plainByte);
+  return encryptedByte;
+}
+
+function createZipEncryptedPayload(bytes: Uint8Array, password: string, crc32: number): Uint8Array {
+  if (!globalThis.crypto?.getRandomValues) {
+    throw new Error("Browser crypto is not available for password-protected ZIP packages.");
+  }
+
+  const keys = createZipCryptoKeys(password);
+  const header = globalThis.crypto.getRandomValues(new Uint8Array(ZIP_CRYPTO_HEADER_BYTES));
+  header[ZIP_CRYPTO_HEADER_BYTES - 1] = (crc32 >>> 24) & 0xff;
+  const encrypted = new Uint8Array(header.length + bytes.length);
+
+  for (let index = 0; index < header.length; index += 1) {
+    encrypted[index] = encryptZipCryptoByte(keys, header[index]);
+  }
+  for (let index = 0; index < bytes.length; index += 1) {
+    encrypted[header.length + index] = encryptZipCryptoByte(keys, bytes[index]);
+  }
+
+  return encrypted;
+}
+
+async function deflateRawBytes(bytes: Uint8Array): Promise<Uint8Array | null> {
+  const CompressionStreamCtor = globalThis.CompressionStream;
+  if (typeof CompressionStreamCtor !== "function") {
+    return null;
+  }
+
+  try {
+    const stream = new Blob([toArrayBuffer(bytes)])
+      .stream()
+      .pipeThrough(new CompressionStreamCtor("deflate-raw"));
+    return new Uint8Array(await new Response(stream).arrayBuffer());
+  } catch {
+    return null;
+  }
+}
+
+function shouldCompressZipEntry(name: string): boolean {
+  return /\.(json|txt|csv|xml|html|css|js|map|svg)$/i.test(name);
+}
+
+// Write a dependency-free ZIP package: already-compressed media stays stored,
+// while JSON/text artifacts use browser DEFLATE when that reduces payload size.
+// Passwords use traditional ZIP entry encryption so downloaded archives prompt
+// for the password in common unzip tools.
+async function createZipBlob(
+  entries: Array<{ name: string; blob: Blob }>,
+  modifiedAt = new Date(),
+  password = "",
+): Promise<Blob> {
   const encoder = new TextEncoder();
   const chunks: BlobPart[] = [];
   const centralDirectory: ArrayBuffer[] = [];
   const timestamp = createZipTimestamp(modifiedAt);
+  const shouldEncrypt = password.length > 0;
   let offset = 0;
 
   for (const entry of entries) {
@@ -415,34 +494,41 @@ async function createZipBlob(entries: Array<{ name: string; blob: Blob }>, modif
     const nameBytes = encoder.encode(safeName);
     const bytes = new Uint8Array(await entry.blob.arrayBuffer());
     const crc32 = calculateCrc32(bytes);
+    const compressedBytes = shouldCompressZipEntry(safeName) ? await deflateRawBytes(bytes) : null;
+    // ZIP compression is lossless, but tiny files can grow after DEFLATE headers.
+    // Store those entries so every package is at least as small as the old path.
+    const payloadBytes = compressedBytes && compressedBytes.byteLength < bytes.byteLength ? compressedBytes : bytes;
+    const compressionMethod = payloadBytes === bytes ? ZIP_METHOD_STORE : ZIP_METHOD_DEFLATE;
+    const payload = shouldEncrypt ? createZipEncryptedPayload(payloadBytes, password, crc32) : payloadBytes;
+    const flags = ZIP_FLAG_UTF8 | (shouldEncrypt ? ZIP_FLAG_ENCRYPTED : 0);
     const localHeader = new ArrayBuffer(30 + nameBytes.length);
     const localView = new DataView(localHeader);
 
     writeUint32(localView, 0, ZIP_LOCAL_FILE_HEADER_SIGNATURE);
     writeUint16(localView, 4, 20);
-    writeUint16(localView, 6, 0x0800);
-    writeUint16(localView, 8, 0);
+    writeUint16(localView, 6, flags);
+    writeUint16(localView, 8, compressionMethod);
     writeUint16(localView, 10, timestamp.time);
     writeUint16(localView, 12, timestamp.date);
     writeUint32(localView, 14, crc32);
-    writeUint32(localView, 18, bytes.length);
+    writeUint32(localView, 18, payload.length);
     writeUint32(localView, 22, bytes.length);
     writeUint16(localView, 26, nameBytes.length);
     writeUint16(localView, 28, 0);
     new Uint8Array(localHeader, 30).set(nameBytes);
-    chunks.push(localHeader, bytes);
+    chunks.push(localHeader, toArrayBuffer(payload));
 
     const centralHeader = new ArrayBuffer(46 + nameBytes.length);
     const centralView = new DataView(centralHeader);
     writeUint32(centralView, 0, ZIP_CENTRAL_DIRECTORY_SIGNATURE);
     writeUint16(centralView, 4, 20);
     writeUint16(centralView, 6, 20);
-    writeUint16(centralView, 8, 0x0800);
-    writeUint16(centralView, 10, 0);
+    writeUint16(centralView, 8, flags);
+    writeUint16(centralView, 10, compressionMethod);
     writeUint16(centralView, 12, timestamp.time);
     writeUint16(centralView, 14, timestamp.date);
     writeUint32(centralView, 16, crc32);
-    writeUint32(centralView, 20, bytes.length);
+    writeUint32(centralView, 20, payload.length);
     writeUint32(centralView, 24, bytes.length);
     writeUint16(centralView, 28, nameBytes.length);
     writeUint16(centralView, 30, 0);
@@ -454,7 +540,7 @@ async function createZipBlob(entries: Array<{ name: string; blob: Blob }>, modif
     new Uint8Array(centralHeader, 46).set(nameBytes);
     centralDirectory.push(centralHeader);
 
-    offset += localHeader.byteLength + bytes.length;
+    offset += localHeader.byteLength + payload.length;
   }
 
   const centralDirectorySize = centralDirectory.reduce((sum, part) => sum + part.byteLength, 0);
@@ -470,94 +556,6 @@ async function createZipBlob(entries: Array<{ name: string; blob: Blob }>, modif
   writeUint16(endView, 20, 0);
 
   return new Blob([...chunks, ...centralDirectory, endRecord], { type: "application/zip" });
-}
-
-function bytesToBase64(bytes: Uint8Array): string {
-  let binary = "";
-  for (const byte of bytes) {
-    binary += String.fromCharCode(byte);
-  }
-  return btoa(binary);
-}
-
-function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
-  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
-}
-
-async function deriveZipPasswordKey(password: string, salt: Uint8Array, usages: KeyUsage[]): Promise<CryptoKey> {
-  if (!globalThis.crypto?.subtle) {
-    throw new Error("Browser crypto is not available for password-protected recordings.");
-  }
-
-  const keyMaterial = await globalThis.crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(password),
-    { name: "PBKDF2" },
-    false,
-    ["deriveKey"],
-  );
-
-  return globalThis.crypto.subtle.deriveKey(
-    {
-      name: "PBKDF2",
-      hash: "SHA-256",
-      salt: toArrayBuffer(salt),
-      iterations: ZIP_ENCRYPTION_ITERATIONS,
-    },
-    keyMaterial,
-    { name: ZIP_ENCRYPTION_ALGORITHM, length: 256 },
-    false,
-    usages,
-  );
-}
-
-async function createEncryptedZipBlob(
-  innerZipBlob: Blob,
-  password: string,
-  zipFilename: string,
-  targetFolderId: string | null,
-  modifiedAt: Date,
-): Promise<Blob> {
-  const salt = globalThis.crypto.getRandomValues(new Uint8Array(ZIP_ENCRYPTION_SALT_BYTES));
-  const iv = globalThis.crypto.getRandomValues(new Uint8Array(ZIP_ENCRYPTION_IV_BYTES));
-  const key = await deriveZipPasswordKey(password, salt, ["encrypt"]);
-  const encryptedPayload = await globalThis.crypto.subtle.encrypt(
-    { name: ZIP_ENCRYPTION_ALGORITHM, iv: toArrayBuffer(iv) },
-    key,
-    await innerZipBlob.arrayBuffer(),
-  );
-  const clearIndex = {
-    schemaVersion: 3,
-    folderId: targetFolderId,
-    package: {
-      filename: zipFilename,
-      format: "zip",
-      encrypted: true,
-    },
-    encryption: {
-      version: 1,
-      algorithm: ZIP_ENCRYPTION_ALGORITHM,
-      kdf: ZIP_ENCRYPTION_KDF,
-      iterations: ZIP_ENCRYPTION_ITERATIONS,
-      salt: bytesToBase64(salt),
-      iv: bytesToBase64(iv),
-      payloadPath: ZIP_ENCRYPTION_PAYLOAD_PATH,
-      cleartext: "gn-tracing-recording-zip",
-    },
-  };
-
-  // The outer ZIP deliberately exposes only unlock metadata; the replay artifacts
-  // remain inside the encrypted inner ZIP until the player receives the password.
-  return createZipBlob([
-    {
-      name: "recording-index.json",
-      blob: new Blob([JSON.stringify(clearIndex, null, 2)], { type: "application/json" }),
-    },
-    {
-      name: ZIP_ENCRYPTION_PAYLOAD_PATH,
-      blob: new Blob([encryptedPayload], { type: "application/octet-stream" }),
-    },
-  ], modifiedAt);
 }
 
 async function uploadToGoogleDrive(
@@ -876,28 +874,24 @@ async function uploadToGoogleDrive(
     }));
     const metadataBlob = new Blob(
       [
-        JSON.stringify(
-          {
-            timestamp: new Date().toISOString(),
-            duration: data.duration,
-            url: data.url,
-            startTime: data.startTime,
-            extension: "gn-tracing",
-            version: "1.0.0",
-            storage: {
-              provider: "google-drive",
-              folderId: targetFolderId,
-              package: zipFilename,
-            },
-            video: {
-              mimeType: snapshot.mimeType,
-              totalBytes: snapshot.blob.size,
-              partCount: videoParts.length,
-            },
+        JSON.stringify({
+          timestamp: new Date().toISOString(),
+          duration: data.duration,
+          url: data.url,
+          startTime: data.startTime,
+          extension: "gn-tracing",
+          version: "1.0.0",
+          storage: {
+            provider: "google-drive",
+            folderId: targetFolderId,
+            package: zipFilename,
           },
-          null,
-          2,
-        ),
+          video: {
+            mimeType: snapshot.mimeType,
+            totalBytes: snapshot.blob.size,
+            partCount: videoParts.length,
+          },
+        }),
       ],
       { type: "application/json" },
     );
@@ -914,7 +908,7 @@ async function uploadToGoogleDrive(
       },
       artifacts,
     };
-    const manifestBlob = new Blob([JSON.stringify(manifest, null, 2)], { type: "application/json" });
+    const manifestBlob = new Blob([JSON.stringify(manifest)], { type: "application/json" });
     const recordingIndex = {
       schemaVersion: 2,
       folderId: targetFolderId,
@@ -935,7 +929,7 @@ async function uploadToGoogleDrive(
         partPaths: videoDescriptors.map((part) => part.name),
       },
     };
-    const indexBlob = new Blob([JSON.stringify(recordingIndex, null, 2)], { type: "application/json" });
+    const indexBlob = new Blob([JSON.stringify(recordingIndex)], { type: "application/json" });
     const zipEntries: Array<{ name: string; blob: Blob }> = [
       { name: "recording-index.json", blob: indexBlob },
       { name: "manifest.json", blob: manifestBlob },
@@ -957,13 +951,10 @@ async function uploadToGoogleDrive(
     }
 
     const zipPassword = typeof data.zipPassword === "string" ? data.zipPassword : "";
-    const innerZipBlob = await createZipBlob(zipEntries, now);
     if (zipPassword) {
-      emitProgress("Encrypting recording package...", true);
+      emitProgress("Protecting recording zip...", true);
     }
-    const zipBlob = zipPassword
-      ? await createEncryptedZipBlob(innerZipBlob, zipPassword, zipFilename, targetFolderId, now)
-      : innerZipBlob;
+    const zipBlob = await createZipBlob(zipEntries, now, zipPassword);
     totalUploadBytes = zipBlob.size;
     completedSteps += 1;
     uploadedBytes = 0;

@@ -75,10 +75,11 @@ This module covers authentication, Google Drive upload, replay URL generation, b
 - `GoogleDriveAuth.getAuthToken()` returns a usable token or `null`.
 - extension builds inject `GOOGLE_CLIENT_ID` into `GoogleDriveAuth` and `dist/manifest.json` from `.env`, environment variables, or release workflow secrets; production builds require explicit OAuth and extension identity values.
 - `manifest.template.json` is the manifest source of truth; build-time substitution writes the OAuth client id and Chrome extension public key into `dist/manifest.json`.
-- unprotected uploads package `metadata.json`, `manifest.json`, `recording-index.json`, optional log JSON files, and one or more `video.part-XXX.webm` files into a single `gn-tracing-*.zip` stored directly inside the configured upload folder.
-- password-protected uploads encrypt that normal recording zip with Web Crypto (`PBKDF2-SHA-256` plus `AES-GCM`) and upload an outer zip containing only clear unlock metadata plus `encrypted-payload.bin`.
+- unprotected uploads package compact `metadata.json`, `manifest.json`, `recording-index.json`, optional log JSON files, and one or more `video.part-XXX.webm` files into a single `gn-tracing-*.zip` stored directly inside the configured upload folder.
+- JSON/text zip entries are written with ZIP DEFLATE when compression reduces size; video WebM entries stay stored because they are already media-compressed.
+- password-protected uploads write the same recording package shape as a native password-protected ZIP with encrypted entry payloads; compressed JSON/text entries are compressed before ZIP encryption.
 - `manifest.json` inside the zip is the storage layout source of truth; it records schema version, target folder ID, video mime type/parts, and which optional artifacts exist.
-- `recording-index.json` inside an unprotected zip is the replay entrypoint metadata; protected outer zips use clear `recording-index.json` only to describe encryption metadata and payload path.
+- `recording-index.json` inside the zip is the replay entrypoint metadata; protected packages require the password before the player can read the encrypted entry.
 - replay links use a single zip file ID path, for example `https://tracing.gnas.dev/<zip-file-id>`.
 - the player also retains a legacy direct-file query parser for debugging or older links that still pass `videos`, `metadata`, `console`, `network`, and `websocket` params.
 - standalone player loads the index first, then loads artifacts directly from the file IDs listed by that index and does not require Drive folder listing or a Drive API key for replay.
@@ -93,7 +94,8 @@ This module covers authentication, Google Drive upload, replay URL generation, b
 - Chrome OAuth identity is configured by `GOOGLE_CLIENT_ID`, `CHROME_EXTENSION_ID`, and `CHROME_EXTENSION_PUBLIC_KEY`; the build validates that the configured extension id matches the public key before writing `dist/manifest.json`.
 - disconnect always attempts revocation but returns a success-style response even when the token is already invalid.
 - the uploaded recording zip is made world-readable before being referenced by the player; failed share-permission creation fails the upload instead of returning a broken replay link.
-- if a zip password is configured, the Drive file remains readable by link but replay artifacts stay encrypted until the player derives the key from the password entered by the viewer.
+- if a zip password is configured, the Drive file remains readable by link but replay artifacts stay protected until the player decrypts ZIP entries with the password entered by the viewer.
+- the player can unpack both stored and DEFLATE-compressed package entries so existing store-only packages and optimized new packages share the same replay path.
 - service-worker settings snapshots expose only whether a zip password is configured; the plaintext password is kept out of popup state, upload history, replay URLs, and recording package metadata.
 - replay links always target the full Cloudflare Pages player host URL directly.
 - the auth page is a first-class surface that can both start auth and react to service-worker state updates.
@@ -123,7 +125,7 @@ This module covers authentication, Google Drive upload, replay URL generation, b
 - console detail renders source-mapped file/line metadata and, when present, a small highlighted source preview from the captured console artifact without fetching source files during replay.
 - HTML preview uses a sandboxed iframe, media preview uses inline data URLs when captured payloads are base64-backed, and JSON preview combines a summary card with formatted source.
 - player title derives a short label from metadata URL plus recording timestamp and applies it to both the visible header and `document.title`.
-- player unlocks password-protected packages by prompting for the recording password, decrypting the inner zip in-browser, and then using the same parser path as unprotected packages.
+- player unlocks password-protected packages by prompting for the recording password, decrypting encrypted ZIP entries in-browser, and then using the same parser path as unprotected packages.
 - opening the player with no query params should render onboarding/help content rather than the invalid-params error; malformed partial query strings still use the error state.
 - popup should provide direct links to the GitHub repository and a contribution surface so users can discover the project and help improve it, while auth status is revalidated on popup open instead of relying only on cached session state.
 - popup should run a lightweight update check on open, provide a manual check action, and only guide the user to a release/download page; it does not self-install extension updates.
@@ -137,8 +139,8 @@ This module covers authentication, Google Drive upload, replay URL generation, b
 
 - uploads require publicly shareable Drive permissions for replay links to work outside the extension.
 - password-protected uploads protect package contents rather than Drive file discoverability; users still control who receives the replay URL and password.
-- password-protected uploads are GN Tracing encrypted packages, not native ZIP password files compatible with desktop unzip password prompts.
-- forgotten zip passwords cannot be recovered by GN Tracing because the encrypted payload is decrypted only from the user-provided password.
+- password-protected uploads use native ZIP password entries so downloaded archives prompt for the password in common unzip tools.
+- forgotten zip passwords cannot be recovered by GN Tracing because protected ZIP entries are decrypted only from the user-provided password.
 - standalone mode depends on the `/api/drive` public proxy for the artifact IDs embedded in the replay URL unless a future hosted web OAuth flow explicitly supplies a token.
 - standalone mode assumes the Cloudflare Pages deployment includes the `/api/drive` proxy function so the browser never fetches Drive artifacts cross-origin.
 - extension build and standalone player build are separate pipelines.

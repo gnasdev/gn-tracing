@@ -124,7 +124,7 @@ export class StorageManager {
     const artifacts: FinalizedRecordingArtifacts = {
       consoleLogCount: this.#consoleLogs.length,
       networkRequestCount: this.#networkEntries.length,
-      consoleLogs: this.#consoleLogs.length > 0 ? JSON.stringify(this.#consoleLogs, null, 2) : undefined,
+      consoleLogs: this.#consoleLogs.length > 0 ? JSON.stringify(this.#consoleLogs) : undefined,
       networkRequests: this.#networkEntries.length > 0
         ? JSON.stringify({
             log: {
@@ -173,9 +173,9 @@ export class StorageManager {
                 initiator: entry.initiator || undefined,
               })),
             },
-          }, null, 2)
+          })
         : undefined,
-      webSocketLogs: this.#webSocketEntries.length > 0 ? JSON.stringify(this.#webSocketEntries, null, 2) : undefined,
+      webSocketLogs: this.#webSocketEntries.length > 0 ? JSON.stringify(this.#webSocketEntries) : undefined,
     };
 
     this.beginSession();

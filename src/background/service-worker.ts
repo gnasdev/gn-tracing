@@ -97,6 +97,11 @@ const MAX_UPLOAD_HISTORY_ITEMS = 100;
 const UPLOAD_ARTIFACT_CHUNK_CHARS = 1024 * 1024;
 const GITHUB_LATEST_RELEASE_URL = "https://api.github.com/repos/gnasdev/gn-tracing/releases/latest";
 const DEFAULT_UPLOAD_FOLDER = parseGoogleDriveFolderInput(DEFAULT_UPLOAD_FOLDER_INPUT);
+const DEFAULT_CAPTURE_PRIVACY_SETTINGS = {
+  captureRequestBodies: true,
+  captureResponseBodies: true,
+  captureWebSocketFrames: true,
+};
 
 const activeRecording: ActiveRecordingState = {
   sessionId: null,
@@ -123,9 +128,7 @@ let cachedUploadSettings: UploadSettingsStore = {
   folderId: DEFAULT_UPLOAD_FOLDER.folderId,
   folderPath: [...DEFAULT_UPLOAD_FOLDER.folderPath],
   zipPassword: "",
-  captureRequestBodies: false,
-  captureResponseBodies: false,
-  captureWebSocketFrames: false,
+  ...DEFAULT_CAPTURE_PRIVACY_SETTINGS,
 };
 let hasLoadedUploadSettings = false;
 let cachedUploadHistory: UploadHistoryEntry[] = [];
@@ -221,6 +224,37 @@ function getRecordingStatus(): RecordingStatus | null {
   };
 }
 
+function normalizeUploadSettingsStore(
+  stored: Partial<UploadSettingsStore> | Partial<UploadSettings> | undefined,
+): UploadSettingsStore {
+  const storedUploadSettings = stored as Partial<UploadSettingsStore> | undefined;
+  const storedHasFolderInput = typeof stored?.folderInput === "string";
+  // Only missing folder settings use the default; saved blank values still mean Drive root.
+  const parsedFolder = storedHasFolderInput
+    ? parseGoogleDriveFolderInput(stored.folderInput)
+    : DEFAULT_UPLOAD_FOLDER;
+
+  return {
+    folderInput: parsedFolder.normalizedInput,
+    folderId: typeof stored?.folderId === "string" ? stored.folderId : parsedFolder.folderId,
+    folderPath: Array.isArray(storedUploadSettings?.folderPath)
+      ? storedUploadSettings.folderPath.filter((segment) => typeof segment === "string")
+      : [...parsedFolder.folderPath],
+    zipPassword: typeof storedUploadSettings?.zipPassword === "string"
+      ? storedUploadSettings.zipPassword
+      : "",
+    captureRequestBodies: typeof stored?.captureRequestBodies === "boolean"
+      ? stored.captureRequestBodies
+      : DEFAULT_CAPTURE_PRIVACY_SETTINGS.captureRequestBodies,
+    captureResponseBodies: typeof stored?.captureResponseBodies === "boolean"
+      ? stored.captureResponseBodies
+      : DEFAULT_CAPTURE_PRIVACY_SETTINGS.captureResponseBodies,
+    captureWebSocketFrames: typeof stored?.captureWebSocketFrames === "boolean"
+      ? stored.captureWebSocketFrames
+      : DEFAULT_CAPTURE_PRIVACY_SETTINGS.captureWebSocketFrames,
+  };
+}
+
 async function getUploadSettings(): Promise<UploadSettingsStore> {
   if (hasLoadedUploadSettings) {
     return cachedUploadSettings;
@@ -228,33 +262,22 @@ async function getUploadSettings(): Promise<UploadSettingsStore> {
 
   try {
     const result = await chrome.storage.local.get(STORAGE_KEY_SETTINGS);
-    const stored = result[STORAGE_KEY_SETTINGS] as Partial<UploadSettingsStore> | undefined;
-    const storedHasFolderInput = typeof stored?.folderInput === "string";
-    // Only missing folder settings use the default; saved blank values still mean Drive root.
-    const parsedFolder = storedHasFolderInput
-      ? parseGoogleDriveFolderInput(stored.folderInput)
-      : DEFAULT_UPLOAD_FOLDER;
-    cachedUploadSettings = {
-      folderInput: parsedFolder.normalizedInput,
-      folderId: typeof stored?.folderId === "string" ? stored.folderId : parsedFolder.folderId,
-      folderPath: Array.isArray(stored?.folderPath)
-        ? stored.folderPath.filter((segment) => typeof segment === "string")
-        : [...parsedFolder.folderPath],
-      zipPassword: typeof stored?.zipPassword === "string" ? stored.zipPassword : "",
-      captureRequestBodies: Boolean(stored?.captureRequestBodies),
-      captureResponseBodies: Boolean(stored?.captureResponseBodies),
-      captureWebSocketFrames: Boolean(stored?.captureWebSocketFrames),
-    };
+    let stored = result[STORAGE_KEY_SETTINGS] as Partial<UploadSettingsStore> | undefined;
+    let shouldBackfillLocalSettings = false;
+
+    if (!stored) {
+      const persistedState = await loadPersistedPopupState();
+      stored = persistedState?.settings;
+      shouldBackfillLocalSettings = Boolean(stored);
+    }
+
+    cachedUploadSettings = normalizeUploadSettingsStore(stored);
+
+    if (shouldBackfillLocalSettings) {
+      await chrome.storage.local.set({ [STORAGE_KEY_SETTINGS]: cachedUploadSettings });
+    }
   } catch {
-    cachedUploadSettings = {
-      folderInput: DEFAULT_UPLOAD_FOLDER.normalizedInput,
-      folderId: DEFAULT_UPLOAD_FOLDER.folderId,
-      folderPath: [...DEFAULT_UPLOAD_FOLDER.folderPath],
-      zipPassword: "",
-      captureRequestBodies: false,
-      captureResponseBodies: false,
-      captureWebSocketFrames: false,
-    };
+    cachedUploadSettings = normalizeUploadSettingsStore(undefined);
   }
 
   hasLoadedUploadSettings = true;

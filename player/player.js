@@ -40,6 +40,8 @@
   const ZIP_ENCRYPTION_PAYLOAD_PATH = 'encrypted-payload.bin';
   const ZIP_ENCRYPTION_ALGORITHM = 'AES-GCM';
   const ZIP_ENCRYPTION_KDF = 'PBKDF2-SHA-256';
+  const ZIP_FLAG_ENCRYPTED = 0x0001;
+  const ZIP_CRYPTO_HEADER_BYTES = 12;
   const DYNAMIC_ROUTE_EXTENSIONS = new Set(['.html', '.htm', '.php', '.asp', '.aspx', '.jsp']);
 
   console.log('[GN Tracing Player] Mode:', IS_EXTENSION ? 'extension' : 'standalone');
@@ -1656,9 +1658,132 @@
     return new Blob([decrypted], { type: 'application/zip' });
   }
 
-  async function unzipStoredPackage(blob) {
-    // GN Tracing writes ZIP entries with the store method, which keeps the
-    // player dependency-free while still producing a standard .zip file.
+  function makeCrc32Table() {
+    const table = new Uint32Array(256);
+    for (let i = 0; i < table.length; i += 1) {
+      let value = i;
+      for (let bit = 0; bit < 8; bit += 1) {
+        value = (value & 1) ? (0xedb88320 ^ (value >>> 1)) : (value >>> 1);
+      }
+      table[i] = value >>> 0;
+    }
+    return table;
+  }
+
+  const CRC32_TABLE = makeCrc32Table();
+
+  function updateCrc32Value(crc, byte) {
+    return (CRC32_TABLE[(crc ^ byte) & 0xff] ^ (crc >>> 8)) >>> 0;
+  }
+
+  function calculateCrc32(bytes) {
+    let crc = 0xffffffff;
+    for (const byte of bytes) {
+      crc = updateCrc32Value(crc, byte);
+    }
+    return (crc ^ 0xffffffff) >>> 0;
+  }
+
+  function createZipCryptoKeys(password) {
+    const keys = [0x12345678, 0x23456789, 0x34567890];
+    for (const byte of new TextEncoder().encode(password)) {
+      updateZipCryptoKeys(keys, byte);
+    }
+    return keys;
+  }
+
+  function updateZipCryptoKeys(keys, byte) {
+    keys[0] = updateCrc32Value(keys[0], byte);
+    keys[1] = (Math.imul((keys[1] + (keys[0] & 0xff)) >>> 0, 134775813) + 1) >>> 0;
+    keys[2] = updateCrc32Value(keys[2], keys[1] >>> 24);
+  }
+
+  function getZipCryptoByte(keys) {
+    const temp = (keys[2] | 2) >>> 0;
+    return (Math.imul(temp, temp ^ 1) >>> 8) & 0xff;
+  }
+
+  function decryptZipCryptoByte(keys, encryptedByte) {
+    const plainByte = encryptedByte ^ getZipCryptoByte(keys);
+    updateZipCryptoKeys(keys, plainByte);
+    return plainByte;
+  }
+
+  function createZipPasswordError(message, code) {
+    const error = new Error(message);
+    error.code = code;
+    return error;
+  }
+
+  function decryptZipCryptoPayload(encryptedBytes, password, crc32, name) {
+    if (!password) {
+      throw createZipPasswordError('Recording package requires a password.', 'ZIP_PASSWORD_REQUIRED');
+    }
+    if (encryptedBytes.length < ZIP_CRYPTO_HEADER_BYTES) {
+      throw new Error(`Recording package entry ${name} is missing its encryption header`);
+    }
+
+    const keys = createZipCryptoKeys(password);
+    const header = new Uint8Array(ZIP_CRYPTO_HEADER_BYTES);
+    for (let index = 0; index < ZIP_CRYPTO_HEADER_BYTES; index += 1) {
+      header[index] = decryptZipCryptoByte(keys, encryptedBytes[index]);
+    }
+
+    if (header[ZIP_CRYPTO_HEADER_BYTES - 1] !== ((crc32 >>> 24) & 0xff)) {
+      throw createZipPasswordError('Wrong password or corrupted recording package.', 'ZIP_PASSWORD_INVALID');
+    }
+
+    const decrypted = new Uint8Array(encryptedBytes.length - ZIP_CRYPTO_HEADER_BYTES);
+    for (let index = 0; index < decrypted.length; index += 1) {
+      decrypted[index] = decryptZipCryptoByte(keys, encryptedBytes[ZIP_CRYPTO_HEADER_BYTES + index]);
+    }
+
+    return decrypted;
+  }
+
+  function isZipPasswordError(error) {
+    return error?.code === 'ZIP_PASSWORD_REQUIRED' || error?.code === 'ZIP_PASSWORD_INVALID';
+  }
+
+  async function inflateRawBytes(bytes, name) {
+    if (typeof DecompressionStream !== 'function') {
+      throw new Error(`Recording package entry ${name} uses DEFLATE compression, but this browser cannot decompress it.`);
+    }
+
+    try {
+      const stream = new Blob([bytes])
+        .stream()
+        .pipeThrough(new DecompressionStream('deflate-raw'));
+      return new Uint8Array(await new Response(stream).arrayBuffer());
+    } catch {
+      throw new Error(`Recording package entry ${name} could not be decompressed`);
+    }
+  }
+
+  async function readZipEntryBytes(entryBytes, compressionMethod, uncompressedSize, name) {
+    if (compressionMethod === 0) {
+      if (entryBytes.length !== uncompressedSize) {
+        throw new Error(`Invalid recording package size for ${name}`);
+      }
+      return entryBytes;
+    }
+
+    if (compressionMethod === 8) {
+      const inflated = await inflateRawBytes(entryBytes, name);
+      if (inflated.length !== uncompressedSize) {
+        throw new Error(`Invalid decompressed recording package size for ${name}`);
+      }
+      return inflated;
+    }
+
+    throw new Error(`Unsupported recording package compression for ${name}`);
+  }
+
+  async function unzipStoredPackage(blob, options = {}) {
+    // Recording packages may store already-compressed video entries directly,
+    // while JSON/text artifacts use ZIP DEFLATE to reduce Drive payload size.
+    // Password-protected packages keep using traditional ZIP encryption so
+    // downloaded archives also prompt in common unzip tools.
     const buffer = await blob.arrayBuffer();
     const bytes = new Uint8Array(buffer);
     const view = new DataView(buffer);
@@ -1688,7 +1813,9 @@
         throw new Error('Invalid recording package. Central directory is corrupt.');
       }
 
+      const flags = view.getUint16(centralOffset + 8, true);
       const compressionMethod = view.getUint16(centralOffset + 10, true);
+      const crc32 = view.getUint32(centralOffset + 16, true);
       const compressedSize = view.getUint32(centralOffset + 20, true);
       const uncompressedSize = view.getUint32(centralOffset + 24, true);
       const fileNameLength = view.getUint16(centralOffset + 28, true);
@@ -1698,10 +1825,8 @@
       const nameStart = centralOffset + 46;
       const name = decoder.decode(bytes.subarray(nameStart, nameStart + fileNameLength));
 
-      if (compressionMethod !== 0) {
-        throw new Error(`Unsupported recording package compression for ${name}`);
-      }
-      if (compressedSize !== uncompressedSize) {
+      const isEncrypted = (flags & ZIP_FLAG_ENCRYPTED) !== 0;
+      if (!isEncrypted && compressionMethod === 0 && compressedSize !== uncompressedSize) {
         throw new Error(`Invalid recording package size for ${name}`);
       }
       if (view.getUint32(localHeaderOffset, true) !== localSignature) {
@@ -1711,13 +1836,24 @@
       const localNameLength = view.getUint16(localHeaderOffset + 26, true);
       const localExtraLength = view.getUint16(localHeaderOffset + 28, true);
       const dataStart = localHeaderOffset + 30 + localNameLength + localExtraLength;
-      const dataEnd = dataStart + uncompressedSize;
+      const dataEnd = dataStart + compressedSize;
       if (dataEnd > bytes.length) {
         throw new Error(`Recording package entry ${name} is truncated`);
       }
 
       if (name && !name.endsWith('/')) {
-        entries.set(name, new Blob([bytes.slice(dataStart, dataEnd)]));
+        const entryBytes = bytes.slice(dataStart, dataEnd);
+        const packedBytes = isEncrypted
+          ? decryptZipCryptoPayload(entryBytes, options.password || '', crc32, name)
+          : entryBytes;
+        const plainBytes = await readZipEntryBytes(packedBytes, compressionMethod, uncompressedSize, name);
+        if (calculateCrc32(plainBytes) !== crc32) {
+          if (isEncrypted) {
+            throw createZipPasswordError('Wrong password or corrupted recording package.', 'ZIP_PASSWORD_INVALID');
+          }
+          throw new Error(`Recording package entry ${name} failed integrity validation`);
+        }
+        entries.set(name, new Blob([plainBytes]));
       }
 
       centralOffset += 46 + fileNameLength + extraLength + commentLength;
@@ -1883,6 +2019,32 @@
     }
   }
 
+  async function unlockPasswordProtectedZipPackage(packageBlob, indexId) {
+    let promptError = '';
+
+    while (true) {
+      const password = await requestRecordingPassword(promptError);
+      try {
+        setPasswordPromptBusy(true);
+        const entries = await unzipStoredPackage(packageBlob, { password });
+        setPasswordPromptBusy(false);
+        if (elements.passwordInput) {
+          elements.passwordInput.value = '';
+        }
+        showLoading();
+        resetLoadingProgress('Loading unlocked recording...');
+        const indexJson = await parseJsonBlob(getPackageEntry(entries, 'recording-index.json'), 'recording-index.json');
+        return buildRecordingFilesFromPackageEntries(entries, indexJson, indexId);
+      } catch (error) {
+        console.warn('[GN Tracing Player] Failed to unlock ZIP recording package:', error);
+        promptError = isZipPasswordError(error)
+          ? 'Wrong password or corrupted recording package. Please try again.'
+          : (error?.message || 'Failed to unlock recording package.');
+        setPasswordPromptBusy(false);
+      }
+    }
+  }
+
   async function loadRecordingFilesFromIndex(indexId) {
     registerLoadingEntry('package', 'recording.zip', 'other');
     const packageBlob = await downloadFileAsBlob(
@@ -1895,7 +2057,15 @@
     markLoadingEntryLoaded('package', 'recording.zip', 'other');
 
     if (await hasZipSignature(packageBlob)) {
-      const entries = await unzipStoredPackage(packageBlob);
+      let entries;
+      try {
+        entries = await unzipStoredPackage(packageBlob);
+      } catch (error) {
+        if (isZipPasswordError(error)) {
+          return unlockPasswordProtectedZipPackage(packageBlob, indexId);
+        }
+        throw error;
+      }
       const indexJson = await parseJsonBlob(getPackageEntry(entries, 'recording-index.json'), 'recording-index.json');
       if (isEncryptedPackageIndex(indexJson)) {
         return unlockEncryptedRecordingPackage(entries, indexJson, indexId);

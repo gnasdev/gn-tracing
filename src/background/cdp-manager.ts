@@ -253,9 +253,9 @@ export class CdpManager {
   #sourceMapResolver = new SourceMapResolver();
   #sourceMapFetches = new Set<Promise<void>>();
   #captureSettings: CaptureSettings = {
-    captureRequestBodies: false,
-    captureResponseBodies: false,
-    captureWebSocketFrames: false,
+    captureRequestBodies: true,
+    captureResponseBodies: true,
+    captureWebSocketFrames: true,
   };
 
   constructor(storage: StorageManager) {

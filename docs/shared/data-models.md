@@ -66,8 +66,8 @@ related:
 - Edge token fallback is stored in `chrome.storage.local`
 - console/network/WebSocket capture payloads stay in memory only for the active post-recording flow and are cleared after a successful Google Drive upload
 - Google Drive replay storage is package-scoped: each upload writes one `gn-tracing-*.zip` directly into the configured upload folder
-- unprotected zips contain `metadata.json`, `manifest.json`, `recording-index.json`, optional log JSON files, and ordered `video.part-XXX.webm` chunks; the hosted player URL references the zip file ID
-- password-protected zips contain clear encryption metadata plus `encrypted-payload.bin`; the decrypted payload is the normal recording zip, and the player prompts for the password before loading artifacts
+- unprotected zips contain compact `metadata.json`, `manifest.json`, `recording-index.json`, optional log JSON files, and ordered `video.part-XXX.webm` chunks; JSON/text entries may use ZIP DEFLATE while video entries stay stored, and the hosted player URL references the zip file ID
+- password-protected zips keep the normal recording package shape but protect entry payloads with a ZIP password; compressed JSON/text entries are compressed before encryption, and the player prompts for the password before loading artifacts
 - zip password settings are stored locally in extension storage and only a `zipPasswordConfigured` boolean is exposed through popup state snapshots
 - the offscreen recorded video blob is retained only until upload completes successfully; after that the blob and recorder references are released
 - source-map caches are temporary enrichment helpers and are discarded immediately after stored console/network artifacts are resolved; replay artifacts retain only resolved locations and bounded source snippets, not full sourcemaps

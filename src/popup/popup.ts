@@ -811,6 +811,7 @@ saveFolderBtn.addEventListener("click", async () => {
     }
 
     if (result.settings) {
+      currentSettings = result.settings;
       googleDriveFolderInput.value = getFolderDisplayValue(result.settings.folderInput);
       updateFolderHint(result.settings);
       setFolderEditingState(false);

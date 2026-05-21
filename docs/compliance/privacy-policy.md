@@ -32,7 +32,7 @@ GN Tracing may collect the following data for the tab being recorded:
 - console logs, runtime errors, stack traces, and source-map-enhanced locations
 - network request metadata such as URL, method, status, timing, resource type, protocol, remote IP address, and encoded size
 - request and response headers with sensitive header values redacted by default
-- request bodies, response bodies, and WebSocket message payloads only when the user enables those capture options
+- request bodies, response bodies, and WebSocket message payloads when those capture options are enabled
 - optional zip password settings for protecting new uploads
 - local upload history such as replay URL, Drive folder ID, page URL, upload time, and duration
 
@@ -42,13 +42,13 @@ GN Tracing does not run continuous background browsing surveillance. It records 
 
 GN Tracing uses captured data only to create a replayable debugging package. The extension stores the captured data temporarily in the extension runtime and browser extension storage so it can show upload progress, retry a pending upload, and generate a replay link.
 
-When Google Drive is connected, GN Tracing uploads the recording artifacts to the user's Google Drive. If the user configures a zip password, GN Tracing encrypts the recording package in the browser before upload and the hosted player at `https://tracing.gnas.dev/` asks for that password before loading the replay.
+When Google Drive is connected, GN Tracing uploads the recording artifacts to the user's Google Drive. If the user configures a zip password, GN Tracing writes a password-protected ZIP package in the browser before upload and the hosted player at `https://tracing.gnas.dev/` asks for that password before loading the replay.
 
 ## Google Drive And Sharing
 
 GN Tracing uses the Google Drive `drive.file` scope to create and access files that GN Tracing creates or opens through the user's interaction. It does not request full access to every file in the user's Google Drive.
 
-Uploaded replay artifacts are made readable by link so the replay URL can be opened by teammates or other people the user shares it with. Anyone with an unprotected replay URL may be able to view the recording video and included debugging artifacts. Password-protected replay packages still use a link-readable Drive file, but the recording contents require the password in the GN Tracing player. Users should avoid recording pages that contain confidential information unless they intend to share that information through the generated replay link and, when configured, its password.
+Uploaded replay artifacts are made readable by link so the replay URL can be opened by teammates or other people the user shares it with. Anyone with an unprotected replay URL may be able to view the recording video and included debugging artifacts. Password-protected replay packages still use a link-readable Drive file, but the recording contents require the password in the GN Tracing player or a compatible unzip tool. Users should avoid recording pages that contain confidential information unless they intend to share that information through the generated replay link and, when configured, its password.
 
 ## Data Storage And Deletion
 
