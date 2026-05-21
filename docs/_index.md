@@ -23,13 +23,14 @@ related:
 - [compliance/_summary.md](./compliance/_summary.md)
 - [compliance/privacy-policy.md](./compliance/privacy-policy.md)
 - [compliance/chrome-web-store-submission.md](./compliance/chrome-web-store-submission.md)
+- [specs/planning/password-protected-recording-zip.md](./specs/planning/password-protected-recording-zip.md)
 - [_sync.md](./_sync.md)
 
 ## Dependency Map
 
 - `recording-runtime`
   reads: `shared/data-models`, `shared/api-conventions`
-  calls: `drive-and-player` for auth token lookup, Drive folder upload, and replay link generation during upload completion
+  calls: `drive-and-player` for auth token lookup, Drive zip package upload, and replay link generation during upload completion
 - `drive-and-player`
   reads: `shared/data-models`, `shared/api-conventions`
   consumes: recording artifacts emitted by `recording-runtime`
@@ -42,7 +43,7 @@ related:
 - `service-worker` -> `cdp-manager`: console/network/WebSocket capture
 - `service-worker` -> `recorder-manager` -> `offscreen`: tab media recording lifecycle
 - `service-worker` -> `chrome.storage.session`: state fan-out to popup and auth page
-- `offscreen` -> Google Drive APIs: recording-folder creation, multipart uploads, chunked video upload, and sharing permissions
-- `offscreen` -> Cloudflare Pages standalone player URL generation with one recording index file ID path (`/<id>`)
-- `standalone player` -> same-origin `/api/drive?id=<file-id>` proxy for Drive artifact fetches during replay
+- `offscreen` -> Google Drive APIs: target-folder resolution/creation, optional password-based package encryption, zip package upload, and sharing permissions
+- `offscreen` -> Cloudflare Pages standalone player URL generation with one recording zip file ID path (`/<id>`)
+- `standalone player` -> same-origin `/api/drive?id=<file-id>` proxy for Drive package fetches during replay; password-protected packages are decrypted in-browser after user unlock
 - `release workflow` -> root `Taskfile.yml`: extension build, Store package checks, and zip packaging with OAuth/extension identity from repository secrets; standalone player deploy stays manual via `player-standalone/deploy.sh`

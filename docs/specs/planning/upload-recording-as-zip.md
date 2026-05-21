@@ -8,13 +8,13 @@ Yêu cầu mới là gom toàn bộ artifact của recording thành một file z
 
 ## Nguyên Nhân Và Lý Do Thiết Kế
 
-Triệu chứng là replay đang phụ thuộc vào nhiều Drive file công khai. Nguyên nhân trực tiếp là upload queue hiện chạy theo artifact riêng lẻ và index chỉ đóng vai trò entrypoint. Nguyên nhân gốc rễ là storage contract đang folder-scoped, khiến một recording không còn là một artifact nguyên tử.
+Triệu chứng là replay đang phụ thuộc vào nhiều Drive file công khai. Nguyên nhân trực tiếp là upload queue hiện chạy theo artifact riêng lẻ và index chỉ đóng vai trò entrypoint. Nguyên nhân gốc rễ là storage contract đang phụ thuộc vào nhiều file trong một folder, khiến một recording không còn là một artifact nguyên tử.
 
 Hướng zip biến recording thành một package duy nhất: upload một file, share một file, replay một file. Manifest và index vẫn nên nằm trong zip để giữ schema tự mô tả và tránh phải viết lại toàn bộ player parser.
 
 ## Phạm Vi
 
-- Offscreen upload tạo `metadata.json`, `manifest.json`, `recording-index.json`, log JSON và video parts trong bộ nhớ, đóng gói thành `gn-tracing-*.zip`, rồi upload zip lên Drive.
+- Offscreen upload tạo `metadata.json`, `manifest.json`, `recording-index.json`, log JSON và video parts trong bộ nhớ, đóng gói thành `gn-tracing-*.zip`, rồi upload zip trực tiếp vào upload folder đã cấu hình trên Drive.
 - Replay URL dùng ID của zip file.
 - Player khi nhận ID sẽ tải file đó, detect zip, unzip và đọc artifact trong package.
 - Legacy replay bằng `recording-index.json` vẫn nên được giữ như fallback để các link cũ không hỏng.

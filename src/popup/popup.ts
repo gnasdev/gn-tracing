@@ -62,6 +62,10 @@ const googleDriveDisconnectBtn = document.getElementById("google-drive-disconnec
 const googleDriveFolderInput = document.getElementById("google-drive-folder-input") as HTMLInputElement;
 const googleDriveFolderHint = document.getElementById("google-drive-folder-hint")!;
 const saveFolderBtn = document.getElementById("save-folder-btn") as HTMLButtonElement;
+const zipPasswordInput = document.getElementById("zip-password-input") as HTMLInputElement;
+const zipPasswordHint = document.getElementById("zip-password-hint")!;
+const saveZipPasswordBtn = document.getElementById("save-zip-password-btn") as HTMLButtonElement;
+const clearZipPasswordBtn = document.getElementById("clear-zip-password-btn") as HTMLButtonElement;
 const captureRequestBodiesInput = document.getElementById("capture-request-bodies-input") as HTMLInputElement;
 const captureResponseBodiesInput = document.getElementById("capture-response-bodies-input") as HTMLInputElement;
 const captureWebSocketFramesInput = document.getElementById("capture-websocket-frames-input") as HTMLInputElement;
@@ -88,6 +92,7 @@ function closeSettingsSection(): void {
     googleDriveFolderInput.value = getFolderDisplayValue(currentSettings?.folderInput);
     setFolderEditingState(false);
   }
+  zipPasswordInput.value = "";
 }
 
 function getEditIcon(): string {
@@ -225,8 +230,12 @@ function showSuccess(message: string): void {
   showToast(message);
 }
 
+function normalizeToastMessage(message: string): string {
+  return message.trim().replace(/\.+$/, "");
+}
+
 function showToast(message: string, durationMs = 1800): void {
-  toastMessageEl.textContent = message;
+  toastMessageEl.textContent = normalizeToastMessage(message);
   toastEl.classList.remove("hidden");
   if (toastTimeout) {
     clearTimeout(toastTimeout);
@@ -535,11 +544,26 @@ function setCaptureUiVisibility(isVisible: boolean): void {
 }
 
 function updateFolderHint(settings: UploadSettings | null): void {
-  if (!settings || !settings.folderId) {
-    googleDriveFolderHint.textContent = "Using your Google Drive root folder.";
+  if (settings?.folderId) {
+    googleDriveFolderHint.textContent = `Resolved folder ID: ${settings.folderId}`;
     return;
   }
-  googleDriveFolderHint.textContent = `Resolved folder ID: ${settings.folderId}`;
+
+  const folderInput = (settings?.folderInput || "").trim();
+  googleDriveFolderHint.textContent = folderInput && folderInput !== "/"
+    ? `Using Google Drive folder: ${folderInput}.`
+    : "Using your Google Drive root folder.";
+}
+
+function updateZipPasswordUI(settings: UploadSettings | null): void {
+  currentSettings = settings;
+  const isConfigured = Boolean(settings?.zipPasswordConfigured);
+  zipPasswordInput.value = "";
+  zipPasswordHint.textContent = isConfigured
+    ? "A zip password is configured for new uploads."
+    : "New uploads will not require a zip password.";
+  clearZipPasswordBtn.classList.toggle("hidden", !isConfigured);
+  clearZipPasswordBtn.disabled = !isConfigured;
 }
 
 function updateCapturePrivacyUI(settings: UploadSettings | null): void {
@@ -617,6 +641,7 @@ function handleStateUpdate(state: PopupState): void {
     setFolderEditingState(false);
   }
   updateFolderHint(state.settings);
+  updateZipPasswordUI(state.settings);
   updateCapturePrivacyUI(state.settings);
 }
 
@@ -761,6 +786,59 @@ saveFolderBtn.addEventListener("click", async () => {
   }
 });
 
+saveZipPasswordBtn.innerHTML = getSaveIcon();
+
+function setZipPasswordControlsDisabled(disabled: boolean): void {
+  zipPasswordInput.disabled = disabled;
+  saveZipPasswordBtn.disabled = disabled;
+  clearZipPasswordBtn.disabled = disabled || !currentSettings?.zipPasswordConfigured;
+}
+
+async function saveZipPasswordSettings(data: { zipPassword?: string; clearZipPassword?: boolean }, successMessage: string): Promise<void> {
+  const previousSettings = currentSettings;
+  setZipPasswordControlsDisabled(true);
+  errorMsg.classList.add("hidden");
+
+  try {
+    const result = await chrome.runtime.sendMessage({
+      action: "UPDATE_SETTINGS",
+      data,
+    }) as MessageResponse & { settings?: UploadSettings };
+
+    if (!result.ok) {
+      updateZipPasswordUI(previousSettings);
+      showError(result.error || "Failed to save zip password settings");
+      return;
+    }
+
+    if (result.settings) {
+      updateFolderHint(result.settings);
+      updateZipPasswordUI(result.settings);
+      updateCapturePrivacyUI(result.settings);
+      showToast(successMessage);
+    }
+  } catch (error) {
+    updateZipPasswordUI(previousSettings);
+    showError((error as Error).message);
+  } finally {
+    setZipPasswordControlsDisabled(false);
+  }
+}
+
+saveZipPasswordBtn.addEventListener("click", () => {
+  const password = zipPasswordInput.value;
+  if (!password) {
+    showError("Enter a zip password or clear the configured password.");
+    return;
+  }
+
+  void saveZipPasswordSettings({ zipPassword: password }, "Zip password saved.");
+});
+
+clearZipPasswordBtn.addEventListener("click", () => {
+  void saveZipPasswordSettings({ clearZipPassword: true }, "Zip password cleared.");
+});
+
 async function saveCapturePrivacySettings(): Promise<void> {
   const previousSettings = currentSettings;
   const inputs = [
@@ -902,10 +980,12 @@ sessionList.addEventListener("click", async (event) => {
 
 settingsPanel.addEventListener("toggle", () => {
   if (settingsPanel.open) {
+    updateZipPasswordUI(currentSettings);
     updateCapturePrivacyUI(currentSettings);
   } else if (isEditingFolder) {
     googleDriveFolderInput.value = getFolderDisplayValue(currentSettings?.folderInput);
     setFolderEditingState(false);
+    zipPasswordInput.value = "";
   }
 });
 
@@ -1012,6 +1092,7 @@ async function initPopup(): Promise<void> {
       googleDriveFolderInput.value = getFolderDisplayValue(settingsResult.settings.folderInput);
       setFolderEditingState(false);
       updateFolderHint(settingsResult.settings);
+      updateZipPasswordUI(settingsResult.settings);
       updateCapturePrivacyUI(settingsResult.settings);
     }
     if (settingsResult.ok && Array.isArray(settingsResult.uploadHistory)) {

@@ -175,6 +175,73 @@ body {
   margin-bottom: 16px;
 }
 
+.password-panel {
+  width: min(420px, calc(100vw - 48px));
+  padding: 24px;
+  border: 1px solid var(--gh-border);
+  border-radius: 8px;
+  background: var(--gh-panel);
+}
+
+.password-panel h2 {
+  color: var(--gh-bright);
+  margin-bottom: 8px;
+}
+
+.password-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+.password-form label {
+  color: var(--gh-text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.password-entry-row {
+  display: flex;
+  gap: 8px;
+}
+
+.password-entry-row input {
+  flex: 1;
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid var(--gh-border);
+  border-radius: 6px;
+  color: var(--gh-bright);
+  background: var(--gh-bg);
+  outline: none;
+}
+
+.password-entry-row input:focus {
+  border-color: var(--gh-accent);
+  box-shadow: 0 0 0 2px rgba(88, 166, 255, 0.18);
+}
+
+.password-entry-row button {
+  flex: 0 0 auto;
+  padding: 9px 12px;
+  border: 1px solid var(--gh-accent-bg);
+  border-radius: 6px;
+  color: #fff;
+  background: var(--gh-accent-bg);
+  cursor: pointer;
+}
+
+.password-entry-row button:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+.password-error {
+  color: var(--gh-error);
+  margin: 4px 0 0;
+}
+
 #intro-state {
   padding: 24px;
 }
@@ -1214,9 +1281,24 @@ body {
 
 .col-url {
   color: var(--gh-secondary);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.network-url-main,
+.network-initiator-location {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.network-initiator-location {
+  color: var(--gh-muted);
+  font-size: 10px;
+  line-height: 1.2;
 }
 
 .col-status {

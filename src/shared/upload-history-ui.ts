@@ -59,13 +59,13 @@ export function renderUploadHistoryList(items: UploadHistoryEntry[] | undefined)
           attrValue: item.recordingUrl,
           icon: getCopyIcon(),
         })}
-        ${renderHistoryActionButton({
+        ${item.recordingFolderId ? renderHistoryActionButton({
           action: "open-folder",
           label: "Open folder",
           attrName: "data-folder-id",
           attrValue: item.recordingFolderId,
           icon: getFolderIcon(),
-        })}
+        }) : ""}
         ${renderHistoryActionButton({
           action: "delete-history",
           label: "Delete",

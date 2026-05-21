@@ -80,10 +80,14 @@ export class StorageManager {
           entry.originalSource = resolved.source ?? undefined;
           entry.originalLine = resolved.line;
           entry.originalColumn = resolved.column;
+          if (resolved.name) {
+            entry.originalName = resolved.name;
+          }
         }
       }
       if (entry.stackTrace) {
         this.#resolveFrames(resolver, entry.stackTrace);
+        this.#promoteStackFrameLocation(entry, this.#findFirstResolvedFrame(entry.stackTrace));
       }
     }
 
@@ -102,11 +106,15 @@ export class StorageManager {
           entry.initiator.originalSource = resolved.source ?? undefined;
           entry.initiator.originalLine = resolved.line;
           entry.initiator.originalColumn = resolved.column;
+          if (resolved.name) {
+            entry.initiator.originalName = resolved.name;
+          }
         }
       }
 
       if (entry.initiator.stack) {
         this.#resolveCdpStack(resolver, entry.initiator.stack);
+        this.#promoteStackFrameLocation(entry.initiator, this.#findFirstResolvedCdpFrame(entry.initiator.stack));
       }
     }
   }
@@ -187,6 +195,44 @@ export class StorageManager {
           frame.originalName = resolved.name;
         }
       }
+    }
+  }
+
+  #findFirstResolvedFrame(frames: StackFrame[]): StackFrame | undefined {
+    return frames.find((frame) => !frame.asyncBoundary && Boolean(frame.originalSource));
+  }
+
+  #findFirstResolvedCdpFrame(stack: CdpStackTrace): StackFrame | undefined {
+    const frame = stack.callFrames?.find((callFrame) => Boolean(callFrame.originalSource));
+    if (frame) {
+      return frame;
+    }
+    return stack.parent ? this.#findFirstResolvedCdpFrame(stack.parent) : undefined;
+  }
+
+  #promoteStackFrameLocation(
+    target: {
+      originalSource?: string;
+      originalLine?: number;
+      originalColumn?: number;
+      originalName?: string;
+    },
+    frame: StackFrame | undefined,
+  ): void {
+    if (!frame) {
+      return;
+    }
+
+    // Console API entries and some network initiators only expose location via
+    // stack frames. Promote the resolved frame so item-level renderers can use
+    // the source-mapped location directly instead of knowing stack internals.
+    if (!target.originalSource) {
+      target.originalSource = frame.originalSource;
+      target.originalLine = frame.originalLine;
+      target.originalColumn = frame.originalColumn;
+    }
+    if (!target.originalName && frame.originalName) {
+      target.originalName = frame.originalName;
     }
   }
 

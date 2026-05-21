@@ -83,6 +83,65 @@ interface ParsedMap {
   mappings: number[][][];
 }
 
+function parseMap(raw: SourceMapRaw): ParsedMap | null {
+  if (!raw || raw.version !== 3) return null;
+
+  if (raw.mappings) {
+    const sourceRoot = raw.sourceRoot || "";
+    return {
+      sources: (raw.sources || []).map((s) => sourceRoot + s),
+      names: raw.names || [],
+      mappings: decodeMappings(raw.mappings),
+    };
+  }
+
+  if (!raw.sections?.length) return null;
+
+  const parsed: ParsedMap = {
+    sources: [],
+    names: [],
+    mappings: [],
+  };
+
+  for (const section of raw.sections) {
+    if (!section.map) continue;
+    const child = parseMap(section.map);
+    if (!child) continue;
+
+    const sourceOffset = parsed.sources.length;
+    const nameOffset = parsed.names.length;
+    parsed.sources.push(...child.sources);
+    parsed.names.push(...child.names);
+
+    const lineOffset = section.offset?.line || 0;
+    const columnOffset = section.offset?.column || 0;
+    child.mappings.forEach((segments, childLine) => {
+      const targetLine = lineOffset + childLine;
+      if (!parsed.mappings[targetLine]) {
+        parsed.mappings[targetLine] = [];
+      }
+
+      for (const segment of segments) {
+        const shifted = [...segment];
+        shifted[0] += childLine === 0 ? columnOffset : 0;
+        if (shifted.length >= 4) {
+          shifted[1] += sourceOffset;
+        }
+        if (shifted.length >= 5) {
+          shifted[4] += nameOffset;
+        }
+        parsed.mappings[targetLine].push(shifted);
+      }
+    });
+  }
+
+  for (const segments of parsed.mappings) {
+    segments?.sort((a, b) => a[0] - b[0]);
+  }
+
+  return parsed;
+}
+
 export class SourceMapResolver {
   /**
    * Minimal source-map resolver used during stop-time enrichment.
@@ -95,12 +154,9 @@ export class SourceMapResolver {
   #maps = new Map<string, ParsedMap>();
 
   addMap(scriptUrl: string, raw: SourceMapRaw): void {
-    if (!raw || raw.version !== 3 || !raw.mappings) return;
-    const sourceRoot = raw.sourceRoot || "";
-    const sources = (raw.sources || []).map((s) => sourceRoot + s);
-    const names = raw.names || [];
-    const mappings = decodeMappings(raw.mappings);
-    this.#maps.set(scriptUrl, { sources, names, mappings });
+    const parsed = parseMap(raw);
+    if (!parsed) return;
+    this.#maps.set(scriptUrl, parsed);
   }
 
   resolve(url: string, line: number, column: number): ResolvedLocation | null {

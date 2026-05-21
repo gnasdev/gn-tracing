@@ -144,6 +144,7 @@ export interface UploadState {
 export interface UploadSettings {
   folderInput: string;
   folderId: string | null;
+  zipPasswordConfigured: boolean;
   captureRequestBodies: boolean;
   captureResponseBodies: boolean;
   captureWebSocketFrames: boolean;
@@ -154,7 +155,7 @@ export interface UploadHistoryEntry {
   uploadedAt: number;
   pageUrl: string;
   recordingUrl: string;
-  recordingFolderId: string;
+  recordingFolderId: string | null;
   targetFolderId: string | null;
   durationMs: number;
 }

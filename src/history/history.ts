@@ -85,21 +85,31 @@ uploadHistoryList.addEventListener("click", async (event) => {
       }
     },
     deleteHistoryEntry: async (historyEntryId, button) => {
+      const previousHistory = currentHistory;
+      renderHistory(currentHistory.filter((entry) => entry.id !== historyEntryId));
       button.disabled = true;
       try {
         const result = await chrome.runtime.sendMessage({
           action: "DELETE_UPLOAD_HISTORY_ENTRY",
           data: { historyEntryId },
-        }) as MessageResponse;
+        }) as MessageResponse & { uploadHistory?: UploadHistoryEntry[] };
 
         if (!result.ok) {
+          renderHistory(previousHistory);
           showError(result.error || "Failed to delete history item");
           button.disabled = false;
           return;
         }
 
-        renderHistory(currentHistory.filter((entry) => entry.id !== historyEntryId));
+        // Rerender from the service worker response so the page reflects the
+        // persisted local history state after deletion.
+        if (Array.isArray(result.uploadHistory)) {
+          renderHistory(result.uploadHistory);
+        } else {
+          await refreshHistory();
+        }
       } catch (error) {
+        renderHistory(previousHistory);
         showError((error as Error).message);
         button.disabled = false;
       }

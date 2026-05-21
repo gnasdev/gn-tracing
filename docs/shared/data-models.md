@@ -43,7 +43,7 @@ related:
 - `UploadState`
   tracks in-flight upload progress, status message, generated recording URL, and error.
 - `UploadSettings`
-  tracks the optional Drive target folder input and resolved folder ID.
+  tracks the Drive target folder input, which defaults to `/gn-tracing`, the resolved folder ID, capture privacy toggles, and whether a zip password is configured.
 - `UploadHistoryEntry`
   tracks recent uploaded replay links, Drive folder IDs, target folder scope, source page URL, and duration for popup/history UI.
 
@@ -63,10 +63,12 @@ related:
 - service worker runtime state is mirrored into `chrome.storage.session` under `gn_tracing_state`
 - Edge token fallback is stored in `chrome.storage.local`
 - console/network/WebSocket capture payloads stay in memory only for the active post-recording flow and are cleared after a successful Google Drive upload
-- Google Drive replay storage remains folder-scoped: each upload creates one folder with `metadata.json`, `manifest.json`, optional log JSON files, and ordered `video.part-XXX.webm` chunks
-- every upload also writes `recording-index.json`, which is the public replay entrypoint referenced by the hosted player URL
+- Google Drive replay storage is package-scoped: each upload writes one `gn-tracing-*.zip` directly into the configured upload folder
+- unprotected zips contain `metadata.json`, `manifest.json`, `recording-index.json`, optional log JSON files, and ordered `video.part-XXX.webm` chunks; the hosted player URL references the zip file ID
+- password-protected zips contain clear encryption metadata plus `encrypted-payload.bin`; the decrypted payload is the normal recording zip, and the player prompts for the password before loading artifacts
+- zip password settings are stored locally in extension storage and only a `zipPasswordConfigured` boolean is exposed through popup state snapshots
 - the offscreen recorded video blob is retained only until upload completes successfully; after that the blob and recorder references are released
 - source-map caches are temporary enrichment helpers and are discarded immediately after stored console/network artifacts are resolved
-- replay links identify a recording by the single recording index file ID path, while legacy query-param replay links can still be parsed by the player for compatibility
+- replay links identify a recording by the single zip file ID path, while legacy query-param replay links can still be parsed by the player for compatibility
 - standalone replay resolves those file IDs through the same-origin `/api/drive?id=<file-id>` proxy on Cloudflare Pages instead of browser-direct Drive fetches
-- upload history is stored in `chrome.storage.local` and synced as `gn-tracing-upload-history.json` per Drive target folder scope when Drive auth is available
+- upload history is stored only in `chrome.storage.local`; it is not synced or written into Google Drive

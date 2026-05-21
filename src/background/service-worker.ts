@@ -66,13 +66,10 @@ interface UploadSettingsStore {
   folderInput: string;
   folderId: string | null;
   folderPath: string[];
+  zipPassword: string;
   captureRequestBodies: boolean;
   captureResponseBodies: boolean;
   captureWebSocketFrames: boolean;
-}
-
-interface UploadHistoryFileMap {
-  [scopeKey: string]: string;
 }
 
 interface UploadSuccessResult {
@@ -95,11 +92,11 @@ const STORAGE_KEY_STATE = "gn_tracing_state";
 const STORAGE_KEY_ARTIFACTS = "gn_tracing_session_artifacts";
 const STORAGE_KEY_SETTINGS = "gn_tracing_upload_settings";
 const STORAGE_KEY_HISTORY = "gn_tracing_upload_history";
-const STORAGE_KEY_HISTORY_FILES = "gn_tracing_upload_history_files";
-const UPLOAD_HISTORY_FILENAME = "gn-tracing-upload-history.json";
+const DEFAULT_UPLOAD_FOLDER_INPUT = "/gn-tracing";
 const MAX_UPLOAD_HISTORY_ITEMS = 100;
 const UPLOAD_ARTIFACT_CHUNK_CHARS = 1024 * 1024;
 const GITHUB_LATEST_RELEASE_URL = "https://api.github.com/repos/gnasdev/gn-tracing/releases/latest";
+const DEFAULT_UPLOAD_FOLDER = parseGoogleDriveFolderInput(DEFAULT_UPLOAD_FOLDER_INPUT);
 
 const activeRecording: ActiveRecordingState = {
   sessionId: null,
@@ -122,9 +119,10 @@ const googleDriveState = {
 };
 
 let cachedUploadSettings: UploadSettingsStore = {
-  folderInput: "",
-  folderId: null,
-  folderPath: [],
+  folderInput: DEFAULT_UPLOAD_FOLDER.normalizedInput,
+  folderId: DEFAULT_UPLOAD_FOLDER.folderId,
+  folderPath: [...DEFAULT_UPLOAD_FOLDER.folderPath],
+  zipPassword: "",
   captureRequestBodies: false,
   captureResponseBodies: false,
   captureWebSocketFrames: false,
@@ -231,21 +229,28 @@ async function getUploadSettings(): Promise<UploadSettingsStore> {
   try {
     const result = await chrome.storage.local.get(STORAGE_KEY_SETTINGS);
     const stored = result[STORAGE_KEY_SETTINGS] as Partial<UploadSettingsStore> | undefined;
+    const storedHasFolderInput = typeof stored?.folderInput === "string";
+    // Only missing folder settings use the default; saved blank values still mean Drive root.
+    const parsedFolder = storedHasFolderInput
+      ? parseGoogleDriveFolderInput(stored.folderInput)
+      : DEFAULT_UPLOAD_FOLDER;
     cachedUploadSettings = {
-      folderInput: typeof stored?.folderInput === "string" ? stored.folderInput : "",
-      folderId: typeof stored?.folderId === "string" ? stored.folderId : null,
+      folderInput: parsedFolder.normalizedInput,
+      folderId: typeof stored?.folderId === "string" ? stored.folderId : parsedFolder.folderId,
       folderPath: Array.isArray(stored?.folderPath)
         ? stored.folderPath.filter((segment) => typeof segment === "string")
-        : [],
+        : [...parsedFolder.folderPath],
+      zipPassword: typeof stored?.zipPassword === "string" ? stored.zipPassword : "",
       captureRequestBodies: Boolean(stored?.captureRequestBodies),
       captureResponseBodies: Boolean(stored?.captureResponseBodies),
       captureWebSocketFrames: Boolean(stored?.captureWebSocketFrames),
     };
   } catch {
     cachedUploadSettings = {
-      folderInput: "",
-      folderId: null,
-      folderPath: [],
+      folderInput: DEFAULT_UPLOAD_FOLDER.normalizedInput,
+      folderId: DEFAULT_UPLOAD_FOLDER.folderId,
+      folderPath: [...DEFAULT_UPLOAD_FOLDER.folderPath],
+      zipPassword: "",
       captureRequestBodies: false,
       captureResponseBodies: false,
       captureWebSocketFrames: false,
@@ -287,33 +292,11 @@ async function saveUploadHistory(history: UploadHistoryEntry[]): Promise<void> {
   });
 }
 
-async function getUploadHistoryFileMap(): Promise<UploadHistoryFileMap> {
-  try {
-    const result = await chrome.storage.local.get(STORAGE_KEY_HISTORY_FILES);
-    const fileMap = result[STORAGE_KEY_HISTORY_FILES];
-    if (!fileMap || typeof fileMap !== "object") {
-      return {};
-    }
-    return fileMap as UploadHistoryFileMap;
-  } catch {
-    return {};
-  }
-}
-
-async function saveUploadHistoryFileMap(fileMap: UploadHistoryFileMap): Promise<void> {
-  await chrome.storage.local.set({
-    [STORAGE_KEY_HISTORY_FILES]: fileMap,
-  });
-}
-
-function getUploadHistoryScopeKey(folderId: string | null): string {
-  return folderId || "root";
-}
-
 function getSettingsSnapshot(settings: UploadSettingsStore): UploadSettings {
   return {
     folderInput: settings.folderInput,
     folderId: settings.folderId,
+    zipPasswordConfigured: settings.zipPassword.length > 0,
     captureRequestBodies: settings.captureRequestBodies,
     captureResponseBodies: settings.captureResponseBodies,
     captureWebSocketFrames: settings.captureWebSocketFrames,
@@ -908,92 +891,13 @@ async function getPopupSettingsResponse(): Promise<MessageResponse & {
   };
 }
 
-async function upsertDriveJsonFile(params: {
-  authToken: string;
-  filename: string;
-  parentFolderId: string | null;
-  fileId?: string;
-  content: string;
-}): Promise<string> {
-  const metadata: Record<string, unknown> = {
-    name: params.filename,
-    mimeType: "application/json",
-  };
-
-  if (!params.fileId && params.parentFolderId) {
-    metadata.parents = [params.parentFolderId];
-  }
-
-  const boundary = `gn-tracing-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  const multipartBody =
-    `--${boundary}\r\n` +
-    "Content-Type: application/json; charset=UTF-8\r\n\r\n" +
-    `${JSON.stringify(metadata)}\r\n` +
-    `--${boundary}\r\n` +
-    "Content-Type: application/json\r\n\r\n" +
-    `${params.content}\r\n` +
-    `--${boundary}--`;
-
-  const endpoint = params.fileId
-    ? `https://www.googleapis.com/upload/drive/v3/files/${params.fileId}?uploadType=multipart&supportsAllDrives=true`
-    : "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id&supportsAllDrives=true";
-  const method = params.fileId ? "PATCH" : "POST";
-
-  const response = await fetch(endpoint, {
-    method,
-    headers: {
-      Authorization: `Bearer ${params.authToken}`,
-      "Content-Type": `multipart/related; boundary=${boundary}`,
-    },
-    body: multipartBody,
-  });
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(error.error?.message || `Drive history sync failed with status ${response.status}`);
-  }
-
-  const payload = await response.json().catch(() => ({}));
-  return (payload.id as string | undefined) || params.fileId || "";
-}
-
-async function syncAllUploadHistoryFiles(
-  authToken: string,
-  history: UploadHistoryEntry[],
-): Promise<void> {
-  const fileMap = await getUploadHistoryFileMap();
-  const allScopeKeys = new Set<string>([
-    ...Object.keys(fileMap),
-    ...history.map((entry) => getUploadHistoryScopeKey(entry.targetFolderId)),
-  ]);
-
-  for (const scopeKey of allScopeKeys) {
-    const scopedHistory = history.filter((entry) => getUploadHistoryScopeKey(entry.targetFolderId) === scopeKey);
-    const targetFolderId = scopeKey === "root" ? null : scopeKey;
-    const existingFileId = fileMap[scopeKey];
-    const historyFileId = await upsertDriveJsonFile({
-      authToken,
-      filename: UPLOAD_HISTORY_FILENAME,
-      parentFolderId: targetFolderId,
-      fileId: existingFileId,
-      content: JSON.stringify(scopedHistory, null, 2),
-    });
-
-    if (historyFileId) {
-      fileMap[scopeKey] = historyFileId;
-    }
-  }
-
-  await saveUploadHistoryFileMap(fileMap);
-}
-
 async function persistUploadHistory(session: RecordingSessionSummary, targetFolderId: string | null): Promise<void> {
-  if (!session.recordingUrl || !session.recordingFolderId) {
+  if (!session.recordingUrl) {
     return;
   }
 
   const entry: UploadHistoryEntry = {
-    id: `${session.recordingFolderId}:${Date.now()}`,
+    id: `${session.indexFileId || session.recordingUrl}:${Date.now()}`,
     uploadedAt: Date.now(),
     pageUrl: session.tabUrl || "",
     recordingUrl: session.recordingUrl,
@@ -1005,17 +909,6 @@ async function persistUploadHistory(session: RecordingSessionSummary, targetFold
   const history = [entry, ...(await getUploadHistory())].slice(0, MAX_UPLOAD_HISTORY_ITEMS);
   await saveUploadHistory(history);
   notifyPopupStateUpdated(await saveStateToStorage());
-
-  const authToken = await googleAuth.getAuthToken();
-  if (!authToken) {
-    return;
-  }
-
-  try {
-    await syncAllUploadHistoryFiles(authToken, history);
-  } catch (error) {
-    console.warn("[Upload History] Failed to sync history JSON to Drive:", error);
-  }
 }
 
 async function deleteUploadHistoryEntry(
@@ -1033,16 +926,6 @@ async function deleteUploadHistoryEntry(
   }
 
   await saveUploadHistory(nextHistory);
-  notifyPopupStateUpdated(await saveStateToStorage());
-
-  const authToken = await googleAuth.getAuthToken();
-  if (authToken) {
-    try {
-      await syncAllUploadHistoryFiles(authToken, nextHistory);
-    } catch (error) {
-      console.warn("[Upload History] Failed to sync deletion to Drive:", error);
-    }
-  }
 
   const popupState = await saveStateToStorage();
   notifyPopupStateUpdated(popupState);
@@ -1084,6 +967,8 @@ async function updateUploadSettingsFromMessage(
 ): Promise<MessageResponse & { settings?: UploadSettings }> {
   const existingSettings = await getUploadSettings();
   const hasFolderInput = typeof data?.folderInput === "string";
+  const hasZipPassword = typeof data?.zipPassword === "string";
+  const shouldClearZipPassword = data?.clearZipPassword === true;
   const parsed = hasFolderInput
     ? parseGoogleDriveFolderInput(data.folderInput as string)
     : {
@@ -1103,6 +988,12 @@ async function updateUploadSettingsFromMessage(
     folderInput: parsed.normalizedInput,
     folderId: parsed.folderId,
     folderPath: parsed.folderPath,
+    // Keep plaintext password out of popup snapshots; it is only read here for uploads.
+    zipPassword: shouldClearZipPassword
+      ? ""
+      : hasZipPassword
+        ? (data.zipPassword as string)
+        : existingSettings.zipPassword,
     captureRequestBodies: typeof data?.captureRequestBodies === "boolean"
       ? data.captureRequestBodies
       : existingSettings.captureRequestBodies,
@@ -1204,6 +1095,7 @@ async function runSessionUpload(sessionId: string, authToken: string): Promise<v
         authToken,
         targetFolderId: settings.folderId,
         targetFolderPath: settings.folderPath,
+        zipPassword: settings.zipPassword || null,
       },
     }) as MessageResponse & Partial<UploadSuccessResult>;
 

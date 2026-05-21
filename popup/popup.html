@@ -66,7 +66,17 @@
     </div>
 
     <div id="session-queue-section">
-      <div class="section-title">Capture Queue</div>
+      <div class="section-title section-title-with-icon">
+        <svg class="section-title-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M8 6h13"/>
+          <path d="M8 12h13"/>
+          <path d="M8 18h13"/>
+          <path d="M3 6h.01"/>
+          <path d="M3 12h.01"/>
+          <path d="M3 18h.01"/>
+        </svg>
+        <span>Capture Queue</span>
+      </div>
       <div id="session-list" class="session-list"></div>
     </div>
 
@@ -74,7 +84,14 @@
 
     <div id="upload-history-section">
       <div class="section-title-row">
-        <div class="section-title">Latest Upload</div>
+        <div class="section-title section-title-with-icon">
+          <svg class="section-title-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 16V4"/>
+            <path d="m7 9 5-5 5 5"/>
+            <path d="M20 16.5A3.5 3.5 0 0 1 16.5 20h-9A3.5 3.5 0 0 1 4 16.5"/>
+          </svg>
+          <span>Latest Upload</span>
+        </div>
         <button
           id="upload-history-page-btn"
           class="icon-btn history-page-btn"
@@ -104,7 +121,17 @@
     </div>
 
     <details id="settings-panel" class="expandable-section settings-panel">
-      <summary>Settings</summary>
+      <summary>
+        <span class="section-title-with-icon">
+          <svg class="section-title-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 7h16"/>
+            <path d="M4 17h16"/>
+            <path d="M9 7a2 2 0 1 0-4 0 2 2 0 0 0 4 0Z"/>
+            <path d="M19 17a2 2 0 1 0-4 0 2 2 0 0 0 4 0Z"/>
+          </svg>
+          <span>Settings</span>
+        </span>
+      </summary>
       <div id="settings-google-drive-slot"></div>
       <div id="upload-folder-section" class="settings-section">
         <label for="google-drive-folder-input" class="setting-label">Upload Folder</label>
@@ -112,8 +139,8 @@
           <input
             id="google-drive-folder-input"
             type="text"
-            value="/"
-            placeholder="Folder ID or Drive link"
+            value="/gn-tracing"
+            placeholder="/gn-tracing, folder ID, or Drive link"
             autocomplete="off"
             disabled
           >
@@ -125,7 +152,31 @@
             title="Edit upload folder"
           ></button>
         </div>
-        <div id="google-drive-folder-hint" class="setting-hint">Using your Google Drive root folder.</div>
+        <div id="google-drive-folder-hint" class="setting-hint">Using Google Drive folder: /gn-tracing.</div>
+      </div>
+      <div id="zip-password-section" class="settings-section">
+        <label for="zip-password-input" class="setting-label">Zip Password</label>
+        <div class="folder-input-row password-input-row">
+          <input
+            id="zip-password-input"
+            type="password"
+            placeholder="Set password for new uploads"
+            autocomplete="new-password"
+          >
+          <button
+            id="save-zip-password-btn"
+            class="btn btn-secondary btn-small folder-edit-btn"
+            type="button"
+            aria-label="Save zip password"
+            title="Save zip password"
+          ></button>
+          <button
+            id="clear-zip-password-btn"
+            class="btn btn-secondary btn-small password-clear-btn hidden"
+            type="button"
+          >Clear</button>
+        </div>
+        <div id="zip-password-hint" class="setting-hint">No zip password configured.</div>
       </div>
       <div id="capture-privacy-section" class="settings-section">
         <div class="section-title">Capture Privacy</div>
@@ -146,7 +197,16 @@
     </details>
 
     <details id="capture-disclosure" class="expandable-section capture-disclosure">
-      <summary>Info</summary>
+      <summary>
+        <span class="section-title-with-icon">
+          <svg class="section-title-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="9"/>
+            <path d="M12 11v5"/>
+            <path d="M12 8h.01"/>
+          </svg>
+          <span>Info</span>
+        </span>
+      </summary>
       <div class="capture-disclosure-copy">
         Records the selected tab video, console logs, network metadata, and redacted headers. Uploaded replay files are readable by link.
       </div>
@@ -158,8 +218,19 @@
           </p>
         </div>
         <div class="community-actions">
-          <button id="github-link-btn" class="btn btn-secondary" type="button">GitHub</button>
-          <button id="contribute-link-btn" class="btn btn-secondary" type="button">Contribute</button>
+          <button id="github-link-btn" class="btn btn-secondary" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="currentColor">
+              <path d="M12 2a10 10 0 0 0-3.16 19.49c.5.09.68-.22.68-.48v-1.7c-2.78.6-3.37-1.18-3.37-1.18a2.65 2.65 0 0 0-1.1-1.45c-.9-.62.07-.6.07-.6a2.1 2.1 0 0 1 1.53 1.03a2.13 2.13 0 0 0 2.91.83c.05-.52.26-1 .62-1.36c-2.22-.25-4.56-1.11-4.56-4.95a3.87 3.87 0 0 1 1.03-2.69a3.6 3.6 0 0 1 .1-2.65s.84-.27 2.75 1.03a9.46 9.46 0 0 1 5 0c1.91-1.3 2.75-1.03 2.75-1.03c.37.83.4 1.77.1 2.65a3.86 3.86 0 0 1 1.03 2.69c0 3.85-2.34 4.69-4.57 4.94c.36.31.68.92.68 1.86v2.57c0 .27.18.58.69.48A10 10 0 0 0 12 2Z"/>
+            </svg>
+            <span>GitHub</span>
+          </button>
+          <button id="contribute-link-btn" class="btn btn-secondary" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 5v14"/>
+              <path d="M5 12h14"/>
+            </svg>
+            <span>Contribute</span>
+          </button>
         </div>
       </div>
     </details>

@@ -66,7 +66,7 @@ The extension package does not load remote executable JavaScript. Extension page
 5. Start recording, interact with the page, then stop recording.
 6. Wait for upload to complete.
 7. Open the replay link and confirm the player shows the video and captured artifacts.
-8. Confirm the generated Drive folder contains GN Tracing replay files and that the link-readable replay loads.
+8. Confirm the configured Drive upload folder contains the generated GN Tracing zip package and that the link-readable replay loads.
 
 ## Pre-submit Checklist
 

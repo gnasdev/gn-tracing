@@ -50,7 +50,9 @@ interface CdpRequestWillBeSentExtraInfoParams {
 
 interface CdpResponseReceivedParams {
   requestId: string;
+  type?: string;
   response: {
+    url?: string;
     status: number;
     statusText: string;
     headers: Record<string, string>;
@@ -142,6 +144,9 @@ interface CdpLogEntryAddedParams {
 interface CdpScriptParsedParams {
   url: string;
   sourceMapURL?: string;
+  executionContextAuxData?: {
+    frameId?: string;
+  };
 }
 
 interface CdpAttachedToTargetParams {
@@ -155,6 +160,19 @@ interface CdpAttachedToTargetParams {
 
 interface CdpDetachedFromTargetParams {
   sessionId: string;
+}
+
+interface CdpLoadNetworkResourceResult {
+  resource?: {
+    success?: boolean;
+    stream?: string;
+  };
+}
+
+interface CdpIoReadResult {
+  data?: string;
+  base64Encoded?: boolean;
+  eof?: boolean;
 }
 
 interface CdpRemoteObject {
@@ -201,6 +219,8 @@ interface CaptureSettings {
 }
 
 const REDACTED_VALUE = "[redacted by GN Tracing]";
+const SOURCE_MAP_MAX_BYTES = 50 * 1024 * 1024;
+const SOURCE_MAP_READ_CHUNK_BYTES = 1024 * 1024;
 const SENSITIVE_HEADER_PATTERNS = [
   "authorization",
   "cookie",
@@ -224,6 +244,8 @@ export class CdpManager {
   #pendingEarlyHints = new Map<string, Record<string, string>>();
   #pendingServedFromCache = new Set<string>();
   #attachedSessions = new Set<string>();
+  #sourceMapHints = new Map<string, string>();
+  #sourceMapFetchKeys = new Set<string>();
   #storage: StorageManager;
   #attached = false;
   #boundEventHandler: (source: chrome.debugger.Debuggee, method: string, params?: object) => void;
@@ -835,7 +857,12 @@ export class CdpManager {
   #onScriptParsed(source: chrome.debugger.Debuggee, params: CdpScriptParsedParams): void {
     if (params.sourceMapURL && params.url) {
       const promise = this.#trackSourceMapFetch(
-        this.#fetchAndRegisterSourceMap(source, params.url, params.sourceMapURL),
+        this.#fetchAndRegisterSourceMap(
+          source,
+          params.url,
+          params.sourceMapURL,
+          params.executionContextAuxData?.frameId,
+        ),
       );
       this.#sourceMapFetches.add(promise);
     }
@@ -852,10 +879,11 @@ export class CdpManager {
     source: chrome.debugger.Debuggee,
     scriptUrl: string,
     sourceMapURL: string,
+    frameId?: string,
   ): Promise<void> {
     try {
       const resolvedUrl = this.#resolveSourceMapUrl(sourceMapURL, scriptUrl);
-      const content = await this.#fetchSourceMapContent(source, resolvedUrl);
+      const content = await this.#fetchSourceMapContent(source, resolvedUrl, frameId);
       if (content) {
         const raw = JSON.parse(content);
         this.#sourceMapResolver.addMap(scriptUrl, raw);
@@ -874,7 +902,11 @@ export class CdpManager {
     }
   }
 
-  async #fetchSourceMapContent(source: chrome.debugger.Debuggee, url: string): Promise<string | null> {
+  async #fetchSourceMapContent(
+    source: chrome.debugger.Debuggee,
+    url: string,
+    frameId?: string,
+  ): Promise<string | null> {
     if (url.startsWith("data:")) {
       const commaIdx = url.indexOf(",");
       if (commaIdx < 0) return null;
@@ -884,13 +916,17 @@ export class CdpManager {
     }
 
     if (!this.#attached || !this.#tabId) return null;
+    const cdpContent = await this.#loadSourceMapResource(source, url, frameId);
+    if (cdpContent) {
+      return cdpContent;
+    }
+
     try {
-      const maxSize = 5 * 1024 * 1024;
       const result = await this.#sendCommand(
         source,
         "Runtime.evaluate",
         {
-          expression: `fetch(${JSON.stringify(url)}).then(r=>r.ok?r.text():null).then(t=>t&&t.length<=${maxSize}?t:null).catch(()=>null)`,
+          expression: `fetch(${JSON.stringify(url)}, { credentials: "include" }).then(r=>r.ok?r.text():null).then(t=>t&&t.length<=${SOURCE_MAP_MAX_BYTES}?t:null).catch(()=>null)`,
           awaitPromise: true,
           returnByValue: true,
         }
@@ -899,6 +935,87 @@ export class CdpManager {
     } catch {
       return null;
     }
+  }
+
+  async #loadSourceMapResource(
+    source: chrome.debugger.Debuggee,
+    url: string,
+    frameId?: string,
+  ): Promise<string | null> {
+    try {
+      const params: {
+        frameId?: string;
+        url: string;
+        options: { disableCache: boolean; includeCredentials: boolean };
+      } = {
+        url,
+        options: {
+          disableCache: false,
+          includeCredentials: true,
+        },
+      };
+      if (frameId) {
+        params.frameId = frameId;
+      }
+
+      const result = await this.#sendCommand(
+        source,
+        "Network.loadNetworkResource",
+        params,
+      ) as CdpLoadNetworkResourceResult | undefined;
+
+      const stream = result?.resource?.success ? result.resource.stream : undefined;
+      return stream ? this.#readProtocolStream(source, stream) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  async #readProtocolStream(source: chrome.debugger.Debuggee, stream: string): Promise<string | null> {
+    const decoder = new TextDecoder();
+    let content = "";
+    let bytesRead = 0;
+
+    try {
+      while (true) {
+        const chunk = await this.#sendCommand(source, "IO.read", {
+          handle: stream,
+          size: SOURCE_MAP_READ_CHUNK_BYTES,
+        }) as CdpIoReadResult | undefined;
+
+        const data = chunk?.data || "";
+        if (chunk?.base64Encoded) {
+          const bytes = this.#base64ToBytes(data);
+          bytesRead += bytes.byteLength;
+          if (bytesRead > SOURCE_MAP_MAX_BYTES) return null;
+          content += decoder.decode(bytes, { stream: !chunk.eof });
+        } else {
+          bytesRead += data.length;
+          if (bytesRead > SOURCE_MAP_MAX_BYTES) return null;
+          content += data;
+        }
+
+        if (chunk?.eof) {
+          if (chunk.base64Encoded) {
+            content += decoder.decode();
+          }
+          return content || null;
+        }
+      }
+    } catch {
+      return null;
+    } finally {
+      await this.#sendCommand(source, "IO.close", { handle: stream }).catch(() => {});
+    }
+  }
+
+  #base64ToBytes(value: string): Uint8Array {
+    const binary = atob(value);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) {
+      bytes[index] = binary.charCodeAt(index);
+    }
+    return bytes;
   }
 
   #toEpochMs(ts: number | undefined): number {

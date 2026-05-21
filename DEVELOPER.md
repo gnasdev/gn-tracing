@@ -86,15 +86,15 @@ Rebuild and reload the unpacked extension after source changes.
 
 ## Upload And Replay Model
 
-After upload, GN Tracing creates a Drive folder with recording artifacts such as `metadata.json`, `manifest.json`, `recording-index.json`, optional log files, and ordered `video.part-XXX.webm` files.
+After upload, GN Tracing writes one Drive zip package directly into the configured upload folder. The package contains recording artifacts such as `metadata.json`, `manifest.json`, `recording-index.json`, optional log files, and ordered `video.part-XXX.webm` files.
 
-The public replay URL uses the recording index file ID:
+The public replay URL uses the zip file ID:
 
 ```text
-https://tracing.gnas.dev/<recording-index-file-id>
+https://tracing.gnas.dev/<zip-file-id>
 ```
 
-The hosted player loads that index first, then fetches the referenced artifacts through the Cloudflare Pages Drive proxy.
+The hosted player downloads that zip through the Cloudflare Pages Drive proxy, unpacks it locally, and reads the embedded recording index and artifacts.
 
 ## Development Notes
 

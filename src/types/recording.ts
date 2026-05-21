@@ -64,6 +64,7 @@ export interface ConsoleEntry {
   originalSource?: string;
   originalLine?: number;
   originalColumn?: number;
+  originalName?: string;
 }
 
 export interface NetworkEntry {
@@ -103,6 +104,7 @@ export interface NetworkInitiator {
   originalSource?: string;
   originalLine?: number;
   originalColumn?: number;
+  originalName?: string;
 }
 
 export interface CdpStackTrace {
@@ -165,8 +167,18 @@ export interface SourceMapRaw {
   version: number;
   sources?: string[];
   names?: string[];
-  mappings: string;
+  mappings?: string;
   sourceRoot?: string;
+  sections?: SourceMapSection[];
+}
+
+export interface SourceMapSection {
+  offset: {
+    line: number;
+    column: number;
+  };
+  map?: SourceMapRaw;
+  url?: string;
 }
 
 export interface ResolvedLocation {

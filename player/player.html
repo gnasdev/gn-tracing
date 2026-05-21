@@ -23,6 +23,26 @@
       <div id="loading-progress-list" class="loading-progress-list"></div>
     </div>
 
+    <div id="password-state" class="state-container hidden">
+      <div class="password-panel">
+        <h2>Protected Recording</h2>
+        <p>This recording package requires a password before it can be replayed.</p>
+        <form id="recording-password-form" class="password-form">
+          <label for="recording-password-input">Recording password</label>
+          <div class="password-entry-row">
+            <input
+              id="recording-password-input"
+              type="password"
+              autocomplete="current-password"
+              placeholder="Enter password"
+            >
+            <button id="recording-password-submit" type="submit">Unlock</button>
+          </div>
+          <p id="recording-password-error" class="password-error hidden"></p>
+        </form>
+      </div>
+    </div>
+
     <!-- Error state -->
     <div id="error-state" class="state-container hidden">
       <h2>Invalid Recording Parameters</h2>

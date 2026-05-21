@@ -47,6 +47,7 @@ interface GoogleDriveUploadData extends ZipData {
   authToken: string;
   targetFolderId?: string | null;
   targetFolderPath?: string[];
+  zipPassword?: string | null;
   artifactKeys?: {
     consoleLogs?: boolean;
     networkRequests?: boolean;
@@ -73,7 +74,7 @@ interface DriveFileDescriptor {
 
 interface RecordingManifest {
   schemaVersion: number;
-  folderId: string;
+  folderId: string | null;
   video: {
     mimeType: string;
     totalBytes: number;
@@ -107,6 +108,12 @@ const UPLOAD_PROGRESS_MIN_DELTA = 0.5;
 const ZIP_LOCAL_FILE_HEADER_SIGNATURE = 0x04034b50;
 const ZIP_CENTRAL_DIRECTORY_SIGNATURE = 0x02014b50;
 const ZIP_END_OF_CENTRAL_DIRECTORY_SIGNATURE = 0x06054b50;
+const ZIP_ENCRYPTION_PAYLOAD_PATH = "encrypted-payload.bin";
+const ZIP_ENCRYPTION_ALGORITHM = "AES-GCM";
+const ZIP_ENCRYPTION_KDF = "PBKDF2-SHA-256";
+const ZIP_ENCRYPTION_ITERATIONS = 250_000;
+const ZIP_ENCRYPTION_SALT_BYTES = 16;
+const ZIP_ENCRYPTION_IV_BYTES = 12;
 
 // The offscreen document exposes a small command surface to the service worker.
 // Keep message names stable with the service-worker caller because there is no
@@ -465,6 +472,94 @@ async function createZipBlob(entries: Array<{ name: string; blob: Blob }>, modif
   return new Blob([...chunks, ...centralDirectory, endRecord], { type: "application/zip" });
 }
 
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+  return btoa(binary);
+}
+
+function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+}
+
+async function deriveZipPasswordKey(password: string, salt: Uint8Array, usages: KeyUsage[]): Promise<CryptoKey> {
+  if (!globalThis.crypto?.subtle) {
+    throw new Error("Browser crypto is not available for password-protected recordings.");
+  }
+
+  const keyMaterial = await globalThis.crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(password),
+    { name: "PBKDF2" },
+    false,
+    ["deriveKey"],
+  );
+
+  return globalThis.crypto.subtle.deriveKey(
+    {
+      name: "PBKDF2",
+      hash: "SHA-256",
+      salt: toArrayBuffer(salt),
+      iterations: ZIP_ENCRYPTION_ITERATIONS,
+    },
+    keyMaterial,
+    { name: ZIP_ENCRYPTION_ALGORITHM, length: 256 },
+    false,
+    usages,
+  );
+}
+
+async function createEncryptedZipBlob(
+  innerZipBlob: Blob,
+  password: string,
+  zipFilename: string,
+  targetFolderId: string | null,
+  modifiedAt: Date,
+): Promise<Blob> {
+  const salt = globalThis.crypto.getRandomValues(new Uint8Array(ZIP_ENCRYPTION_SALT_BYTES));
+  const iv = globalThis.crypto.getRandomValues(new Uint8Array(ZIP_ENCRYPTION_IV_BYTES));
+  const key = await deriveZipPasswordKey(password, salt, ["encrypt"]);
+  const encryptedPayload = await globalThis.crypto.subtle.encrypt(
+    { name: ZIP_ENCRYPTION_ALGORITHM, iv: toArrayBuffer(iv) },
+    key,
+    await innerZipBlob.arrayBuffer(),
+  );
+  const clearIndex = {
+    schemaVersion: 3,
+    folderId: targetFolderId,
+    package: {
+      filename: zipFilename,
+      format: "zip",
+      encrypted: true,
+    },
+    encryption: {
+      version: 1,
+      algorithm: ZIP_ENCRYPTION_ALGORITHM,
+      kdf: ZIP_ENCRYPTION_KDF,
+      iterations: ZIP_ENCRYPTION_ITERATIONS,
+      salt: bytesToBase64(salt),
+      iv: bytesToBase64(iv),
+      payloadPath: ZIP_ENCRYPTION_PAYLOAD_PATH,
+      cleartext: "gn-tracing-recording-zip",
+    },
+  };
+
+  // The outer ZIP deliberately exposes only unlock metadata; the replay artifacts
+  // remain inside the encrypted inner ZIP until the player receives the password.
+  return createZipBlob([
+    {
+      name: "recording-index.json",
+      blob: new Blob([JSON.stringify(clearIndex, null, 2)], { type: "application/json" }),
+    },
+    {
+      name: ZIP_ENCRYPTION_PAYLOAD_PATH,
+      blob: new Blob([encryptedPayload], { type: "application/octet-stream" }),
+    },
+  ], modifiedAt);
+}
+
 async function uploadToGoogleDrive(
   data: GoogleDriveUploadData,
 ): Promise<{ ok: boolean; recordingUrl?: string; folderId?: string; indexFileId?: string; targetFolderId?: string | null; error?: string }> {
@@ -579,7 +674,7 @@ async function uploadToGoogleDrive(
     const uploadFile = async (
       filename: string,
       blob: Blob,
-      parentId: string,
+      parentId: string | null,
       onProgress?: (loaded: number, total: number) => void,
     ): Promise<string> => {
       // A single recording package can be much larger than the old split parts,
@@ -597,7 +692,7 @@ async function uploadToGoogleDrive(
             },
             body: JSON.stringify({
               name: filename,
-              parents: [parentId],
+              ...(parentId ? { parents: [parentId] } : {}),
             }),
           },
         );
@@ -654,7 +749,7 @@ async function uploadToGoogleDrive(
           [
             JSON.stringify({
               name: filename,
-              parents: [parentId],
+              ...(parentId ? { parents: [parentId] } : {}),
             }),
           ],
           { type: "application/json" },
@@ -752,7 +847,6 @@ async function uploadToGoogleDrive(
 
     emitProgress("Preparing upload...");
     const targetFolderId = await resolveFolderPath(data.targetFolderPath, data.targetFolderId);
-    const folderId = await createFolder(baseName, targetFolderId);
     completedSteps += 1;
 
     packageStatus = "uploading";
@@ -792,7 +886,7 @@ async function uploadToGoogleDrive(
             version: "1.0.0",
             storage: {
               provider: "google-drive",
-              folderId,
+              folderId: targetFolderId,
               package: zipFilename,
             },
             video: {
@@ -809,7 +903,7 @@ async function uploadToGoogleDrive(
     );
     const manifest: RecordingManifest = {
       schemaVersion: 1,
-      folderId,
+      folderId: targetFolderId,
       video: {
         mimeType: snapshot.mimeType,
         totalBytes: snapshot.blob.size,
@@ -823,7 +917,7 @@ async function uploadToGoogleDrive(
     const manifestBlob = new Blob([JSON.stringify(manifest, null, 2)], { type: "application/json" });
     const recordingIndex = {
       schemaVersion: 2,
-      folderId,
+      folderId: targetFolderId,
       package: {
         filename: zipFilename,
         format: "zip",
@@ -862,7 +956,14 @@ async function uploadToGoogleDrive(
       zipEntries.push({ name: "websocket.json", blob: websocketBlob });
     }
 
-    const zipBlob = await createZipBlob(zipEntries, now);
+    const zipPassword = typeof data.zipPassword === "string" ? data.zipPassword : "";
+    const innerZipBlob = await createZipBlob(zipEntries, now);
+    if (zipPassword) {
+      emitProgress("Encrypting recording package...", true);
+    }
+    const zipBlob = zipPassword
+      ? await createEncryptedZipBlob(innerZipBlob, zipPassword, zipFilename, targetFolderId, now)
+      : innerZipBlob;
     totalUploadBytes = zipBlob.size;
     completedSteps += 1;
     uploadedBytes = 0;
@@ -870,7 +971,7 @@ async function uploadToGoogleDrive(
 
     let zipFileId: string | null = null;
     try {
-      zipFileId = await uploadFile(zipFilename, zipBlob, folderId, (loaded, total) => {
+      zipFileId = await uploadFile(zipFilename, zipBlob, targetFolderId, (loaded, total) => {
         uploadedBytes = Math.min(loaded, total || zipBlob.size);
         emitProgress("Uploading recording package...");
       });
@@ -887,7 +988,7 @@ async function uploadToGoogleDrive(
     emitProgress("Upload complete!", true);
 
     const recordingUrl = buildExternalPlayerUrl(zipFileId || "");
-    return { ok: true, recordingUrl, folderId, indexFileId: zipFileId || undefined, targetFolderId };
+    return { ok: true, recordingUrl, folderId: targetFolderId || undefined, indexFileId: zipFileId || undefined, targetFolderId };
   } catch (error) {
     console.error("[Google Drive Upload] Error:", error);
     return { ok: false, error: (error as Error).message };

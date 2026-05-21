@@ -36,6 +36,9 @@
   const DRIVE_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
   const DRIVE_CACHE_MAX_BYTES = 5 * 1024 * 1024;
   const VIDEO_DOWNLOAD_CONCURRENCY = 4;
+  const ZIP_ENCRYPTION_PAYLOAD_PATH = 'encrypted-payload.bin';
+  const ZIP_ENCRYPTION_ALGORITHM = 'AES-GCM';
+  const ZIP_ENCRYPTION_KDF = 'PBKDF2-SHA-256';
   const DYNAMIC_ROUTE_EXTENSIONS = new Set(['.html', '.htm', '.php', '.asp', '.aspx', '.jsp']);
 
   console.log('[GN Tracing Player] Mode:', IS_EXTENSION ? 'extension' : 'standalone');
@@ -66,6 +69,8 @@
   let loadingProgressMessage = 'Loading recording...';
   const loadingProgressEntries = new Map();
   let expectedVideoBytes = 0;
+  let passwordPromptResolve = null;
+  let passwordPromptBusy = false;
 
   function releaseVideoResources() {
     if (videoUrl) {
@@ -80,10 +85,7 @@
   }
 
   // Auto-scroll refs
-  let lastScrolledConsoleIndex = -1;
-  let lastScrolledNetworkIndex = -1;
-  const consoleContainerRef = null;
-  const networkContainerRef = null;
+  const STICKY_SCROLL_THRESHOLD_PX = 8;
 
   // Recording files from Drive
   let recordingFiles = {
@@ -107,6 +109,11 @@
     elements.loadingProgressFill = document.getElementById('loading-progress-fill');
     elements.loadingProgressText = document.getElementById('loading-progress-text');
     elements.loadingProgressList = document.getElementById('loading-progress-list');
+    elements.passwordState = document.getElementById('password-state');
+    elements.passwordForm = document.getElementById('recording-password-form');
+    elements.passwordInput = document.getElementById('recording-password-input');
+    elements.passwordSubmit = document.getElementById('recording-password-submit');
+    elements.passwordError = document.getElementById('recording-password-error');
     elements.introState = document.getElementById('intro-state');
     elements.errorState = document.getElementById('error-state');
     elements.playerState = document.getElementById('player-state');
@@ -160,6 +167,7 @@
     elements.networkFilters = document.getElementById('network-filters');
     elements.networkSearch = document.getElementById('network-search');
     elements.networkSummary = document.getElementById('network-summary');
+    elements.networkEntries = document.getElementById('network-entries');
     elements.networkRows = document.getElementById('network-rows');
     elements.websocketSection = document.getElementById('websocket-section');
     elements.websocketRows = document.getElementById('websocket-rows');
@@ -328,6 +336,35 @@
       });
     }
     renderLoadingProgress();
+  }
+
+  function setPasswordPromptBusy(isBusy) {
+    passwordPromptBusy = isBusy;
+    if (elements.passwordInput) {
+      elements.passwordInput.disabled = isBusy;
+    }
+    if (elements.passwordSubmit) {
+      elements.passwordSubmit.disabled = isBusy;
+      elements.passwordSubmit.textContent = isBusy ? 'Unlocking...' : 'Unlock';
+    }
+  }
+
+  function setPasswordPromptError(message) {
+    if (!elements.passwordError) {
+      return;
+    }
+    elements.passwordError.textContent = message || '';
+    elements.passwordError.classList.toggle('hidden', !message);
+  }
+
+  function requestRecordingPassword(errorMessage = '') {
+    setPasswordPromptBusy(false);
+    setPasswordPromptError(errorMessage);
+    showPasswordPrompt();
+    return new Promise((resolve) => {
+      passwordPromptResolve = resolve;
+      window.setTimeout(() => elements.passwordInput?.focus(), 0);
+    });
   }
 
   function createLoadingProgressReporter(key, group, label) {
@@ -619,13 +656,80 @@
     return String(value);
   }
 
+  function isUsableLocationFrame(frame) {
+    return Boolean(frame && !frame.asyncBoundary && (frame.originalSource || frame.url));
+  }
+
+  function getFirstStackFrame(frames) {
+    return (frames || []).find(isUsableLocationFrame) || null;
+  }
+
+  function getFirstCdpStackFrame(stack) {
+    if (!stack) return null;
+    const frame = getFirstStackFrame(stack.callFrames);
+    return frame || getFirstCdpStackFrame(stack.parent);
+  }
+
+  function getLocationLine(location) {
+    return location.originalSource ? location.originalLine : location.lineNumber;
+  }
+
+  function getLocationColumn(location) {
+    return location.originalSource ? location.originalColumn : location.columnNumber;
+  }
+
+  function formatSourceLocation(location) {
+    if (!location) return '';
+    const source = location.originalSource || location.url || '';
+    if (!source) return '';
+
+    // Captured artifacts store CDP coordinates as zero-based values.
+    const line = getLocationLine(location);
+    const column = getLocationColumn(location);
+    if (typeof line !== 'number') return source;
+    if (typeof column !== 'number') return `${source}:${line + 1}`;
+    return `${source}:${line + 1}:${column + 1}`;
+  }
+
+  function preferSourceMappedLocation(primary, fallback) {
+    if (primary?.originalSource) return primary;
+    if (fallback?.originalSource) return fallback;
+    return primary || fallback || null;
+  }
+
+  function getConsoleSourceLocation(entry) {
+    const entryLocation = isUsableLocationFrame(entry) ? entry : null;
+    const stackLocation = getFirstStackFrame(entry.stackTrace);
+    return formatSourceLocation(
+      preferSourceMappedLocation(entryLocation, stackLocation)
+    );
+  }
+
+  function getNetworkInitiatorLocation(initiator) {
+    if (!initiator) return '';
+    const initiatorLocation = isUsableLocationFrame(initiator) ? initiator : null;
+    const stackLocation = getFirstCdpStackFrame(initiator.stack);
+    return formatSourceLocation(
+      preferSourceMappedLocation(initiatorLocation, stackLocation)
+    );
+  }
+
+  function getNetworkInitiatorSummary(initiator) {
+    const location = getNetworkInitiatorLocation(initiator);
+    if (!location) return '';
+    const type = initiator?.type || 'other';
+    return `${type} @ ${location}`;
+  }
+
   function getConsoleSearchText(entry) {
+    const sourceLocation = getConsoleSourceLocation(entry);
     const parts = [
       entry.source,
       entry.level,
       entry.message,
       entry.url,
       entry.originalSource,
+      sourceLocation,
       renderArgs(entry),
       ...(entry.args || []).map(stringifyForSearch),
       ...((entry.stackTrace || []).flatMap(frame => [
@@ -645,6 +749,7 @@
     const response = entry.response || {};
     const content = getNetworkResponseContent(entry);
     const initiator = entry.initiator || {};
+    const initiatorLocation = getNetworkInitiatorLocation(initiator);
 
     const parts = [
       entry.method,
@@ -669,6 +774,9 @@
       stringifyForSearch(response.headers),
       stringifyForSearch(entry.redirectChain),
       initiator.type,
+      initiator.url,
+      initiator.originalSource,
+      initiatorLocation,
       stringifyForSearch(initiator.stack),
     ];
 
@@ -1373,6 +1481,61 @@
     }
   }
 
+  function base64ToBytes(value) {
+    const binary = atob(value || '');
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) {
+      bytes[index] = binary.charCodeAt(index);
+    }
+    return bytes;
+  }
+
+  async function deriveRecordingPasswordKey(password, encryption) {
+    if (!globalThis.crypto?.subtle) {
+      throw new Error('Browser crypto is not available for password-protected recordings.');
+    }
+    if (encryption?.algorithm !== ZIP_ENCRYPTION_ALGORITHM || encryption?.kdf !== ZIP_ENCRYPTION_KDF) {
+      throw new Error('Unsupported recording package encryption.');
+    }
+
+    const iterations = Number(encryption.iterations);
+    if (!Number.isFinite(iterations) || iterations <= 0) {
+      throw new Error('Invalid recording package encryption metadata.');
+    }
+
+    const keyMaterial = await globalThis.crypto.subtle.importKey(
+      'raw',
+      new TextEncoder().encode(password),
+      { name: 'PBKDF2' },
+      false,
+      ['deriveKey']
+    );
+
+    return globalThis.crypto.subtle.deriveKey(
+      {
+        name: 'PBKDF2',
+        hash: 'SHA-256',
+        salt: base64ToBytes(encryption.salt),
+        iterations,
+      },
+      keyMaterial,
+      { name: ZIP_ENCRYPTION_ALGORITHM, length: 256 },
+      false,
+      ['decrypt']
+    );
+  }
+
+  async function decryptRecordingPackage(encryptedPayload, encryption, password) {
+    const key = await deriveRecordingPasswordKey(password, encryption);
+    const iv = base64ToBytes(encryption.iv);
+    const decrypted = await globalThis.crypto.subtle.decrypt(
+      { name: ZIP_ENCRYPTION_ALGORITHM, iv },
+      key,
+      await encryptedPayload.arrayBuffer()
+    );
+    return new Blob([decrypted], { type: 'application/zip' });
+  }
+
   async function unzipStoredPackage(blob) {
     // GN Tracing writes ZIP entries with the store method, which keeps the
     // player dependency-free while still producing a standard .zip file.
@@ -1525,6 +1688,81 @@
     }
   }
 
+  function isEncryptedPackageIndex(indexJson) {
+    return Boolean(indexJson?.encryption || indexJson?.package?.encrypted);
+  }
+
+  async function buildRecordingFilesFromPackageEntries(entries, indexJson, indexId) {
+    const manifestJson = await parseJsonBlob(getPackageEntry(entries, indexJson.manifestPath || 'manifest.json'), 'manifest.json');
+    const metadataPath = indexJson.metadataPath || manifestJson?.artifacts?.metadata || 'metadata.json';
+    const videoPartPaths = Array.isArray(indexJson?.video?.partPaths) && indexJson.video.partPaths.length
+      ? indexJson.video.partPaths
+      : (Array.isArray(manifestJson?.video?.parts) ? manifestJson.video.parts.map(part => part.name).filter(Boolean) : []);
+    const consoleEntry = manifestJson?.artifacts?.console
+      ? getPackageEntry(entries, manifestJson.artifacts.console, false)
+      : null;
+    const networkEntry = manifestJson?.artifacts?.network
+      ? getPackageEntry(entries, manifestJson.artifacts.network, false)
+      : null;
+    const websocketEntry = manifestJson?.artifacts?.websocket
+      ? getPackageEntry(entries, manifestJson.artifacts.websocket, false)
+      : null;
+
+    const resolved = {
+      packageId: indexId,
+      indexId: null,
+      folderId: typeof indexJson?.folderId === 'string' ? indexJson.folderId : null,
+      manifest: { json: manifestJson, video: manifestJson.video },
+      metadata: { blob: getPackageEntry(entries, metadataPath) },
+      console: consoleEntry ? { blob: consoleEntry } : null,
+      network: networkEntry ? { blob: networkEntry } : null,
+      websocket: websocketEntry ? { blob: websocketEntry } : null,
+      videoParts: videoPartPaths.map(path => ({
+        name: path,
+        blob: getPackageEntry(entries, path)
+      })),
+    };
+
+    if (!resolved.metadata || resolved.videoParts.length === 0) {
+      throw new Error('Invalid recording package. Missing metadata or video parts.');
+    }
+
+    return resolved;
+  }
+
+  async function unlockEncryptedRecordingPackage(entries, indexJson, indexId) {
+    const encryption = indexJson?.encryption || {};
+    if (encryption.algorithm !== ZIP_ENCRYPTION_ALGORITHM || encryption.kdf !== ZIP_ENCRYPTION_KDF) {
+      throw new Error('Unsupported recording package encryption.');
+    }
+    const payloadPath = typeof encryption.payloadPath === 'string'
+      ? encryption.payloadPath
+      : ZIP_ENCRYPTION_PAYLOAD_PATH;
+    const encryptedPayload = getPackageEntry(entries, payloadPath);
+    let promptError = '';
+
+    while (true) {
+      const password = await requestRecordingPassword(promptError);
+      try {
+        setPasswordPromptBusy(true);
+        const innerZipBlob = await decryptRecordingPackage(encryptedPayload, encryption, password);
+        setPasswordPromptBusy(false);
+        if (elements.passwordInput) {
+          elements.passwordInput.value = '';
+        }
+        showLoading();
+        resetLoadingProgress('Loading unlocked recording...');
+        const innerEntries = await unzipStoredPackage(innerZipBlob);
+        const innerIndexJson = await parseJsonBlob(getPackageEntry(innerEntries, 'recording-index.json'), 'recording-index.json');
+        return buildRecordingFilesFromPackageEntries(innerEntries, innerIndexJson, indexId);
+      } catch (error) {
+        console.warn('[GN Tracing Player] Failed to unlock recording package:', error);
+        promptError = 'Wrong password or corrupted recording package. Please try again.';
+        setPasswordPromptBusy(false);
+      }
+    }
+  }
+
   async function loadRecordingFilesFromIndex(indexId) {
     registerLoadingEntry('package', 'recording.zip', 'other');
     const packageBlob = await downloadFileAsBlob(
@@ -1539,41 +1777,11 @@
     if (await hasZipSignature(packageBlob)) {
       const entries = await unzipStoredPackage(packageBlob);
       const indexJson = await parseJsonBlob(getPackageEntry(entries, 'recording-index.json'), 'recording-index.json');
-      const manifestJson = await parseJsonBlob(getPackageEntry(entries, indexJson.manifestPath || 'manifest.json'), 'manifest.json');
-      const metadataPath = indexJson.metadataPath || manifestJson?.artifacts?.metadata || 'metadata.json';
-      const videoPartPaths = Array.isArray(indexJson?.video?.partPaths) && indexJson.video.partPaths.length
-        ? indexJson.video.partPaths
-        : (Array.isArray(manifestJson?.video?.parts) ? manifestJson.video.parts.map(part => part.name).filter(Boolean) : []);
-      const consoleEntry = manifestJson?.artifacts?.console
-        ? getPackageEntry(entries, manifestJson.artifacts.console, false)
-        : null;
-      const networkEntry = manifestJson?.artifacts?.network
-        ? getPackageEntry(entries, manifestJson.artifacts.network, false)
-        : null;
-      const websocketEntry = manifestJson?.artifacts?.websocket
-        ? getPackageEntry(entries, manifestJson.artifacts.websocket, false)
-        : null;
-
-      const resolved = {
-        packageId: indexId,
-        indexId: null,
-        folderId: typeof indexJson?.folderId === 'string' ? indexJson.folderId : null,
-        manifest: { json: manifestJson, video: manifestJson.video },
-        metadata: { blob: getPackageEntry(entries, metadataPath) },
-        console: consoleEntry ? { blob: consoleEntry } : null,
-        network: networkEntry ? { blob: networkEntry } : null,
-        websocket: websocketEntry ? { blob: websocketEntry } : null,
-        videoParts: videoPartPaths.map(path => ({
-          name: path,
-          blob: getPackageEntry(entries, path)
-        })),
-      };
-
-      if (!resolved.metadata || resolved.videoParts.length === 0) {
-        throw new Error('Invalid recording package. Missing metadata or video parts.');
+      if (isEncryptedPackageIndex(indexJson)) {
+        return unlockEncryptedRecordingPackage(entries, indexJson, indexId);
       }
 
-      return resolved;
+      return buildRecordingFilesFromPackageEntries(entries, indexJson, indexId);
     }
 
     const indexJson = await parseJsonBlob(packageBlob, 'recording-index.json');
@@ -1811,6 +2019,15 @@
   function showLoading() {
     resetLoadingProgress('Loading recording...');
     elements.loadingState.classList.remove('hidden');
+    elements.passwordState.classList.add('hidden');
+    elements.introState.classList.add('hidden');
+    elements.errorState.classList.add('hidden');
+    elements.playerState.classList.add('hidden');
+  }
+
+  function showPasswordPrompt() {
+    elements.loadingState.classList.add('hidden');
+    elements.passwordState.classList.remove('hidden');
     elements.introState.classList.add('hidden');
     elements.errorState.classList.add('hidden');
     elements.playerState.classList.add('hidden');
@@ -1820,6 +2037,7 @@
     resetLoadingProgress();
     updatePlayerTitle();
     elements.loadingState.classList.add('hidden');
+    elements.passwordState.classList.add('hidden');
     elements.introState.classList.remove('hidden');
     elements.errorState.classList.add('hidden');
     elements.playerState.classList.add('hidden');
@@ -1827,6 +2045,7 @@
 
   function showError() {
     elements.loadingState.classList.add('hidden');
+    elements.passwordState.classList.add('hidden');
     elements.introState.classList.add('hidden');
     elements.errorState.classList.remove('hidden');
     elements.playerState.classList.add('hidden');
@@ -1834,6 +2053,7 @@
 
   function showPlayer() {
     elements.loadingState.classList.add('hidden');
+    elements.passwordState.classList.add('hidden');
     elements.introState.classList.add('hidden');
     elements.errorState.classList.add('hidden');
     elements.playerState.classList.remove('hidden');
@@ -1841,6 +2061,195 @@
     renderConsoleEntries();
     renderNetworkEntries();
     renderMarkers();
+  }
+
+  function isScrolledNearBottom(container) {
+    if (!container) return false;
+    const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+    return distanceFromBottom <= STICKY_SCROLL_THRESHOLD_PX;
+  }
+
+  function scrollToBottom(container) {
+    if (container) {
+      container.scrollTop = container.scrollHeight;
+    }
+  }
+
+  function getConsoleEntryHtml(pe, closestIdx) {
+    const { entry, index, level } = pe;
+    const isActive = index === closestIdx;
+    const isExpanded = expandedConsoleIndex === index;
+    const timeStr = formatTimeMs(entry.relativeMs);
+    const levelLabel = getConsoleLevelLabel(entry);
+
+    let rowClass = 'console-entry';
+    if (entry.source === 'exception') rowClass += ' error-entry';
+    if (entry.source === 'browser') rowClass += ' browser-entry';
+    if (isActive) rowClass += ' active-entry';
+    if (isExpanded) rowClass += ' expanded';
+
+    const sourceLocation = getConsoleSourceLocation(entry);
+    const sourceLocationHtml = sourceLocation
+      ? `<span class="console-source-location">${escapeHtml(sourceLocation)}</span>`
+      : '';
+
+    return `
+      <div class="${rowClass}" data-index="${index}">
+        <button class="toggle-expand" aria-label="Toggle details"><i class="ph ${isExpanded ? 'ph-caret-down' : 'ph-caret-right'}"></i></button>
+        <span class="console-time">${timeStr}</span>
+        <span class="console-level console-level-${level}">${levelLabel}</span>
+        <span class="console-message">
+          <span>${renderArgs(entry)}</span>
+          ${sourceLocationHtml}
+        </span>
+        ${isExpanded ? renderConsoleDetail(entry) : ''}
+      </div>
+    `;
+  }
+
+  function syncConsoleEntryState(row, pe, closestIdx) {
+    const index = pe.index;
+    const isExpanded = expandedConsoleIndex === index;
+    row.classList.toggle('active-entry', index === closestIdx);
+    row.classList.toggle('expanded', isExpanded);
+
+    const icon = row.querySelector('.toggle-expand i');
+    if (icon) {
+      icon.classList.toggle('ph-caret-down', isExpanded);
+      icon.classList.toggle('ph-caret-right', !isExpanded);
+    }
+
+    const detail = row.querySelector(':scope > .console-detail');
+    if (isExpanded && !detail) {
+      row.insertAdjacentHTML('beforeend', renderConsoleDetail(pe.entry));
+    } else if (!isExpanded && detail) {
+      detail.remove();
+    }
+  }
+
+  function getNetworkEntryHtml(pe, closestIdx) {
+    const { entry, index } = pe;
+    const request = entry.request || {};
+    const response = entry.response || {};
+    const content = getNetworkResponseContent(entry);
+    const isActive = index === closestIdx;
+    const isExpanded = expandedNetworkIndex === index;
+    const statusCode = response.status || entry.status || 0;
+    const statusClass = getStatusColorClass(statusCode);
+    const requestUrl = request.url || entry.url || '';
+    const initiatorSummary = getNetworkInitiatorSummary(entry.initiator);
+    const urlTitle = [requestUrl, initiatorSummary].filter(Boolean).join('\n');
+
+    let rowClass = 'network-row';
+    if (isActive) rowClass += ' active-row';
+    if (isExpanded) rowClass += ' expanded';
+
+    return `
+      <div class="${rowClass}" data-index="${index}">
+        <button class="toggle-expand" aria-label="Toggle details"><i class="ph ${isExpanded ? 'ph-caret-down' : 'ph-caret-right'}"></i></button>
+        <span class="col-method">${request.method || entry.method || 'GET'}</span>
+        <span class="col-url" title="${escapeHtml(urlTitle)}">
+          <span class="network-url-main">${escapeHtml(truncateUrl(requestUrl))}</span>
+          ${initiatorSummary ? `<span class="network-initiator-location">${escapeHtml(initiatorSummary)}</span>` : ''}
+        </span>
+        <span class="col-status ${statusClass}">${statusCode || (entry.error ? 'ERR' : '-')}</span>
+        <span class="col-type">${entry.resourceType || content.mimeType || '-'}</span>
+        <span class="col-size">${formatSize(content.size || entry.encodedDataLength)}</span>
+        ${isExpanded ? renderNetworkDetail(entry) : ''}
+      </div>
+    `;
+  }
+
+  function syncNetworkEntryState(row, pe, closestIdx) {
+    const index = pe.index;
+    const isExpanded = expandedNetworkIndex === index;
+    const activeDetailTab = networkDetailTabs.get(getNetworkDetailTabKey(pe.entry)) || '';
+    row.classList.toggle('active-row', index === closestIdx);
+    row.classList.toggle('expanded', isExpanded);
+
+    const icon = row.querySelector('.toggle-expand i');
+    if (icon) {
+      icon.classList.toggle('ph-caret-down', isExpanded);
+      icon.classList.toggle('ph-caret-right', !isExpanded);
+    }
+
+    const detail = row.querySelector(':scope > .network-detail');
+    if (isExpanded && !detail) {
+      row.insertAdjacentHTML('beforeend', renderNetworkDetail(pe.entry));
+      row.dataset.detailTab = activeDetailTab;
+    } else if (isExpanded && detail && row.dataset.detailTab !== activeDetailTab) {
+      detail.outerHTML = renderNetworkDetail(pe.entry);
+      row.dataset.detailTab = activeDetailTab;
+    } else if (!isExpanded && detail) {
+      detail.remove();
+      delete row.dataset.detailTab;
+    }
+  }
+
+  function getWebSocketEntryHtml(item) {
+    const { ws, index } = item;
+    const isExpanded = expandedWsIndex === index;
+
+    return `
+      <div class="ws-row ${isExpanded ? 'expanded' : ''}" data-index="${index}">
+        <button class="toggle-expand" aria-label="Toggle details"><i class="ph ${isExpanded ? 'ph-caret-down' : 'ph-caret-right'}"></i></button>
+        <span class="ws-url" title="${escapeHtml(ws.url || '')}">${escapeHtml(ws.url || '')}</span>
+        <span class="ws-frames">${(ws.frames || []).length} frames</span>
+        <span class="ws-status ${ws.closed ? 'closed' : 'open'}">${ws.closed ? 'Closed' : 'Open'}</span>
+        ${isExpanded ? renderWsDetail(ws) : ''}
+      </div>
+    `;
+  }
+
+  function syncWebSocketEntryState(row, item) {
+    const isExpanded = expandedWsIndex === item.index;
+    row.classList.toggle('expanded', isExpanded);
+
+    const icon = row.querySelector('.toggle-expand i');
+    if (icon) {
+      icon.classList.toggle('ph-caret-down', isExpanded);
+      icon.classList.toggle('ph-caret-right', !isExpanded);
+    }
+
+    const detail = row.querySelector(':scope > .ws-detail');
+    if (isExpanded && !detail) {
+      row.insertAdjacentHTML('beforeend', renderWsDetail(item.ws));
+    } else if (!isExpanded && detail) {
+      detail.remove();
+    }
+  }
+
+  // Keep existing rows alive while playback advances; only new/hidden rows are inserted or removed.
+  function syncLogRows(container, items, rowSelector, getRowHtml, syncRowState) {
+    const visibleKeys = new Set(items.map((item) => String(item.index)));
+    container.querySelectorAll(rowSelector).forEach((row) => {
+      if (!visibleKeys.has(row.dataset.index)) {
+        row.remove();
+      }
+    });
+
+    let previousRow = null;
+    items.forEach((item) => {
+      const key = String(item.index);
+      let row = container.querySelector(`${rowSelector}[data-index="${CSS.escape(key)}"]`);
+
+      if (!row) {
+        const template = document.createElement('template');
+        template.innerHTML = getRowHtml(item).trim();
+        row = template.content.firstElementChild;
+      }
+
+      if (previousRow) {
+        if (row.previousElementSibling !== previousRow) {
+          previousRow.after(row);
+        }
+      } else if (container.firstElementChild !== row) {
+        container.prepend(row);
+      }
+
+      syncRowState(row, item);
+      previousRow = row;
+    });
   }
 
   // Render console entries
@@ -1863,75 +2272,19 @@
     if (closestDist >= 1500) closestIdx = -1;
     closestConsoleIndex = closestIdx;
 
-    const filtered = visible;
+    const shouldStickToBottom = isScrolledNearBottom(elements.consoleEntries);
 
-    const lastVisibleIndex = filtered.length > 0 ? filtered[filtered.length - 1].index : -1;
+    syncLogRows(
+      elements.consoleEntries,
+      visible,
+      '.console-entry',
+      (pe) => getConsoleEntryHtml(pe, closestIdx),
+      (row, pe) => syncConsoleEntryState(row, pe, closestIdx)
+    );
 
-    // Level color map
-    const levelColorClass = {
-      log: 'console-level-log',
-      warn: 'console-level-warn',
-      error: 'console-level-error',
-      info: 'console-level-info',
-      debug: 'console-level-debug',
-      exception: 'console-level-error',
-      browser: 'console-level-info',
-    };
-
-    elements.consoleEntries.innerHTML = filtered.map((pe, vi) => {
-      const { entry, index, level } = pe;
-      const isActive = index === closestIdx;
-      const isExpanded = expandedConsoleIndex === index;
-      const isLast = vi === filtered.length - 1;
-      const timeStr = formatTimeMs(entry.relativeMs);
-      const levelLabel = getConsoleLevelLabel(entry);
-
-      let rowClass = 'console-entry';
-      if (entry.source === 'exception') rowClass += ' error-entry';
-      if (entry.source === 'browser') rowClass += ' browser-entry';
-      if (isActive) rowClass += ' active-entry';
-      if (isExpanded) rowClass += ' expanded';
-
-      // Source location for exception/browser
-      const sourceLocation = (entry.source === 'exception' || entry.source === 'browser') && (entry.originalSource || entry.url)
-        ? `<span class="console-source-location">${entry.originalSource
-            ? `${entry.originalSource}:${(entry.originalLine ?? 0) + 1}:${(entry.originalColumn ?? 0) + 1}`
-            : `${entry.url}:${(entry.lineNumber ?? 0) + 1}:${(entry.columnNumber ?? 0) + 1}`}</span>`
-        : '';
-
-      return `
-        <div class="${rowClass}" data-index="${index}" ref="${isLast ? 'last' : ''}">
-          <button class="toggle-expand" aria-label="Toggle details"><i class="ph ${isExpanded ? 'ph-caret-down' : 'ph-caret-right'}"></i></button>
-          <span class="console-time">${timeStr}</span>
-          <span class="console-level console-level-${level}">${levelLabel}</span>
-          <span class="console-message">
-            <span>${renderArgs(entry)}</span>
-            ${sourceLocation}
-          </span>
-          ${isExpanded ? renderConsoleDetail(entry) : ''}
-        </div>
-      `;
-    }).join('');
-
-    // Auto-scroll to last visible entry
-    if (lastVisibleIndex !== lastScrolledConsoleIndex) {
-      lastScrolledConsoleIndex = lastVisibleIndex;
-      const lastEl = elements.consoleEntries.querySelector('[ref="last"]');
-      if (lastEl) {
-        lastEl.scrollIntoView({ block: 'nearest', behavior: 'auto' });
-      }
+    if (shouldStickToBottom) {
+      scrollToBottom(elements.consoleEntries);
     }
-
-    // Add click listeners for toggle buttons
-    elements.consoleEntries.querySelectorAll('.toggle-expand').forEach(el => {
-      el.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const index = parseInt(el.closest('.console-entry').dataset.index);
-        expandedConsoleIndex = expandedConsoleIndex === index ? null : index;
-        renderConsoleEntries();
-      });
-    });
-
   }
 
   function renderConsoleDetail(entry) {
@@ -1980,13 +2333,12 @@
     }
 
     // Source location
-    if (entry.originalSource || entry.url) {
+    const sourceLocation = getConsoleSourceLocation(entry);
+    if (sourceLocation) {
       detailHtml += `
         <div class="detail-section">
           <h4>Source</h4>
-          <pre>${entry.originalSource
-            ? `${entry.originalSource}:${(entry.originalLine ?? 0) + 1}:${(entry.originalColumn ?? 0) + 1}`
-            : `${entry.url}:${(entry.lineNumber ?? 0) + 1}:${(entry.columnNumber ?? 0) + 1}`}</pre>
+          <pre>${escapeHtml(sourceLocation)}</pre>
         </div>
       `;
     }
@@ -2000,17 +2352,13 @@
       `;
       entry.stackTrace.forEach((frame, i) => {
         if (frame.asyncBoundary) {
-          detailHtml += `<div class="async-boundary">--- ${frame.asyncBoundary} ---</div>`;
+          detailHtml += `<div class="async-boundary">--- ${escapeHtml(frame.asyncBoundary)} ---</div>`;
         } else {
           const fnName = frame.originalName || frame.functionName || '(anonymous)';
-          const location = frame.originalSource
-            ? `${frame.originalSource}:${(frame.originalLine ?? 0) + 1}:${(frame.originalColumn ?? 0) + 1}`
-            : frame.url
-              ? `${frame.url}:${(frame.lineNumber ?? 0) + 1}:${(frame.columnNumber ?? 0) + 1}`
-              : '';
+          const location = formatSourceLocation(frame);
           const src = frame.originalSource || frame.url || '';
           const isVendor = src && src.includes('node_modules');
-          detailHtml += `<div class="stack-frame ${isVendor ? 'vendor-frame' : ''}">at <span class="fn-name">${escapeHtml(fnName)}</span>${location ? ` <span class="location">(${location})</span>` : ''}</div>`;
+          detailHtml += `<div class="stack-frame ${isVendor ? 'vendor-frame' : ''}">at <span class="fn-name">${escapeHtml(fnName)}</span>${location ? ` <span class="location">(${escapeHtml(location)})</span>` : ''}</div>`;
         }
       });
       detailHtml += `</div></div>`;
@@ -2040,7 +2388,6 @@
     if (closestDist >= 1500) closestIdx = -1;
     closestNetworkIndex = closestIdx;
 
-    const lastVisibleIndex = filtered.length > 0 ? filtered[filtered.length - 1].index : -1;
     const visibleCount = filtered.length;
     const visibleWs = getVisibleWebSocketEntries();
 
@@ -2051,78 +2398,32 @@
     if (webSocketLogs.length > 0) summaryText += ` | ${visibleWs.length}/${webSocketLogs.length} WS`;
     elements.networkSummary.textContent = summaryText;
 
-    elements.networkRows.innerHTML = filtered.map((pe, vi) => {
-      const { entry, index } = pe;
-      const request = entry.request || {};
-      const response = entry.response || {};
-      const content = getNetworkResponseContent(entry);
-      const isActive = index === closestIdx;
-      const isExpanded = expandedNetworkIndex === index;
-      const isLast = vi === filtered.length - 1;
-      const statusCode = response.status || entry.status || 0;
-      const statusClass = getStatusColorClass(statusCode);
+    const shouldStickToBottom = isScrolledNearBottom(elements.networkEntries);
 
-      let rowClass = 'network-row';
-      if (isActive) rowClass += ' active-row';
-      if (isExpanded) rowClass += ' expanded';
+    syncLogRows(
+      elements.networkRows,
+      filtered,
+      '.network-row',
+      (pe) => getNetworkEntryHtml(pe, closestIdx),
+      (row, pe) => syncNetworkEntryState(row, pe, closestIdx)
+    );
 
-      return `
-        <div class="${rowClass}" data-index="${index}" ref="${isLast ? 'last' : ''}">
-          <button class="toggle-expand" aria-label="Toggle details"><i class="ph ${isExpanded ? 'ph-caret-down' : 'ph-caret-right'}"></i></button>
-          <span class="col-method">${request.method || entry.method || 'GET'}</span>
-          <span class="col-url" title="${escapeHtml(request.url || entry.url || '')}">${truncateUrl(request.url || entry.url || '')}</span>
-          <span class="col-status ${statusClass}">${statusCode || (entry.error ? 'ERR' : '-')}</span>
-          <span class="col-type">${entry.resourceType || content.mimeType || '-'}</span>
-          <span class="col-size">${formatSize(content.size || entry.encodedDataLength)}</span>
-          ${isExpanded ? renderNetworkDetail(entry) : ''}
-        </div>
-      `;
-    }).join('');
-
-    // Auto-scroll to last visible entry
-    if (lastVisibleIndex !== lastScrolledNetworkIndex) {
-      lastScrolledNetworkIndex = lastVisibleIndex;
-      const lastEl = elements.networkRows.querySelector('[ref="last"]');
-      if (lastEl) {
-        lastEl.scrollIntoView({ block: 'nearest', behavior: 'auto' });
-      }
+    if (shouldStickToBottom) {
+      scrollToBottom(elements.networkEntries);
     }
-
-    // Add click listeners for toggle buttons
-    elements.networkRows.querySelectorAll('.toggle-expand').forEach(el => {
-      el.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const index = parseInt(el.closest('.network-row').dataset.index);
-        expandedNetworkIndex = expandedNetworkIndex === index ? null : index;
-        renderNetworkEntries();
-      });
-    });
 
     // WebSocket entries
     if (visibleWs.length > 0) {
       elements.websocketSection.classList.remove('hidden');
-      elements.websocketRows.innerHTML = visibleWs.map(({ ws, index }) => {
-        const isExpanded = expandedWsIndex === index;
-        return `
-          <div class="ws-row ${isExpanded ? 'expanded' : ''}" data-index="${index}">
-            <button class="toggle-expand" aria-label="Toggle details"><i class="ph ${isExpanded ? 'ph-caret-down' : 'ph-caret-right'}"></i></button>
-            <span class="ws-url" title="${escapeHtml(ws.url || '')}">${escapeHtml(ws.url || '')}</span>
-            <span class="ws-frames">${(ws.frames || []).length} frames</span>
-            <span class="ws-status ${ws.closed ? 'closed' : 'open'}">${ws.closed ? 'Closed' : 'Open'}</span>
-            ${isExpanded ? renderWsDetail(ws) : ''}
-          </div>
-        `;
-      }).join('');
-
-      elements.websocketRows.querySelectorAll('.toggle-expand').forEach(el => {
-        el.addEventListener('click', (e) => {
-          e.stopPropagation();
-          const index = parseInt(el.closest('.ws-row').dataset.index);
-          expandedWsIndex = expandedWsIndex === index ? null : index;
-          renderNetworkEntries();
-        });
-      });
+      syncLogRows(
+        elements.websocketRows,
+        visibleWs,
+        '.ws-row',
+        getWebSocketEntryHtml,
+        syncWebSocketEntryState
+      );
     } else {
+      elements.websocketRows.innerHTML = '';
       elements.websocketSection.classList.add('hidden');
     }
   }
@@ -2226,29 +2527,23 @@
       detailHtml += `
         <div class="detail-section">
           <h4>Initiator</h4>
-          <pre>${entry.initiator.type || 'other'}</pre>
+          <pre>${escapeHtml(entry.initiator.type || 'other')}</pre>
       `;
-      if (entry.initiator.originalSource || entry.initiator.url) {
-        const loc = entry.initiator.originalSource
-          ? `${entry.initiator.originalSource}:${(entry.initiator.originalLine ?? 0) + 1}:${(entry.initiator.originalColumn ?? 0) + 1}`
-          : `${entry.initiator.url}:${(entry.initiator.lineNumber ?? 0) + 1}:${(entry.initiator.columnNumber ?? 0) + 1}`;
+      const loc = getNetworkInitiatorLocation(entry.initiator);
+      if (loc) {
         detailHtml += `<pre class="initiator-location">${escapeHtml(loc)}</pre>`;
       }
       if (entry.initiator.stack && entry.initiator.stack.callFrames) {
         detailHtml += '<div class="initiator-stack">';
         entry.initiator.stack.callFrames.forEach((frame, i) => {
           const fnName = frame.originalName || frame.functionName || '(anonymous)';
-          const location = frame.originalSource
-            ? `${frame.originalSource}:${(frame.originalLine ?? 0) + 1}:${(frame.originalColumn ?? 0) + 1}`
-            : frame.url
-              ? `${frame.url}:${(frame.lineNumber ?? 0) + 1}:${(frame.columnNumber ?? 0) + 1}`
-              : '';
+          const location = formatSourceLocation(frame);
           const src = frame.originalSource || frame.url || '';
           const isVendor = src && src.includes('node_modules');
-          detailHtml += `<div class="stack-frame ${isVendor ? 'vendor-frame' : ''}">at <span class="fn-name">${escapeHtml(fnName)}</span>${location ? ` <span class="location">(${location})</span>` : ''}</div>`;
+          detailHtml += `<div class="stack-frame ${isVendor ? 'vendor-frame' : ''}">at <span class="fn-name">${escapeHtml(fnName)}</span>${location ? ` <span class="location">(${escapeHtml(location)})</span>` : ''}</div>`;
         });
         if (entry.initiator.stack.parent) {
-          detailHtml += `<div class="async-boundary">--- ${entry.initiator.stack.parent.description || 'async'} ---</div>`;
+          detailHtml += `<div class="async-boundary">--- ${escapeHtml(entry.initiator.stack.parent.description || 'async')} ---</div>`;
         }
         detailHtml += '</div>';
       }
@@ -2679,6 +2974,47 @@
     });
   }
 
+  function setupLogRowListeners() {
+    elements.consoleEntries.addEventListener('click', (e) => {
+      const toggle = e.target.closest('.toggle-expand');
+      if (!toggle) return;
+
+      const row = toggle.closest('.console-entry');
+      if (!row) return;
+
+      e.stopPropagation();
+      const index = parseInt(row.dataset.index);
+      expandedConsoleIndex = expandedConsoleIndex === index ? null : index;
+      renderConsoleEntries();
+    });
+
+    elements.networkRows.addEventListener('click', (e) => {
+      const toggle = e.target.closest('.toggle-expand');
+      if (!toggle) return;
+
+      const row = toggle.closest('.network-row');
+      if (!row) return;
+
+      e.stopPropagation();
+      const index = parseInt(row.dataset.index);
+      expandedNetworkIndex = expandedNetworkIndex === index ? null : index;
+      renderNetworkEntries();
+    });
+
+    elements.websocketRows.addEventListener('click', (e) => {
+      const toggle = e.target.closest('.toggle-expand');
+      if (!toggle) return;
+
+      const row = toggle.closest('.ws-row');
+      if (!row) return;
+
+      e.stopPropagation();
+      const index = parseInt(row.dataset.index);
+      expandedWsIndex = expandedWsIndex === index ? null : index;
+      renderNetworkEntries();
+    });
+  }
+
   // Tab handlers
   function setupTabListeners() {
     elements.consoleTab.addEventListener('click', () => {
@@ -2777,6 +3113,26 @@
     });
   }
 
+  function setupPasswordListeners() {
+    elements.passwordForm?.addEventListener('submit', (event) => {
+      event.preventDefault();
+      if (passwordPromptBusy || !passwordPromptResolve) {
+        return;
+      }
+
+      const password = elements.passwordInput?.value || '';
+      if (!password) {
+        setPasswordPromptError('Enter the recording password.');
+        return;
+      }
+
+      const resolve = passwordPromptResolve;
+      passwordPromptResolve = null;
+      setPasswordPromptError('');
+      resolve(password);
+    });
+  }
+
   // Initialize
   async function init() {
     initElements();
@@ -2787,9 +3143,11 @@
     setupLayoutListeners();
     setupVideoListeners();
     setupFilterListeners();
+    setupLogRowListeners();
     setupTabListeners();
     setupCopyListeners();
     setupNetworkDetailTabListeners();
+    setupPasswordListeners();
 
     const urlParams = new URLSearchParams(window.location.search);
     const videos = urlParams.get('videos');
