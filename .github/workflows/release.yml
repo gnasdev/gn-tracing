@@ -49,5 +49,9 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
+          body: |
+            Download `gn-tracing-extension-${{ github.ref_name }}.zip` from the assets below and load the extracted extension folder in Chrome or Edge developer mode.
+
+            GitHub may still show automatically generated `Source code` links for the release tag. Those archives are not the installable extension package.
           files: |
             gn-tracing-extension-${{ github.ref_name }}.zip
