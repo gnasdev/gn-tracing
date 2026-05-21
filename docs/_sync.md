@@ -10,9 +10,9 @@ tags: ["docs", "sync"]
 
 ## Meta
 
-- Synced commit: `6e2ee8e6d2436607749e1d93b36ae85e6ed81b92`
-- Synced at: `2026-05-21T13:31:14+07:00`
-- Scope: source-map-enriched console source previews, replay player rendering, hardened Drive confirmation handling for standalone replay downloads, OAuth Drive API media downloads for extension replay, popup update-check controls, shared recording payload models, and docs index
+- Synced commit: `fc72b6eac8d13e5eb4d37c02cf2f5f8759400461`
+- Synced at: `2026-05-21T15:32:11+07:00`
+- Scope: versioned release packaging, popup update checks, zip replay packages, optional encrypted replay packages, source-map-enriched console source previews, OAuth Drive API media downloads, hardened standalone Drive proxy downloads, shared recording payload models, and docs index
 - Status: synced
 - Known unsynced: Không có
 
@@ -26,4 +26,4 @@ Console replay artifacts can include bounded source snippets derived from source
 
 Replay downloads can use Google Drive API `files.get?alt=media` with the current in-memory OAuth token when the player runs in the extension context. Hosted standalone replay keeps `/api/drive` as the no-token fallback; that proxy resolves Google Drive's large-file confirmation pages, including form-based confirmation pages, before streaming artifact bytes to the browser. If Drive still returns HTML instead of a zip package or legacy JSON index, the proxy returns a non-cacheable error and the player removes stale cached HTML before retrying network downloads.
 
-The popup and history surfaces expose configurable Drive target folders, optional zip password settings, start/stop/remove recording controls, auto-upload when connected, capture privacy toggles, per-file upload progress, and recent upload history stored only in local extension storage. Popup capture controls and the capture queue are hidden until Drive is connected. Production extension builds require explicit OAuth/extension identity, and Store package validation runs through `Taskfile.yml`.
+The popup and history surfaces expose configurable Drive target folders, optional zip password settings, start/stop/remove recording controls, auto-upload when connected, capture privacy toggles, per-file upload progress, release update checks, GitHub/contribution links, and recent upload history stored only in local extension storage. Popup capture controls and the capture queue are hidden until Drive is connected. Production extension builds require explicit OAuth/extension identity, and Store package validation plus versioned release zip packaging run through `Taskfile.yml`.

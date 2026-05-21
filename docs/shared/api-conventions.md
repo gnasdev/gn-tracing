@@ -12,6 +12,7 @@ related:
   - "./data-models.md"
   - "../modules/recording-runtime.md"
   - "../modules/drive-and-player.md"
+  - "../features/release-and-update-checks.md"
 ---
 
 # API Conventions
@@ -22,7 +23,7 @@ related:
 - Phạm vi: internal message contracts and external browser/Drive/Cloudflare APIs
 - Nguồn code: `src/types/messages.ts`, `src/background/service-worker.ts`, `src/offscreen/offscreen.ts`
 - Tuân thủ: Không áp dụng
-- Links: [Shared Data Models](./data-models.md), [Recording Runtime](../modules/recording-runtime.md), [Drive And Player](../modules/drive-and-player.md)
+- Links: [Shared Data Models](./data-models.md), [Recording Runtime](../modules/recording-runtime.md), [Drive And Player](../modules/drive-and-player.md), [Release And Update Checks](../features/release-and-update-checks.md)
 
 ## Internal Message Contracts
 
@@ -44,3 +45,5 @@ related:
   used for token verification, multipart upload, permission creation, token revocation, and authenticated replay package downloads through `files.get?alt=media` when the extension player has an OAuth token.
 - Cloudflare Pages Function `/api/drive?id=<file-id>`
   proxies standalone replay downloads to `drive.usercontent.google.com`, resolves Google Drive confirmation pages for large public files, preserves range requests plus response content headers when the hosted player cannot use an OAuth token, and returns non-cacheable errors if Drive still responds with HTML instead of file bytes.
+- GitHub Releases API
+  used by the service worker for popup update checks. The extension requests only public release metadata from `https://api.github.com/`, compares the installed version with the latest release version, and returns release/download URLs to the popup.

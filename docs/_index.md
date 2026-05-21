@@ -20,9 +20,11 @@ related:
 - [shared/api-conventions.md](./shared/api-conventions.md)
 - [modules/recording-runtime.md](./modules/recording-runtime.md)
 - [modules/drive-and-player.md](./modules/drive-and-player.md)
+- [features/release-and-update-checks.md](./features/release-and-update-checks.md)
 - [compliance/_summary.md](./compliance/_summary.md)
 - [compliance/privacy-policy.md](./compliance/privacy-policy.md)
 - [compliance/chrome-web-store-submission.md](./compliance/chrome-web-store-submission.md)
+- [specs/planning/upload-recording-as-zip.md](./specs/planning/upload-recording-as-zip.md)
 - [specs/planning/password-protected-recording-zip.md](./specs/planning/password-protected-recording-zip.md)
 - [specs/planning/drive-api-alt-media-player-download.md](./specs/planning/drive-api-alt-media-player-download.md)
 - [specs/planning/player-console-sourcemap-source-preview.md](./specs/planning/player-console-sourcemap-source-preview.md)
@@ -38,6 +40,9 @@ related:
   consumes: recording artifacts emitted by `recording-runtime`
 - `shared/data-models`
   shared by: service worker, popup, offscreen uploader, built-in player, standalone player
+- `release-and-update-checks`
+  reads: `drive-and-player`, `shared/api-conventions`, `compliance/chrome-web-store-submission`
+  calls: GitHub Releases API through the service worker for version comparison and release download discovery
 
 ## Runtime Topology
 
@@ -50,3 +55,4 @@ related:
 - `extension player` -> Google Drive API `files.get?alt=media` with the current OAuth token for Drive package fetches when available
 - `standalone player` -> same-origin `/api/drive?id=<file-id>` proxy for Drive package fetches when no OAuth token is available; password-protected packages are decrypted in-browser after user unlock
 - `release workflow` -> root `Taskfile.yml`: extension build, Store package checks, and zip packaging with OAuth/extension identity from repository secrets; standalone player deploy stays manual via `player-standalone/deploy.sh`
+- `popup update check` -> `service-worker` -> GitHub Releases API: compare installed package version against the latest release and expose a manual download path when a newer extension zip is available

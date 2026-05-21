@@ -1,47 +1,63 @@
+---
+title: "Upload Recording As Zip"
+description: "Implemented storage contract for packaging each recording as a single Google Drive zip artifact."
+type: spec
+status: implemented
+tags: ["replay", "google-drive", "zip-package"]
+source_paths:
+  - "src/offscreen/offscreen.ts"
+  - "player/player.js"
+  - "player-standalone/public/player.js"
+related:
+  - "../../modules/drive-and-player.md"
+  - "../../shared/data-models.md"
+---
+
 # Upload Recording As Zip
 
-## Bối Cảnh
+## Tổng Quan
 
-Luồng hiện tại upload từng artifact của một recording lên Google Drive: metadata, manifest, recording index, các log tùy chọn và từng phần video. Replay link dùng một file ID để player tải `recording-index.json`, rồi tiếp tục tải các file còn lại theo ID trong index.
+Each completed recording is uploaded to Google Drive as one `gn-tracing-*.zip` package. The replay URL identifies that zip file by Drive file ID, and the player downloads the package, validates it, unpacks the recording artifacts in browser memory, and then loads the existing metadata/log/video pipeline.
 
-Yêu cầu mới là gom toàn bộ artifact của recording thành một file zip trước khi upload. Replay link phải trỏ tới file zip đó, và player phải tải zip về rồi unzip để load playback.
+This makes a recording an atomic Drive artifact: one upload, one share permission, one replay URL, and one package to delete from Drive.
 
-## Nguyên Nhân Và Lý Do Thiết Kế
+## Storage Contract
 
-Triệu chứng là replay đang phụ thuộc vào nhiều Drive file công khai. Nguyên nhân trực tiếp là upload queue hiện chạy theo artifact riêng lẻ và index chỉ đóng vai trò entrypoint. Nguyên nhân gốc rễ là storage contract đang phụ thuộc vào nhiều file trong một folder, khiến một recording không còn là một artifact nguyên tử.
+An unprotected package contains:
 
-Hướng zip biến recording thành một package duy nhất: upload một file, share một file, replay một file. Manifest và index vẫn nên nằm trong zip để giữ schema tự mô tả và tránh phải viết lại toàn bộ player parser.
+- `recording-index.json`: replay entrypoint and artifact descriptor.
+- `manifest.json`: storage layout, schema, target folder, video part list, mime type, and optional artifact availability.
+- `metadata.json`: page URL, title, timestamps, duration, and high-level recording details.
+- optional `console.json`, `network.json`, and `websocket.json`.
+- ordered `video.part-XXX.webm` files.
 
-## Phạm Vi
+The zip uses a dependency-free local ZIP writer in the offscreen runtime. Entries are stored rather than compressed so the package can be produced without adding runtime dependencies to the extension.
 
-- Offscreen upload tạo `metadata.json`, `manifest.json`, `recording-index.json`, log JSON và video parts trong bộ nhớ, đóng gói thành `gn-tracing-*.zip`, rồi upload zip trực tiếp vào upload folder đã cấu hình trên Drive.
-- Replay URL dùng ID của zip file.
-- Player khi nhận ID sẽ tải file đó, detect zip, unzip và đọc artifact trong package.
-- Legacy replay bằng `recording-index.json` vẫn nên được giữ như fallback để các link cũ không hỏng.
+## Upload Flow
 
-## Cấu Trúc Giải Pháp
+1. The service worker gathers the completed recording snapshot and sends it to the offscreen upload worker.
+2. Offscreen builds artifact blobs for metadata, manifest, recording index, optional logs, and video parts.
+3. Offscreen creates one zip blob and uploads it to the configured Drive folder.
+4. Drive sharing permission is created for the zip file.
+5. The replay URL is generated from the zip file ID.
 
-```mermaid
-flowchart LR
-  A["Offscreen snapshot"] --> B["Build artifact blobs"]
-  B --> C["Create zip package"]
-  C --> D["Upload and share zip file"]
-  D --> E["Replay URL uses zip file ID"]
-  E --> F["Player downloads zip"]
-  F --> G["Unzip artifacts"]
-  G --> H["Load metadata, logs, video"]
-```
+Video larger than the configured part size is split into ordered chunks before packaging. Upload progress is artifact-based so the UI can show stable labels and byte totals that match the recording content, not multipart HTTP overhead.
 
-## Công Việc Cần Làm
+## Player Flow
 
-- Thêm helper tạo zip tối giản trong offscreen runtime.
-- Đổi upload progress để hiển thị bước package zip và upload zip thay vì từng file Drive.
-- Mở rộng player loader để đọc artifact descriptor từ blob/json nội bộ hoặc từ Drive file ID legacy.
-- Thêm parser zip tối giản trong player runtime, không thêm dependency vào shared player JS.
-- Sync `player/player.js` sang standalone public asset.
+The player accepts the zip file ID from the hosted path, downloads the package, detects whether the response is a zip, and parses package entries in memory. `recording-index.json` and `manifest.json` stay the source of truth for locating metadata, logs, and video parts inside the package.
 
-## Rủi Ro Và Kiểm Chứng
+Legacy direct-file query params remain supported for older replay links and debugging, but new uploads use the zip file ID path.
 
-- Zip dùng store method không nén để tránh dependency và giữ runtime đơn giản; cần CRC32 đúng để zip hợp lệ.
-- Player unzip cần validate tên file và local header để lỗi zip hỏng hiển thị rõ.
-- Kiểm chứng mục tiêu: TypeScript check cho extension và standalone, plus static sync của player asset.
+## Failure Modes
+
+- Invalid ZIP signature, unsupported entry shape, missing manifest, or missing index fails the replay with a package error.
+- HTML Drive download pages are rejected before JSON/ZIP parsing.
+- Unknown optional artifacts are skipped only when the manifest marks them optional.
+- A failed upload, folder resolution failure, zip packaging failure, or share-permission failure prevents replay URL generation.
+
+## Validation
+
+- Root TypeScript build/type checks cover message and upload contracts.
+- Player type checks cover shared replay loader logic.
+- `task player:sync` keeps `player/player.js` and `player/player.css` mirrored into standalone public assets.

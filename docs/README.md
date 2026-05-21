@@ -20,6 +20,7 @@ This directory is the repository knowledge base. It describes the current produc
 - `_index.md`: navigation and dependency map.
 - `_sync.md`: current docs/code synchronization snapshot.
 - `modules/`: implemented module behavior, APIs, relationships, and business rules.
+- `features/`: user-facing shipped behavior that spans more than one module.
 - `shared/`: shared models, conventions, and project context.
 - `compliance/`: coverage summaries and known documentation gaps.
 

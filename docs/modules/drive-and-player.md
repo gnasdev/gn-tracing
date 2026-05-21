@@ -15,6 +15,7 @@ source_paths:
   - "player-standalone"
 related:
   - "./recording-runtime.md"
+  - "../features/release-and-update-checks.md"
   - "../shared/data-models.md"
   - "../shared/api-conventions.md"
 ---
@@ -27,7 +28,7 @@ related:
 - Phạm vi: Google Drive auth, zip package upload, replay URL generation, release packaging, and built-in/standalone player integration
 - Nguồn code: `src/background/google-drive-auth.ts`, `src/drive-auth/drive-auth.ts`, `src/offscreen/offscreen.ts`, `src/shared/player-host.ts`, `player/`, `player-standalone/`
 - Tuân thủ: Không áp dụng
-- Links: [Recording Runtime](./recording-runtime.md), [Shared Data Models](../shared/data-models.md), [API Conventions](../shared/api-conventions.md)
+- Links: [Recording Runtime](./recording-runtime.md), [Release And Update Checks](../features/release-and-update-checks.md), [Shared Data Models](../shared/data-models.md), [API Conventions](../shared/api-conventions.md)
 
 ## 1. Overview
 
@@ -41,6 +42,7 @@ This module covers authentication, Google Drive upload, replay URL generation, b
 - `player/*`
 - `player-standalone/*`
 - fixed replay host wiring in `src/offscreen/offscreen.ts`, `src/shared/player-host.ts`, and popup display in `src/popup/popup.ts`
+- popup release discovery in `src/background/service-worker.ts` and `src/popup/popup.ts`
 
 ## 2. Functional & Non-Functional Requirements
 
@@ -64,6 +66,7 @@ This module covers authentication, Google Drive upload, replay URL generation, b
 - Include recording-specific metadata in the player title so multiple open replay tabs remain distinguishable.
 - Show a usage/intro landing state when the player opens without replay query params, including GitHub and contribution guidance.
 - Surface GitHub and contribution entry points inside the extension popup, without exposing the fixed player host as popup UI.
+- Let the popup compare the installed version with the latest GitHub release and surface a release/download path when a newer extension zip exists.
 - Keep extension runtime state mirrored into a popup/auth snapshot without forcing a live Google Drive verification on every state write.
 - Recover popup-visible recording state after service-worker restart by reconciling the last session snapshot with the offscreen capture state when possible.
 
@@ -82,6 +85,7 @@ This module covers authentication, Google Drive upload, replay URL generation, b
 - player video part downloads use bounded concurrency and skip Cache API storage for large video blobs to avoid first-load memory duplication.
 - extension-hosted player download can use Google Drive API `files.get?alt=media&supportsAllDrives=true` with the in-memory OAuth token returned by `GET_GOOGLE_DRIVE_TOKEN`.
 - standalone player proxies artifact downloads through a same-origin Cloudflare Pages Function at `/api/drive` to avoid browser CORS/CORP failures against public Google Drive download hosts, resolve Drive confirmation pages for large public files when OAuth is unavailable, and prevent unresolved HTML confirmation responses from being cached as replay artifacts.
+- popup update checks use the GitHub Releases API to compare the installed package version with the latest release and discover the versioned extension zip asset.
 
 ## 4. Business Rules
 
@@ -122,6 +126,7 @@ This module covers authentication, Google Drive upload, replay URL generation, b
 - player unlocks password-protected packages by prompting for the recording password, decrypting the inner zip in-browser, and then using the same parser path as unprotected packages.
 - opening the player with no query params should render onboarding/help content rather than the invalid-params error; malformed partial query strings still use the error state.
 - popup should provide direct links to the GitHub repository and a contribution surface so users can discover the project and help improve it, while auth status is revalidated on popup open instead of relying only on cached session state.
+- popup should run a lightweight update check on open, provide a manual check action, and only guide the user to a release/download page; it does not self-install extension updates.
 - per-file progress labels should use artifact-level filenames or stable labels so parallel transfers remain debuggable without coupling copy to transient upload ordering.
 - popup should default uploads to `/gn-tracing` and let the user configure a Google Drive parent folder by entering `/folder/path`, pasting a folder id, or pasting a Google Drive folder link; blank or `/` means Drive root.
 - popup should expose recent upload history from local extension storage only; upload history is not written to Google Drive.
