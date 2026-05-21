@@ -24,6 +24,8 @@ related:
 - [compliance/privacy-policy.md](./compliance/privacy-policy.md)
 - [compliance/chrome-web-store-submission.md](./compliance/chrome-web-store-submission.md)
 - [specs/planning/password-protected-recording-zip.md](./specs/planning/password-protected-recording-zip.md)
+- [specs/planning/drive-api-alt-media-player-download.md](./specs/planning/drive-api-alt-media-player-download.md)
+- [specs/planning/player-console-sourcemap-source-preview.md](./specs/planning/player-console-sourcemap-source-preview.md)
 - [_sync.md](./_sync.md)
 
 ## Dependency Map
@@ -45,5 +47,6 @@ related:
 - `service-worker` -> `chrome.storage.session`: state fan-out to popup and auth page
 - `offscreen` -> Google Drive APIs: target-folder resolution/creation, optional password-based package encryption, zip package upload, and sharing permissions
 - `offscreen` -> Cloudflare Pages standalone player URL generation with one recording zip file ID path (`/<id>`)
-- `standalone player` -> same-origin `/api/drive?id=<file-id>` proxy for Drive package fetches during replay; password-protected packages are decrypted in-browser after user unlock
+- `extension player` -> Google Drive API `files.get?alt=media` with the current OAuth token for Drive package fetches when available
+- `standalone player` -> same-origin `/api/drive?id=<file-id>` proxy for Drive package fetches when no OAuth token is available; password-protected packages are decrypted in-browser after user unlock
 - `release workflow` -> root `Taskfile.yml`: extension build, Store package checks, and zip packaging with OAuth/extension identity from repository secrets; standalone player deploy stays manual via `player-standalone/deploy.sh`

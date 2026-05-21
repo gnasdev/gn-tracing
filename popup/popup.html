@@ -26,6 +26,7 @@
             <path d="M5 19h14"/>
             <path d="M18 7a6 6 0 0 0-11.5-1.5"/>
           </svg>
+          <span id="update-available-badge" class="update-available-badge hidden" aria-hidden="true"></span>
         </button>
         <div id="status-bar" class="hidden">
           <span id="recording-indicator"></span>
@@ -238,6 +239,7 @@
     <div id="error-msg" class="hidden"></div>
     <div id="toast" class="toast hidden" role="status" aria-live="polite">
       <span id="toast-message"></span>
+      <a id="toast-link" class="toast-link hidden" href="#" target="_blank" rel="noopener noreferrer"></a>
       <button id="toast-close-btn" class="toast-close-btn" type="button" aria-label="Dismiss notification" title="Dismiss">
         <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
           <path d="M6 6l12 12M18 6 6 18"/>

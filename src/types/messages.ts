@@ -75,6 +75,7 @@ export interface UpdateCheckResult {
   currentVersion: string;
   latestVersion: string;
   isUpdateAvailable: boolean;
+  downloadUrl?: string;
 }
 
 export type ProgressItemStatus =

@@ -1185,6 +1185,60 @@ body {
   border-radius: 4px;
 }
 
+.source-preview {
+  overflow: hidden;
+  border: 1px solid var(--gh-border);
+  border-radius: 6px;
+  background: var(--gh-bg);
+}
+
+.source-preview-location {
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--gh-border);
+  color: var(--gh-secondary);
+  font-family: "SF Mono", "Fira Code", monospace;
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+
+.source-preview-code {
+  overflow-x: auto;
+  padding: 4px 0;
+  font-family: "SF Mono", "Fira Code", monospace;
+}
+
+.source-preview-row {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  min-width: max-content;
+  line-height: 1.5;
+}
+
+.source-preview-row.active {
+  background: rgba(255, 212, 0, 0.08);
+}
+
+.source-preview-line {
+  user-select: none;
+  padding: 0 8px;
+  border-right: 1px solid var(--gh-border);
+  color: var(--gh-muted);
+  text-align: right;
+}
+
+.source-preview code {
+  display: block;
+  padding: 0 8px;
+  color: var(--gh-primary);
+  white-space: pre;
+}
+
+.source-preview-note {
+  padding: 4px 8px 6px;
+  color: var(--gh-muted);
+  font-size: 10px;
+}
+
 .console-detail .arg-row {
   display: flex;
   gap: 8px;

@@ -32,6 +32,15 @@ export interface PreviewEntry {
   value: ObjectPreview;
 }
 
+export interface SourceCodeSnippet {
+  source: string;
+  startLine: number;
+  line: number;
+  column?: number;
+  lines: string[];
+  truncated?: boolean;
+}
+
 /**
  * Recording artifact data models.
  *
@@ -49,6 +58,7 @@ export interface StackFrame {
   originalLine?: number;
   originalColumn?: number;
   originalName?: string;
+  sourceSnippet?: SourceCodeSnippet;
 }
 
 export interface ConsoleEntry {
@@ -65,6 +75,7 @@ export interface ConsoleEntry {
   originalLine?: number;
   originalColumn?: number;
   originalName?: string;
+  sourceSnippet?: SourceCodeSnippet;
 }
 
 export interface NetworkEntry {
@@ -166,6 +177,7 @@ export interface WebSocketFrame {
 export interface SourceMapRaw {
   version: number;
   sources?: string[];
+  sourcesContent?: Array<string | null>;
   names?: string[];
   mappings?: string;
   sourceRoot?: string;
@@ -186,4 +198,5 @@ export interface ResolvedLocation {
   line: number;
   column: number;
   name: string | null;
+  sourceSnippet?: SourceCodeSnippet;
 }

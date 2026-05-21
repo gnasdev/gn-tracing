@@ -274,8 +274,6 @@ export class CdpManager {
 
   releaseSourceMaps(): void {
     this.#sourceMapFetches.clear();
-    this.#sourceMapFetchKeys.clear();
-    this.#sourceMapHints.clear();
     this.#sourceMapResolver.clear();
   }
 
@@ -289,8 +287,6 @@ export class CdpManager {
     this.#pendingEarlyHints.clear();
     this.#pendingServedFromCache.clear();
     this.#attachedSessions.clear();
-    this.#sourceMapHints.clear();
-    this.#sourceMapFetchKeys.clear();
     this.#sourceMapResolver.clear();
     this.#sourceMapFetches.clear();
 
@@ -556,14 +552,6 @@ export class CdpManager {
       entry.entry.protocol = params.response.protocol ?? null;
       entry.entry.remoteIPAddress = params.response.remoteIPAddress ?? null;
     }
-
-    const scriptUrl = params.response.url || entry?.entry.url;
-    const sourceMapHint = this.#getHeaderValue(params.response.headers, "sourcemap")
-      || this.#getHeaderValue(params.response.headers, "x-sourcemap");
-    if (scriptUrl && sourceMapHint) {
-      this.#sourceMapHints.set(scriptUrl, sourceMapHint);
-      this.#scheduleSourceMapFetch(source, scriptUrl, sourceMapHint);
-    }
   }
 
   #onResponseReceivedExtraInfo(source: chrome.debugger.Debuggee, params: CdpResponseReceivedExtraInfoParams): void {
@@ -743,17 +731,6 @@ export class CdpManager {
     return SENSITIVE_HEADER_PATTERNS.some((pattern) => normalized.includes(pattern));
   }
 
-  #getHeaderValue(headers: Record<string, string> | undefined, headerName: string): string | undefined {
-    if (!headers) return undefined;
-    const normalizedHeaderName = headerName.toLowerCase();
-    for (const [name, value] of Object.entries(headers)) {
-      if (name.toLowerCase() === normalizedHeaderName && value) {
-        return value;
-      }
-    }
-    return undefined;
-  }
-
   // ════════════════════════════════════════════
   // Console / Runtime handlers
   // ════════════════════════════════════════════
@@ -879,34 +856,16 @@ export class CdpManager {
 
   #onScriptParsed(source: chrome.debugger.Debuggee, params: CdpScriptParsedParams): void {
     if (params.sourceMapURL && params.url) {
-      this.#scheduleSourceMapFetch(
-        source,
-        params.url,
-        params.sourceMapURL,
-        params.executionContextAuxData?.frameId,
+      const promise = this.#trackSourceMapFetch(
+        this.#fetchAndRegisterSourceMap(
+          source,
+          params.url,
+          params.sourceMapURL,
+          params.executionContextAuxData?.frameId,
+        ),
       );
+      this.#sourceMapFetches.add(promise);
     }
-  }
-
-  #scheduleSourceMapFetch(
-    source: chrome.debugger.Debuggee,
-    scriptUrl: string,
-    sourceMapURL: string,
-    frameId?: string,
-  ): void {
-    const resolvedUrl = this.#resolveSourceMapUrl(sourceMapURL, scriptUrl);
-    const key = `${scriptUrl}\n${resolvedUrl}`;
-    if (this.#sourceMapFetchKeys.has(key)) {
-      return;
-    }
-
-    this.#sourceMapFetchKeys.add(key);
-    const rawPromise = this.#fetchAndRegisterSourceMap(source, scriptUrl, resolvedUrl, frameId)
-      .finally(() => {
-        this.#sourceMapFetchKeys.delete(key);
-      });
-    const promise = this.#trackSourceMapFetch(rawPromise);
-    this.#sourceMapFetches.add(promise);
   }
 
   #trackSourceMapFetch(promise: Promise<void>): Promise<void> {

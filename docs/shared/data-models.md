@@ -50,13 +50,15 @@ related:
 ## Capture Payload Models
 
 - `ConsoleEntry`
-  console/browser/exception payload with serialized args and optional source-mapped stack data.
+  console/browser/exception payload with serialized args, optional source-mapped stack data, and bounded source snippets when sourcemaps include `sourcesContent`.
 - `NetworkEntry`
   request/response/timing/body/redirect metadata, plus initiator/source-map enrichment.
 - `WebSocketEntry`
   connection metadata plus sent/received frames.
+- `SourceCodeSnippet`
+  compact source preview embedded on resolved console entries or frames; it stores only nearby lines, zero-based source coordinates, and truncation metadata.
 - `ResolvedLocation`
-  normalized source map result used to enrich console and initiator frames after capture ends.
+  normalized source map result used to enrich console and initiator frames after capture ends, including a `SourceCodeSnippet` when source content is available.
 
 ## Storage Semantics
 
@@ -68,7 +70,7 @@ related:
 - password-protected zips contain clear encryption metadata plus `encrypted-payload.bin`; the decrypted payload is the normal recording zip, and the player prompts for the password before loading artifacts
 - zip password settings are stored locally in extension storage and only a `zipPasswordConfigured` boolean is exposed through popup state snapshots
 - the offscreen recorded video blob is retained only until upload completes successfully; after that the blob and recorder references are released
-- source-map caches are temporary enrichment helpers and are discarded immediately after stored console/network artifacts are resolved
+- source-map caches are temporary enrichment helpers and are discarded immediately after stored console/network artifacts are resolved; replay artifacts retain only resolved locations and bounded source snippets, not full sourcemaps
 - replay links identify a recording by the single zip file ID path, while legacy query-param replay links can still be parsed by the player for compatibility
-- standalone replay resolves those file IDs through the same-origin `/api/drive?id=<file-id>` proxy on Cloudflare Pages instead of browser-direct Drive fetches
+- extension replay can resolve those file IDs through Google Drive API `files.get?alt=media` with the current in-memory OAuth token, while standalone replay resolves them through the same-origin `/api/drive?id=<file-id>` proxy on Cloudflare Pages when no token is available
 - upload history is stored only in `chrome.storage.local`; it is not synced or written into Google Drive

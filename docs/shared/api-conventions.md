@@ -41,6 +41,6 @@ related:
 - Manifest host permissions
   the Store manifest does not request broad host permissions; recording access is initiated through the user-selected active tab, `tabCapture`, and temporary `chrome.debugger` attachment. The only fixed host permission is `https://api.github.com/`, used by the popup update check to compare the installed version with the latest GitHub release.
 - Google Drive REST APIs
-  used for token verification, multipart upload, permission creation, and token revocation.
+  used for token verification, multipart upload, permission creation, token revocation, and authenticated replay package downloads through `files.get?alt=media` when the extension player has an OAuth token.
 - Cloudflare Pages Function `/api/drive?id=<file-id>`
-  proxies standalone replay downloads to `drive.usercontent.google.com` while preserving range requests and response content headers.
+  proxies standalone replay downloads to `drive.usercontent.google.com`, resolves Google Drive confirmation pages for large public files, preserves range requests plus response content headers when the hosted player cannot use an OAuth token, and returns non-cacheable errors if Drive still responds with HTML instead of file bytes.

@@ -35,6 +35,7 @@
   const DRIVE_CACHE_NAME = 'gn-tracing-drive-files-v1';
   const DRIVE_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
   const DRIVE_CACHE_MAX_BYTES = 5 * 1024 * 1024;
+  const DRIVE_API_FILES_URL = 'https://www.googleapis.com/drive/v3/files';
   const VIDEO_DOWNLOAD_CONCURRENCY = 4;
   const ZIP_ENCRYPTION_PAYLOAD_PATH = 'encrypted-payload.bin';
   const ZIP_ENCRYPTION_ALGORITHM = 'AES-GCM';
@@ -705,6 +706,45 @@
     );
   }
 
+  function getConsoleSourceSnippet(entry) {
+    if (entry?.sourceSnippet?.lines?.length) return entry.sourceSnippet;
+    const frame = (entry?.stackTrace || []).find(item => !item.asyncBoundary && item.sourceSnippet?.lines?.length);
+    return frame?.sourceSnippet || null;
+  }
+
+  function formatSnippetSourceLocation(snippet) {
+    if (!snippet?.source) return '';
+    const line = typeof snippet.line === 'number' ? snippet.line + 1 : null;
+    const column = typeof snippet.column === 'number' ? snippet.column + 1 : null;
+    if (!line) return snippet.source;
+    return column ? `${snippet.source}:${line}:${column}` : `${snippet.source}:${line}`;
+  }
+
+  function renderSourceSnippet(snippet) {
+    if (!snippet?.lines?.length) return '';
+    const activeLine = typeof snippet.line === 'number' ? snippet.line : -1;
+    const startLine = typeof snippet.startLine === 'number' ? snippet.startLine : 0;
+    const location = formatSnippetSourceLocation(snippet);
+    const rows = snippet.lines.map((line, index) => {
+      const lineNumber = startLine + index;
+      const isActive = lineNumber === activeLine;
+      return `
+        <div class="source-preview-row ${isActive ? 'active' : ''}">
+          <span class="source-preview-line">${lineNumber + 1}</span>
+          <code>${escapeHtml(line)}</code>
+        </div>
+      `;
+    }).join('');
+
+    return `
+      <div class="source-preview">
+        ${location ? `<div class="source-preview-location">${escapeHtml(location)}</div>` : ''}
+        <div class="source-preview-code">${rows}</div>
+        ${snippet.truncated ? '<div class="source-preview-note">Line truncated in recording artifact.</div>' : ''}
+      </div>
+    `;
+  }
+
   function getNetworkInitiatorLocation(initiator) {
     if (!initiator) return '';
     const initiatorLocation = isUsableLocationFrame(initiator) ? initiator : null;
@@ -729,6 +769,7 @@
       entry.message,
       entry.url,
       entry.originalSource,
+      stringifyForSearch(entry.sourceSnippet),
       sourceLocation,
       renderArgs(entry),
       ...(entry.args || []).map(stringifyForSearch),
@@ -738,6 +779,7 @@
         frame.originalName,
         frame.url,
         frame.originalSource,
+        stringifyForSearch(frame.sourceSnippet),
       ])),
     ];
 
@@ -1334,12 +1376,69 @@
   // Google Drive API functions
   // Check if external adapter is available (set by standalone mode)
   const DRIVE_ADAPTER = window.GN_DRIVE_ADAPTER || null;
+  function getDriveApiMediaUrl(fileId) {
+    const url = new URL(`${DRIVE_API_FILES_URL}/${encodeURIComponent(fileId)}`);
+    url.searchParams.set('alt', 'media');
+    url.searchParams.set('supportsAllDrives', 'true');
+    return url.toString();
+  }
+
   function getDownloadUrl(fileId) {
     if (IS_STANDALONE && DRIVE_ADAPTER) {
       return `/api/drive?id=${encodeURIComponent(fileId)}`;
     }
 
     return `https://drive.usercontent.google.com/download?id=${fileId}&export=download`;
+  }
+
+  async function getExtensionDriveToken() {
+    if (!IS_EXTENSION || typeof chrome === 'undefined' || !chrome.runtime || typeof chrome.runtime.sendMessage !== 'function') {
+      return null;
+    }
+
+    return new Promise((resolve) => {
+      try {
+        chrome.runtime.sendMessage({ action: 'GET_GOOGLE_DRIVE_TOKEN' }, (response) => {
+          if (chrome.runtime.lastError || !response?.ok || typeof response.token !== 'string' || !response.token) {
+            resolve(null);
+            return;
+          }
+          resolve(response.token);
+        });
+      } catch {
+        resolve(null);
+      }
+    });
+  }
+
+  async function fetchDriveFileWithOAuth(fileId) {
+    const token = await getExtensionDriveToken();
+    if (!token) {
+      return null;
+    }
+
+    let response;
+    try {
+      response = await fetch(getDriveApiMediaUrl(fileId), {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+    } catch {
+      return null;
+    }
+
+    if (response.ok) {
+      return response;
+    }
+
+    // Auth and permission failures can still succeed through the public link
+    // proxy when a replay package is link-readable, so let the caller fall back.
+    if (response.status === 401 || response.status === 403) {
+      return null;
+    }
+
+    throw new Error(`Failed to download Drive file ${fileId} via Google Drive API: HTTP ${response.status}`);
   }
 
   async function mapWithConcurrency(items, concurrency, worker) {
@@ -1365,6 +1464,11 @@
   }
 
   async function fetchDriveFileWithCache(fileId, options = {}) {
+    const oauthResponse = await fetchDriveFileWithOAuth(fileId);
+    if (oauthResponse) {
+      return oauthResponse;
+    }
+
     const url = getDownloadUrl(fileId);
     if (options.cache === false || typeof caches === 'undefined') {
       return fetch(url);
@@ -1373,7 +1477,14 @@
     const cache = await caches.open(DRIVE_CACHE_NAME);
     const cached = await cache.match(url);
     const cachedAt = Number(cached?.headers.get('x-gn-cached-at')) || 0;
-    const isFresh = cached && cachedAt > 0 && (Date.now() - cachedAt) < DRIVE_CACHE_TTL_MS;
+    const cachedType = String(cached?.headers.get('content-type') || '').toLowerCase();
+    const cachedLooksLikeHtml = cachedType.includes('text/html');
+    if (cachedLooksLikeHtml) {
+      // Confirmation/error HTML pages are not valid recording artifacts; remove
+      // stale bad entries so a fixed proxy can be retried immediately.
+      await cache.delete(url);
+    }
+    const isFresh = cached && !cachedLooksLikeHtml && cachedAt > 0 && (Date.now() - cachedAt) < DRIVE_CACHE_TTL_MS;
 
     if (isFresh) {
       return cached.clone();
@@ -1471,6 +1582,15 @@
     }
     const bytes = new Uint8Array(await blob.slice(0, 4).arrayBuffer());
     return bytes[0] === 0x50 && bytes[1] === 0x4b && bytes[2] === 0x03 && bytes[3] === 0x04;
+  }
+
+  async function isLikelyHtmlBlob(blob) {
+    const type = String(blob?.type || '').toLowerCase();
+    if (type.includes('text/html')) {
+      return true;
+    }
+    const preview = await blob.slice(0, 128).text().catch(() => '');
+    return preview.trimStart().startsWith('<');
   }
 
   async function parseJsonBlob(blob, label) {
@@ -1782,6 +1902,10 @@
       }
 
       return buildRecordingFilesFromPackageEntries(entries, indexJson, indexId);
+    }
+
+    if (await isLikelyHtmlBlob(packageBlob)) {
+      throw new Error('Drive returned an HTML download page instead of a recording package. Please retry after the player proxy refreshes the Drive download confirmation.');
     }
 
     const indexJson = await parseJsonBlob(packageBlob, 'recording-index.json');
@@ -2339,6 +2463,16 @@
         <div class="detail-section">
           <h4>Source</h4>
           <pre>${escapeHtml(sourceLocation)}</pre>
+        </div>
+      `;
+    }
+
+    const sourceSnippet = getConsoleSourceSnippet(entry);
+    if (sourceSnippet) {
+      detailHtml += `
+        <div class="detail-section">
+          <h4>Source Preview</h4>
+          ${renderSourceSnippet(sourceSnippet)}
         </div>
       `;
     }

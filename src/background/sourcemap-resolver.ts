@@ -1,9 +1,12 @@
 /**
  * Resolves generated stack frames back to original source locations.
  */
-import type { SourceMapRaw, ResolvedLocation } from "../types/recording";
+import type { SourceMapRaw, ResolvedLocation, SourceCodeSnippet } from "../types/recording";
 
 const BASE64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+const SOURCE_SNIPPET_CONTEXT_LINES = 3;
+const SOURCE_SNIPPET_MAX_LINE_LENGTH = 500;
+const SOURCE_SNIPPET_MAX_TOTAL_CHARS = 6000;
 const charToInt = new Uint8Array(128);
 for (let i = 0; i < BASE64.length; i++) {
   charToInt[BASE64.charCodeAt(i)] = i;
@@ -79,6 +82,7 @@ function decodeMappings(mappingsStr: string): number[][][] {
 
 interface ParsedMap {
   sources: string[];
+  sourcesContent: Array<string | null | undefined>;
   names: string[];
   mappings: number[][][];
 }
@@ -90,6 +94,7 @@ function parseMap(raw: SourceMapRaw): ParsedMap | null {
     const sourceRoot = raw.sourceRoot || "";
     return {
       sources: (raw.sources || []).map((s) => sourceRoot + s),
+      sourcesContent: raw.sourcesContent || [],
       names: raw.names || [],
       mappings: decodeMappings(raw.mappings),
     };
@@ -99,6 +104,7 @@ function parseMap(raw: SourceMapRaw): ParsedMap | null {
 
   const parsed: ParsedMap = {
     sources: [],
+    sourcesContent: [],
     names: [],
     mappings: [],
   };
@@ -111,6 +117,7 @@ function parseMap(raw: SourceMapRaw): ParsedMap | null {
     const sourceOffset = parsed.sources.length;
     const nameOffset = parsed.names.length;
     parsed.sources.push(...child.sources);
+    parsed.sourcesContent.push(...child.sourcesContent);
     parsed.names.push(...child.names);
 
     const lineOffset = section.offset?.line || 0;
@@ -140,6 +147,115 @@ function parseMap(raw: SourceMapRaw): ParsedMap | null {
   }
 
   return parsed;
+}
+
+function truncateSnippetLine(line: string): { text: string; truncated: boolean } {
+  if (line.length <= SOURCE_SNIPPET_MAX_LINE_LENGTH) {
+    return { text: line, truncated: false };
+  }
+  return {
+    text: `${line.slice(0, SOURCE_SNIPPET_MAX_LINE_LENGTH)}...(truncated)`,
+    truncated: true,
+  };
+}
+
+function readSourceSnippetLines(
+  content: string,
+  startLine: number,
+  endLine: number,
+  targetLine: number,
+): string[] | null {
+  const lines: string[] = [];
+  let currentLine = 0;
+  let lineStart = 0;
+  let sawTargetLine = false;
+
+  for (let i = 0; i <= content.length; i++) {
+    let isLineBreak = i === content.length;
+    let lineEnd = i;
+
+    if (!isLineBreak) {
+      const char = content[i];
+      if (char === "\r" || char === "\n") {
+        isLineBreak = true;
+        if (char === "\r" && content[i + 1] === "\n") {
+          lineEnd = i;
+          i++;
+        }
+      }
+    }
+
+    if (!isLineBreak) {
+      continue;
+    }
+
+    if (currentLine === targetLine) {
+      sawTargetLine = true;
+    }
+    if (currentLine >= startLine && currentLine < endLine) {
+      lines.push(content.slice(lineStart, lineEnd));
+    }
+    if (currentLine >= endLine) {
+      break;
+    }
+
+    currentLine++;
+    lineStart = i + 1;
+  }
+
+  return sawTargetLine ? lines : null;
+}
+
+function buildSourceSnippet(
+  source: string,
+  content: string | null | undefined,
+  line: number,
+  column: number,
+): SourceCodeSnippet | undefined {
+  if (typeof content !== "string" || line < 0) {
+    return undefined;
+  }
+
+  const startLine = Math.max(0, line - SOURCE_SNIPPET_CONTEXT_LINES);
+  const endLine = line + SOURCE_SNIPPET_CONTEXT_LINES + 1;
+  let truncated = false;
+  let totalChars = 0;
+
+  // Store only the few lines needed to explain the captured stack frame. The
+  // full file can be large or sensitive, so replay artifacts should not embed it.
+  const sourceLines = readSourceSnippetLines(content, startLine, endLine, line);
+  if (!sourceLines) {
+    return undefined;
+  }
+
+  const lines: string[] = [];
+  for (const sourceLine of sourceLines) {
+    const result = truncateSnippetLine(sourceLine);
+    truncated = truncated || result.truncated;
+    const remainingChars = SOURCE_SNIPPET_MAX_TOTAL_CHARS - totalChars;
+    if (remainingChars <= 0) {
+      truncated = true;
+      break;
+    }
+    const suffix = "...(truncated)";
+    const text = result.text.length > remainingChars
+      ? remainingChars > suffix.length
+        ? `${result.text.slice(0, remainingChars - suffix.length)}${suffix}`
+        : suffix.slice(0, remainingChars)
+      : result.text;
+    truncated = truncated || text !== result.text;
+    totalChars += text.length;
+    lines.push(text);
+  }
+
+  return {
+    source,
+    startLine,
+    line,
+    column,
+    lines,
+    truncated: truncated || undefined,
+  };
 }
 
 export class SourceMapResolver {
@@ -187,6 +303,9 @@ export class SourceMapResolver {
       line: seg[2],
       column: seg[3],
       name: seg.length >= 5 ? (map.names[seg[4]] || null) : null,
+      sourceSnippet: map.sources[seg[1]]
+        ? buildSourceSnippet(map.sources[seg[1]], map.sourcesContent[seg[1]], seg[2], seg[3])
+        : undefined,
     };
   }
 

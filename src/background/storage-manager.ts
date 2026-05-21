@@ -80,6 +80,7 @@ export class StorageManager {
           entry.originalSource = resolved.source ?? undefined;
           entry.originalLine = resolved.line;
           entry.originalColumn = resolved.column;
+          entry.sourceSnippet = resolved.sourceSnippet;
           if (resolved.name) {
             entry.originalName = resolved.name;
           }
@@ -191,6 +192,7 @@ export class StorageManager {
         frame.originalSource = resolved.source ?? undefined;
         frame.originalLine = resolved.line;
         frame.originalColumn = resolved.column;
+        frame.sourceSnippet = resolved.sourceSnippet;
         if (resolved.name) {
           frame.originalName = resolved.name;
         }
@@ -216,6 +218,7 @@ export class StorageManager {
       originalLine?: number;
       originalColumn?: number;
       originalName?: string;
+      sourceSnippet?: StackFrame["sourceSnippet"];
     },
     frame: StackFrame | undefined,
   ): void {
@@ -230,6 +233,9 @@ export class StorageManager {
       target.originalSource = frame.originalSource;
       target.originalLine = frame.originalLine;
       target.originalColumn = frame.originalColumn;
+    }
+    if (!target.sourceSnippet && frame.sourceSnippet) {
+      target.sourceSnippet = frame.sourceSnippet;
     }
     if (!target.originalName && frame.originalName) {
       target.originalName = frame.originalName;

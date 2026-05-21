@@ -52,12 +52,14 @@ This module covers authentication, Google Drive upload, replay URL generation, b
 - Upload Google Drive artifacts with bounded parallelism instead of strictly serial transfer.
 - Throttle high-frequency upload progress updates so popup state sync stays responsive while preserving immediate per-file state transitions.
 - Always return the Cloudflare-hosted standalone player URL at `https://tracing.gnas.dev/`.
+- Let the extension-hosted player use the user's existing Drive OAuth token to download replay packages through the Drive API media endpoint before falling back to public download paths.
 - Keep auth UI resilient to popup lifetime by using a dedicated auth page.
 - Keep standalone player deployable to Cloudflare Pages through a separate manual path outside the GitHub release workflow.
 - Keep GitHub Releases focused on the manual unpacked install zip.
 - Keep replay player layout user-adjustable with a draggable splitter, persisted split percentage, and switchable horizontal/vertical pane orientation.
 - Allow the video pane to expand to an immersive tab-level mode inside the player surface without triggering OS/screen fullscreen.
 - Keep network response inspection readable with syntax-highlighted source views for JavaScript, HTML, CSS, and JSON payloads.
+- Show source-mapped console locations with a bounded source preview when the recording artifact includes sourcemap `sourcesContent` snippets.
 - Provide inline response preview panels for HTML, media, and JSON artifacts inside the network detail inspector.
 - Include recording-specific metadata in the player title so multiple open replay tabs remain distinguishable.
 - Show a usage/intro landing state when the player opens without replay query params, including GitHub and contribution guidance.
@@ -78,7 +80,8 @@ This module covers authentication, Google Drive upload, replay URL generation, b
 - the player also retains a legacy direct-file query parser for debugging or older links that still pass `videos`, `metadata`, `console`, `network`, and `websocket` params.
 - standalone player loads the index first, then loads artifacts directly from the file IDs listed by that index and does not require Drive folder listing or a Drive API key for replay.
 - player video part downloads use bounded concurrency and skip Cache API storage for large video blobs to avoid first-load memory duplication.
-- standalone player proxies artifact downloads through a same-origin Cloudflare Pages Function at `/api/drive` to avoid browser CORS/CORP failures against public Google Drive download hosts.
+- extension-hosted player download can use Google Drive API `files.get?alt=media&supportsAllDrives=true` with the in-memory OAuth token returned by `GET_GOOGLE_DRIVE_TOKEN`.
+- standalone player proxies artifact downloads through a same-origin Cloudflare Pages Function at `/api/drive` to avoid browser CORS/CORP failures against public Google Drive download hosts, resolve Drive confirmation pages for large public files when OAuth is unavailable, and prevent unresolved HTML confirmation responses from being cached as replay artifacts.
 
 ## 4. Business Rules
 
@@ -91,6 +94,8 @@ This module covers authentication, Google Drive upload, replay URL generation, b
 - replay links always target the full Cloudflare Pages player host URL directly.
 - the auth page is a first-class surface that can both start auth and react to service-worker state updates.
 - standalone player is not the system of record for assets; it mirrors `player/` runtime logic through the sync script and wrapper adapters.
+- player download first uses authenticated Drive API media fetches when an extension OAuth token is available, but never places the token in replay URLs, uploaded artifacts, Cache API keys, or Cloudflare proxy requests.
+- player download falls back to the public/proxy Drive path when no token is available or the authenticated request returns an auth/access failure that may still succeed for link-readable files.
 - release automation expects both npm workspaces to have committed lockfiles and delegates build, zip, Store validation, and deploy commands to `Taskfile.yml`.
 - tag-based GitHub releases build the extension with repository secrets `GOOGLE_CLIENT_ID`, `CHROME_EXTENSION_ID`, `CHROME_EXTENSION_PUBLIC_KEY`, and `CHROME_EXTENSION_PRIVATE_KEY`, then publish `gn-tracing-extension-${tag}.zip` containing `gn-tracing-extension-${tag}/` for manual unpacked installation; they do not publish CRX/update XML artifacts or invoke Cloudflare deploy steps for the standalone player.
 - if video exceeds the upload limit, offscreen upload slices the final recording blob into ordered byte chunks and the player reassembles them locally before playback.
@@ -111,6 +116,7 @@ This module covers authentication, Google Drive upload, replay URL generation, b
 - pane resize is clamped to keep both panes visible; the same persisted percent is reused when switching between horizontal and vertical layout modes.
 - video "fullscreen" is implemented as an in-tab immersive player mode that hides the header and logs pane instead of using browser/OS fullscreen APIs.
 - network detail derives response presentation from mime type plus URL extension, then renders either highlighted source, an inline preview, or both.
+- console detail renders source-mapped file/line metadata and, when present, a small highlighted source preview from the captured console artifact without fetching source files during replay.
 - HTML preview uses a sandboxed iframe, media preview uses inline data URLs when captured payloads are base64-backed, and JSON preview combines a summary card with formatted source.
 - player title derives a short label from metadata URL plus recording timestamp and applies it to both the visible header and `document.title`.
 - player unlocks password-protected packages by prompting for the recording password, decrypting the inner zip in-browser, and then using the same parser path as unprotected packages.
@@ -128,12 +134,13 @@ This module covers authentication, Google Drive upload, replay URL generation, b
 - password-protected uploads protect package contents rather than Drive file discoverability; users still control who receives the replay URL and password.
 - password-protected uploads are GN Tracing encrypted packages, not native ZIP password files compatible with desktop unzip password prompts.
 - forgotten zip passwords cannot be recovered by GN Tracing because the encrypted payload is decrypted only from the user-provided password.
-- standalone mode depends only on direct public file download behavior for the artifact IDs embedded in the replay URL.
+- standalone mode depends on the `/api/drive` public proxy for the artifact IDs embedded in the replay URL unless a future hosted web OAuth flow explicitly supplies a token.
 - standalone mode assumes the Cloudflare Pages deployment includes the `/api/drive` proxy function so the browser never fetches Drive artifacts cross-origin.
 - extension build and standalone player build are separate pipelines.
 - local development extension builds may fall back to development OAuth/extension identity defaults, but production extension builds require explicit `GOOGLE_CLIENT_ID`, `CHROME_EXTENSION_ID`, and `CHROME_EXTENSION_PUBLIC_KEY`.
 - built-in player HTML and standalone wrapper HTML must stay markup-compatible because only `player.css` and `player.js` are synced automatically into `player-standalone/public/`; loading-state markup changes still require manual updates in `player-standalone/index.html`.
 - response preview intentionally stays dependency-free and lightweight; syntax highlighting is implemented in local player runtime helpers rather than external libraries.
+- console source previews are dependency-free and artifact-backed; replay does not fetch original sourcemaps or application source files from the recorded page.
 - manual Cloudflare Pages deployment expects project `gn-tracing-player`, root base path `/`, and secrets `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID`.
 - local deploys can source root `.env` / `.env.example` with `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_PAGES_PROJECT`, `PLAYER_HOST_URL`, and `VITE_BASE_PATH`.
 - intro/empty-state copy should stay aligned between extension and standalone player shells so the hosted root URL behaves as a clear product landing page.

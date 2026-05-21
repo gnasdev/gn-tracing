@@ -597,7 +597,15 @@ async function checkForExtensionUpdate(): Promise<MessageResponse> {
       return { ok: false, error: `GitHub release check failed (${response.status}).` };
     }
 
-    const latestRelease = await response.json() as { tag_name?: unknown; name?: unknown };
+    const latestRelease = await response.json() as {
+      tag_name?: unknown;
+      name?: unknown;
+      html_url?: unknown;
+      assets?: Array<{
+        name?: unknown;
+        browser_download_url?: unknown;
+      }>;
+    };
     const latestVersion = normalizeReleaseVersion(
       typeof latestRelease.tag_name === "string"
         ? latestRelease.tag_name
@@ -611,13 +619,15 @@ async function checkForExtensionUpdate(): Promise<MessageResponse> {
     }
 
     const comparison = compareVersions(currentVersion, latestVersion);
+    const downloadUrl = getReleaseDownloadUrl(latestRelease);
     const update = {
       currentVersion,
       latestVersion,
       isUpdateAvailable: comparison < 0,
+      downloadUrl,
     };
     if (comparison < 0) {
-      return { ok: true, message: `Update ${latestVersion} is available. Current ${currentVersion}.`, update };
+      return { ok: true, message: `New version ${latestVersion} is available. Current ${currentVersion}.`, update };
     }
     if (comparison > 0) {
       return { ok: true, message: `Current ${currentVersion} is newer than GitHub release ${latestVersion}.`, update };
@@ -626,6 +636,26 @@ async function checkForExtensionUpdate(): Promise<MessageResponse> {
   } catch (error) {
     return { ok: false, error: (error as Error).message };
   }
+}
+
+function getReleaseDownloadUrl(release: {
+  html_url?: unknown;
+  assets?: Array<{
+    name?: unknown;
+    browser_download_url?: unknown;
+  }>;
+}): string | undefined {
+  const extensionZip = release.assets?.find((asset) => {
+    const name = typeof asset.name === "string" ? asset.name : "";
+    return /^gn-tracing-extension-.+\.zip$/i.test(name);
+  });
+  const assetUrl = extensionZip?.browser_download_url;
+  if (typeof assetUrl === "string" && assetUrl.trim()) {
+    return assetUrl;
+  }
+  return typeof release.html_url === "string" && release.html_url.trim()
+    ? release.html_url
+    : undefined;
 }
 
 function normalizeReleaseVersion(version: string): string {

@@ -63,7 +63,7 @@ The service worker is the orchestration boundary. It owns session state, starts/
 - `START_RECORDING` clears prior captured data before a new session begins.
 - service worker marks the extension badge with `REC` while recording is active.
 - `chrome.alarms` keepalive is created at 0.4 minutes and cleared after stop.
-- source maps are flushed before debugger detach, then applied to stored console/network initiator data, and the resolver cache is released immediately after enrichment completes.
+- source maps are flushed before debugger detach, then applied to stored console/network initiator data, including bounded console source snippets when `sourcesContent` is available, and the resolver cache is released immediately after enrichment completes.
 - if the recorded tab closes, the service worker attempts an automatic stop and falls back to a forced state reset on error.
 - offscreen stop waits on a recording-complete signal with a 3 second safety timeout.
 - large console payloads are truncated to 32 KB per entry before storage.
@@ -80,6 +80,7 @@ The service worker is the orchestration boundary. It owns session state, starts/
 - `MediaRecorder` uses VP9+Opus when supported, otherwise VP8+Opus.
 - request/response body capture is opt-in, best-effort, and subject to CDP availability plus body size/type rules in the implementation.
 - sensitive headers are redacted by header-name pattern before network entries are serialized for upload/replay.
+- source previews depend on sourcemaps carrying `sourcesContent`; recordings fall back to source-mapped file/line labels when source content is absent.
 
 ## 6. Relationships
 

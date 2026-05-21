@@ -40,6 +40,7 @@ const toggleBtn = document.getElementById("toggle-btn") as HTMLButtonElement;
 const removeRecordingBtn = document.getElementById("remove-recording-btn") as HTMLButtonElement;
 const reloadBtn = document.getElementById("reload-btn") as HTMLButtonElement;
 const checkUpdateBtn = document.getElementById("check-update-btn") as HTMLButtonElement;
+const updateAvailableBadge = document.getElementById("update-available-badge")!;
 const settingsPanel = document.getElementById("settings-panel") as HTMLDetailsElement;
 const mainGoogleDriveSlot = document.getElementById("main-google-drive-slot")!;
 const settingsGoogleDriveSlot = document.getElementById("settings-google-drive-slot")!;
@@ -53,6 +54,7 @@ const sessionList = document.getElementById("session-list")!;
 const errorMsg = document.getElementById("error-msg")!;
 const toastEl = document.getElementById("toast")!;
 const toastMessageEl = document.getElementById("toast-message")!;
+const toastLinkEl = document.getElementById("toast-link") as HTMLAnchorElement;
 const toastCloseBtn = document.getElementById("toast-close-btn") as HTMLButtonElement;
 
 const googleDriveSection = document.getElementById("google-drive-section")!;
@@ -234,8 +236,18 @@ function normalizeToastMessage(message: string): string {
   return message.trim().replace(/\.+$/, "");
 }
 
-function showToast(message: string, durationMs = 1800): void {
+function showToast(message: string, durationMs = 1800, options: { variant?: "default" | "info"; linkUrl?: string; linkLabel?: string } = {}): void {
   toastMessageEl.textContent = normalizeToastMessage(message);
+  toastEl.classList.toggle("toast-info", options.variant === "info");
+  if (options.linkUrl) {
+    toastLinkEl.href = options.linkUrl;
+    toastLinkEl.textContent = options.linkLabel || "Open";
+    toastLinkEl.classList.remove("hidden");
+  } else {
+    toastLinkEl.removeAttribute("href");
+    toastLinkEl.textContent = "";
+    toastLinkEl.classList.add("hidden");
+  }
   toastEl.classList.remove("hidden");
   if (toastTimeout) {
     clearTimeout(toastTimeout);
@@ -251,6 +263,16 @@ function hideToast(): void {
     clearTimeout(toastTimeout);
     toastTimeout = null;
   }
+}
+
+function setUpdateAvailableBadge(isAvailable: boolean, latestVersion?: string): void {
+  updateAvailableBadge.classList.toggle("hidden", !isAvailable);
+  checkUpdateBtn.classList.toggle("has-update", isAvailable);
+  const label = isAvailable && latestVersion
+    ? `Check for update. Version ${latestVersion} is available.`
+    : "Check for update";
+  checkUpdateBtn.setAttribute("aria-label", label);
+  checkUpdateBtn.setAttribute("title", label);
 }
 
 function setUpdateCheckLoading(isLoading: boolean): void {
@@ -300,8 +322,15 @@ function handleUpdateCheckResult(result: MessageResponse, requestId: string, not
     return;
   }
 
+  setUpdateAvailableBadge(Boolean(result.update?.isUpdateAvailable), result.update?.latestVersion);
+
   if (result.update?.isUpdateAvailable || notifyAlways) {
-    showToast(result.message || "Update check complete.");
+    const hasUpdate = Boolean(result.update?.isUpdateAvailable);
+    showToast(result.message || "Update check complete.", hasUpdate ? 6000 : 1800, {
+      variant: hasUpdate ? "info" : "default",
+      linkUrl: hasUpdate ? result.update?.downloadUrl : undefined,
+      linkLabel: "Download",
+    });
   }
 }
 
@@ -724,6 +753,14 @@ reloadBtn.addEventListener("click", () => {
 
 toastCloseBtn.addEventListener("click", () => {
   hideToast();
+});
+
+toastLinkEl.addEventListener("click", (event) => {
+  event.preventDefault();
+  const url = toastLinkEl.getAttribute("href");
+  if (url) {
+    openExternalUrl(url);
+  }
 });
 
 checkUpdateBtn.addEventListener("click", () => {
