@@ -1,12 +1,13 @@
 /**
  * Renders and manages the full upload history page.
  */
-import type { MessageResponse, UploadHistoryEntry, UploadSettings } from "../types/messages";
+
 import {
   handleUploadHistoryAction,
   renderUploadHistoryList,
   sortUploadHistoryNewestFirst,
 } from "../shared/upload-history-ui";
+import type { MessageResponse, UploadHistoryEntry, UploadSettings } from "../types/messages";
 
 /**
  * Full upload-history page controller.
@@ -32,7 +33,7 @@ function showError(message: string): void {
 function showSuccess(message: string): void {
   errorMsg.textContent = message;
   errorMsg.className = "success-msg";
-  setTimeout(() => errorMsg.className = "hidden", 2000);
+  setTimeout(() => (errorMsg.className = "hidden"), 2000);
 }
 
 function openExternalUrl(url: string): void {
@@ -54,7 +55,9 @@ function renderHistory(history: UploadHistoryEntry[]): void {
 
 async function refreshHistory(): Promise<void> {
   try {
-    const result = await chrome.runtime.sendMessage({ action: "GET_SETTINGS" }) as MessageResponse & {
+    const result = (await chrome.runtime.sendMessage({
+      action: "GET_SETTINGS",
+    })) as MessageResponse & {
       settings?: UploadSettings;
       uploadHistory?: UploadHistoryEntry[];
     };
@@ -89,10 +92,10 @@ uploadHistoryList.addEventListener("click", async (event) => {
       renderHistory(currentHistory.filter((entry) => entry.id !== historyEntryId));
       button.disabled = true;
       try {
-        const result = await chrome.runtime.sendMessage({
+        const result = (await chrome.runtime.sendMessage({
           action: "DELETE_UPLOAD_HISTORY_ENTRY",
           data: { historyEntryId },
-        }) as MessageResponse & { uploadHistory?: UploadHistoryEntry[] };
+        })) as MessageResponse & { uploadHistory?: UploadHistoryEntry[] };
 
         if (!result.ok) {
           renderHistory(previousHistory);

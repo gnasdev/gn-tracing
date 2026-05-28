@@ -24,12 +24,8 @@ related:
 - [compliance/_summary.md](./compliance/_summary.md)
 - [compliance/privacy-policy.md](./compliance/privacy-policy.md)
 - [compliance/chrome-web-store-submission.md](./compliance/chrome-web-store-submission.md)
-- [specs/planning/upload-recording-as-zip.md](./specs/planning/upload-recording-as-zip.md)
-- [specs/planning/password-protected-recording-zip.md](./specs/planning/password-protected-recording-zip.md)
-- [specs/planning/native-zip-password-protection.md](./specs/planning/native-zip-password-protection.md)
-- [specs/planning/reduce-network-log-capture-volume.md](./specs/planning/reduce-network-log-capture-volume.md)
-- [specs/planning/drive-api-alt-media-player-download.md](./specs/planning/drive-api-alt-media-player-download.md)
-- [specs/planning/player-console-sourcemap-source-preview.md](./specs/planning/player-console-sourcemap-source-preview.md)
+- [specs/planning/restore-request-call-stack-sourcemap-resolution.md](./specs/planning/restore-request-call-stack-sourcemap-resolution.md)
+- [specs/planning/fix-generated-only-sourcemap-replay.md](./specs/planning/fix-generated-only-sourcemap-replay.md)
 - [_sync.md](./_sync.md)
 
 ## Dependency Map
@@ -45,12 +41,16 @@ related:
 - `release-and-update-checks`
   reads: `drive-and-player`, `shared/api-conventions`, `compliance/chrome-web-store-submission`
   calls: GitHub Releases API through the service worker for version comparison and release download discovery
+- `developer-tooling`
+  reads: `DEVELOPER.md`, `Taskfile.yml`, `package.json`, `biome.json`
+  enforces: Biome format/lint/import checks through npm scripts, Task aliases, and a Husky pre-commit hook over staged files
 
 ## Runtime Topology
 
 - `popup` -> `service-worker`: start/stop recording, upload, auth status
 - `service-worker` -> `cdp-manager`: console/network/WebSocket capture
 - `service-worker` -> `recorder-manager` -> `offscreen`: tab media recording lifecycle
+- `service-worker` -> injected content script: active-tab, recording-scoped user-event collection and selector-based visual masking with safe privacy settings only
 - `service-worker` -> `chrome.storage.session`: state fan-out to popup and auth page
 - `offscreen` -> Google Drive APIs: target-folder resolution/creation, compact/DEFLATE zip package creation, optional ZIP password entry protection, package upload, and sharing permissions
 - `offscreen` -> Cloudflare Pages standalone player URL generation with one recording zip file ID path (`/<id>`)

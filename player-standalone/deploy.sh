@@ -21,9 +21,6 @@ if [ -z "${CLOUDFLARE_API_TOKEN:-}" ] || [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]; th
   exit 1
 fi
 
-echo "Syncing player assets..."
-task -d .. player:sync
-
 echo "Building standalone player..."
 task -d .. player:build:cloudflare
 

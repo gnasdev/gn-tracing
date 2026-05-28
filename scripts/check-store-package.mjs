@@ -47,12 +47,22 @@ if (!manifest.minimum_chrome_version) {
 
 const allowedHostPermissions = new Set(["https://api.github.com/"]);
 const hostPermissions = Array.isArray(manifest.host_permissions) ? manifest.host_permissions : [];
-const unexpectedHostPermissions = hostPermissions.filter((permission) => !allowedHostPermissions.has(permission));
+const unexpectedHostPermissions = hostPermissions.filter(
+  (permission) => !allowedHostPermissions.has(permission),
+);
 if (unexpectedHostPermissions.length > 0) {
   fail(`unexpected host_permissions found: ${unexpectedHostPermissions.join(", ")}`);
 }
 
-for (const permission of ["tabCapture", "offscreen", "debugger", "activeTab", "storage", "alarms", "identity"]) {
+for (const permission of [
+  "tabCapture",
+  "offscreen",
+  "debugger",
+  "activeTab",
+  "storage",
+  "alarms",
+  "identity",
+]) {
   if (!manifest.permissions?.includes(permission)) {
     fail(`required permission ${permission} is missing.`);
   }

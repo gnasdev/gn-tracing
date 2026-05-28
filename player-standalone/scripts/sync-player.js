@@ -2,17 +2,17 @@
  * Sync Script - Copy player assets from ../player/ to public/
  */
 
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const sourceDir = path.resolve(__dirname, '../../player');
-const targetDir = path.resolve(__dirname, '../public');
+const sourceDir = path.resolve(__dirname, "../../player");
+const targetDir = path.resolve(__dirname, "../public");
 
-console.log('🔄 Syncing player assets...');
-console.log('Source:', sourceDir);
-console.log('Target:', targetDir);
+console.log("🔄 Syncing player assets...");
+console.log("Source:", sourceDir);
+console.log("Target:", targetDir);
 
 // Ensure target directory exists
 if (!fs.existsSync(targetDir)) {
@@ -20,7 +20,7 @@ if (!fs.existsSync(targetDir)) {
 }
 
 // Copy main files
-const filesToCopy = ['player.css', 'player.js'];
+const filesToCopy = ["player.css", "player.js"];
 let copiedCount = 0;
 
 for (const file of filesToCopy) {
@@ -37,10 +37,10 @@ for (const file of filesToCopy) {
 }
 
 // Copy icons directory
-const iconsSrc = path.join(sourceDir, 'icons');
-const iconsDest = path.join(targetDir, 'icons');
-const sharedIconsSrc = path.resolve(__dirname, '../../icons');
-const sharedIconFiles = ['icon.svg', 'icon32.png'];
+const iconsSrc = path.join(sourceDir, "icons");
+const iconsDest = path.join(targetDir, "icons");
+const sharedIconsSrc = path.resolve(__dirname, "../../icons");
+const sharedIconFiles = ["icon.svg", "icon32.png"];
 
 if (fs.existsSync(iconsSrc)) {
   if (!fs.existsSync(iconsDest)) {
@@ -53,10 +53,10 @@ if (fs.existsSync(iconsSrc)) {
     const destPath = path.join(iconsDest, entry.name);
     fs.copyFileSync(srcPath, destPath);
   }
-  console.log('  ✓ icons/');
+  console.log("  ✓ icons/");
   copiedCount++;
 } else {
-  console.error('  ✗ Missing icons/');
+  console.error("  ✗ Missing icons/");
 }
 
 for (const file of sharedIconFiles) {

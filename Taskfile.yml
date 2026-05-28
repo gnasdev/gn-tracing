@@ -21,6 +21,26 @@ tasks:
     cmds:
       - npx tsc --noEmit
 
+  lint:
+    desc: Run Biome lint checks across the repository.
+    cmds:
+      - npm run lint
+
+  format:
+    desc: Format repository sources with Biome.
+    cmds:
+      - npm run format
+
+  format:check:
+    desc: Check repository formatting with Biome.
+    cmds:
+      - npm run format:check
+
+  check:
+    desc: Run Biome format, lint, and import checks across the repository.
+    cmds:
+      - npm run check
+
   player:sync:
     desc: Sync shared player assets into the standalone player.
     dir: player-standalone
@@ -28,26 +48,24 @@ tasks:
       - node scripts/sync-player.js
 
   player:dev:
-    desc: Run the standalone player dev server.
-    dir: player-standalone
-    cmds:
-      - npm exec -- vite --port 5173
-
-  player:watch:
-    desc: Run the standalone player dev server.
+    desc: Run and watch the standalone player dev server.
     dir: player-standalone
     cmds:
       - npm exec -- vite --port 5173
 
   player:build:
-    desc: Build the standalone player with the development environment.
+    desc: Sync and build the standalone player with the development environment.
+    deps:
+      - player:sync
     dir: player-standalone
     cmds:
       - npm exec -- tsc
       - npm exec -- vite build --mode development
 
   player:dist:
-    desc: Build the standalone player with the production environment.
+    desc: Sync and build the standalone player with the production environment.
+    deps:
+      - player:sync
     dir: player-standalone
     cmds:
       - npm exec -- tsc
@@ -78,29 +96,17 @@ tasks:
     cmds:
       - ./deploy.sh
 
-  player:deploy:cloudflare:
-    desc: Deploy the standalone player to Cloudflare Pages.
-    cmds:
-      - task: player:deploy
-
   build:all:
     desc: Build the extension and standalone player with development settings.
     cmds:
       - task: build
-      - task: player:sync
       - task: player:build
 
   dist:all:
     desc: Build the extension and standalone player with production settings.
     cmds:
       - task: dist
-      - task: player:sync
       - task: player:dist
-
-  release:build:
-    desc: Build the production extension release artifact.
-    cmds:
-      - task: dist
 
   release:zip:
     desc: Zip the built extension for a GitHub release.
@@ -115,7 +121,7 @@ tasks:
   release:ci:
     desc: Run the CI release flow.
     cmds:
-      - task: release:build
+      - task: dist
       - task: release:zip
 
   store:check:

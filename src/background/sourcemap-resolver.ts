@@ -1,7 +1,12 @@
 /**
  * Resolves generated stack frames back to original source locations.
  */
-import type { SourceMapRaw, ResolvedLocation, SourceCodeSnippet } from "../types/recording";
+import type {
+  ResolvedLocation,
+  SourceCodeSnippet,
+  SourceMapRaw,
+  SourceMapResolveResult,
+} from "../types/recording";
 
 const BASE64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 const SOURCE_SNIPPET_CONTEXT_LINES = 3;
@@ -25,12 +30,15 @@ function decodeVLQ(str: string, offset: number): { value: number; next: number }
     shift += 5;
     if ((c & 32) === 0) break;
   }
-  return { value: (value & 1) ? -(value >> 1) : (value >> 1), next: i };
+  return { value: value & 1 ? -(value >> 1) : value >> 1, next: i };
 }
 
 function decodeMappings(mappingsStr: string): number[][][] {
   const lines: number[][][] = [];
-  let srcFile = 0, srcLine = 0, srcCol = 0, nameIdx = 0;
+  let srcFile = 0,
+    srcLine = 0,
+    srcCol = 0,
+    nameIdx = 0;
 
   for (const lineStr of mappingsStr.split(";")) {
     const segments: number[][] = [];
@@ -38,7 +46,10 @@ function decodeMappings(mappingsStr: string): number[][][] {
     let i = 0;
 
     while (i < lineStr.length) {
-      if (lineStr[i] === ",") { i++; continue; }
+      if (lineStr[i] === ",") {
+        i++;
+        continue;
+      }
 
       const seg: number[] = [];
 
@@ -85,6 +96,31 @@ interface ParsedMap {
   sourcesContent: Array<string | null | undefined>;
   names: string[];
   mappings: number[][][];
+}
+
+export function getSourceMapUrlKeys(url: string): string[] {
+  const keys = new Set<string>();
+  if (!url) return [];
+  keys.add(url);
+
+  try {
+    const parsed = new URL(url);
+    parsed.hash = "";
+    keys.add(parsed.href);
+
+    if (parsed.search) {
+      const withoutQuery = new URL(parsed.href);
+      withoutQuery.search = "";
+      keys.add(withoutQuery.href);
+    }
+  } catch {
+    const hashIndex = url.indexOf("#");
+    if (hashIndex >= 0) {
+      keys.add(url.slice(0, hashIndex));
+    }
+  }
+
+  return Array.from(keys);
 }
 
 function parseMap(raw: SourceMapRaw): ParsedMap | null {
@@ -238,11 +274,12 @@ function buildSourceSnippet(
       break;
     }
     const suffix = "...(truncated)";
-    const text = result.text.length > remainingChars
-      ? remainingChars > suffix.length
-        ? `${result.text.slice(0, remainingChars - suffix.length)}${suffix}`
-        : suffix.slice(0, remainingChars)
-      : result.text;
+    const text =
+      result.text.length > remainingChars
+        ? remainingChars > suffix.length
+          ? `${result.text.slice(0, remainingChars - suffix.length)}${suffix}`
+          : suffix.slice(0, remainingChars)
+        : result.text;
     truncated = truncated || text !== result.text;
     totalChars += text.length;
     lines.push(text);
@@ -269,21 +306,33 @@ export class SourceMapResolver {
    */
   #maps = new Map<string, ParsedMap>();
 
-  addMap(scriptUrl: string, raw: SourceMapRaw): void {
+  addMap(scriptUrl: string, raw: SourceMapRaw): boolean {
     const parsed = parseMap(raw);
-    if (!parsed) return;
-    this.#maps.set(scriptUrl, parsed);
+    if (!parsed) return false;
+    for (const key of getSourceMapUrlKeys(scriptUrl)) {
+      this.#maps.set(key, parsed);
+    }
+    return true;
   }
 
   resolve(url: string, line: number, column: number): ResolvedLocation | null {
-    const map = this.#maps.get(url);
-    if (!map) return null;
-    if (line < 0 || line >= map.mappings.length) return null;
+    const result = this.resolveWithStatus(url, line, column);
+    return result.status === "mapped" ? (result.location ?? null) : null;
+  }
+
+  resolveWithStatus(url: string, line: number, column: number): SourceMapResolveResult {
+    const map = getSourceMapUrlKeys(url)
+      .map((key) => this.#maps.get(key))
+      .find(Boolean);
+    if (!map) return { status: "no-map-for-generated-url" };
+    if (line < 0 || line >= map.mappings.length) return { status: "no-generated-line" };
 
     const segments = map.mappings[line];
-    if (!segments || segments.length === 0) return null;
+    if (!segments || segments.length === 0) return { status: "no-segment-for-column" };
 
-    let lo = 0, hi = segments.length - 1, best = -1;
+    let lo = 0,
+      hi = segments.length - 1,
+      best = -1;
     while (lo <= hi) {
       const mid = (lo + hi) >> 1;
       if (segments[mid][0] <= column) {
@@ -294,18 +343,21 @@ export class SourceMapResolver {
       }
     }
 
-    if (best < 0) return null;
+    if (best < 0) return { status: "no-segment-for-column" };
     const seg = segments[best];
-    if (seg.length < 4) return null;
+    if (seg.length < 4) return { status: "no-original-segment" };
 
     return {
-      source: map.sources[seg[1]] || null,
-      line: seg[2],
-      column: seg[3],
-      name: seg.length >= 5 ? (map.names[seg[4]] || null) : null,
-      sourceSnippet: map.sources[seg[1]]
-        ? buildSourceSnippet(map.sources[seg[1]], map.sourcesContent[seg[1]], seg[2], seg[3])
-        : undefined,
+      status: "mapped",
+      location: {
+        source: map.sources[seg[1]] || null,
+        line: seg[2],
+        column: seg[3],
+        name: seg.length >= 5 ? map.names[seg[4]] || null : null,
+        sourceSnippet: map.sources[seg[1]]
+          ? buildSourceSnippet(map.sources[seg[1]], map.sourcesContent[seg[1]], seg[2], seg[3])
+          : undefined,
+      },
     };
   }
 

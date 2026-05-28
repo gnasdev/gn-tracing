@@ -27,7 +27,9 @@ export class GoogleDriveAuth {
   }
 
   private async revokeAccessToken(token: string): Promise<void> {
-    const response = await fetch(`https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(token)}`);
+    const response = await fetch(
+      `https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(token)}`,
+    );
     if (!response.ok) {
       throw new Error(`Token revoke failed with status ${response.status}`);
     }
@@ -121,7 +123,10 @@ export class GoogleDriveAuth {
     if (this.isEdgeBrowser()) {
       try {
         if (!GOOGLE_CLIENT_ID) {
-          return { ok: false, error: "Google OAuth client id is not configured. Set GOOGLE_CLIENT_ID and rebuild." };
+          return {
+            ok: false,
+            error: "Google OAuth client id is not configured. Set GOOGLE_CLIENT_ID and rebuild.",
+          };
         }
 
         const redirectUri = chrome.identity.getRedirectURL();

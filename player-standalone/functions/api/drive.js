@@ -19,7 +19,7 @@ function createDriveDownloadUrl(fileId) {
 function decodeHtmlAttribute(value) {
   return value
     .replace(/&amp;/g, "&")
-    .replace(/&quot;/g, "\"")
+    .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">");
@@ -28,9 +28,12 @@ function decodeHtmlAttribute(value) {
 function extractInputAttributes(inputHtml) {
   const attributes = {};
   const attributePattern = /([a-zA-Z_:][-a-zA-Z0-9_:.]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/g;
-  let match;
-  while ((match = attributePattern.exec(inputHtml)) !== null) {
-    attributes[match[1].toLowerCase()] = decodeHtmlAttribute(match[2] ?? match[3] ?? match[4] ?? "");
+  let match = attributePattern.exec(inputHtml);
+  while (match !== null) {
+    attributes[match[1].toLowerCase()] = decodeHtmlAttribute(
+      match[2] ?? match[3] ?? match[4] ?? "",
+    );
+    match = attributePattern.exec(inputHtml);
   }
   return attributes;
 }
@@ -38,12 +41,13 @@ function extractInputAttributes(inputHtml) {
 function extractFormFields(html) {
   const fields = new URLSearchParams();
   const inputPattern = /<input\b[^>]*>/gi;
-  let match;
-  while ((match = inputPattern.exec(html)) !== null) {
+  let match = inputPattern.exec(html);
+  while (match !== null) {
     const attributes = extractInputAttributes(match[0]);
     if (attributes.name && typeof attributes.value === "string") {
       fields.set(attributes.name, attributes.value);
     }
+    match = inputPattern.exec(html);
   }
   return fields;
 }

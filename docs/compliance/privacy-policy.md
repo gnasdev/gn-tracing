@@ -28,11 +28,15 @@ GN Tracing is a browser debugging extension that records a tab when the user exp
 GN Tracing may collect the following data for the tab being recorded:
 
 - tab video and tab audio when available
-- page URL and recording timestamps
+- page URL, page title, recording timestamps, duration, and basic browser/page environment context such as extension version, browser label, viewport, screen size, language, and timezone
+- a redacted interaction timeline with navigation, click, focus, and submit summaries; GN Tracing does not store raw typed input in this timeline
+- an optional visible-tab screenshot captured when the user stops recording
 - console logs, runtime errors, stack traces, and source-map-enhanced locations
 - network request metadata such as URL, method, status, timing, resource type, protocol, remote IP address, and encoded size
 - request and response headers with sensitive header values redacted by default
 - request bodies, response bodies, and WebSocket message payloads when those capture options are enabled
+- redaction summary metadata such as policy version, selected privacy profile, artifact flags, grouped redaction counts, and known limitations; this summary does not include raw secret values
+- optional DOM selector rules used locally by the extension to visually mask matching page elements during recording
 - optional zip password settings for protecting new uploads
 - local upload history such as replay URL, Drive folder ID, page URL, upload time, and duration
 
@@ -40,7 +44,7 @@ GN Tracing does not run continuous background browsing surveillance. It records 
 
 ## How Data Is Used
 
-GN Tracing uses captured data only to create a replayable debugging package. The extension stores the captured data temporarily in the extension runtime and browser extension storage so it can show upload progress, retry a pending upload, and generate a replay link.
+GN Tracing uses captured data only to create a replayable debugging package. Report metadata, the redacted interaction timeline, the optional screenshot, and the privacy summary help the player render a clearer bug report summary around the video and debugging logs. The extension applies client-side redaction before upload for supported text/JSON evidence, including sensitive headers, URL query parameters, body fields, console values, WebSocket text payloads, report metadata, and event metadata according to the user's privacy settings. The extension stores the captured data temporarily in the extension runtime and browser extension storage so it can show upload progress, retry a pending upload, and generate a replay link.
 
 When Google Drive is connected, GN Tracing uploads the recording artifacts to the user's Google Drive. If the user configures a zip password, GN Tracing writes a password-protected ZIP package in the browser before upload and the hosted player at `https://tracing.gnas.dev/` asks for that password before loading the replay.
 
@@ -48,11 +52,11 @@ When Google Drive is connected, GN Tracing uploads the recording artifacts to th
 
 GN Tracing uses the Google Drive `drive.file` scope to create and access files that GN Tracing creates or opens through the user's interaction. It does not request full access to every file in the user's Google Drive.
 
-Uploaded replay artifacts are made readable by link so the replay URL can be opened by teammates or other people the user shares it with. Anyone with an unprotected replay URL may be able to view the recording video and included debugging artifacts. Password-protected replay packages still use a link-readable Drive file, but the recording contents require the password in the GN Tracing player or a compatible unzip tool. Users should avoid recording pages that contain confidential information unless they intend to share that information through the generated replay link and, when configured, its password.
+Uploaded replay artifacts are made readable by link so the replay URL can be opened by teammates or other people the user shares it with. Anyone with an unprotected replay URL may be able to view the recording video, optional screenshot, report metadata, redacted interaction timeline, privacy summary, and included debugging artifacts. Password-protected replay packages still use a link-readable Drive file, but the recording contents require the password in the GN Tracing player or a compatible unzip tool. Users should avoid recording pages that contain confidential information unless they intend to share that information through the generated replay link and, when configured, its password.
 
 ## Data Storage And Deletion
 
-Before upload, recording data is held in the extension runtime and browser extension storage. Optional zip password settings are stored locally by the extension and are not placed in replay URLs, upload history, or uploaded package metadata. After upload, recording artifacts are stored in the user's Google Drive. Upload history is stored locally by the extension and is not synced into Google Drive.
+Before upload, recording data is held in the extension runtime and browser extension storage. Optional zip password settings are stored locally by the extension and are not placed in replay URLs, upload history, uploaded package metadata, or the page-injected event collector. After upload, recording artifacts, including any report, event, privacy summary, and screenshot artifacts captured for that session, are stored in the user's Google Drive. Upload history is stored locally by the extension and is not synced into Google Drive.
 
 Users can delete local upload history from the extension UI. Users can delete uploaded recordings by deleting the generated GN Tracing zip package from Google Drive.
 

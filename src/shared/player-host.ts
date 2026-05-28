@@ -26,7 +26,9 @@ export function buildExternalPlayerUrl(recordingId: string): string {
 }
 
 function normalizeAppEnv(value: string): string {
-  const normalized = String(value || "").trim().toLowerCase();
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase();
   if (normalized === "dev") return "development";
   if (normalized === "prod") return "production";
   return normalized || "production";

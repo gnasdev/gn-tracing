@@ -99,22 +99,30 @@ export class RecorderManager {
     this.#activeSessionId = sessionId;
   }
 
-  async cleanup(): Promise<void> {
+  async closeOffscreenDocument(): Promise<void> {
     if (this.#stopTimeoutId) {
       clearTimeout(this.#stopTimeoutId);
       this.#stopTimeoutId = null;
     }
     this.#stopPromiseResolve = null;
 
-    if (this.#offscreenCreated) {
-      try {
-        await chrome.offscreen.closeDocument();
-      } catch {
-        // Already closed.
-      }
-      this.#offscreenCreated = false;
+    const contexts = await chrome.runtime.getContexts({
+      contextTypes: [chrome.runtime.ContextType.OFFSCREEN_DOCUMENT],
+    });
+
+    if (contexts.length > 0) {
+      await chrome.offscreen.closeDocument();
     }
 
+    this.#offscreenCreated = false;
     this.#activeSessionId = null;
+  }
+
+  async cleanup(): Promise<void> {
+    try {
+      await this.closeOffscreenDocument();
+    } catch {
+      // Already closed.
+    }
   }
 }

@@ -31,7 +31,6 @@ function parseOptions(rawArgs) {
     }
     if (arg.startsWith("--zip=")) {
       parsed.zip = arg.slice("--zip=".length);
-      continue;
     }
   }
   return parsed;
@@ -77,7 +76,9 @@ async function getAccessToken() {
 
   const payload = await response.json().catch(() => ({}));
   if (!response.ok || !payload.access_token) {
-    throw new Error(`Unable to fetch access token (${response.status}): ${JSON.stringify(payload)}`);
+    throw new Error(
+      `Unable to fetch access token (${response.status}): ${JSON.stringify(payload)}`,
+    );
   }
 
   return payload.access_token;
@@ -118,7 +119,9 @@ async function uploadPackage() {
     body: zip,
   });
 
-  console.log(`Uploaded ${payload.itemId || getEnv("CHROME_WEBSTORE_EXTENSION_ID")} (${payload.crxVersion || "version pending"}).`);
+  console.log(
+    `Uploaded ${payload.itemId || getEnv("CHROME_WEBSTORE_EXTENSION_ID")} (${payload.crxVersion || "version pending"}).`,
+  );
   console.log(JSON.stringify(payload, null, 2));
 }
 

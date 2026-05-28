@@ -8,24 +8,24 @@
 
 export function isExtensionContext(): boolean {
   return (
-    typeof chrome !== 'undefined' &&
+    typeof chrome !== "undefined" &&
     chrome.runtime !== undefined &&
-    typeof chrome.runtime.getURL === 'function'
+    typeof chrome.runtime.getURL === "function"
   );
 }
 
-export function detectMode(): 'extension' | 'standalone' {
+export function detectMode(): "extension" | "standalone" {
   if (isExtensionContext()) {
-    return 'extension';
+    return "extension";
   }
-  return 'standalone';
+  return "standalone";
 }
 
 export function getBaseUrl(): string {
   if (isExtensionContext()) {
-    return chrome.runtime.getURL('dist/player/');
+    return chrome.runtime.getURL("dist/player/");
   }
-  return './';
+  return "./";
 }
 
 export function getDriveFileUrl(fileId: string): string {

@@ -1,22 +1,50 @@
 /**
  * Main extension service worker for recording, state, upload, and message routing.
  */
-import { RecorderManager } from "./recorder-manager";
-import { CdpManager } from "./cdp-manager";
-import { StorageManager } from "./storage-manager";
-import { GoogleDriveAuth } from "./google-drive-auth";
-import { buildExternalPlayerUrl } from "../shared/player-host";
+
 import { parseGoogleDriveFolderInput } from "../shared/google-drive-folder";
+import { buildExternalPlayerUrl } from "../shared/player-host";
+import {
+  buildRecordingPrivacySummary,
+  getPrivacyProfileSettings,
+  normalizeMaskDomSelectors,
+  redactReport,
+  redactUserEvent,
+} from "../shared/privacy-redaction";
+import { getRecordingTabTarget } from "../shared/recording-target";
 import type {
+  CaptureProfile,
+  ConsolePreviewDepth,
+  ConsoleSourceSnippetMode,
+  ConsoleStackMode,
+  HeaderCaptureMode,
+  InitiatorCaptureMode,
   MessageResponse,
   PopupState,
+  PrivacyProfile,
+  PrivacyRedactionSettings,
   ProgressItemSnapshot,
   RecordingSessionSummary,
   RecordingStatus,
+  RedirectHeaderCaptureMode,
+  ResponseBodyCaptureMode,
   ServiceWorkerMessage,
   UploadHistoryEntry,
   UploadSettings,
 } from "../types/messages";
+import type {
+  CaptureEnvironment,
+  RecordingPrivacySummary,
+  RecordingReport,
+  RecordingUserEvent,
+  RecordingUserEventArtifact,
+  RedactionHit,
+  SourceMapDiagnosticsArtifact,
+} from "../types/recording";
+import { CdpManager } from "./cdp-manager";
+import { GoogleDriveAuth } from "./google-drive-auth";
+import { RecorderManager } from "./recorder-manager";
+import { StorageManager } from "./storage-manager";
 
 /**
  * Service-worker coordinator for the MV3 extension.
@@ -41,12 +69,24 @@ interface ActiveRecordingState {
   startTime: number | null;
   stopTime: number | null;
   tabUrl: string | null;
+  tabTitle: string | null;
+  environment: CaptureEnvironment | null;
+  userEvents: RecordingUserEvent[];
+  redactionHits: RedactionHit[];
+  privacyLimitations: string[];
+  privacySettings: PrivacyRedactionSettings;
+  recordingSettings: UploadSettingsStore | null;
 }
 
 interface SessionArtifacts {
   consoleLogs?: string;
   networkRequests?: string;
   webSocketLogs?: string;
+  report?: string;
+  userEvents?: string;
+  privacy?: string;
+  diagnostics?: string;
+  screenshotDataUrl?: string;
   duration: number;
   url: string;
   startTime: number | null;
@@ -62,14 +102,32 @@ interface OffscreenCaptureState {
   snapshotSessionIds?: string[];
 }
 
-interface UploadSettingsStore {
+interface UploadSettingsStore extends PrivacyRedactionSettings {
   folderInput: string;
   folderId: string | null;
   folderPath: string[];
   zipPassword: string;
+  captureProfile: CaptureProfile;
+  captureConsole: boolean;
+  captureConsoleArgs: boolean;
+  consolePreviewDepth: ConsolePreviewDepth;
+  captureConsoleStacks: ConsoleStackMode;
+  captureConsoleSourceSnippets: ConsoleSourceSnippetMode;
+  maxConsoleEntryBytes: number | null;
+  captureNetwork: boolean;
+  captureRequestHeaders: HeaderCaptureMode;
+  captureResponseHeaders: HeaderCaptureMode;
   captureRequestBodies: boolean;
   captureResponseBodies: boolean;
+  captureResponseBodyMode: ResponseBodyCaptureMode;
+  maxResponseBodyBytes: number | null;
+  captureRedirectHeaders: RedirectHeaderCaptureMode;
+  captureInitiator: InitiatorCaptureMode;
+  suppressRecorderInternalRequests: boolean;
+  captureWebSockets: boolean;
   captureWebSocketFrames: boolean;
+  maxWebSocketFrameBytes: number | null;
+  captureWebSocketInitiator: boolean;
 }
 
 interface UploadSuccessResult {
@@ -80,7 +138,14 @@ interface UploadSuccessResult {
   targetFolderId?: string | null;
 }
 
-type UploadArtifactKey = "consoleLogs" | "networkRequests" | "webSocketLogs";
+type UploadArtifactKey =
+  | "consoleLogs"
+  | "networkRequests"
+  | "webSocketLogs"
+  | "report"
+  | "userEvents"
+  | "privacy"
+  | "diagnostics";
 
 interface UploadArtifactChunkResponse extends MessageResponse {
   chunk?: string;
@@ -95,12 +160,36 @@ const STORAGE_KEY_HISTORY = "gn_tracing_upload_history";
 const DEFAULT_UPLOAD_FOLDER_INPUT = "/gn-tracing";
 const MAX_UPLOAD_HISTORY_ITEMS = 100;
 const UPLOAD_ARTIFACT_CHUNK_CHARS = 1024 * 1024;
+const MAX_RECORDED_USER_EVENTS = 2000;
+const MAX_EVENT_STRING_LENGTH = 160;
+const MAX_SCREENSHOT_DATA_URL_CHARS = 1536 * 1024;
+const RECORDING_EVENTS_SCRIPT = "content/recording-events.js";
 const GITHUB_LATEST_RELEASE_URL = "https://api.github.com/repos/gnasdev/gn-tracing/releases/latest";
 const DEFAULT_UPLOAD_FOLDER = parseGoogleDriveFolderInput(DEFAULT_UPLOAD_FOLDER_INPUT);
+const DEFAULT_PRIVACY_REDACTION_SETTINGS = getPrivacyProfileSettings("standard");
 const DEFAULT_CAPTURE_PRIVACY_SETTINGS = {
+  captureProfile: "full" as CaptureProfile,
+  ...DEFAULT_PRIVACY_REDACTION_SETTINGS,
+  captureConsole: true,
+  captureConsoleArgs: true,
+  consolePreviewDepth: "full" as ConsolePreviewDepth,
+  captureConsoleStacks: "all" as ConsoleStackMode,
+  captureConsoleSourceSnippets: "all" as ConsoleSourceSnippetMode,
+  maxConsoleEntryBytes: null,
+  captureNetwork: true,
+  captureRequestHeaders: "full" as HeaderCaptureMode,
+  captureResponseHeaders: "full" as HeaderCaptureMode,
   captureRequestBodies: true,
   captureResponseBodies: true,
+  captureResponseBodyMode: "eligible" as ResponseBodyCaptureMode,
+  maxResponseBodyBytes: null,
+  captureRedirectHeaders: "full" as RedirectHeaderCaptureMode,
+  captureInitiator: "full-stack" as InitiatorCaptureMode,
+  suppressRecorderInternalRequests: true,
+  captureWebSockets: true,
   captureWebSocketFrames: true,
+  maxWebSocketFrameBytes: null,
+  captureWebSocketInitiator: true,
 };
 
 const activeRecording: ActiveRecordingState = {
@@ -110,6 +199,13 @@ const activeRecording: ActiveRecordingState = {
   startTime: null,
   stopTime: null,
   tabUrl: null,
+  tabTitle: null,
+  environment: null,
+  userEvents: [],
+  redactionHits: [],
+  privacyLimitations: [],
+  privacySettings: DEFAULT_PRIVACY_REDACTION_SETTINGS,
+  recordingSettings: null,
 };
 
 let sessions: RecordingSessionSummary[] = [];
@@ -159,7 +255,47 @@ function resetActiveRecordingState(): void {
   activeRecording.startTime = null;
   activeRecording.stopTime = null;
   activeRecording.tabUrl = null;
+  activeRecording.tabTitle = null;
+  activeRecording.environment = null;
+  activeRecording.userEvents = [];
+  activeRecording.redactionHits = [];
+  activeRecording.privacyLimitations = [];
+  activeRecording.privacySettings = DEFAULT_PRIVACY_REDACTION_SETTINGS;
+  activeRecording.recordingSettings = null;
   recorder.clearActiveSession();
+}
+
+function recordActiveRedactionHits(hits: RedactionHit[] | undefined): void {
+  if (!hits?.length || !activeRecording.sessionId) {
+    return;
+  }
+  activeRecording.redactionHits.push(...hits);
+  if (activeRecording.redactionHits.length > 10000) {
+    activeRecording.redactionHits.splice(0, activeRecording.redactionHits.length - 10000);
+  }
+}
+
+function addActivePrivacyLimitation(message: string): void {
+  if (!message || activeRecording.privacyLimitations.includes(message)) {
+    return;
+  }
+  activeRecording.privacyLimitations.push(message);
+}
+
+function pickPrivacyRedactionSettings(
+  settings: PrivacyRedactionSettings,
+): PrivacyRedactionSettings {
+  return {
+    privacyProfile: settings.privacyProfile,
+    redactSensitiveHeaders: settings.redactSensitiveHeaders,
+    redactSensitiveQueryParams: settings.redactSensitiveQueryParams,
+    redactRequestBodyFields: settings.redactRequestBodyFields,
+    redactResponseBodyFields: settings.redactResponseBodyFields,
+    redactConsoleValues: settings.redactConsoleValues,
+    redactWebSocketPayloads: settings.redactWebSocketPayloads,
+    redactEventMetadata: settings.redactEventMetadata,
+    maskDomSelectors: [...settings.maskDomSelectors],
+  };
 }
 
 function sortSessions(items: RecordingSessionSummary[]): RecordingSessionSummary[] {
@@ -188,7 +324,10 @@ function setSession(session: RecordingSessionSummary): void {
   sessions = sortSessions(sessions);
 }
 
-function patchSession(sessionId: string, patch: Partial<RecordingSessionSummary>): RecordingSessionSummary | null {
+function patchSession(
+  sessionId: string,
+  patch: Partial<RecordingSessionSummary>,
+): RecordingSessionSummary | null {
   const existing = getSession(sessionId);
   if (!existing) {
     return null;
@@ -224,6 +363,258 @@ function getRecordingStatus(): RecordingStatus | null {
   };
 }
 
+function normalizeBoolean(value: unknown, fallback: boolean): boolean {
+  return typeof value === "boolean" ? value : fallback;
+}
+
+function normalizeOptionalNumber(
+  value: unknown,
+  fallback: number | null,
+  min: number,
+  max: number,
+): number | null {
+  if (value === undefined) {
+    return fallback;
+  }
+  // Null or an empty string means the user intentionally left the setting blank, disabling the size limit.
+  if (value === null || value === "") {
+    return null;
+  }
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return fallback;
+  }
+  return Math.min(max, Math.max(min, Math.round(value)));
+}
+
+function normalizeEnum<T extends string>(value: unknown, allowed: readonly T[], fallback: T): T {
+  return typeof value === "string" && (allowed as readonly string[]).includes(value)
+    ? (value as T)
+    : fallback;
+}
+
+function truncateEventString(value: unknown, limit = MAX_EVENT_STRING_LENGTH): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (!normalized) {
+    return undefined;
+  }
+  return normalized.length > limit ? `${normalized.slice(0, limit)}...` : normalized;
+}
+
+function normalizeFiniteNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function parseBrowserFromUserAgent(userAgent: string): {
+  browserName?: string;
+  browserVersion?: string;
+} {
+  const matchers: Array<[string, RegExp]> = [
+    ["Edge", /Edg\/([0-9.]+)/],
+    ["Chrome", /Chrome\/([0-9.]+)/],
+    ["Firefox", /Firefox\/([0-9.]+)/],
+    ["Safari", /Version\/([0-9.]+).*Safari/],
+  ];
+
+  for (const [browserName, pattern] of matchers) {
+    const match = userAgent.match(pattern);
+    if (match?.[1]) {
+      return { browserName, browserVersion: match[1] };
+    }
+  }
+
+  return {};
+}
+
+function buildFallbackEnvironment(): CaptureEnvironment {
+  const userAgent = typeof navigator !== "undefined" ? navigator.userAgent : "";
+  return {
+    extensionVersion: chrome.runtime.getManifest().version,
+    userAgent,
+    language: typeof navigator !== "undefined" ? navigator.language : "",
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "",
+    ...parseBrowserFromUserAgent(userAgent),
+  };
+}
+
+function normalizeCaptureEnvironment(value: unknown): CaptureEnvironment | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const raw = value as Record<string, unknown>;
+  const userAgent = truncateEventString(raw.userAgent, 512) || "";
+  const viewport =
+    raw.viewport && typeof raw.viewport === "object"
+      ? (raw.viewport as Record<string, unknown>)
+      : null;
+  const screen =
+    raw.screen && typeof raw.screen === "object" ? (raw.screen as Record<string, unknown>) : null;
+
+  return {
+    extensionVersion: chrome.runtime.getManifest().version,
+    userAgent,
+    language: truncateEventString(raw.language, 64) || "",
+    timezone: truncateEventString(raw.timezone, 96) || "",
+    ...parseBrowserFromUserAgent(userAgent),
+    ...(viewport
+      ? {
+          viewport: {
+            width: Math.max(0, Math.round(normalizeFiniteNumber(viewport.width) || 0)),
+            height: Math.max(0, Math.round(normalizeFiniteNumber(viewport.height) || 0)),
+            devicePixelRatio: Math.max(0, normalizeFiniteNumber(viewport.devicePixelRatio) || 1),
+          },
+        }
+      : {}),
+    ...(screen
+      ? {
+          screen: {
+            width: Math.max(0, Math.round(normalizeFiniteNumber(screen.width) || 0)),
+            height: Math.max(0, Math.round(normalizeFiniteNumber(screen.height) || 0)),
+          },
+        }
+      : {}),
+  };
+}
+
+function normalizeRecordingUserEvent(value: unknown): RecordingUserEvent | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const raw = value as Record<string, unknown>;
+  const timestamp = normalizeFiniteNumber(raw.timestamp);
+  if (!timestamp) {
+    return null;
+  }
+
+  switch (raw.type) {
+    case "navigation": {
+      const url = truncateEventString(raw.url, 2048);
+      if (!url) {
+        return null;
+      }
+      return {
+        type: "navigation",
+        timestamp,
+        url,
+        title: truncateEventString(raw.title, 160),
+      };
+    }
+    case "click":
+      return {
+        type: "click",
+        timestamp,
+        selector: truncateEventString(raw.selector),
+        text: truncateEventString(raw.text),
+        role: truncateEventString(raw.role, 64),
+        x: normalizeFiniteNumber(raw.x),
+        y: normalizeFiniteNumber(raw.y),
+      };
+    case "focus":
+      return {
+        type: "focus",
+        timestamp,
+        selector: truncateEventString(raw.selector),
+        inputType: truncateEventString(raw.inputType, 64),
+      };
+    case "submit":
+      return {
+        type: "submit",
+        timestamp,
+        selector: truncateEventString(raw.selector),
+      };
+    default:
+      return null;
+  }
+}
+
+type CaptureSettingsStore = Omit<
+  UploadSettingsStore,
+  | "folderInput"
+  | "folderId"
+  | "folderPath"
+  | "zipPassword"
+  | "captureProfile"
+  | keyof PrivacyRedactionSettings
+>;
+
+function getCaptureProfileSettings(profile: CaptureProfile): CaptureSettingsStore {
+  if (profile === "lean") {
+    return {
+      captureConsole: true,
+      captureConsoleArgs: false,
+      consolePreviewDepth: "none",
+      captureConsoleStacks: "errors",
+      captureConsoleSourceSnippets: "errors",
+      maxConsoleEntryBytes: 16384,
+      captureNetwork: true,
+      captureRequestHeaders: "minimal",
+      captureResponseHeaders: "minimal",
+      captureRequestBodies: false,
+      captureResponseBodies: false,
+      captureResponseBodyMode: "off",
+      maxResponseBodyBytes: 0,
+      captureRedirectHeaders: "location",
+      captureInitiator: "summary",
+      suppressRecorderInternalRequests: true,
+      captureWebSockets: true,
+      captureWebSocketFrames: false,
+      maxWebSocketFrameBytes: 0,
+      captureWebSocketInitiator: false,
+    };
+  }
+
+  if (profile === "full") {
+    return {
+      captureConsole: true,
+      captureConsoleArgs: true,
+      consolePreviewDepth: "full",
+      captureConsoleStacks: "all",
+      captureConsoleSourceSnippets: "all",
+      maxConsoleEntryBytes: null,
+      captureNetwork: true,
+      captureRequestHeaders: "full",
+      captureResponseHeaders: "full",
+      captureRequestBodies: true,
+      captureResponseBodies: true,
+      captureResponseBodyMode: "eligible",
+      maxResponseBodyBytes: null,
+      captureRedirectHeaders: "full",
+      captureInitiator: "full-stack",
+      suppressRecorderInternalRequests: true,
+      captureWebSockets: true,
+      captureWebSocketFrames: true,
+      maxWebSocketFrameBytes: null,
+      captureWebSocketInitiator: true,
+    };
+  }
+
+  return {
+    captureConsole: true,
+    captureConsoleArgs: true,
+    consolePreviewDepth: "shallow",
+    captureConsoleStacks: "warnings-errors",
+    captureConsoleSourceSnippets: "warnings-errors",
+    maxConsoleEntryBytes: 32768,
+    captureNetwork: true,
+    captureRequestHeaders: "full",
+    captureResponseHeaders: "full",
+    captureRequestBodies: true,
+    captureResponseBodies: true,
+    captureResponseBodyMode: "eligible",
+    maxResponseBodyBytes: 1024 * 1024,
+    captureRedirectHeaders: "location",
+    captureInitiator: "summary",
+    suppressRecorderInternalRequests: true,
+    captureWebSockets: true,
+    captureWebSocketFrames: true,
+    maxWebSocketFrameBytes: 65536,
+    captureWebSocketInitiator: false,
+  };
+}
+
 function normalizeUploadSettingsStore(
   stored: Partial<UploadSettingsStore> | Partial<UploadSettings> | undefined,
 ): UploadSettingsStore {
@@ -233,6 +624,22 @@ function normalizeUploadSettingsStore(
   const parsedFolder = storedHasFolderInput
     ? parseGoogleDriveFolderInput(stored.folderInput)
     : DEFAULT_UPLOAD_FOLDER;
+  const captureProfile = normalizeEnum<CaptureProfile>(
+    storedUploadSettings?.captureProfile,
+    ["lean", "balanced", "full", "custom"],
+    DEFAULT_CAPTURE_PRIVACY_SETTINGS.captureProfile,
+  );
+  const profileDefaults = getCaptureProfileSettings(
+    captureProfile === "custom" ? "full" : captureProfile,
+  );
+  const privacyProfile = normalizeEnum<PrivacyProfile>(
+    storedUploadSettings?.privacyProfile,
+    ["standard", "strict", "custom"],
+    DEFAULT_PRIVACY_REDACTION_SETTINGS.privacyProfile,
+  );
+  const privacyDefaults = getPrivacyProfileSettings(
+    privacyProfile === "custom" ? "standard" : privacyProfile,
+  );
 
   return {
     folderInput: parsedFolder.normalizedInput,
@@ -240,18 +647,136 @@ function normalizeUploadSettingsStore(
     folderPath: Array.isArray(storedUploadSettings?.folderPath)
       ? storedUploadSettings.folderPath.filter((segment) => typeof segment === "string")
       : [...parsedFolder.folderPath],
-    zipPassword: typeof storedUploadSettings?.zipPassword === "string"
-      ? storedUploadSettings.zipPassword
-      : "",
-    captureRequestBodies: typeof stored?.captureRequestBodies === "boolean"
-      ? stored.captureRequestBodies
-      : DEFAULT_CAPTURE_PRIVACY_SETTINGS.captureRequestBodies,
-    captureResponseBodies: typeof stored?.captureResponseBodies === "boolean"
-      ? stored.captureResponseBodies
-      : DEFAULT_CAPTURE_PRIVACY_SETTINGS.captureResponseBodies,
-    captureWebSocketFrames: typeof stored?.captureWebSocketFrames === "boolean"
-      ? stored.captureWebSocketFrames
-      : DEFAULT_CAPTURE_PRIVACY_SETTINGS.captureWebSocketFrames,
+    zipPassword:
+      typeof storedUploadSettings?.zipPassword === "string" ? storedUploadSettings.zipPassword : "",
+    captureProfile,
+    privacyProfile,
+    redactSensitiveHeaders: normalizeBoolean(
+      storedUploadSettings?.redactSensitiveHeaders,
+      privacyDefaults.redactSensitiveHeaders,
+    ),
+    redactSensitiveQueryParams: normalizeBoolean(
+      storedUploadSettings?.redactSensitiveQueryParams,
+      privacyDefaults.redactSensitiveQueryParams,
+    ),
+    redactRequestBodyFields: normalizeBoolean(
+      storedUploadSettings?.redactRequestBodyFields,
+      privacyDefaults.redactRequestBodyFields,
+    ),
+    redactResponseBodyFields: normalizeBoolean(
+      storedUploadSettings?.redactResponseBodyFields,
+      privacyDefaults.redactResponseBodyFields,
+    ),
+    redactConsoleValues: normalizeBoolean(
+      storedUploadSettings?.redactConsoleValues,
+      privacyDefaults.redactConsoleValues,
+    ),
+    redactWebSocketPayloads: normalizeEnum(
+      storedUploadSettings?.redactWebSocketPayloads,
+      ["off", "sensitive-fields", "all"],
+      privacyDefaults.redactWebSocketPayloads,
+    ),
+    redactEventMetadata: normalizeBoolean(
+      storedUploadSettings?.redactEventMetadata,
+      privacyDefaults.redactEventMetadata,
+    ),
+    maskDomSelectors: normalizeMaskDomSelectors(storedUploadSettings?.maskDomSelectors),
+    captureConsole: normalizeBoolean(
+      storedUploadSettings?.captureConsole,
+      profileDefaults.captureConsole,
+    ),
+    captureConsoleArgs: normalizeBoolean(
+      storedUploadSettings?.captureConsoleArgs,
+      profileDefaults.captureConsoleArgs,
+    ),
+    consolePreviewDepth: normalizeEnum<ConsolePreviewDepth>(
+      storedUploadSettings?.consolePreviewDepth,
+      ["none", "shallow", "full"],
+      profileDefaults.consolePreviewDepth,
+    ),
+    captureConsoleStacks: normalizeEnum<ConsoleStackMode>(
+      storedUploadSettings?.captureConsoleStacks,
+      ["off", "errors", "warnings-errors", "all"],
+      profileDefaults.captureConsoleStacks,
+    ),
+    captureConsoleSourceSnippets: normalizeEnum<ConsoleSourceSnippetMode>(
+      storedUploadSettings?.captureConsoleSourceSnippets,
+      ["off", "errors", "warnings-errors", "all"],
+      profileDefaults.captureConsoleSourceSnippets,
+    ),
+    maxConsoleEntryBytes: normalizeOptionalNumber(
+      storedUploadSettings?.maxConsoleEntryBytes,
+      profileDefaults.maxConsoleEntryBytes,
+      1024,
+      512 * 1024,
+    ),
+    captureNetwork: normalizeBoolean(
+      storedUploadSettings?.captureNetwork,
+      profileDefaults.captureNetwork,
+    ),
+    captureRequestHeaders: normalizeEnum<HeaderCaptureMode>(
+      storedUploadSettings?.captureRequestHeaders,
+      ["off", "minimal", "full"],
+      profileDefaults.captureRequestHeaders,
+    ),
+    captureResponseHeaders: normalizeEnum<HeaderCaptureMode>(
+      storedUploadSettings?.captureResponseHeaders,
+      ["off", "minimal", "full"],
+      profileDefaults.captureResponseHeaders,
+    ),
+    captureRequestBodies: normalizeBoolean(
+      stored?.captureRequestBodies,
+      profileDefaults.captureRequestBodies,
+    ),
+    captureResponseBodies: normalizeBoolean(
+      stored?.captureResponseBodies,
+      profileDefaults.captureResponseBodies,
+    ),
+    captureResponseBodyMode: normalizeEnum<ResponseBodyCaptureMode>(
+      storedUploadSettings?.captureResponseBodyMode,
+      ["off", "text", "text-json", "eligible"],
+      normalizeBoolean(stored?.captureResponseBodies, profileDefaults.captureResponseBodies)
+        ? profileDefaults.captureResponseBodyMode
+        : "off",
+    ),
+    maxResponseBodyBytes: normalizeOptionalNumber(
+      storedUploadSettings?.maxResponseBodyBytes,
+      profileDefaults.maxResponseBodyBytes,
+      0,
+      10 * 1024 * 1024,
+    ),
+    captureRedirectHeaders: normalizeEnum<RedirectHeaderCaptureMode>(
+      storedUploadSettings?.captureRedirectHeaders,
+      ["off", "location", "full"],
+      profileDefaults.captureRedirectHeaders,
+    ),
+    captureInitiator: normalizeEnum<InitiatorCaptureMode>(
+      storedUploadSettings?.captureInitiator,
+      ["off", "summary", "short-stack", "full-stack"],
+      profileDefaults.captureInitiator,
+    ),
+    suppressRecorderInternalRequests: normalizeBoolean(
+      storedUploadSettings?.suppressRecorderInternalRequests,
+      profileDefaults.suppressRecorderInternalRequests,
+    ),
+    captureWebSockets: normalizeBoolean(
+      storedUploadSettings?.captureWebSockets,
+      profileDefaults.captureWebSockets,
+    ),
+    captureWebSocketFrames: normalizeBoolean(
+      stored?.captureWebSocketFrames,
+      profileDefaults.captureWebSocketFrames,
+    ),
+    maxWebSocketFrameBytes: normalizeOptionalNumber(
+      storedUploadSettings?.maxWebSocketFrameBytes,
+      profileDefaults.maxWebSocketFrameBytes,
+      0,
+      1024 * 1024,
+    ),
+    captureWebSocketInitiator: normalizeBoolean(
+      storedUploadSettings?.captureWebSocketInitiator,
+      profileDefaults.captureWebSocketInitiator,
+    ),
   };
 }
 
@@ -298,7 +823,9 @@ async function getUploadHistory(): Promise<UploadHistoryEntry[]> {
   try {
     const result = await chrome.storage.local.get(STORAGE_KEY_HISTORY);
     const history = result[STORAGE_KEY_HISTORY];
-    cachedUploadHistory = Array.isArray(history) ? sortUploadHistory(history as UploadHistoryEntry[]) : [];
+    cachedUploadHistory = Array.isArray(history)
+      ? sortUploadHistory(history as UploadHistoryEntry[])
+      : [];
   } catch {
     cachedUploadHistory = [];
   }
@@ -320,9 +847,36 @@ function getSettingsSnapshot(settings: UploadSettingsStore): UploadSettings {
     folderInput: settings.folderInput,
     folderId: settings.folderId,
     zipPasswordConfigured: settings.zipPassword.length > 0,
+    captureProfile: settings.captureProfile,
+    privacyProfile: settings.privacyProfile,
+    redactSensitiveHeaders: settings.redactSensitiveHeaders,
+    redactSensitiveQueryParams: settings.redactSensitiveQueryParams,
+    redactRequestBodyFields: settings.redactRequestBodyFields,
+    redactResponseBodyFields: settings.redactResponseBodyFields,
+    redactConsoleValues: settings.redactConsoleValues,
+    redactWebSocketPayloads: settings.redactWebSocketPayloads,
+    redactEventMetadata: settings.redactEventMetadata,
+    maskDomSelectors: settings.maskDomSelectors,
+    captureConsole: settings.captureConsole,
+    captureConsoleArgs: settings.captureConsoleArgs,
+    consolePreviewDepth: settings.consolePreviewDepth,
+    captureConsoleStacks: settings.captureConsoleStacks,
+    captureConsoleSourceSnippets: settings.captureConsoleSourceSnippets,
+    maxConsoleEntryBytes: settings.maxConsoleEntryBytes,
+    captureNetwork: settings.captureNetwork,
+    captureRequestHeaders: settings.captureRequestHeaders,
+    captureResponseHeaders: settings.captureResponseHeaders,
     captureRequestBodies: settings.captureRequestBodies,
     captureResponseBodies: settings.captureResponseBodies,
+    captureResponseBodyMode: settings.captureResponseBodyMode,
+    maxResponseBodyBytes: settings.maxResponseBodyBytes,
+    captureRedirectHeaders: settings.captureRedirectHeaders,
+    captureInitiator: settings.captureInitiator,
+    suppressRecorderInternalRequests: settings.suppressRecorderInternalRequests,
+    captureWebSockets: settings.captureWebSockets,
     captureWebSocketFrames: settings.captureWebSocketFrames,
+    maxWebSocketFrameBytes: settings.maxWebSocketFrameBytes,
+    captureWebSocketInitiator: settings.captureWebSocketInitiator,
   };
 }
 
@@ -365,10 +919,7 @@ async function refreshGoogleDriveState(): Promise<void> {
 }
 
 async function buildPopupState(): Promise<PopupState> {
-  const [settings, uploadHistory] = await Promise.all([
-    getUploadSettings(),
-    getUploadHistory(),
-  ]);
+  const [settings, uploadHistory] = await Promise.all([getUploadSettings(), getUploadHistory()]);
   return {
     recording: getRecordingStatus(),
     sessions: sortSessions(sessions),
@@ -395,11 +946,13 @@ function notifyPopupStateUpdated(state: PopupState | null): void {
   if (!state) {
     return;
   }
-  void chrome.runtime.sendMessage({
-    target: "popup",
-    action: "POPUP_STATE_UPDATED",
-    state,
-  }).catch(() => {});
+  void chrome.runtime
+    .sendMessage({
+      target: "popup",
+      action: "POPUP_STATE_UPDATED",
+      state,
+    })
+    .catch(() => {});
 }
 
 async function probeOffscreenCaptureState(): Promise<OffscreenCaptureState | null> {
@@ -412,13 +965,30 @@ async function probeOffscreenCaptureState(): Promise<OffscreenCaptureState | nul
       return null;
     }
 
-    return await chrome.runtime.sendMessage({
+    return (await chrome.runtime.sendMessage({
       target: "offscreen",
       type: "GET_CAPTURE_STATE",
-    }) as OffscreenCaptureState;
+    })) as OffscreenCaptureState;
   } catch {
     return null;
   }
+}
+
+async function closeOffscreenDocumentIfIdle(): Promise<void> {
+  if (activeUploadTasks.size > 1) {
+    return;
+  }
+
+  const offscreenState = await probeOffscreenCaptureState();
+  if (
+    !offscreenState?.ok ||
+    offscreenState.isRecording ||
+    (offscreenState.snapshotSessionIds || []).length > 0
+  ) {
+    return;
+  }
+
+  await recorder.closeOffscreenDocument();
 }
 
 async function syncRuntimeState(): Promise<void> {
@@ -439,6 +1009,13 @@ async function syncRuntimeState(): Promise<void> {
     activeRecording.startTime = persistedState.recording.startTime ?? null;
     activeRecording.stopTime = persistedState.recording.stopTime ?? null;
     activeRecording.tabUrl = persistedState.recording.tabUrl ?? null;
+    activeRecording.tabTitle = null;
+    activeRecording.environment = buildFallbackEnvironment();
+    activeRecording.userEvents = [];
+    activeRecording.redactionHits = [];
+    activeRecording.privacyLimitations = [];
+    activeRecording.privacySettings = DEFAULT_PRIVACY_REDACTION_SETTINGS;
+    activeRecording.recordingSettings = null;
   } else {
     resetActiveRecordingState();
   }
@@ -454,34 +1031,36 @@ async function syncRuntimeState(): Promise<void> {
     recorder.hydrateActiveSession(activeRecording.sessionId);
   }
 
-  sessions = sortSessions(sessions.map((session) => {
-    const hasLocalSnapshot = snapshotIds.has(session.id);
-    if (session.phase === "uploading") {
+  sessions = sortSessions(
+    sessions.map((session) => {
+      const hasLocalSnapshot = snapshotIds.has(session.id);
+      if (session.phase === "uploading") {
+        return {
+          ...session,
+          phase: "failed",
+          hasLocalSnapshot,
+          error: "Upload was interrupted when the extension runtime restarted.",
+        };
+      }
+      if ((session.phase === "recorded" || session.phase === "failed") && !hasLocalSnapshot) {
+        return {
+          ...session,
+          hasLocalSnapshot: false,
+          error: session.error || "Recording snapshot is no longer available for upload.",
+        };
+      }
+      if (session.phase === "uploaded") {
+        return {
+          ...session,
+          hasLocalSnapshot: false,
+        };
+      }
       return {
         ...session,
-        phase: "failed",
         hasLocalSnapshot,
-        error: "Upload was interrupted when the extension runtime restarted.",
       };
-    }
-    if ((session.phase === "recorded" || session.phase === "failed") && !hasLocalSnapshot) {
-      return {
-        ...session,
-        hasLocalSnapshot: false,
-        error: session.error || "Recording snapshot is no longer available for upload.",
-      };
-    }
-    if (session.phase === "uploaded") {
-      return {
-        ...session,
-        hasLocalSnapshot: false,
-      };
-    }
-    return {
-      ...session,
-      hasLocalSnapshot,
-    };
-  }));
+    }),
+  );
 
   await refreshGoogleDriveState();
   await saveArtifactsToStorage();
@@ -514,7 +1093,11 @@ chrome.runtime.onMessage.addListener((message: ServiceWorkerMessage, sender, sen
 });
 
 chrome.runtime.onMessage.addListener((message: any, _sender, sendResponse) => {
-  if (message.target !== "offscreen" || message.type !== "UPLOAD_PROGRESS" || !message.data?.sessionId) {
+  if (
+    message.target !== "offscreen" ||
+    message.type !== "UPLOAD_PROGRESS" ||
+    !message.data?.sessionId
+  ) {
     return false;
   }
 
@@ -524,8 +1107,9 @@ chrome.runtime.onMessage.addListener((message: any, _sender, sendResponse) => {
     progress: typeof message.data.percent === "number" ? message.data.percent : 0,
     uploadedBytes: typeof message.data.uploadedBytes === "number" ? message.data.uploadedBytes : 0,
     totalBytes: typeof message.data.totalBytes === "number" ? message.data.totalBytes : 0,
-    message: typeof message.data.message === "string" ? message.data.message : "Uploading recording...",
-    items: Array.isArray(message.data.items) ? message.data.items as ProgressItemSnapshot[] : [],
+    message:
+      typeof message.data.message === "string" ? message.data.message : "Uploading recording...",
+    items: Array.isArray(message.data.items) ? (message.data.items as ProgressItemSnapshot[]) : [],
     error: null,
   });
   void saveStateToStorage();
@@ -546,13 +1130,40 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
   }
 });
 
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (
+    !activeRecording.isRecording ||
+    tabId !== activeRecording.tabId ||
+    !activeRecording.sessionId
+  ) {
+    return;
+  }
+
+  if (typeof tab.url === "string") {
+    activeRecording.tabUrl = tab.url;
+  }
+  if (typeof tab.title === "string") {
+    activeRecording.tabTitle = tab.title;
+  }
+
+  if (changeInfo.status === "complete") {
+    // Page navigations replace the injected listener context, so re-arm it on
+    // complete while keeping the recording alive.
+    void startRecordingEventCapture(tabId, activeRecording.sessionId);
+  }
+});
+
 async function handleMessage(
   message: ServiceWorkerMessage,
-  _sender: chrome.runtime.MessageSender,
-): Promise<MessageResponse | UploadArtifactChunkResponse | RecordingStatus | PopupState["sessions"] | null> {
+  sender: chrome.runtime.MessageSender,
+): Promise<
+  MessageResponse | UploadArtifactChunkResponse | RecordingStatus | PopupState["sessions"] | null
+> {
   switch (message.action) {
     case "START_RECORDING":
-      return startRecording(message.tabId || 0);
+      return typeof message.tabId === "number"
+        ? startRecording(message.tabId)
+        : { ok: false, error: "Open a browser tab before starting a recording." };
     case "STOP_RECORDING":
       return stopRecording();
     case "REMOVE_RECORDING":
@@ -569,6 +1180,8 @@ async function handleMessage(
       return deleteUploadHistoryEntry(message.data);
     case "DELETE_SESSION":
       return deleteSession(message.data);
+    case "RECORDING_USER_EVENT":
+      return handleRecordingUserEvent(message.data, sender);
     case "UPLOAD_TO_GOOGLE_DRIVE":
       return uploadSessionToGoogleDrive(message.data);
     case "GET_UPLOAD_STATE":
@@ -597,7 +1210,9 @@ async function handleMessage(
     case "GET_GOOGLE_DRIVE_TOKEN":
       return { ok: true, token: await googleAuth.getAuthToken() };
     case "RECORDING_COMPLETE":
-      recorder.onRecordingComplete(typeof message.data?.sessionId === "string" ? message.data.sessionId : undefined);
+      recorder.onRecordingComplete(
+        typeof message.data?.sessionId === "string" ? message.data.sessionId : undefined,
+      );
       return { ok: true };
     case "GET_UPLOAD_ARTIFACT_CHUNK":
       return getUploadArtifactChunk(message.data);
@@ -620,7 +1235,7 @@ async function checkForExtensionUpdate(): Promise<MessageResponse> {
       return { ok: false, error: `GitHub release check failed (${response.status}).` };
     }
 
-    const latestRelease = await response.json() as {
+    const latestRelease = (await response.json()) as {
       tag_name?: unknown;
       name?: unknown;
       html_url?: unknown;
@@ -650,10 +1265,18 @@ async function checkForExtensionUpdate(): Promise<MessageResponse> {
       downloadUrl,
     };
     if (comparison < 0) {
-      return { ok: true, message: `New version ${latestVersion} is available. Current ${currentVersion}.`, update };
+      return {
+        ok: true,
+        message: `New version ${latestVersion} is available. Current ${currentVersion}.`,
+        update,
+      };
     }
     if (comparison > 0) {
-      return { ok: true, message: `Current ${currentVersion} is newer than GitHub release ${latestVersion}.`, update };
+      return {
+        ok: true,
+        message: `Current ${currentVersion} is newer than GitHub release ${latestVersion}.`,
+        update,
+      };
     }
     return { ok: true, message: `GN Tracing is up to date (${currentVersion}).`, update };
   } catch (error) {
@@ -706,12 +1329,15 @@ function parseVersionParts(version: string): number[] {
     .map((part) => Number.parseInt(part, 10) || 0);
 }
 
-function getUploadArtifactChunk(data: Record<string, unknown> | undefined): UploadArtifactChunkResponse {
+function getUploadArtifactChunk(
+  data: Record<string, unknown> | undefined,
+): UploadArtifactChunkResponse {
   const sessionId = typeof data?.sessionId === "string" ? data.sessionId : "";
   const key = typeof data?.key === "string" ? data.key : "";
-  const offset = typeof data?.offset === "number" && Number.isFinite(data.offset)
-    ? Math.max(0, Math.floor(data.offset))
-    : 0;
+  const offset =
+    typeof data?.offset === "number" && Number.isFinite(data.offset)
+      ? Math.max(0, Math.floor(data.offset))
+      : 0;
 
   if (!sessionId || !isUploadArtifactKey(key)) {
     return { ok: false, error: "Missing upload artifact reference." };
@@ -730,7 +1356,260 @@ function getUploadArtifactChunk(data: Record<string, unknown> | undefined): Uplo
 }
 
 function isUploadArtifactKey(key: string): key is UploadArtifactKey {
-  return key === "consoleLogs" || key === "networkRequests" || key === "webSocketLogs";
+  return (
+    key === "consoleLogs" ||
+    key === "networkRequests" ||
+    key === "webSocketLogs" ||
+    key === "report" ||
+    key === "userEvents" ||
+    key === "privacy" ||
+    key === "diagnostics"
+  );
+}
+
+function buildDefaultReportTitle(tabTitle: string | null, tabUrl: string | null): string {
+  const normalizedTitle = truncateEventString(tabTitle, 120);
+  if (normalizedTitle) {
+    return normalizedTitle;
+  }
+
+  if (!tabUrl) {
+    return "Recorded browser session";
+  }
+
+  try {
+    const parsed = new URL(tabUrl);
+    const path = parsed.pathname.split("/").filter(Boolean).pop();
+    return (
+      [parsed.hostname.replace(/^www\./, ""), path].filter(Boolean).join(" / ") || parsed.hostname
+    );
+  } catch {
+    return truncateEventString(tabUrl, 120) || "Recorded browser session";
+  }
+}
+
+function buildRecordingReport(stopTime: number): RecordingReport {
+  const environment = activeRecording.environment || buildFallbackEnvironment();
+  const pageUrl = activeRecording.tabUrl || "";
+  const pageTitle = truncateEventString(activeRecording.tabTitle, 160);
+
+  const report: RecordingReport = {
+    schemaVersion: 1,
+    title: buildDefaultReportTitle(pageTitle || null, pageUrl),
+    source: "extension",
+    createdAt: new Date(stopTime).toISOString(),
+    page: {
+      url: pageUrl,
+      ...(pageTitle ? { title: pageTitle } : {}),
+    },
+    environment,
+  };
+  const redacted = redactReport(report, activeRecording.privacySettings);
+  recordActiveRedactionHits(redacted.applied);
+  return redacted.value;
+}
+
+function buildUserEventArtifact(events: RecordingUserEvent[]): RecordingUserEventArtifact | null {
+  if (events.length === 0) {
+    return null;
+  }
+
+  return {
+    schemaVersion: 1,
+    events,
+  };
+}
+
+function buildSourceMapDiagnosticsArtifact(stopTime: number): SourceMapDiagnosticsArtifact | null {
+  const sourceMaps = cdp.getSourceMapDiagnostics();
+  if (sourceMaps.length === 0) {
+    return null;
+  }
+
+  return {
+    schemaVersion: 1,
+    generatedAt: new Date(stopTime).toISOString(),
+    sourceMaps,
+  };
+}
+
+async function startRecordingEventCapture(
+  tabId: number,
+  sessionId: string,
+  privacySettings: PrivacyRedactionSettings = activeRecording.privacySettings,
+): Promise<void> {
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: [RECORDING_EVENTS_SCRIPT],
+    });
+    await chrome.tabs.sendMessage(tabId, {
+      target: "recording-events",
+      type: "START",
+      sessionId,
+      privacySettings: pickPrivacyRedactionSettings(privacySettings),
+    });
+  } catch (error) {
+    if (privacySettings.maskDomSelectors.length > 0) {
+      addActivePrivacyLimitation("Visual masking could not be injected into the recorded tab.");
+    }
+    console.warn("[GN Tracing] User-event capture unavailable:", error);
+  }
+}
+
+async function stopRecordingEventCapture(tabId: number | null): Promise<void> {
+  if (tabId == null) {
+    return;
+  }
+
+  await chrome.tabs
+    .sendMessage(tabId, {
+      target: "recording-events",
+      type: "STOP",
+    })
+    .catch(() => {});
+}
+
+async function captureVisibleTabScreenshot(tabId: number | null): Promise<string | undefined> {
+  if (tabId == null) {
+    return undefined;
+  }
+
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    if (!tab.active || tab.windowId == null) {
+      return undefined;
+    }
+
+    const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, {
+      format: "jpeg",
+      quality: 70,
+    });
+    if (dataUrl.length > MAX_SCREENSHOT_DATA_URL_CHARS) {
+      addActivePrivacyLimitation(
+        "The stop-time screenshot was skipped because it exceeded the size limit.",
+      );
+      console.warn("[GN Tracing] Skipping screenshot artifact because it exceeded the size limit.");
+      return undefined;
+    }
+    return dataUrl;
+  } catch (error) {
+    addActivePrivacyLimitation("The stop-time screenshot could not be captured.");
+    console.warn("[GN Tracing] Screenshot capture unavailable:", error);
+    return undefined;
+  }
+}
+
+function handleRecordingUserEvent(
+  data: Record<string, unknown> | undefined,
+  sender: chrome.runtime.MessageSender,
+): MessageResponse {
+  const sessionId = typeof data?.sessionId === "string" ? data.sessionId : "";
+  if (
+    !sessionId ||
+    sessionId !== activeRecording.sessionId ||
+    sender.tab?.id !== activeRecording.tabId
+  ) {
+    return { ok: true };
+  }
+
+  if (Array.isArray(data?.redactionHits)) {
+    recordActiveRedactionHits(data.redactionHits as RedactionHit[]);
+  }
+  if (Array.isArray(data?.limitations)) {
+    for (const limitation of data.limitations) {
+      if (typeof limitation === "string") {
+        addActivePrivacyLimitation(limitation);
+      }
+    }
+  }
+
+  const environment = normalizeCaptureEnvironment(data?.environment);
+  if (environment) {
+    activeRecording.environment = environment;
+  }
+
+  const event = normalizeRecordingUserEvent(data?.event);
+  if (event) {
+    const redactedEvent = redactUserEvent(event, activeRecording.privacySettings);
+    recordActiveRedactionHits(redactedEvent.applied);
+    const safeEvent = redactedEvent.value;
+    if (event.type === "navigation") {
+      activeRecording.tabUrl =
+        safeEvent.type === "navigation" ? safeEvent.url : activeRecording.tabUrl;
+      activeRecording.tabTitle =
+        safeEvent.type === "navigation"
+          ? safeEvent.title || activeRecording.tabTitle
+          : activeRecording.tabTitle;
+    }
+    activeRecording.userEvents.push(safeEvent);
+    if (activeRecording.userEvents.length > MAX_RECORDED_USER_EVENTS) {
+      activeRecording.userEvents.splice(
+        0,
+        activeRecording.userEvents.length - MAX_RECORDED_USER_EVENTS,
+      );
+    }
+  }
+
+  return { ok: true };
+}
+
+function buildPrivacyArtifactFlags(
+  settings: UploadSettingsStore,
+  finalizedArtifacts: {
+    consoleLogs?: string;
+    networkRequests?: string;
+    webSocketLogs?: string;
+  },
+  userEventArtifact: RecordingUserEventArtifact | null,
+  screenshotDataUrl: string | undefined,
+): RecordingPrivacySummary["artifactFlags"] {
+  return {
+    video: true,
+    screenshot: Boolean(screenshotDataUrl),
+    report: true,
+    events: Boolean(userEventArtifact),
+    console: Boolean(finalizedArtifacts.consoleLogs),
+    network: Boolean(finalizedArtifacts.networkRequests),
+    websocket: Boolean(finalizedArtifacts.webSocketLogs),
+    requestBodies: Boolean(settings.captureNetwork && settings.captureRequestBodies),
+    responseBodies: Boolean(settings.captureNetwork && settings.captureResponseBodyMode !== "off"),
+    websocketPayloads: Boolean(settings.captureWebSockets && settings.captureWebSocketFrames),
+    sourceSnippets: settings.captureConsoleSourceSnippets !== "off",
+  };
+}
+
+function buildPrivacySummary(
+  settings: UploadSettingsStore,
+  stopTime: number,
+  finalizedArtifacts: {
+    consoleLogs?: string;
+    networkRequests?: string;
+    webSocketLogs?: string;
+  },
+  userEventArtifact: RecordingUserEventArtifact | null,
+  screenshotDataUrl: string | undefined,
+): RecordingPrivacySummary {
+  const limitations = [...activeRecording.privacyLimitations];
+  if (settings.captureResponseBodyMode !== "off") {
+    limitations.push("Binary or base64 response bodies are not parsed for field-level redaction.");
+  }
+  if (settings.captureWebSockets && settings.captureWebSocketFrames) {
+    limitations.push("Binary WebSocket payloads are not parsed for field-level redaction.");
+  }
+  if (settings.maskDomSelectors.length > 0) {
+    limitations.push(
+      "Selector-based visual masking does not cover canvas, video, closed shadow DOM, or content drawn outside matched elements.",
+    );
+  }
+
+  return buildRecordingPrivacySummary(
+    settings,
+    buildPrivacyArtifactFlags(settings, finalizedArtifacts, userEventArtifact, screenshotDataUrl),
+    activeRecording.redactionHits,
+    limitations,
+    new Date(stopTime).toISOString(),
+  );
 }
 
 async function startRecording(tabId: number): Promise<MessageResponse> {
@@ -741,8 +1620,9 @@ async function startRecording(tabId: number): Promise<MessageResponse> {
   try {
     const settings = await getUploadSettings();
     const tab = await chrome.tabs.get(tabId);
-    if (tab.url && tab.url.startsWith("chrome://")) {
-      return { ok: false, error: "Cannot record chrome:// pages. Please open a regular webpage." };
+    const target = getRecordingTabTarget(tab);
+    if (target.error) {
+      return { ok: false, error: target.error };
     }
 
     const sessionId = createSessionId();
@@ -751,22 +1631,26 @@ async function startRecording(tabId: number): Promise<MessageResponse> {
     activeRecording.tabId = tabId;
     activeRecording.startTime = Date.now();
     activeRecording.stopTime = null;
-    activeRecording.tabUrl = tab.url ?? null;
+    activeRecording.tabUrl = target.url;
+    activeRecording.tabTitle = typeof tab.title === "string" ? tab.title : null;
+    activeRecording.environment = buildFallbackEnvironment();
+    activeRecording.userEvents = [];
+    activeRecording.redactionHits = [];
+    activeRecording.privacyLimitations = [];
+    activeRecording.privacySettings = pickPrivacyRedactionSettings(settings);
+    activeRecording.recordingSettings = settings;
 
     storage.beginSession();
-    cdp.setCaptureSettings({
-      captureRequestBodies: settings.captureRequestBodies,
-      captureResponseBodies: settings.captureResponseBodies,
-      captureWebSocketFrames: settings.captureWebSocketFrames,
-    });
+    storage.setCaptureSettings(settings);
+    storage.setPrivacySettings(activeRecording.privacySettings, recordActiveRedactionHits);
+    cdp.setCaptureSettings(settings);
+    cdp.setPrivacySettings(activeRecording.privacySettings, recordActiveRedactionHits);
 
-    await Promise.all([
-      cdp.attach(tabId),
-      recorder.startCapture(tabId, sessionId),
-    ]);
+    await Promise.all([cdp.attach(tabId), recorder.startCapture(tabId, sessionId)]);
 
     activeRecording.isRecording = true;
     recorder.hydrateActiveSession(sessionId);
+    void startRecordingEventCapture(tabId, sessionId, activeRecording.privacySettings);
 
     chrome.action.setBadgeText({ text: "REC" });
     chrome.action.setBadgeBackgroundColor({ color: "#ef233c" });
@@ -775,6 +1659,7 @@ async function startRecording(tabId: number): Promise<MessageResponse> {
     await saveStateToStorage();
     return { ok: true };
   } catch (error) {
+    await stopRecordingEventCapture(tabId);
     try {
       await cdp.detach();
     } catch {
@@ -806,19 +1691,45 @@ async function stopRecording(): Promise<MessageResponse> {
     activeRecording.isRecording = false;
     activeRecording.stopTime = stopTime;
 
+    await stopRecordingEventCapture(activeRecording.tabId);
+    await recorder.stopCapture();
+    const screenshotDataUrl = await captureVisibleTabScreenshot(activeRecording.tabId);
+    // Keep CDP attached while flushing source maps, but stop media capture first
+    // so the video length matches the user's stop action as closely as possible.
     await cdp.flushSourceMaps();
-    await Promise.allSettled([
-      recorder.stopCapture(),
-      cdp.detach(),
-    ]);
-    storage.resolveSourceMaps(cdp.sourceMapResolver);
+    try {
+      await cdp.detach();
+    } catch {
+      // Capture has already stopped, so detach failures should not block finalization.
+    }
+    const sourceMapDiagnosticsSnapshot = cdp.getSourceMapDiagnostics();
+    storage.resolveSourceMaps(cdp.sourceMapResolver, sourceMapDiagnosticsSnapshot);
+    const sourceMapDiagnostics = buildSourceMapDiagnosticsArtifact(stopTime);
     cdp.releaseSourceMaps();
 
     const finalizedArtifacts = storage.finalizeCurrentSession();
+    const report = buildRecordingReport(stopTime);
+    const userEventArtifact = buildUserEventArtifact(activeRecording.userEvents);
+    const recordingSettings = activeRecording.recordingSettings || {
+      ...(await getUploadSettings()),
+      ...activeRecording.privacySettings,
+    };
+    const privacy = buildPrivacySummary(
+      recordingSettings,
+      stopTime,
+      finalizedArtifacts,
+      userEventArtifact,
+      screenshotDataUrl,
+    );
     sessionArtifacts[sessionId] = {
       consoleLogs: finalizedArtifacts.consoleLogs,
       networkRequests: finalizedArtifacts.networkRequests,
       webSocketLogs: finalizedArtifacts.webSocketLogs,
+      report: JSON.stringify(report),
+      userEvents: userEventArtifact ? JSON.stringify(userEventArtifact) : undefined,
+      privacy: JSON.stringify(privacy),
+      diagnostics: sourceMapDiagnostics ? JSON.stringify(sourceMapDiagnostics) : undefined,
+      screenshotDataUrl,
       duration: startTime ? Math.max(0, stopTime - startTime) : 0,
       url: tabUrl || "",
       startTime,
@@ -876,10 +1787,8 @@ async function removeRecording(): Promise<MessageResponse> {
   try {
     activeRecording.isRecording = false;
 
-    await Promise.allSettled([
-      recorder.stopCapture(true),
-      cdp.detach(),
-    ]);
+    await stopRecordingEventCapture(activeRecording.tabId);
+    await Promise.allSettled([recorder.stopCapture(true), cdp.detach()]);
 
     storage.clear();
     cdp.releaseSourceMaps();
@@ -892,11 +1801,13 @@ async function removeRecording(): Promise<MessageResponse> {
     await saveArtifactsToStorage();
     await saveStateToStorage();
 
-    void chrome.runtime.sendMessage({
-      target: "offscreen",
-      type: "DELETE_SESSION_SNAPSHOT",
-      data: { sessionId },
-    }).catch(() => {});
+    void chrome.runtime
+      .sendMessage({
+        target: "offscreen",
+        type: "DELETE_SESSION_SNAPSHOT",
+        data: { sessionId },
+      })
+      .catch(() => {});
 
     return { ok: true };
   } catch (error) {
@@ -916,7 +1827,10 @@ function normalizeRecordingUrl(recordingUrl: string | null | undefined): string 
 
   try {
     const parsed = new URL(recordingUrl);
-    if (parsed.protocol === "chrome-extension:" || parsed.pathname.endsWith("/player/player.html")) {
+    if (
+      parsed.protocol === "chrome-extension:" ||
+      parsed.pathname.endsWith("/player/player.html")
+    ) {
       const legacyRecordingId = parsed.searchParams.get("id");
       if (legacyRecordingId) {
         return buildExternalPlayerUrl(legacyRecordingId);
@@ -928,14 +1842,13 @@ function normalizeRecordingUrl(recordingUrl: string | null | undefined): string 
   }
 }
 
-async function getPopupSettingsResponse(): Promise<MessageResponse & {
-  settings: UploadSettings;
-  uploadHistory: UploadHistoryEntry[];
-}> {
-  const [settings, uploadHistory] = await Promise.all([
-    getUploadSettings(),
-    getUploadHistory(),
-  ]);
+async function getPopupSettingsResponse(): Promise<
+  MessageResponse & {
+    settings: UploadSettings;
+    uploadHistory: UploadHistoryEntry[];
+  }
+> {
+  const [settings, uploadHistory] = await Promise.all([getUploadSettings(), getUploadHistory()]);
 
   return {
     ok: true,
@@ -944,7 +1857,10 @@ async function getPopupSettingsResponse(): Promise<MessageResponse & {
   };
 }
 
-async function persistUploadHistory(session: RecordingSessionSummary, targetFolderId: string | null): Promise<void> {
+async function persistUploadHistory(
+  session: RecordingSessionSummary,
+  targetFolderId: string | null,
+): Promise<void> {
   if (!session.recordingUrl) {
     return;
   }
@@ -1006,11 +1922,13 @@ async function deleteSession(data: Record<string, unknown> | undefined): Promise
   await saveArtifactsToStorage();
   await saveStateToStorage();
 
-  void chrome.runtime.sendMessage({
-    target: "offscreen",
-    type: "DELETE_SESSION_SNAPSHOT",
-    data: { sessionId },
-  }).catch(() => {});
+  void chrome.runtime
+    .sendMessage({
+      target: "offscreen",
+      type: "DELETE_SESSION_SNAPSHOT",
+      data: { sessionId },
+    })
+    .catch(() => {});
 
   return { ok: true };
 }
@@ -1033,9 +1951,42 @@ async function updateUploadSettingsFromMessage(
   if (parsed.normalizedInput && !parsed.folderId && parsed.folderPath.length === 0) {
     return {
       ok: false,
-      error: "Invalid Google Drive folder input. Use /folder/path, a folder ID, or a Google Drive folder link.",
+      error:
+        "Invalid Google Drive folder input. Use /folder/path, a folder ID, or a Google Drive folder link.",
     };
   }
+  const requestedProfile = normalizeEnum<CaptureProfile>(
+    data?.captureProfile,
+    ["lean", "balanced", "full", "custom"],
+    existingSettings.captureProfile,
+  );
+  const profileSettings = getCaptureProfileSettings(
+    requestedProfile === "custom" ? "full" : requestedProfile,
+  );
+  // Choosing a named preset is an explicit reset to that preset, even when the stored profile name is already selected.
+  const baseCaptureSettings = requestedProfile !== "custom" ? profileSettings : existingSettings;
+  // UI clients mark manual advanced edits by switching the requested profile to Custom before saving.
+  // Named profile saves may include the expanded preset fields, but they should remain on that named profile.
+  const nextCaptureProfile = requestedProfile;
+  const nextCaptureResponseBodyMode = normalizeEnum<ResponseBodyCaptureMode>(
+    data?.captureResponseBodyMode,
+    ["off", "text", "text-json", "eligible"],
+    baseCaptureSettings.captureResponseBodies ? baseCaptureSettings.captureResponseBodyMode : "off",
+  );
+  const nextCaptureResponseBodies =
+    typeof data?.captureResponseBodies === "boolean"
+      ? data.captureResponseBodies
+      : nextCaptureResponseBodyMode !== "off";
+  const requestedPrivacyProfile = normalizeEnum<PrivacyProfile>(
+    data?.privacyProfile,
+    ["standard", "strict", "custom"],
+    existingSettings.privacyProfile,
+  );
+  const privacyProfileSettings = getPrivacyProfileSettings(
+    requestedPrivacyProfile === "custom" ? "standard" : requestedPrivacyProfile,
+  );
+  const basePrivacySettings =
+    requestedPrivacyProfile !== "custom" ? privacyProfileSettings : existingSettings;
 
   const settings: UploadSettingsStore = {
     folderInput: parsed.normalizedInput,
@@ -1047,15 +1998,123 @@ async function updateUploadSettingsFromMessage(
       : hasZipPassword
         ? (data.zipPassword as string)
         : existingSettings.zipPassword,
-    captureRequestBodies: typeof data?.captureRequestBodies === "boolean"
-      ? data.captureRequestBodies
-      : existingSettings.captureRequestBodies,
-    captureResponseBodies: typeof data?.captureResponseBodies === "boolean"
-      ? data.captureResponseBodies
-      : existingSettings.captureResponseBodies,
-    captureWebSocketFrames: typeof data?.captureWebSocketFrames === "boolean"
-      ? data.captureWebSocketFrames
-      : existingSettings.captureWebSocketFrames,
+    captureProfile: nextCaptureProfile,
+    privacyProfile: requestedPrivacyProfile,
+    redactSensitiveHeaders: normalizeBoolean(
+      data?.redactSensitiveHeaders,
+      basePrivacySettings.redactSensitiveHeaders,
+    ),
+    redactSensitiveQueryParams: normalizeBoolean(
+      data?.redactSensitiveQueryParams,
+      basePrivacySettings.redactSensitiveQueryParams,
+    ),
+    redactRequestBodyFields: normalizeBoolean(
+      data?.redactRequestBodyFields,
+      basePrivacySettings.redactRequestBodyFields,
+    ),
+    redactResponseBodyFields: normalizeBoolean(
+      data?.redactResponseBodyFields,
+      basePrivacySettings.redactResponseBodyFields,
+    ),
+    redactConsoleValues: normalizeBoolean(
+      data?.redactConsoleValues,
+      basePrivacySettings.redactConsoleValues,
+    ),
+    redactWebSocketPayloads: normalizeEnum(
+      data?.redactWebSocketPayloads,
+      ["off", "sensitive-fields", "all"],
+      basePrivacySettings.redactWebSocketPayloads,
+    ),
+    redactEventMetadata: normalizeBoolean(
+      data?.redactEventMetadata,
+      basePrivacySettings.redactEventMetadata,
+    ),
+    maskDomSelectors: normalizeMaskDomSelectors(
+      Object.hasOwn(data || {}, "maskDomSelectors")
+        ? data?.maskDomSelectors
+        : basePrivacySettings.maskDomSelectors,
+    ),
+    captureConsole: normalizeBoolean(data?.captureConsole, baseCaptureSettings.captureConsole),
+    captureConsoleArgs: normalizeBoolean(
+      data?.captureConsoleArgs,
+      baseCaptureSettings.captureConsoleArgs,
+    ),
+    consolePreviewDepth: normalizeEnum<ConsolePreviewDepth>(
+      data?.consolePreviewDepth,
+      ["none", "shallow", "full"],
+      baseCaptureSettings.consolePreviewDepth,
+    ),
+    captureConsoleStacks: normalizeEnum<ConsoleStackMode>(
+      data?.captureConsoleStacks,
+      ["off", "errors", "warnings-errors", "all"],
+      baseCaptureSettings.captureConsoleStacks,
+    ),
+    captureConsoleSourceSnippets: normalizeEnum<ConsoleSourceSnippetMode>(
+      data?.captureConsoleSourceSnippets,
+      ["off", "errors", "warnings-errors", "all"],
+      baseCaptureSettings.captureConsoleSourceSnippets,
+    ),
+    maxConsoleEntryBytes: normalizeOptionalNumber(
+      data?.maxConsoleEntryBytes,
+      baseCaptureSettings.maxConsoleEntryBytes,
+      1024,
+      512 * 1024,
+    ),
+    captureNetwork: normalizeBoolean(data?.captureNetwork, baseCaptureSettings.captureNetwork),
+    captureRequestHeaders: normalizeEnum<HeaderCaptureMode>(
+      data?.captureRequestHeaders,
+      ["off", "minimal", "full"],
+      baseCaptureSettings.captureRequestHeaders,
+    ),
+    captureResponseHeaders: normalizeEnum<HeaderCaptureMode>(
+      data?.captureResponseHeaders,
+      ["off", "minimal", "full"],
+      baseCaptureSettings.captureResponseHeaders,
+    ),
+    captureRequestBodies: normalizeBoolean(
+      data?.captureRequestBodies,
+      baseCaptureSettings.captureRequestBodies,
+    ),
+    captureResponseBodies: nextCaptureResponseBodies,
+    captureResponseBodyMode: nextCaptureResponseBodies ? nextCaptureResponseBodyMode : "off",
+    maxResponseBodyBytes: normalizeOptionalNumber(
+      data?.maxResponseBodyBytes,
+      baseCaptureSettings.maxResponseBodyBytes,
+      0,
+      10 * 1024 * 1024,
+    ),
+    captureRedirectHeaders: normalizeEnum<RedirectHeaderCaptureMode>(
+      data?.captureRedirectHeaders,
+      ["off", "location", "full"],
+      baseCaptureSettings.captureRedirectHeaders,
+    ),
+    captureInitiator: normalizeEnum<InitiatorCaptureMode>(
+      data?.captureInitiator,
+      ["off", "summary", "short-stack", "full-stack"],
+      baseCaptureSettings.captureInitiator,
+    ),
+    suppressRecorderInternalRequests: normalizeBoolean(
+      data?.suppressRecorderInternalRequests,
+      baseCaptureSettings.suppressRecorderInternalRequests,
+    ),
+    captureWebSockets: normalizeBoolean(
+      data?.captureWebSockets,
+      baseCaptureSettings.captureWebSockets,
+    ),
+    captureWebSocketFrames: normalizeBoolean(
+      data?.captureWebSocketFrames,
+      baseCaptureSettings.captureWebSocketFrames,
+    ),
+    maxWebSocketFrameBytes: normalizeOptionalNumber(
+      data?.maxWebSocketFrameBytes,
+      baseCaptureSettings.maxWebSocketFrameBytes,
+      0,
+      1024 * 1024,
+    ),
+    captureWebSocketInitiator: normalizeBoolean(
+      data?.captureWebSocketInitiator,
+      baseCaptureSettings.captureWebSocketInitiator,
+    ),
   };
   await saveUploadSettings(settings);
   await saveStateToStorage();
@@ -1069,9 +2128,14 @@ async function updateUploadSettingsFromMessage(
 async function uploadSessionToGoogleDrive(
   data: Record<string, unknown> | undefined,
 ): Promise<MessageResponse> {
-  const requestedSessionId = typeof data?.sessionId === "string"
-    ? data.sessionId
-    : sessions.find((session) => (session.phase === "recorded" || session.phase === "failed") && session.hasLocalSnapshot)?.id;
+  const requestedSessionId =
+    typeof data?.sessionId === "string"
+      ? data.sessionId
+      : sessions.find(
+          (session) =>
+            (session.phase === "recorded" || session.phase === "failed") &&
+            session.hasLocalSnapshot,
+        )?.id;
 
   if (!requestedSessionId) {
     return { ok: false, error: "No recorded session is available for upload." };
@@ -1096,10 +2160,9 @@ function startSessionUploadTask(sessionId: string, authToken: string): Promise<v
     return existing;
   }
 
-  const task = runSessionUpload(sessionId, authToken)
-    .finally(() => {
-      activeUploadTasks.delete(sessionId);
-    });
+  const task = runSessionUpload(sessionId, authToken).finally(() => {
+    activeUploadTasks.delete(sessionId);
+  });
 
   activeUploadTasks.set(sessionId, task);
   return task;
@@ -1132,7 +2195,7 @@ async function runSessionUpload(sessionId: string, authToken: string): Promise<v
   await saveStateToStorage();
 
   try {
-    const result = await chrome.runtime.sendMessage({
+    const result = (await chrome.runtime.sendMessage({
       target: "offscreen",
       type: "UPLOAD_TO_GOOGLE_DRIVE",
       data: {
@@ -1141,16 +2204,22 @@ async function runSessionUpload(sessionId: string, authToken: string): Promise<v
           consoleLogs: Boolean(artifacts.consoleLogs),
           networkRequests: Boolean(artifacts.networkRequests),
           webSocketLogs: Boolean(artifacts.webSocketLogs),
+          report: Boolean(artifacts.report),
+          userEvents: Boolean(artifacts.userEvents),
+          privacy: Boolean(artifacts.privacy),
+          diagnostics: Boolean(artifacts.diagnostics),
+          screenshot: Boolean(artifacts.screenshotDataUrl),
         },
         duration: artifacts.duration,
         url: artifacts.url,
         startTime: artifacts.startTime,
+        screenshotDataUrl: artifacts.screenshotDataUrl || null,
         authToken,
         targetFolderId: settings.folderId,
         targetFolderPath: settings.folderPath,
         zipPassword: settings.zipPassword || null,
       },
-    }) as MessageResponse & Partial<UploadSuccessResult>;
+    })) as MessageResponse & Partial<UploadSuccessResult>;
 
     if (!result?.ok) {
       throw new Error(result?.error || "Upload failed");
@@ -1172,11 +2241,14 @@ async function runSessionUpload(sessionId: string, authToken: string): Promise<v
     delete sessionArtifacts[sessionId];
     await saveArtifactsToStorage();
 
-    void chrome.runtime.sendMessage({
-      target: "offscreen",
-      type: "DELETE_SESSION_SNAPSHOT",
-      data: { sessionId },
-    }).catch(() => {});
+    await chrome.runtime
+      .sendMessage({
+        target: "offscreen",
+        type: "DELETE_SESSION_SNAPSHOT",
+        data: { sessionId },
+      })
+      .catch(() => {});
+    await closeOffscreenDocumentIfIdle();
 
     if (updatedSession) {
       await persistUploadHistory(

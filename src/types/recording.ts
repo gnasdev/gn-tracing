@@ -41,6 +41,68 @@ export interface SourceCodeSnippet {
   truncated?: boolean;
 }
 
+export type SourceMapDiagnosticStatus = "pending" | "success" | "failed" | "skipped";
+
+export type SourceMapDiagnosticReason =
+  | "pending-frame-id"
+  | "missing-frame-id"
+  | "unsupported-target"
+  | "unsupported-url"
+  | "too-large"
+  | "network-failed"
+  | "http-error"
+  | "stream-read-failed"
+  | "html-fallback"
+  | "non-json-response"
+  | "json-parse-failed"
+  | "unsupported-map"
+  | "no-map-for-generated-url"
+  | "no-generated-line"
+  | "no-segment-for-column"
+  | "no-original-segment";
+
+export type SourceMapResolveStatus =
+  | "mapped"
+  | "no-map-for-generated-url"
+  | "no-generated-line"
+  | "no-segment-for-column"
+  | "no-original-segment";
+
+export interface SourceMapDiagnostic {
+  generatedUrl: string;
+  sourceMapUrl: string;
+  sourceType: "inline" | "external";
+  targetType: string;
+  sessionId?: string;
+  executionContextId?: number;
+  frameId?: string;
+  status: SourceMapDiagnosticStatus;
+  reason?: SourceMapDiagnosticReason;
+  httpStatusCode?: number;
+  netError?: string;
+  byteSize?: number;
+  sourcesCount?: number;
+  hasSourcesContent?: boolean;
+}
+
+export interface SourceMapDiagnosticsArtifact {
+  schemaVersion: 1;
+  generatedAt: string;
+  sourceMaps: SourceMapDiagnostic[];
+}
+
+export interface SourceMapFrameStatus {
+  status: "unresolved";
+  reason: Exclude<SourceMapResolveStatus, "mapped"> | SourceMapDiagnosticReason;
+  sourceMapUrl?: string;
+  httpStatusCode?: number;
+}
+
+export interface SourceMapResolveResult {
+  status: SourceMapResolveStatus;
+  location?: ResolvedLocation;
+}
+
 /**
  * Recording artifact data models.
  *
@@ -59,6 +121,7 @@ export interface StackFrame {
   originalColumn?: number;
   originalName?: string;
   sourceSnippet?: SourceCodeSnippet;
+  sourceMapStatus?: SourceMapFrameStatus;
 }
 
 export interface ConsoleEntry {
@@ -76,6 +139,7 @@ export interface ConsoleEntry {
   originalColumn?: number;
   originalName?: string;
   sourceSnippet?: SourceCodeSnippet;
+  sourceMapStatus?: SourceMapFrameStatus;
 }
 
 export interface NetworkEntry {
@@ -116,6 +180,7 @@ export interface NetworkInitiator {
   originalLine?: number;
   originalColumn?: number;
   originalName?: string;
+  sourceMapStatus?: SourceMapFrameStatus;
 }
 
 export interface CdpStackTrace {
@@ -133,6 +198,7 @@ export interface CdpCallFrame {
   originalLine?: number;
   originalColumn?: number;
   originalName?: string;
+  sourceMapStatus?: SourceMapFrameStatus;
 }
 
 export interface NetworkTiming {
@@ -199,4 +265,131 @@ export interface ResolvedLocation {
   column: number;
   name: string | null;
   sourceSnippet?: SourceCodeSnippet;
+}
+
+export interface CaptureViewport {
+  width: number;
+  height: number;
+  devicePixelRatio: number;
+}
+
+export interface CaptureScreen {
+  width: number;
+  height: number;
+}
+
+export interface CaptureEnvironment {
+  extensionVersion: string;
+  userAgent: string;
+  language: string;
+  timezone: string;
+  browserName?: string;
+  browserVersion?: string;
+  viewport?: CaptureViewport;
+  screen?: CaptureScreen;
+}
+
+export interface RecordingReport {
+  schemaVersion: 1;
+  title: string;
+  description?: string;
+  expected?: string;
+  actual?: string;
+  severity?: "low" | "medium" | "high" | "critical";
+  reference?: string;
+  source: "extension";
+  createdAt: string;
+  page: {
+    url: string;
+    title?: string;
+  };
+  environment: CaptureEnvironment;
+}
+
+export type RecordingUserEvent =
+  | {
+      type: "navigation";
+      timestamp: number;
+      url: string;
+      title?: string;
+    }
+  | {
+      type: "click";
+      timestamp: number;
+      selector?: string;
+      text?: string;
+      role?: string;
+      x?: number;
+      y?: number;
+    }
+  | {
+      type: "focus";
+      timestamp: number;
+      selector?: string;
+      inputType?: string;
+    }
+  | {
+      type: "submit";
+      timestamp: number;
+      selector?: string;
+    };
+
+export interface RecordingUserEventArtifact {
+  schemaVersion: 1;
+  events: RecordingUserEvent[];
+}
+
+export type RedactionArtifact =
+  | "headers"
+  | "url"
+  | "body"
+  | "console"
+  | "websocket"
+  | "events"
+  | "report"
+  | "visual";
+
+export type RedactionClass =
+  | "credential"
+  | "personal"
+  | "payment"
+  | "location"
+  | "opaque-id"
+  | "custom";
+
+export type RedactionAction = "redacted" | "removed" | "masked" | "truncated" | "skipped";
+
+export interface RedactionHit {
+  artifact: RedactionArtifact;
+  class: RedactionClass;
+  action: RedactionAction;
+  field?: string;
+  ruleId: string;
+}
+
+export interface RecordingPrivacySummary {
+  schemaVersion: 1;
+  policyVersion: 1;
+  profile: string;
+  createdAt: string;
+  artifactFlags: {
+    video: boolean;
+    screenshot: boolean;
+    report: boolean;
+    events: boolean;
+    console: boolean;
+    network: boolean;
+    websocket: boolean;
+    requestBodies: boolean;
+    responseBodies: boolean;
+    websocketPayloads: boolean;
+    sourceSnippets: boolean;
+  };
+  counts: Array<{
+    artifact: RedactionArtifact;
+    class: RedactionClass;
+    action: RedactionAction;
+    count: number;
+  }>;
+  limitations: string[];
 }

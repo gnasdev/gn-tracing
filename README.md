@@ -77,7 +77,7 @@ Request bodies, response bodies, and WebSocket message payloads are captured onl
 ## Limits
 
 - Records one tab at a time.
-- Cannot record `chrome://` pages.
+- Cannot record browser system pages, extension pages, Chrome Web Store pages, DevTools/internal URLs, or tabs without a normal `http:`, `https:`, or `file:` URL.
 - Keeps unfinished recording data in extension memory until upload.
 - A browser or extension restart can interrupt an unfinished local recording.
 

@@ -11,6 +11,7 @@ export type MessageAction =
   | "CHECK_FOR_UPDATE"
   | "DELETE_UPLOAD_HISTORY_ENTRY"
   | "DELETE_SESSION"
+  | "RECORDING_USER_EVENT"
   | "GOOGLE_DRIVE_CONNECT"
   | "GOOGLE_DRIVE_DISCONNECT"
   | "GOOGLE_DRIVE_STATUS"
@@ -29,16 +30,9 @@ export type OffscreenMessageType =
   | "DELETE_SESSION_SNAPSHOT"
   | "UPLOAD_PROGRESS";
 
-export type RecordingPhase =
-  | "idle"
-  | "recording"
-  | "interrupted";
+export type RecordingPhase = "idle" | "recording" | "interrupted";
 
-export type RecordingSessionPhase =
-  | "recorded"
-  | "uploading"
-  | "uploaded"
-  | "failed";
+export type RecordingSessionPhase = "recorded" | "uploading" | "uploaded" | "failed";
 
 export interface ServiceWorkerMessage {
   action: MessageAction;
@@ -146,10 +140,59 @@ export interface UploadSettings {
   folderInput: string;
   folderId: string | null;
   zipPasswordConfigured: boolean;
+  captureProfile: CaptureProfile;
+  privacyProfile: PrivacyProfile;
+  redactSensitiveHeaders: boolean;
+  redactSensitiveQueryParams: boolean;
+  redactRequestBodyFields: boolean;
+  redactResponseBodyFields: boolean;
+  redactConsoleValues: boolean;
+  redactWebSocketPayloads: WebSocketPayloadRedactionMode;
+  redactEventMetadata: boolean;
+  maskDomSelectors: string[];
+  captureConsole: boolean;
+  captureConsoleArgs: boolean;
+  consolePreviewDepth: ConsolePreviewDepth;
+  captureConsoleStacks: ConsoleStackMode;
+  captureConsoleSourceSnippets: ConsoleSourceSnippetMode;
+  maxConsoleEntryBytes: number | null;
+  captureNetwork: boolean;
+  captureRequestHeaders: HeaderCaptureMode;
+  captureResponseHeaders: HeaderCaptureMode;
   captureRequestBodies: boolean;
   captureResponseBodies: boolean;
+  captureResponseBodyMode: ResponseBodyCaptureMode;
+  maxResponseBodyBytes: number | null;
+  captureRedirectHeaders: RedirectHeaderCaptureMode;
+  captureInitiator: InitiatorCaptureMode;
+  suppressRecorderInternalRequests: boolean;
+  captureWebSockets: boolean;
   captureWebSocketFrames: boolean;
+  maxWebSocketFrameBytes: number | null;
+  captureWebSocketInitiator: boolean;
 }
+
+export type CaptureProfile = "lean" | "balanced" | "full" | "custom";
+export type PrivacyProfile = "standard" | "strict" | "custom";
+export type WebSocketPayloadRedactionMode = "off" | "sensitive-fields" | "all";
+export interface PrivacyRedactionSettings {
+  privacyProfile: PrivacyProfile;
+  redactSensitiveHeaders: boolean;
+  redactSensitiveQueryParams: boolean;
+  redactRequestBodyFields: boolean;
+  redactResponseBodyFields: boolean;
+  redactConsoleValues: boolean;
+  redactWebSocketPayloads: WebSocketPayloadRedactionMode;
+  redactEventMetadata: boolean;
+  maskDomSelectors: string[];
+}
+export type ConsolePreviewDepth = "none" | "shallow" | "full";
+export type ConsoleStackMode = "off" | "errors" | "warnings-errors" | "all";
+export type ConsoleSourceSnippetMode = "off" | "errors" | "warnings-errors" | "all";
+export type HeaderCaptureMode = "off" | "minimal" | "full";
+export type ResponseBodyCaptureMode = "off" | "text" | "text-json" | "eligible";
+export type RedirectHeaderCaptureMode = "off" | "location" | "full";
+export type InitiatorCaptureMode = "off" | "summary" | "short-stack" | "full-stack";
 
 export interface UploadHistoryEntry {
   id: string;

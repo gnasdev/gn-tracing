@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<!-- Full settings page for Drive, package security, and capture detail controls. -->
+<html lang="en" class="settings-root">
+<head>
+  <meta charset="UTF-8">
+  <title>GN Tracing Settings</title>
+  <link rel="stylesheet" href="../popup/popup.css">
+  <link rel="stylesheet" href="./settings.css">
+</head>
+<body class="settings-page">
+  <div id="app" class="settings-app">
+    <header class="settings-hero">
+      <div>
+        <div class="settings-eyebrow">GN Tracing</div>
+        <h1 class="settings-title" data-i18n="page.title">Settings</h1>
+        <p class="settings-lead" data-i18n="page.lead">Choose what each recording captures before you start a session.</p>
+      </div>
+      <div class="settings-hero-actions">
+        <button id="language-toggle-btn" class="btn btn-secondary language-toggle-btn" type="button" aria-label="Switch language"></button>
+        <button id="save-settings-btn" class="btn btn-start settings-save-btn" type="button" data-i18n="actions.save">Save Settings</button>
+      </div>
+    </header>
+
+    <section class="settings-panel-full">
+      <h2 data-i18n="sections.captureProfile">Capture Profile</h2>
+      <div class="profile-grid">
+        <label class="profile-option">
+          <input type="radio" name="capture-profile" value="lean">
+          <span data-i18n="profile.lean.label">Lean</span>
+          <small data-i18n="profile.lean.help">Metadata, minimal headers, compact console, no bodies.</small>
+        </label>
+        <label class="profile-option">
+          <input type="radio" name="capture-profile" value="balanced">
+          <span data-i18n="profile.balanced.label">Balanced</span>
+          <small data-i18n="profile.balanced.help">Useful debug details with bounded payloads.</small>
+        </label>
+        <label class="profile-option">
+          <input type="radio" name="capture-profile" value="full" checked>
+          <span data-i18n="profile.full.label">Full debug</span>
+          <small data-i18n="profile.full.help">Maximum detail with blank byte limits.</small>
+        </label>
+        <label class="profile-option">
+          <input type="radio" name="capture-profile" value="custom">
+          <span data-i18n="profile.custom.label">Custom</span>
+          <small data-i18n="profile.custom.help">Use the advanced choices below.</small>
+        </label>
+      </div>
+    </section>
+
+    <section class="settings-panel-full">
+      <h2 data-i18n="sections.privacyRedaction">Privacy & Redaction</h2>
+      <div class="profile-grid">
+        <label class="profile-option privacy-profile-option">
+          <input type="radio" name="privacy-profile" value="standard" checked>
+          <span data-i18n="privacy.standard.label">Standard</span>
+          <small data-i18n="privacy.standard.help">Redact high-confidence secrets across artifacts.</small>
+        </label>
+        <label class="profile-option privacy-profile-option">
+          <input type="radio" name="privacy-profile" value="strict">
+          <span data-i18n="privacy.strict.label">Strict</span>
+          <small data-i18n="privacy.strict.help">Also redact personal and opaque identifiers.</small>
+        </label>
+        <label class="profile-option privacy-profile-option">
+          <input type="radio" name="privacy-profile" value="custom">
+          <span data-i18n="privacy.custom.label">Custom</span>
+          <small data-i18n="privacy.custom.help">Use the privacy choices below.</small>
+        </label>
+      </div>
+      <div class="settings-grid settings-grid-spaced">
+        <div class="settings-group">
+          <h2 data-i18n="sections.privacyData">Data redaction</h2>
+          <label class="settings-check"><input id="redact-sensitive-headers-input" type="checkbox" checked><span data-i18n="fields.redactSensitiveHeaders.label">Redact sensitive headers</span></label>
+          <label class="settings-check"><input id="redact-sensitive-query-params-input" type="checkbox" checked><span data-i18n="fields.redactSensitiveQueryParams.label">Redact sensitive query params</span></label>
+          <label class="settings-check"><input id="redact-request-body-fields-input" type="checkbox" checked><span data-i18n="fields.redactRequestBodyFields.label">Redact request body fields</span></label>
+          <label class="settings-check"><input id="redact-response-body-fields-input" type="checkbox" checked><span data-i18n="fields.redactResponseBodyFields.label">Redact response body fields</span></label>
+          <label class="settings-check"><input id="redact-console-values-input" type="checkbox" checked><span data-i18n="fields.redactConsoleValues.label">Redact console values</span></label>
+          <label class="settings-check"><input id="redact-event-metadata-input" type="checkbox" checked><span data-i18n="fields.redactEventMetadata.label">Redact event/report metadata</span></label>
+          <label class="setting-field"><span data-i18n="fields.redactWebSocketPayloads.label">WebSocket payload redaction</span><select id="redact-websocket-payloads-input"><option value="off" data-i18n="options.off">Off</option><option value="sensitive-fields" selected data-i18n="options.sensitiveFields">Sensitive fields</option><option value="all" data-i18n="options.allPayloads">All payloads</option></select></label>
+        </div>
+        <div class="settings-group">
+          <h2 data-i18n="sections.visualMasking">Visual masking</h2>
+          <label class="setting-field">
+            <span data-i18n="fields.maskDomSelectors.label">DOM selectors to mask</span>
+            <textarea id="mask-dom-selectors-input" rows="8" placeholder="[data-private]&#10;.customer-email" data-i18n-placeholder="placeholders.maskDomSelectors"></textarea>
+          </label>
+          <p class="setting-hint" data-i18n="hints.visualMasking">Selectors are applied before capture when possible. They do not cover canvas, video, or closed shadow DOM.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="settings-panel-full settings-grid">
+      <div class="settings-group">
+        <h2 data-i18n="sections.googleDrive">Google Drive</h2>
+        <label class="setting-field">
+          <span data-i18n="fields.folder.label">Upload folder</span>
+          <input id="folder-input" type="text" value="/gn-tracing" placeholder="/gn-tracing, folder ID, or Drive link">
+        </label>
+        <p id="folder-hint" class="setting-hint" data-i18n="hints.folderDefault">Using Google Drive folder: /gn-tracing.</p>
+      </div>
+
+      <div class="settings-group">
+        <h2 data-i18n="sections.packageSecurity">Package Security</h2>
+        <label class="setting-field">
+          <span data-i18n="fields.zipPassword.label">Zip password</span>
+          <input id="zip-password-input" type="password" placeholder="Set password for new uploads" autocomplete="new-password">
+        </label>
+        <label class="settings-check">
+          <input id="clear-zip-password-input" type="checkbox">
+          <span data-i18n="fields.clearZipPassword.label">Clear configured zip password</span>
+        </label>
+        <p id="zip-password-hint" class="setting-hint" data-i18n="hints.zipPasswordNone">No zip password configured.</p>
+      </div>
+    </section>
+
+    <section class="settings-panel-full settings-grid">
+      <div class="settings-group">
+        <h2 data-i18n="sections.console">Console</h2>
+        <label class="settings-check"><input id="capture-console-input" type="checkbox" checked><span data-i18n="fields.captureConsole.label">Capture console artifact</span></label>
+        <label class="settings-check"><input id="capture-console-args-input" type="checkbox" checked><span data-i18n="fields.captureConsoleArgs.label">Store console args and previews</span></label>
+        <label class="setting-field"><span data-i18n="fields.consolePreviewDepth.label">Preview depth</span><select id="console-preview-depth-input"><option value="none" data-i18n="options.none">None</option><option value="shallow" data-i18n="options.shallow">Shallow</option><option value="full" selected data-i18n="options.fullWithinLimit">Full within limit</option></select></label>
+        <label class="setting-field"><span data-i18n="fields.captureConsoleStacks.label">Stacks</span><select id="capture-console-stacks-input"><option value="off" data-i18n="options.off">Off</option><option value="errors" data-i18n="options.errorsOnly">Errors only</option><option value="warnings-errors" data-i18n="options.warningsErrors">Warnings and errors</option><option value="all" selected data-i18n="options.allEntries">All entries</option></select></label>
+        <label class="setting-field"><span data-i18n="fields.captureConsoleSourceSnippets.label">Source snippets</span><select id="capture-console-source-snippets-input"><option value="off" data-i18n="options.off">Off</option><option value="errors" data-i18n="options.errorsOnly">Errors only</option><option value="warnings-errors" data-i18n="options.warningsErrors">Warnings and errors</option><option value="all" selected data-i18n="options.allResolvedEntries">All resolved entries</option></select></label>
+        <label class="setting-field"><span data-i18n="fields.maxConsoleEntryBytes.label">Max entry bytes</span><input id="max-console-entry-bytes-input" type="number" min="1024" max="524288" step="1024" placeholder="No limit" data-i18n-placeholder="placeholders.noLimit"></label>
+      </div>
+
+      <div class="settings-group">
+        <h2 data-i18n="sections.network">Network</h2>
+        <label class="settings-check"><input id="capture-network-input" type="checkbox" checked><span data-i18n="fields.captureNetwork.label">Capture network artifact</span></label>
+        <label class="setting-field"><span data-i18n="fields.captureRequestHeaders.label">Request headers</span><select id="capture-request-headers-input"><option value="off" data-i18n="options.off">Off</option><option value="minimal" data-i18n="options.minimal">Minimal</option><option value="full" selected data-i18n="options.fullRedacted">Full redacted</option></select></label>
+        <label class="setting-field"><span data-i18n="fields.captureResponseHeaders.label">Response headers</span><select id="capture-response-headers-input"><option value="off" data-i18n="options.off">Off</option><option value="minimal" data-i18n="options.minimal">Minimal</option><option value="full" selected data-i18n="options.fullRedacted">Full redacted</option></select></label>
+        <label class="settings-check"><input id="capture-request-bodies-input" type="checkbox" checked><span data-i18n="fields.captureRequestBodies.label">Capture request bodies</span></label>
+        <label class="setting-field"><span data-i18n="fields.captureResponseBodyMode.label">Response bodies</span><select id="capture-response-body-mode-input"><option value="off" data-i18n="options.off">Off</option><option value="text" data-i18n="options.textOnly">Text only</option><option value="text-json" data-i18n="options.textJson">Text and JSON</option><option value="eligible" selected data-i18n="options.eligibleText">All eligible text types</option></select></label>
+        <label class="setting-field"><span data-i18n="fields.maxResponseBodyBytes.label">Max response body bytes</span><input id="max-response-body-bytes-input" type="number" min="0" max="10485760" step="1024" placeholder="No limit" data-i18n-placeholder="placeholders.noLimit"></label>
+        <label class="setting-field"><span data-i18n="fields.captureRedirectHeaders.label">Redirect headers</span><select id="capture-redirect-headers-input"><option value="off" data-i18n="options.off">Off</option><option value="location" data-i18n="options.locationOnly">Location only</option><option value="full" selected data-i18n="options.fullRedacted">Full redacted</option></select></label>
+        <label class="setting-field"><span data-i18n="fields.captureInitiator.label">Initiator</span><select id="capture-initiator-input"><option value="off" data-i18n="options.off">Off</option><option value="summary" data-i18n="options.summaryLocation">Summary location</option><option value="short-stack" data-i18n="options.shortStack">Short stack</option><option value="full-stack" selected data-i18n="options.fullStack">Full stack</option></select></label>
+        <label class="settings-check"><input id="suppress-recorder-internal-requests-input" type="checkbox" checked><span data-i18n="fields.suppressRecorderInternalRequests.label">Suppress recorder sourcemap fetches</span></label>
+      </div>
+    </section>
+
+    <section class="settings-panel-full">
+      <div class="settings-group">
+        <h2 data-i18n="sections.websocket">WebSocket</h2>
+        <label class="settings-check"><input id="capture-websockets-input" type="checkbox" checked><span data-i18n="fields.captureWebSockets.label">Capture WebSocket artifact</span></label>
+        <label class="settings-check"><input id="capture-websocket-frames-input" type="checkbox" checked><span data-i18n="fields.captureWebSocketFrames.label">Store WebSocket frame payloads</span></label>
+        <label class="setting-field"><span data-i18n="fields.maxWebSocketFrameBytes.label">Max frame bytes</span><input id="max-websocket-frame-bytes-input" type="number" min="0" max="1048576" step="1024" placeholder="No limit" data-i18n-placeholder="placeholders.noLimit"></label>
+        <label class="settings-check"><input id="capture-websocket-initiator-input" type="checkbox" checked><span data-i18n="fields.captureWebSocketInitiator.label">Store WebSocket initiator</span></label>
+      </div>
+    </section>
+
+    <div id="error-msg" class="hidden"></div>
+    <dialog id="setting-info-dialog" class="setting-info-dialog" aria-labelledby="setting-info-title">
+      <form method="dialog" class="setting-info-card">
+        <div class="setting-info-header">
+          <h2 id="setting-info-title"></h2>
+          <button class="icon-btn" type="submit" aria-label="Close" title="Close">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
+              <path d="M6 6l12 12M18 6 6 18"/>
+            </svg>
+          </button>
+        </div>
+        <p id="setting-info-body"></p>
+      </form>
+    </dialog>
+  </div>
+  <script src="./settings.js"></script>
+</body>
+</html>

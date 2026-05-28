@@ -4,8 +4,9 @@
  * The root package owns extension bundling; the standalone player has its own
  * Vite build under `player-standalone/`.
  */
-import * as esbuild from "esbuild";
+
 import crypto from "crypto";
+import * as esbuild from "esbuild";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -17,11 +18,16 @@ const watch = process.argv.includes("--watch");
 const rawAppEnv = cliEnv || (watch ? "development" : "production");
 const appEnv = normalizeAppEnv(rawAppEnv);
 const isProductionBuild = appEnv === "production";
-const DEFAULT_GOOGLE_CLIENT_ID = "95916347176-ulk25djm5l4g6ebq7vftjik8iv9a11vf.apps.googleusercontent.com";
-const DEFAULT_CHROME_EXTENSION_PUBLIC_KEY = "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAjDxBQBIrG2c71RP7pfCDOIDtdcgHOTv4DFIXpFgH96fFdK7AQJ5jIgCfH5GR5+8EVgzFVk6MzJL6qjxIzJrB9APYHDpjeV64izWJIiwL6JOGBh10HqUWSPLu1dj/ccjJLmmxcBJRp4Dq5/MnKnKrLfuFyHtQMlB9jNXcozgAPBLiVD03FM7xgnf5AtMAXjjONhCaJT8eLkBEqlXk0NztNosUOy99i6TOro8ZXAM9Wlr1RlaL9iw/V62CDWC2AVYn3bD8pM42cf9vdaVfAYHfftp8T3V+sN2WZ0N0sZaYl6YoahAoXUQ9audQMQgSIX7cY0GAqsbcY/gQTiyDTtEuawIDAQAB";
+const DEFAULT_GOOGLE_CLIENT_ID =
+  "95916347176-ulk25djm5l4g6ebq7vftjik8iv9a11vf.apps.googleusercontent.com";
+const DEFAULT_CHROME_EXTENSION_PUBLIC_KEY =
+  "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAjDxBQBIrG2c71RP7pfCDOIDtdcgHOTv4DFIXpFgH96fFdK7AQJ5jIgCfH5GR5+8EVgzFVk6MzJL6qjxIzJrB9APYHDpjeV64izWJIiwL6JOGBh10HqUWSPLu1dj/ccjJLmmxcBJRp4Dq5/MnKnKrLfuFyHtQMlB9jNXcozgAPBLiVD03FM7xgnf5AtMAXjjONhCaJT8eLkBEqlXk0NztNosUOy99i6TOro8ZXAM9Wlr1RlaL9iw/V62CDWC2AVYn3bD8pM42cf9vdaVfAYHfftp8T3V+sN2WZ0N0sZaYl6YoahAoXUQ9audQMQgSIX7cY0GAqsbcY/gQTiyDTtEuawIDAQAB";
 const packageJson = JSON.parse(fs.readFileSync(path.resolve(__dirname, "package.json"), "utf-8"));
 const packageVersion = typeof packageJson.version === "string" ? packageJson.version : "";
-const googleClientId = getConfigValue("GOOGLE_CLIENT_ID", isProductionBuild ? "" : DEFAULT_GOOGLE_CLIENT_ID);
+const googleClientId = getConfigValue(
+  "GOOGLE_CLIENT_ID",
+  isProductionBuild ? "" : DEFAULT_GOOGLE_CLIENT_ID,
+);
 const chromeExtensionPublicKey = getConfigValue(
   "CHROME_EXTENSION_PUBLIC_KEY",
   isProductionBuild ? "" : DEFAULT_CHROME_EXTENSION_PUBLIC_KEY,
@@ -37,6 +43,8 @@ const STATIC_ASSET_ENTRIES = [
   { type: "file", src: "popup/popup.css", dest: "dist/popup/popup.css" },
   { type: "text", src: "history/history.html", dest: "dist/history/history.html" },
   { type: "file", src: "history/history.css", dest: "dist/history/history.css" },
+  { type: "text", src: "settings/settings.html", dest: "dist/settings/settings.html" },
+  { type: "file", src: "settings/settings.css", dest: "dist/settings/settings.css" },
   { type: "text", src: "offscreen/offscreen.html", dest: "dist/offscreen/offscreen.html" },
   { type: "text", src: "drive-auth/drive-auth.html", dest: "dist/drive-auth/drive-auth.html" },
   { type: "dir", src: "icons", dest: "dist/icons" },
@@ -113,7 +121,9 @@ function getChromeExtensionId(publicKey) {
     byte
       .toString(16)
       .padStart(2, "0")
-      .replace(/[0-9a-f]/g, (char) => String.fromCharCode("a".charCodeAt(0) + Number.parseInt(char, 16))),
+      .replace(/[0-9a-f]/g, (char) =>
+        String.fromCharCode("a".charCodeAt(0) + Number.parseInt(char, 16)),
+      ),
   ).join("");
 }
 
@@ -143,7 +153,9 @@ function validateChromeExtensionIdentity() {
 }
 
 function normalizeAppEnv(value) {
-  const normalized = String(value || "").trim().toLowerCase();
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase();
   if (normalized === "dev") return "development";
   if (normalized === "prod") return "production";
   return normalized || "production";
@@ -229,6 +241,7 @@ async function build() {
     entryPoints: [
       { in: "src/popup/popup.ts", out: "popup/popup" },
       { in: "src/history/history.ts", out: "history/history" },
+      { in: "src/settings/settings.ts", out: "settings/settings" },
       { in: "src/offscreen/offscreen.ts", out: "offscreen/offscreen" },
       { in: "src/drive-auth/drive-auth.ts", out: "drive-auth/drive-auth" },
     ],
@@ -236,16 +249,24 @@ async function build() {
     format: "iife",
   });
 
+  const contentCtx = await esbuild.context({
+    ...commonOptions,
+    entryPoints: [{ in: "src/content/recording-events.ts", out: "content/recording-events" }],
+    outdir: "dist",
+    format: "iife",
+    sourcemap: false,
+  });
+
   if (watch) {
-    await Promise.all([swCtx.watch(), uiCtx.watch()]);
+    await Promise.all([swCtx.watch(), uiCtx.watch(), contentCtx.watch()]);
     syncExtensionAssets();
     watchExtensionAssets();
     console.log("Watching extension sources...");
     return;
   }
 
-  await Promise.all([swCtx.rebuild(), uiCtx.rebuild()]);
-  await Promise.all([swCtx.dispose(), uiCtx.dispose()]);
+  await Promise.all([swCtx.rebuild(), uiCtx.rebuild(), contentCtx.rebuild()]);
+  await Promise.all([swCtx.dispose(), uiCtx.dispose(), contentCtx.dispose()]);
   syncExtensionAssets();
 
   console.log("Extension built.");
@@ -273,7 +294,9 @@ function watchExtensionAssets() {
   let lastAssetSignature = getStaticAssetSignature();
   const watchedPaths = new Set([
     path.resolve(__dirname, "manifest.template.json"),
-    ...STATIC_ASSET_ENTRIES.flatMap((entry) => getWatchedAssetPaths(path.resolve(__dirname, entry.src))),
+    ...STATIC_ASSET_ENTRIES.flatMap((entry) =>
+      getWatchedAssetPaths(path.resolve(__dirname, entry.src)),
+    ),
   ]);
 
   const syncAfterChange = () => {
@@ -329,7 +352,9 @@ function getWatchedAssetPaths(assetPath) {
 function getStaticAssetSignature() {
   const assetPaths = [
     path.resolve(__dirname, "manifest.template.json"),
-    ...STATIC_ASSET_ENTRIES.flatMap((entry) => getWatchedAssetPaths(path.resolve(__dirname, entry.src))),
+    ...STATIC_ASSET_ENTRIES.flatMap((entry) =>
+      getWatchedAssetPaths(path.resolve(__dirname, entry.src)),
+    ),
   ];
 
   return assetPaths

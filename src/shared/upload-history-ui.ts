@@ -37,7 +37,9 @@ export function renderUploadHistoryList(items: UploadHistoryEntry[] | undefined)
     return `<div class="history-empty">No uploads yet.</div>`;
   }
 
-  return safeItems.map((item) => `
+  return safeItems
+    .map(
+      (item) => `
     <div class="history-item">
       <div class="history-item-title">${escapeHtml(formatPageLabel(item.pageUrl))}</div>
       <div class="history-item-meta">
@@ -59,13 +61,17 @@ export function renderUploadHistoryList(items: UploadHistoryEntry[] | undefined)
           attrValue: item.recordingUrl,
           icon: getCopyIcon(),
         })}
-        ${item.recordingFolderId ? renderHistoryActionButton({
-          action: "open-folder",
-          label: "Open folder",
-          attrName: "data-folder-id",
-          attrValue: item.recordingFolderId,
-          icon: getFolderIcon(),
-        }) : ""}
+        ${
+          item.recordingFolderId
+            ? renderHistoryActionButton({
+                action: "open-folder",
+                label: "Open folder",
+                attrName: "data-folder-id",
+                attrValue: item.recordingFolderId,
+                icon: getFolderIcon(),
+              })
+            : ""
+        }
         ${renderHistoryActionButton({
           action: "delete-history",
           label: "Delete",
@@ -75,7 +81,9 @@ export function renderUploadHistoryList(items: UploadHistoryEntry[] | undefined)
         })}
       </div>
     </div>
-  `).join("");
+  `,
+    )
+    .join("");
 }
 
 export async function handleUploadHistoryAction(
@@ -230,6 +238,6 @@ export function escapeHtml(value: string): string {
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
-    .replaceAll("\"", "&quot;")
+    .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
 }

@@ -88,7 +88,15 @@ function text(x, y, value, size, fill = colors.white, weight = 700, extra = "") 
   return `<text x="${x}" y="${y}" fill="${fill}" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Arial, sans-serif" font-size="${size}" font-weight="${weight}" ${extra}>${esc(value)}</text>`;
 }
 
-function lines(x, y, values, size, fill = colors.white, gap = Math.round(size * 1.25), weight = 750) {
+function lines(
+  x,
+  y,
+  values,
+  size,
+  fill = colors.white,
+  gap = Math.round(size * 1.25),
+  weight = 750,
+) {
   return values.map((line, index) => text(x, y + index * gap, line, size, fill, weight)).join("");
 }
 
@@ -155,7 +163,9 @@ async function makePopupCapture(name, fixtureScript) {
 async function makePlayerCapture(name, mode) {
   const playerHtml = await fs.readFile(path.join(rootDir, "player", "player.html"), "utf8");
   const playerCss = await fs.readFile(path.join(rootDir, "player", "player.css"), "utf8");
-  const iconCss = await fs.readFile(path.join(rootDir, "player", "icons", "phosphor-icons.css"), "utf8").catch(() => "");
+  const iconCss = await fs
+    .readFile(path.join(rootDir, "player", "icons", "phosphor-icons.css"), "utf8")
+    .catch(() => "");
   const body = readBody(playerHtml);
   const script = mode === "intro" ? playerIntroScript() : playerReplayScript();
   const htmlPath = path.join(tempDir, `${name}.html`);
@@ -169,25 +179,33 @@ async function makeHistoryCapture() {
   const historyCss = await fs.readFile(path.join(rootDir, "history", "history.css"), "utf8");
   const body = readBody(historyHtml);
   const htmlPath = path.join(tempDir, "history-page.html");
-  await fs.writeFile(htmlPath, baseHtml("history-page", `${popupCss}\n${historyCss}`, body, historyScript()), "utf8");
+  await fs.writeFile(
+    htmlPath,
+    baseHtml("history-page", `${popupCss}\n${historyCss}`, body, historyScript()),
+    "utf8",
+  );
   await captureChrome(htmlPath, path.join(capturesDir, "history-page.png"), 1100, 760);
 }
 
 async function captureChrome(htmlPath, outPath, width, height) {
   const profileDir = await fs.mkdtemp(path.join(os.tmpdir(), "gn-tracing-store-assets-"));
   try {
-    await execFileAsync(chromeBin, [
-      "--headless=new",
-      "--disable-gpu",
-      "--disable-dev-shm-usage",
-      "--hide-scrollbars",
-      "--no-first-run",
-      "--allow-file-access-from-files",
-      `--user-data-dir=${profileDir}`,
-      `--window-size=${width},${height}`,
-      `--screenshot=${outPath}`,
-      fileUrl(htmlPath),
-    ], { timeout: 20000 });
+    await execFileAsync(
+      chromeBin,
+      [
+        "--headless=new",
+        "--disable-gpu",
+        "--disable-dev-shm-usage",
+        "--hide-scrollbars",
+        "--no-first-run",
+        "--allow-file-access-from-files",
+        `--user-data-dir=${profileDir}`,
+        `--window-size=${width},${height}`,
+        `--screenshot=${outPath}`,
+        fileUrl(htmlPath),
+      ],
+      { timeout: 20000 },
+    );
   } finally {
     await fs.rm(profileDir, { recursive: true, force: true });
   }
@@ -301,17 +319,23 @@ async function renderStoreScreenshot(config) {
     .toBuffer();
 
   const isTallCapture = shot.h > 560;
-  const bg = svgRoot(width, height, `
+  const bg = svgRoot(
+    width,
+    height,
+    `
     ${rect(70, 72, Math.min(320, config.badge.length * 10 + 46), 34, "rgba(46,196,182,0.18)", 17)}
     ${text(92, 94, config.badge, 15, "#9ff5ec", 800)}
-    ${isTallCapture
-      ? `${lines(70, 160, config.title, 52, colors.white, 62, 850)}
+    ${
+      isTallCapture
+        ? `${lines(70, 160, config.title, 52, colors.white, 62, 850)}
          ${lines(72, 318, config.copy, 23, colors.muted, 33, 650)}`
-      : `${text(70, 172, config.title.join(" "), 56, colors.white, 850)}
-         ${lines(72, 218, config.copy, 22, colors.muted, 31, 650)}`}
+        : `${text(70, 172, config.title.join(" "), 56, colors.white, 850)}
+         ${lines(72, 218, config.copy, 22, colors.muted, 31, 650)}`
+    }
     ${rect(shot.x - 18, shot.y - 18, shot.w + 36, shot.h + 36, colors.panel, 24, colors.line, 1, 'filter="url(#shadow)"')}
     ${rect(shot.x - 10, shot.y - 10, shot.w + 20, shot.h + 20, "#091427", 18, "#385176", 1)}
-  `);
+  `,
+  );
 
   await sharp(Buffer.from(bg))
     .composite([{ input: captureBuffer, left: shot.x, top: shot.y }])
@@ -320,19 +344,34 @@ async function renderStoreScreenshot(config) {
 }
 
 async function renderPromoAssets() {
-  const popup = await sharp(path.join(capturesDir, "popup-recording.png")).resize({ width: 150 }).png().toBuffer();
-  const player = await sharp(path.join(capturesDir, "player-replay.png")).resize({ width: 470, height: 294, fit: "cover", position: "top" }).png().toBuffer();
+  const popup = await sharp(path.join(capturesDir, "popup-recording.png"))
+    .resize({ width: 150 })
+    .png()
+    .toBuffer();
+  const player = await sharp(path.join(capturesDir, "player-replay.png"))
+    .resize({ width: 470, height: 294, fit: "cover", position: "top" })
+    .png()
+    .toBuffer();
 
-  const small = svgRoot(440, 280, `
+  const small = svgRoot(
+    440,
+    280,
+    `
     ${rect(28, 28, 384, 224, "rgba(10,20,37,0.82)", 24, colors.line, 1)}
     ${rect(52, 52, 150, 34, "url(#accent)", 17)}
     ${text(72, 74, "GN Tracing", 15, colors.bg0, 850)}
     ${lines(52, 126, ["Bug reports", "with evidence", "teams need"], 29, colors.white, 33, 850)}
     ${text(54, 232, "Video + console + network replay", 15, colors.muted, 700)}
-  `);
-  await sharp(Buffer.from(small)).png({ compressionLevel: 9 }).toFile(path.join(outDir, "small-promo-440x280.png"));
+  `,
+  );
+  await sharp(Buffer.from(small))
+    .png({ compressionLevel: 9 })
+    .toFile(path.join(outDir, "small-promo-440x280.png"));
 
-  const marquee = svgRoot(1400, 560, `
+  const marquee = svgRoot(
+    1400,
+    560,
+    `
     ${rect(74, 80, 346, 34, "rgba(46,196,182,0.18)", 17)}
     ${text(92, 102, "Chrome/Edge debugging recorder", 15, "#9ff5ec", 800)}
     ${lines(74, 166, ["Share the full bug story,", "not just the screen."], 58, colors.white, 68, 850)}
@@ -341,7 +380,8 @@ async function renderPromoAssets() {
     ${text(92, 474, "Uses real UI screenshots", 15, "#dbe4ff", 800)}
     ${rect(786, 82, 560, 386, colors.panel, 24, colors.line, 1, 'filter="url(#shadow)"')}
     ${rect(808, 104, 516, 342, "#091427", 16, "#385176", 1)}
-  `);
+  `,
+  );
   await sharp(Buffer.from(marquee))
     .composite([
       { input: player, left: 832, top: 128 },
@@ -377,7 +417,9 @@ Raw page captures are kept in \`captures/\` for review.
 async function verifyImage(file, width, height) {
   const meta = await sharp(file).metadata();
   if (meta.width !== width || meta.height !== height) {
-    throw new Error(`${path.relative(rootDir, file)} rendered as ${meta.width}x${meta.height}, expected ${width}x${height}`);
+    throw new Error(
+      `${path.relative(rootDir, file)} rendered as ${meta.width}x${meta.height}, expected ${width}x${height}`,
+    );
   }
   return { file: path.relative(outDir, file), width: meta.width, height: meta.height };
 }

@@ -4,12 +4,20 @@
   "private": true,
   "license": "GPL-3.0-or-later",
   "scripts": {
+    "prepare": "husky",
+    "lint": "biome lint . --files-ignore-unknown=true",
+    "format": "biome format --write . --files-ignore-unknown=true",
+    "format:check": "biome format . --files-ignore-unknown=true",
+    "check": "biome check . --files-ignore-unknown=true",
+    "check:write": "biome check --write . --files-ignore-unknown=true",
     "store:assets": "node scripts/generate-store-assets.mjs"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.4.15",
     "@types/chrome": "^0.0.287",
     "concurrently": "^8.2.2",
     "esbuild": "^0.24.0",
+    "husky": "^9.1.7",
     "sharp": "^0.34.5",
     "typescript": "^5.7.0"
   }

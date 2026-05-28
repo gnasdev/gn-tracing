@@ -4,7 +4,7 @@
 /// <reference types="vite/client" />
 
 interface GNTracingConfig {
-  mode: 'extension' | 'standalone';
+  mode: "extension" | "standalone";
   driveApiKey?: string;
 }
 

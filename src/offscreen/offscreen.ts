@@ -1,8 +1,9 @@
 /**
  * Runs tab media capture and Google Drive upload work in an offscreen document.
  */
-import type { ProgressItemSnapshot, ProgressItemStatus } from "../types/messages";
+
 import { buildExternalPlayerUrl } from "../shared/player-host";
+import type { ProgressItemSnapshot, ProgressItemStatus } from "../types/messages";
 
 /**
  * Offscreen document runtime for media capture and Google Drive uploads.
@@ -17,6 +18,7 @@ let activeChunks: Blob[] = [];
 let activeSessionId: string | null = null;
 let activeStream: MediaStream | null = null;
 let playbackAudioContext: AudioContext | null = null;
+let playbackSourceNode: MediaStreamAudioSourceNode | null = null;
 let shouldDiscardActiveCapture = false;
 
 interface SessionRecordingSnapshot {
@@ -37,6 +39,11 @@ interface ZipData {
   consoleLogs?: string;
   networkRequests?: string;
   webSocketLogs?: string;
+  report?: string;
+  userEvents?: string;
+  privacy?: string;
+  diagnostics?: string;
+  screenshotDataUrl?: string | null;
   duration: number;
   url: string;
   startTime: number | null;
@@ -52,10 +59,22 @@ interface GoogleDriveUploadData extends ZipData {
     consoleLogs?: boolean;
     networkRequests?: boolean;
     webSocketLogs?: boolean;
+    report?: boolean;
+    userEvents?: boolean;
+    privacy?: boolean;
+    diagnostics?: boolean;
+    screenshot?: boolean;
   };
 }
 
-type UploadArtifactKey = "consoleLogs" | "networkRequests" | "webSocketLogs";
+type UploadArtifactKey =
+  | "consoleLogs"
+  | "networkRequests"
+  | "webSocketLogs"
+  | "report"
+  | "userEvents"
+  | "privacy"
+  | "diagnostics";
 
 interface UploadArtifactChunkResponse {
   ok: boolean;
@@ -85,6 +104,11 @@ interface RecordingManifest {
   };
   artifacts: {
     metadata: string;
+    report?: string;
+    events?: string;
+    privacy?: string;
+    diagnostics?: string;
+    screenshot?: string;
     console?: string;
     network?: string;
     websocket?: string;
@@ -124,23 +148,22 @@ chrome.runtime.onMessage.addListener((message: OffscreenIncomingMessage, _sender
 
   switch (message.type) {
     case "START_CAPTURE":
-      startCapture(
-        String(message.data?.streamId || ""),
-        String(message.data?.sessionId || ""),
-      )
+      startCapture(String(message.data?.streamId || ""), String(message.data?.sessionId || ""))
         .then(() => sendResponse({ ok: true }))
         .catch((error: Error) => sendResponse({ ok: false, error: error.message }));
       return true;
 
     case "STOP_CAPTURE":
-      stopCapture();
-      sendResponse({ ok: true });
-      return false;
+      stopCapture()
+        .then(() => sendResponse({ ok: true }))
+        .catch((error: Error) => sendResponse({ ok: false, error: error.message }));
+      return true;
 
     case "DISCARD_CAPTURE":
-      discardCapture();
-      sendResponse({ ok: true });
-      return false;
+      discardCapture()
+        .then(() => sendResponse({ ok: true }))
+        .catch((error: Error) => sendResponse({ ok: false, error: error.message }));
+      return true;
 
     case "DELETE_SESSION_SNAPSHOT":
       deleteSessionSnapshot(String(message.data?.sessionId || ""));
@@ -182,6 +205,26 @@ function clampPercent(value: number): number {
   return Math.max(0, Math.min(100, value));
 }
 
+async function stopActiveMediaStream(): Promise<void> {
+  if (playbackSourceNode) {
+    playbackSourceNode.disconnect();
+    playbackSourceNode = null;
+  }
+
+  if (activeStream) {
+    activeStream.getTracks().forEach((track) => {
+      track.stop();
+    });
+    activeStream = null;
+  }
+
+  if (playbackAudioContext) {
+    const context = playbackAudioContext;
+    playbackAudioContext = null;
+    await context.close().catch(() => {});
+  }
+}
+
 function clearActiveCapture(): void {
   activeChunks = [];
   activeSessionId = null;
@@ -193,15 +236,7 @@ function clearActiveCapture(): void {
     recorder = null;
   }
 
-  if (activeStream) {
-    activeStream.getTracks().forEach((track) => track.stop());
-    activeStream = null;
-  }
-
-  if (playbackAudioContext) {
-    void playbackAudioContext.close().catch(() => {});
-    playbackAudioContext = null;
-  }
+  void stopActiveMediaStream();
 }
 
 async function startCapture(streamId: string, sessionId: string): Promise<void> {
@@ -233,6 +268,7 @@ async function startCapture(streamId: string, sessionId: string): Promise<void> 
 
   playbackAudioContext = new AudioContext();
   const source = playbackAudioContext.createMediaStreamSource(stream);
+  playbackSourceNode = source;
   source.connect(playbackAudioContext.destination);
 
   const mimeType = MediaRecorder.isTypeSupported("video/webm;codecs=vp9,opus")
@@ -279,19 +315,29 @@ async function startCapture(streamId: string, sessionId: string): Promise<void> 
   recorder.start();
 }
 
-function stopCapture(): void {
-  if (recorder && recorder.state !== "inactive") {
+async function stopCapture(): Promise<void> {
+  if (!recorder || recorder.state === "inactive") {
+    await stopActiveMediaStream();
+    return;
+  }
+
+  try {
+    recorder.requestData();
     recorder.stop();
+  } finally {
+    // MediaRecorder finalization is asynchronous; release every stream/audio
+    // reference now so Chrome clears the capture indicator before upload work starts.
+    await stopActiveMediaStream();
   }
 }
 
-function discardCapture(): void {
+async function discardCapture(): Promise<void> {
   shouldDiscardActiveCapture = true;
   if (!recorder || recorder.state === "inactive") {
     clearActiveCapture();
     return;
   }
-  stopCapture();
+  await stopCapture();
 }
 
 function deleteSessionSnapshot(sessionId: string): void {
@@ -330,10 +376,10 @@ async function createArtifactBlob(
   let totalLength = 0;
 
   while (true) {
-    const result = await chrome.runtime.sendMessage({
+    const result = (await chrome.runtime.sendMessage({
       action: "GET_UPLOAD_ARTIFACT_CHUNK",
       data: { sessionId, key, offset },
-    }) as UploadArtifactChunkResponse;
+    })) as UploadArtifactChunkResponse;
 
     if (!result?.ok) {
       throw new Error(result?.error || `Failed to load ${key} artifact.`);
@@ -359,12 +405,37 @@ async function createArtifactBlob(
   return new Blob(chunks, { type: "application/json" });
 }
 
+function createBlobFromDataUrl(dataUrl: string | null | undefined): Blob | null {
+  if (typeof dataUrl !== "string" || !dataUrl.startsWith("data:")) {
+    return null;
+  }
+
+  const commaIndex = dataUrl.indexOf(",");
+  if (commaIndex === -1) {
+    return null;
+  }
+
+  const metadata = dataUrl.slice(5, commaIndex);
+  const payload = dataUrl.slice(commaIndex + 1);
+  const [mimeType = "application/octet-stream", encoding] = metadata.split(";");
+  if (encoding === "base64") {
+    const binary = atob(payload);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) {
+      bytes[index] = binary.charCodeAt(index);
+    }
+    return new Blob([bytes], { type: mimeType });
+  }
+
+  return new Blob([decodeURIComponent(payload)], { type: mimeType });
+}
+
 function makeCrc32Table(): Uint32Array {
   const table = new Uint32Array(256);
   for (let i = 0; i < table.length; i += 1) {
     let value = i;
     for (let bit = 0; bit < 8; bit += 1) {
-      value = (value & 1) ? (0xedb88320 ^ (value >>> 1)) : (value >>> 1);
+      value = value & 1 ? 0xedb88320 ^ (value >>> 1) : value >>> 1;
     }
     table[i] = value >>> 0;
   }
@@ -395,7 +466,8 @@ function writeUint32(view: DataView, offset: number, value: number): void {
 
 function createZipTimestamp(date: Date): { time: number; date: number } {
   const year = Math.max(1980, date.getFullYear());
-  const time = (date.getHours() << 11) | (date.getMinutes() << 5) | Math.floor(date.getSeconds() / 2);
+  const time =
+    (date.getHours() << 11) | (date.getMinutes() << 5) | Math.floor(date.getSeconds() / 2);
   const dosDate = ((year - 1980) << 9) | ((date.getMonth() + 1) << 5) | date.getDate();
   return { time, date: dosDate };
 }
@@ -497,9 +569,12 @@ async function createZipBlob(
     const compressedBytes = shouldCompressZipEntry(safeName) ? await deflateRawBytes(bytes) : null;
     // ZIP compression is lossless, but tiny files can grow after DEFLATE headers.
     // Store those entries so every package is at least as small as the old path.
-    const payloadBytes = compressedBytes && compressedBytes.byteLength < bytes.byteLength ? compressedBytes : bytes;
+    const payloadBytes =
+      compressedBytes && compressedBytes.byteLength < bytes.byteLength ? compressedBytes : bytes;
     const compressionMethod = payloadBytes === bytes ? ZIP_METHOD_STORE : ZIP_METHOD_DEFLATE;
-    const payload = shouldEncrypt ? createZipEncryptedPayload(payloadBytes, password, crc32) : payloadBytes;
+    const payload = shouldEncrypt
+      ? createZipEncryptedPayload(payloadBytes, password, crc32)
+      : payloadBytes;
     const flags = ZIP_FLAG_UTF8 | (shouldEncrypt ? ZIP_FLAG_ENCRYPTED : 0);
     const localHeader = new ArrayBuffer(30 + nameBytes.length);
     const localView = new DataView(localHeader);
@@ -558,9 +633,14 @@ async function createZipBlob(
   return new Blob([...chunks, ...centralDirectory, endRecord], { type: "application/zip" });
 }
 
-async function uploadToGoogleDrive(
-  data: GoogleDriveUploadData,
-): Promise<{ ok: boolean; recordingUrl?: string; folderId?: string; indexFileId?: string; targetFolderId?: string | null; error?: string }> {
+async function uploadToGoogleDrive(data: GoogleDriveUploadData): Promise<{
+  ok: boolean;
+  recordingUrl?: string;
+  folderId?: string;
+  indexFileId?: string;
+  targetFolderId?: string | null;
+  error?: string;
+}> {
   const sessionId = String(data.sessionId || "");
   if (!sessionId) {
     return { ok: false, error: "Missing session id." };
@@ -577,25 +657,33 @@ async function uploadToGoogleDrive(
 
   try {
     const makeShareable = async (fileId: string): Promise<void> => {
-      const response = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}/permissions`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${data.authToken}`,
-          "Content-Type": "application/json",
+      const response = await fetch(
+        `https://www.googleapis.com/drive/v3/files/${fileId}/permissions`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${data.authToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            type: "anyone",
+            role: "reader",
+          }),
         },
-        body: JSON.stringify({
-          type: "anyone",
-          role: "reader",
-        }),
-      });
+      );
 
       if (!response.ok) {
         const error = await response.json().catch(() => ({}));
-        throw new Error(error.error?.message || `Share permission failed with status ${response.status}`);
+        throw new Error(
+          error.error?.message || `Share permission failed with status ${response.status}`,
+        );
       }
     };
 
-    const createFolder = async (folderName: string, parentFolderId?: string | null): Promise<string> => {
+    const createFolder = async (
+      folderName: string,
+      parentFolderId?: string | null,
+    ): Promise<string> => {
       const response = await fetch(
         "https://www.googleapis.com/drive/v3/files?fields=id&supportsAllDrives=true",
         {
@@ -614,7 +702,9 @@ async function uploadToGoogleDrive(
 
       if (!response.ok) {
         const error = await response.json().catch(() => ({}));
-        throw new Error(error.error?.message || `Create folder failed with status ${response.status}`);
+        throw new Error(
+          error.error?.message || `Create folder failed with status ${response.status}`,
+        );
       }
 
       const result = await response.json();
@@ -622,7 +712,10 @@ async function uploadToGoogleDrive(
       return result.id;
     };
 
-    const findFolder = async (folderName: string, parentFolderId?: string | null): Promise<string | null> => {
+    const findFolder = async (
+      folderName: string,
+      parentFolderId?: string | null,
+    ): Promise<string | null> => {
       const escapedName = folderName.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
       const parentQuery = parentFolderId ? `'${parentFolderId}' in parents` : "'root' in parents";
       const query = [
@@ -646,7 +739,9 @@ async function uploadToGoogleDrive(
 
       if (!response.ok) {
         const error = await response.json().catch(() => ({}));
-        throw new Error(error.error?.message || `Find folder failed with status ${response.status}`);
+        throw new Error(
+          error.error?.message || `Find folder failed with status ${response.status}`,
+        );
       }
 
       const result = await response.json().catch(() => ({}));
@@ -654,7 +749,10 @@ async function uploadToGoogleDrive(
       return typeof folder?.id === "string" ? folder.id : null;
     };
 
-    const resolveFolderPath = async (folderPath: string[] | undefined, parentFolderId?: string | null): Promise<string | null> => {
+    const resolveFolderPath = async (
+      folderPath: string[] | undefined,
+      parentFolderId?: string | null,
+    ): Promise<string | null> => {
       let currentParentId = parentFolderId || null;
       const safePath = Array.isArray(folderPath)
         ? folderPath.filter((segment) => typeof segment === "string" && segment.trim())
@@ -663,7 +761,7 @@ async function uploadToGoogleDrive(
       for (const rawSegment of safePath) {
         const segment = rawSegment.trim();
         const existingFolderId = await findFolder(segment, currentParentId);
-        currentParentId = existingFolderId || await createFolder(segment, currentParentId);
+        currentParentId = existingFolderId || (await createFolder(segment, currentParentId));
       }
 
       return currentParentId;
@@ -697,7 +795,10 @@ async function uploadToGoogleDrive(
 
         if (!sessionResponse.ok) {
           const error = await sessionResponse.json().catch(() => ({}));
-          throw new Error(error.error?.message || `Start resumable upload failed with status ${sessionResponse.status}`);
+          throw new Error(
+            error.error?.message ||
+              `Start resumable upload failed with status ${sessionResponse.status}`,
+          );
         }
 
         const uploadUrl = sessionResponse.headers.get("Location");
@@ -710,9 +811,10 @@ async function uploadToGoogleDrive(
           xhr.open("PUT", uploadUrl);
           xhr.setRequestHeader("Content-Type", blob.type || "application/octet-stream");
           xhr.upload.addEventListener("progress", (event) => {
-            const loaded = event.lengthComputable && event.total > 0
-              ? Math.min(blob.size, Math.round((event.loaded / event.total) * blob.size))
-              : Math.min(event.loaded, blob.size);
+            const loaded =
+              event.lengthComputable && event.total > 0
+                ? Math.min(blob.size, Math.round((event.loaded / event.total) * blob.size))
+                : Math.min(event.loaded, blob.size);
             onProgress?.(loaded, blob.size);
           });
 
@@ -726,7 +828,9 @@ async function uploadToGoogleDrive(
             }
 
             if (xhr.status < 200 || xhr.status >= 300 || !payload.id) {
-              reject(new Error(payload.error?.message || `Upload failed with status ${xhr.status}`));
+              reject(
+                new Error(payload.error?.message || `Upload failed with status ${xhr.status}`),
+              );
               return;
             }
 
@@ -764,9 +868,10 @@ async function uploadToGoogleDrive(
         xhr.setRequestHeader("Authorization", `Bearer ${data.authToken}`);
 
         xhr.upload.addEventListener("progress", (event) => {
-          const loaded = event.lengthComputable && event.total > 0
-            ? Math.min(blob.size, Math.round((event.loaded / event.total) * blob.size))
-            : Math.min(event.loaded, blob.size);
+          const loaded =
+            event.lengthComputable && event.total > 0
+              ? Math.min(blob.size, Math.round((event.loaded / event.total) * blob.size))
+              : Math.min(event.loaded, blob.size);
           onProgress?.(loaded, blob.size);
         });
 
@@ -805,26 +910,36 @@ async function uploadToGoogleDrive(
     const zipFilename = `${baseName}.zip`;
 
     const buildProgressItems = (): ProgressItemSnapshot[] => {
-      const percent = totalUploadBytes > 0
-        ? clampPercent((Math.min(uploadedBytes, totalUploadBytes) / totalUploadBytes) * 100)
-        : 0;
-      return [{
-        key: "recording-zip",
-        label: zipFilename,
-        status: packageStatus,
-        loadedBytes: uploadedBytes,
-        totalBytes: totalUploadBytes,
-        percent,
-      }];
+      const percent =
+        totalUploadBytes > 0
+          ? clampPercent((Math.min(uploadedBytes, totalUploadBytes) / totalUploadBytes) * 100)
+          : 0;
+      return [
+        {
+          key: "recording-zip",
+          label: zipFilename,
+          status: packageStatus,
+          loadedBytes: uploadedBytes,
+          totalBytes: totalUploadBytes,
+          percent,
+        },
+      ];
     };
 
     const emitProgress = (message: string, force = false): void => {
-      const percent = totalUploadBytes > 0
-        ? clampPercent((uploadedBytes / totalUploadBytes) * 100)
-        : completedSteps >= totalSteps ? 100 : 0;
+      const percent =
+        totalUploadBytes > 0
+          ? clampPercent((uploadedBytes / totalUploadBytes) * 100)
+          : completedSteps >= totalSteps
+            ? 100
+            : 0;
       const nowMs = Date.now();
 
-      if (!force && nowMs - lastProgressSentAt < UPLOAD_PROGRESS_THROTTLE_MS && Math.abs(percent - lastProgressPercent) < UPLOAD_PROGRESS_MIN_DELTA) {
+      if (
+        !force &&
+        nowMs - lastProgressSentAt < UPLOAD_PROGRESS_THROTTLE_MS &&
+        Math.abs(percent - lastProgressPercent) < UPLOAD_PROGRESS_MIN_DELTA
+      ) {
         return;
       }
 
@@ -850,18 +965,45 @@ async function uploadToGoogleDrive(
     packageStatus = "uploading";
     emitProgress("Packaging recording...", true);
 
-    const consoleBlob = (data.artifactKeys?.consoleLogs || data.consoleLogs)
-      ? await createArtifactBlob(sessionId, "consoleLogs", data.consoleLogs)
-      : null;
-    const networkBlob = (data.artifactKeys?.networkRequests || data.networkRequests)
-      ? await createArtifactBlob(sessionId, "networkRequests", data.networkRequests)
-      : null;
-    const websocketBlob = (data.artifactKeys?.webSocketLogs || data.webSocketLogs)
-      ? await createArtifactBlob(sessionId, "webSocketLogs", data.webSocketLogs)
+    const consoleBlob =
+      data.artifactKeys?.consoleLogs || data.consoleLogs
+        ? await createArtifactBlob(sessionId, "consoleLogs", data.consoleLogs)
+        : null;
+    const networkBlob =
+      data.artifactKeys?.networkRequests || data.networkRequests
+        ? await createArtifactBlob(sessionId, "networkRequests", data.networkRequests)
+        : null;
+    const websocketBlob =
+      data.artifactKeys?.webSocketLogs || data.webSocketLogs
+        ? await createArtifactBlob(sessionId, "webSocketLogs", data.webSocketLogs)
+        : null;
+    const reportBlob =
+      data.artifactKeys?.report || data.report
+        ? await createArtifactBlob(sessionId, "report", data.report)
+        : null;
+    const userEventsBlob =
+      data.artifactKeys?.userEvents || data.userEvents
+        ? await createArtifactBlob(sessionId, "userEvents", data.userEvents)
+        : null;
+    const privacyBlob =
+      data.artifactKeys?.privacy || data.privacy
+        ? await createArtifactBlob(sessionId, "privacy", data.privacy)
+        : null;
+    const diagnosticsBlob =
+      data.artifactKeys?.diagnostics || data.diagnostics
+        ? await createArtifactBlob(sessionId, "diagnostics", data.diagnostics)
+        : null;
+    const screenshotBlob = data.artifactKeys?.screenshot
+      ? createBlobFromDataUrl(data.screenshotDataUrl)
       : null;
 
     const artifacts: RecordingManifest["artifacts"] = {
       metadata: "metadata.json",
+      ...(reportBlob ? { report: "report.json" } : {}),
+      ...(userEventsBlob ? { events: "events.json" } : {}),
+      ...(privacyBlob ? { privacy: "privacy.json" } : {}),
+      ...(diagnosticsBlob ? { diagnostics: "diagnostics.json" } : {}),
+      ...(screenshotBlob ? { screenshot: "screenshot.jpg" } : {}),
       ...(consoleBlob ? { console: "console.json" } : {}),
       ...(networkBlob ? { network: "network.json" } : {}),
       ...(websocketBlob ? { websocket: "websocket.json" } : {}),
@@ -919,6 +1061,11 @@ async function uploadToGoogleDrive(
       manifestPath: "manifest.json",
       metadataPath: "metadata.json",
       artifacts: {
+        ...(reportBlob ? { reportPath: "report.json" } : {}),
+        ...(userEventsBlob ? { eventsPath: "events.json" } : {}),
+        ...(privacyBlob ? { privacyPath: "privacy.json" } : {}),
+        ...(diagnosticsBlob ? { diagnosticsPath: "diagnostics.json" } : {}),
+        ...(screenshotBlob ? { screenshotPath: "screenshot.jpg" } : {}),
         ...(consoleBlob ? { consolePath: "console.json" } : {}),
         ...(networkBlob ? { networkPath: "network.json" } : {}),
         ...(websocketBlob ? { websocketPath: "websocket.json" } : {}),
@@ -948,6 +1095,21 @@ async function uploadToGoogleDrive(
     }
     if (websocketBlob) {
       zipEntries.push({ name: "websocket.json", blob: websocketBlob });
+    }
+    if (reportBlob) {
+      zipEntries.push({ name: "report.json", blob: reportBlob });
+    }
+    if (userEventsBlob) {
+      zipEntries.push({ name: "events.json", blob: userEventsBlob });
+    }
+    if (privacyBlob) {
+      zipEntries.push({ name: "privacy.json", blob: privacyBlob });
+    }
+    if (diagnosticsBlob) {
+      zipEntries.push({ name: "diagnostics.json", blob: diagnosticsBlob });
+    }
+    if (screenshotBlob) {
+      zipEntries.push({ name: "screenshot.jpg", blob: screenshotBlob });
     }
 
     const zipPassword = typeof data.zipPassword === "string" ? data.zipPassword : "";
@@ -979,7 +1141,13 @@ async function uploadToGoogleDrive(
     emitProgress("Upload complete!", true);
 
     const recordingUrl = buildExternalPlayerUrl(zipFileId || "");
-    return { ok: true, recordingUrl, folderId: targetFolderId || undefined, indexFileId: zipFileId || undefined, targetFolderId };
+    return {
+      ok: true,
+      recordingUrl,
+      folderId: targetFolderId || undefined,
+      indexFileId: zipFileId || undefined,
+      targetFolderId,
+    };
   } catch (error) {
     console.error("[Google Drive Upload] Error:", error);
     return { ok: false, error: (error as Error).message };

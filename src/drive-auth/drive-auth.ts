@@ -76,9 +76,10 @@ function applyTranslations(): void {
   }
 
   document.documentElement.lang = currentLanguage;
-  document.title = currentLanguage === "vi"
-    ? "Kết nối Google Drive - GN Tracing"
-    : "Connect Google Drive - GN Tracing";
+  document.title =
+    currentLanguage === "vi"
+      ? "Kết nối Google Drive - GN Tracing"
+      : "Connect Google Drive - GN Tracing";
 
   langEnBtn.classList.toggle("active", currentLanguage === "en");
   langViBtn.classList.toggle("active", currentLanguage === "vi");
@@ -136,7 +137,9 @@ async function startAuth() {
   showState("loading");
 
   try {
-    const result = await chrome.runtime.sendMessage({ action: "GOOGLE_DRIVE_CONNECT" }) as MessageResponse;
+    const result = (await chrome.runtime.sendMessage({
+      action: "GOOGLE_DRIVE_CONNECT",
+    })) as MessageResponse;
 
     if (result.ok) {
       currentErrorMessage = null;
@@ -170,7 +173,9 @@ langViBtn.addEventListener("click", () => setLanguage("vi"));
 // Check if already connected on load
 async function checkStatus() {
   try {
-    const result = await chrome.runtime.sendMessage({ action: "GOOGLE_DRIVE_STATUS" }) as MessageResponse & { isConnected: boolean };
+    const result = (await chrome.runtime.sendMessage({
+      action: "GOOGLE_DRIVE_STATUS",
+    })) as MessageResponse & { isConnected: boolean };
     if (result.ok) {
       updateAuthUI(result.isConnected);
     }

@@ -62,8 +62,11 @@ This module covers authentication, Google Drive upload, replay URL generation, b
 - Allow the video pane to expand to an immersive tab-level mode inside the player surface without triggering OS/screen fullscreen.
 - Keep network response inspection readable with syntax-highlighted source views for JavaScript, HTML, CSS, and JSON payloads.
 - Show source-mapped console locations with a bounded source preview when the recording artifact includes sourcemap `sourcesContent` snippets.
-- Provide inline response preview panels for HTML, media, and JSON artifacts inside the network detail inspector.
-- Include recording-specific metadata in the player title so multiple open replay tabs remain distinguishable.
+- Show source-map availability diagnostics in console/network details when a frame remains generated-only, preferring frame-level `sourceMapStatus` and falling back to package-level `diagnostics.json`.
+- Show report metadata, environment chips, redacted interaction timeline rows, and the optional stop-time screenshot when a replay package includes Phase 1 report artifacts.
+- Show package privacy metadata when available, including policy version, privacy profile, artifact flags, redaction counts, and known limitations.
+- Provide inline response preview panels for HTML and media artifacts, and validate request/response bodies before offering a toggled pretty JSON preview in the network detail inspector.
+- Keep the player topbar branded with the GN Tracing app logo and title, while keeping recording-specific labels out of the visible topbar.
 - Show a usage/intro landing state when the player opens without replay query params, including GitHub and contribution guidance.
 - Surface GitHub and contribution entry points inside the extension popup, without exposing the fixed player host as popup UI.
 - Let the popup compare the installed version with the latest GitHub release and surface a release/download path when a newer extension zip exists.
@@ -75,11 +78,11 @@ This module covers authentication, Google Drive upload, replay URL generation, b
 - `GoogleDriveAuth.getAuthToken()` returns a usable token or `null`.
 - extension builds inject `GOOGLE_CLIENT_ID` into `GoogleDriveAuth` and `dist/manifest.json` from `.env`, environment variables, or release workflow secrets; production builds require explicit OAuth and extension identity values.
 - `manifest.template.json` is the manifest source of truth; build-time substitution writes the OAuth client id and Chrome extension public key into `dist/manifest.json`.
-- unprotected uploads package compact `metadata.json`, `manifest.json`, `recording-index.json`, optional log JSON files, and one or more `video.part-XXX.webm` files into a single `gn-tracing-*.zip` stored directly inside the configured upload folder.
+- unprotected uploads package compact `metadata.json`, `manifest.json`, `recording-index.json`, optional `report.json`, optional `events.json`, optional `privacy.json`, optional `diagnostics.json`, optional `screenshot.jpg`, optional log JSON files, and one or more `video.part-XXX.webm` files into a single `gn-tracing-*.zip` stored directly inside the configured upload folder.
 - JSON/text zip entries are written with ZIP DEFLATE when compression reduces size; video WebM entries stay stored because they are already media-compressed.
 - password-protected uploads write the same recording package shape as a native password-protected ZIP with encrypted entry payloads; compressed JSON/text entries are compressed before ZIP encryption.
 - `manifest.json` inside the zip is the storage layout source of truth; it records schema version, target folder ID, video mime type/parts, and which optional artifacts exist.
-- `recording-index.json` inside the zip is the replay entrypoint metadata; protected packages require the password before the player can read the encrypted entry.
+- `recording-index.json` inside the zip is the replay entrypoint metadata; it can point to optional report, events, privacy, and screenshot entries, and protected packages require the password before the player can read the encrypted entry.
 - replay links use a single zip file ID path, for example `https://tracing.gnas.dev/<zip-file-id>`.
 - the player also retains a legacy direct-file query parser for debugging or older links that still pass `videos`, `metadata`, `console`, `network`, and `websocket` params.
 - standalone player loads the index first, then loads artifacts directly from the file IDs listed by that index and does not require Drive folder listing or a Drive API key for replay.
@@ -123,15 +126,23 @@ This module covers authentication, Google Drive upload, replay URL generation, b
 - video "fullscreen" is implemented as an in-tab immersive player mode that hides the header and logs pane instead of using browser/OS fullscreen APIs.
 - network detail derives response presentation from mime type plus URL extension, then renders either highlighted source, an inline preview, or both.
 - console detail renders source-mapped file/line metadata and, when present, a small highlighted source preview from the captured console artifact without fetching source files during replay.
-- HTML preview uses a sandboxed iframe, media preview uses inline data URLs when captured payloads are base64-backed, and JSON preview combines a summary card with formatted source.
-- player title derives a short label from metadata URL plus recording timestamp and applies it to both the visible header and `document.title`.
+- console and network details render source-map diagnostic messages from frame-level `sourceMapStatus` first, then fall back to `diagnostics.json` when capture attempted to load a map but the stored frame still has only generated coordinates.
+- player source-map messages include HTML/non-JSON source-map responses, missing frame ids, HTTP load failures, missing generated lines, and loaded maps without matching generated columns.
+- HTML preview uses a sandboxed iframe, media preview uses inline data URLs when captured payloads are base64-backed, and request/response JSON preview is shown only after body text validates as JSON.
+- player `document.title` derives a short label from metadata URL plus recording timestamp, while the visible topbar stays as the GN Tracing app logo and title.
+- when `report.json` is available, the player prefers the report title and renders report/environment details above the video while preserving the metadata-derived title fallback for older packages.
+- player timeline markers include both log evidence and user-event entries; clicking a report event row seeks the video to that relative timestamp when available.
+- optional report, event, diagnostic, and screenshot artifacts are tolerant loads: missing or corrupt optional artifacts are warned/skipped without breaking video/log replay.
+- optional privacy artifacts are tolerant loads; packages without `privacy.json` continue through the legacy replay path, while packages with it render a compact privacy summary in the report panel.
 - player unlocks password-protected packages by prompting for the recording password, decrypting encrypted ZIP entries in-browser, and then using the same parser path as unprotected packages.
 - opening the player with no query params should render onboarding/help content rather than the invalid-params error; malformed partial query strings still use the error state.
 - popup should provide direct links to the GitHub repository and a contribution surface so users can discover the project and help improve it, while auth status is revalidated on popup open instead of relying only on cached session state.
 - popup should run a lightweight update check on open, provide a manual check action, and only guide the user to a release/download page; it does not self-install extension updates.
 - per-file progress labels should use artifact-level filenames or stable labels so parallel transfers remain debuggable without coupling copy to transient upload ordering.
 - popup should default uploads to `/gn-tracing` and let the user configure a Google Drive parent folder by entering `/folder/path`, pasting a folder id, or pasting a Google Drive folder link; blank or `/` means Drive root.
+- Settings live on a dedicated extension page for Drive folder, zip password, capture profile, and advanced capture controls; the page supports English/Vietnamese labels plus per-field help dialogs for QC/tester users, while the popup keeps quick recording controls and a topbar settings opener.
 - popup should expose recent upload history from local extension storage only; upload history is not written to Google Drive.
+- popup, Settings, and full-page upload history should share one dark glass-panel theme and action-button language so extension surfaces feel like one product.
 - stopping a finished capture should auto-start the Drive upload when a valid Drive token is already available.
 - popup recording controls expose start, stop, and remove actions; stop and remove are grouped together while a recording is active.
 
@@ -140,6 +151,7 @@ This module covers authentication, Google Drive upload, replay URL generation, b
 - uploads require publicly shareable Drive permissions for replay links to work outside the extension.
 - password-protected uploads protect package contents rather than Drive file discoverability; users still control who receives the replay URL and password.
 - password-protected uploads use native ZIP password entries so downloaded archives prompt for the password in common unzip tools.
+- password-protected uploads protect report, events, privacy, screenshot, logs, metadata, and video entries with the same package password when those artifacts are present.
 - forgotten zip passwords cannot be recovered by GN Tracing because protected ZIP entries are decrypted only from the user-provided password.
 - standalone mode depends on the `/api/drive` public proxy for the artifact IDs embedded in the replay URL unless a future hosted web OAuth flow explicitly supplies a token.
 - standalone mode assumes the Cloudflare Pages deployment includes the `/api/drive` proxy function so the browser never fetches Drive artifacts cross-origin.
@@ -148,6 +160,7 @@ This module covers authentication, Google Drive upload, replay URL generation, b
 - built-in player HTML and standalone wrapper HTML must stay markup-compatible because only `player.css` and `player.js` are synced automatically into `player-standalone/public/`; loading-state markup changes still require manual updates in `player-standalone/index.html`.
 - response preview intentionally stays dependency-free and lightweight; syntax highlighting is implemented in local player runtime helpers rather than external libraries.
 - console source previews are dependency-free and artifact-backed; replay does not fetch original sourcemaps or application source files from the recorded page.
+- report metadata, user-event timelines, privacy summaries, and screenshots are optional package enrichments; the player must continue to load packages created before these artifacts existed.
 - manual Cloudflare Pages deployment expects project `gn-tracing-player`, root base path `/`, and secrets `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID`.
 - local deploys can source root `.env` / `.env.example` with `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_PAGES_PROJECT`, `PLAYER_HOST_URL`, and `VITE_BASE_PATH`.
 - intro/empty-state copy should stay aligned between extension and standalone player shells so the hosted root URL behaves as a clear product landing page.

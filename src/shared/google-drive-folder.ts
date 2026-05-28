@@ -15,10 +15,7 @@ export interface ParsedGoogleDriveFolderInput {
  * raw Drive folder ids, Drive folder URLs, query-string ids, and slash-prefixed
  * folder paths for folder creation/resolution in the upload flow.
  */
-const DRIVE_FOLDER_PATTERNS = [
-  /\/folders\/([a-zA-Z0-9_-]+)/i,
-  /[?&]id=([a-zA-Z0-9_-]+)/i,
-];
+const DRIVE_FOLDER_PATTERNS = [/\/folders\/([a-zA-Z0-9_-]+)/i, /[?&]id=([a-zA-Z0-9_-]+)/i];
 
 function isLikelyDriveId(value: string): boolean {
   return /^[a-zA-Z0-9_-]{10,}$/.test(value);
@@ -51,7 +48,9 @@ function parseFolderPath(value: string): { normalizedInput: string; folderPath: 
   };
 }
 
-export function parseGoogleDriveFolderInput(input: string | null | undefined): ParsedGoogleDriveFolderInput {
+export function parseGoogleDriveFolderInput(
+  input: string | null | undefined,
+): ParsedGoogleDriveFolderInput {
   const rawInput = typeof input === "string" ? input : "";
   const normalizedInput = rawInput.trim();
 

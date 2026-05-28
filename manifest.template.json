@@ -8,19 +8,16 @@
     "tabCapture",
     "offscreen",
     "debugger",
+    "scripting",
     "activeTab",
     "storage",
     "alarms",
     "identity"
   ],
-  "host_permissions": [
-    "https://api.github.com/"
-  ],
+  "host_permissions": ["https://api.github.com/"],
   "oauth2": {
     "client_id": "{{GOOGLE_CLIENT_ID}}",
-    "scopes": [
-      "https://www.googleapis.com/auth/drive.file"
-    ]
+    "scopes": ["https://www.googleapis.com/auth/drive.file"]
   },
   "key": "{{CHROME_EXTENSION_PUBLIC_KEY}}",
   "background": {

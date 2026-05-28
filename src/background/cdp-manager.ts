@@ -1,16 +1,32 @@
 /**
  * Captures Chrome Debugger Protocol events for recording replay artifacts.
  */
-import { SourceMapResolver } from "./sourcemap-resolver";
-import type { StorageManager } from "./storage-manager";
+
+import {
+  getPrivacyProfileSettings,
+  REDACTED_VALUE,
+  redactBodyText,
+  redactHeaderMap,
+  redactUrl,
+} from "../shared/privacy-redaction";
+import type {
+  HeaderCaptureMode,
+  PrivacyRedactionSettings,
+  UploadSettings,
+} from "../types/messages";
 import type {
   ConsoleEntry,
   NetworkEntry,
-  WebSocketEntry,
-  SerializedRemoteObject,
+  NetworkInitiator,
   ObjectPreview,
+  RedactionHit,
+  SerializedRemoteObject,
+  SourceMapDiagnostic,
   StackFrame,
+  WebSocketEntry,
 } from "../types/recording";
+import { SourceMapResolver } from "./sourcemap-resolver";
+import type { StorageManager } from "./storage-manager";
 
 /**
  * Chrome Debugger Protocol collector.
@@ -34,7 +50,13 @@ interface CdpRequestWillBeSentParams {
   };
   timestamp: number;
   wallTime: number;
-  initiator: { type?: string; url?: string; lineNumber?: number; columnNumber?: number; stack?: CdpRawStackTrace };
+  initiator: {
+    type?: string;
+    url?: string;
+    lineNumber?: number;
+    columnNumber?: number;
+    stack?: CdpRawStackTrace;
+  };
   type: string;
   redirectResponse?: {
     status: number;
@@ -58,10 +80,14 @@ interface CdpResponseReceivedParams {
     headers: Record<string, string>;
     mimeType: string;
     timing?: {
-      dnsStart: number; dnsEnd: number;
-      connectStart: number; connectEnd: number;
-      sslStart: number; sslEnd: number;
-      sendStart: number; sendEnd: number;
+      dnsStart: number;
+      dnsEnd: number;
+      connectStart: number;
+      connectEnd: number;
+      sslStart: number;
+      sslEnd: number;
+      sendStart: number;
+      sendEnd: number;
       receiveHeadersEnd: number;
     };
     protocol?: string;
@@ -98,7 +124,13 @@ interface CdpRequestServedFromCacheParams {
 interface CdpWebSocketCreatedParams {
   requestId: string;
   url: string;
-  initiator?: { type?: string; url?: string; lineNumber?: number; columnNumber?: number; stack?: CdpRawStackTrace };
+  initiator?: {
+    type?: string;
+    url?: string;
+    lineNumber?: number;
+    columnNumber?: number;
+    stack?: CdpRawStackTrace;
+  };
 }
 
 interface CdpWebSocketFrameParams {
@@ -141,7 +173,17 @@ interface CdpLogEntryAddedParams {
   };
 }
 
+interface CdpExecutionContextCreatedParams {
+  context?: {
+    id?: number;
+    auxData?: {
+      frameId?: string;
+    };
+  };
+}
+
 interface CdpScriptParsedParams {
+  executionContextId?: number;
   url: string;
   sourceMapURL?: string;
   executionContextAuxData?: {
@@ -166,6 +208,9 @@ interface CdpLoadNetworkResourceResult {
   resource?: {
     success?: boolean;
     stream?: string;
+    httpStatusCode?: number;
+    netError?: number;
+    netErrorName?: string;
   };
 }
 
@@ -212,27 +257,53 @@ interface CdpRawStackTrace {
   description?: string;
 }
 
-interface CaptureSettings {
-  captureRequestBodies: boolean;
-  captureResponseBodies: boolean;
-  captureWebSocketFrames: boolean;
+interface SourceMapLoadAttempt {
+  source: chrome.debugger.Debuggee;
+  scriptUrl: string;
+  sourceMapURL: string;
+  resolvedUrl: string;
+  sessionId?: string;
+  executionContextId?: number;
+  frameId?: string;
+  diagnostic: SourceMapDiagnostic;
 }
 
-const REDACTED_VALUE = "[redacted by GN Tracing]";
+type RuntimeCaptureSettings = Pick<
+  UploadSettings,
+  | "captureConsole"
+  | "captureNetwork"
+  | "captureRequestHeaders"
+  | "captureResponseHeaders"
+  | "captureRequestBodies"
+  | "captureResponseBodyMode"
+  | "maxResponseBodyBytes"
+  | "captureRedirectHeaders"
+  | "captureInitiator"
+  | "suppressRecorderInternalRequests"
+  | "captureWebSockets"
+  | "captureWebSocketFrames"
+  | "maxWebSocketFrameBytes"
+  | "captureWebSocketInitiator"
+>;
+
 const SOURCE_MAP_MAX_BYTES = 50 * 1024 * 1024;
 const SOURCE_MAP_READ_CHUNK_BYTES = 1024 * 1024;
-const SENSITIVE_HEADER_PATTERNS = [
-  "authorization",
-  "cookie",
-  "token",
-  "secret",
-  "api-key",
-  "apikey",
-  "x-api-key",
-  "x-auth",
-  "x-csrf",
-  "x-xsrf",
-];
+const SOURCE_MAP_DIAGNOSTIC_LIMIT = 500;
+const SOURCE_MAP_RESOLVE_URL_PROPERTY = "__gnSourceMapResolveUrl";
+const MINIMAL_REQUEST_HEADERS = new Set([
+  "accept",
+  "content-type",
+  "origin",
+  "referer",
+  "user-agent",
+]);
+const MINIMAL_RESPONSE_HEADERS = new Set([
+  "cache-control",
+  "content-type",
+  "etag",
+  "last-modified",
+  "location",
+]);
 
 export class CdpManager {
   #tabId: number | null = null;
@@ -240,22 +311,42 @@ export class CdpManager {
   #pendingWebSockets = new Map<string, PendingWebSocket>();
   #responseBodyFetches = new Map<string, Promise<void>>();
   #pendingRequestExtraInfo = new Map<string, Record<string, string>>();
-  #pendingResponseExtraInfo = new Map<string, { headers?: Record<string, string>; statusCode?: number }>();
+  #pendingResponseExtraInfo = new Map<
+    string,
+    { headers?: Record<string, string>; statusCode?: number }
+  >();
   #pendingEarlyHints = new Map<string, Record<string, string>>();
   #pendingServedFromCache = new Set<string>();
+  #suppressedRequestKeys = new Set<string>();
   #attachedSessions = new Set<string>();
-  #sourceMapHints = new Map<string, string>();
-  #sourceMapFetchKeys = new Set<string>();
+  #executionContextFrameIds = new Map<string, string>();
+  #sessionTargetTypes = new Map<string, string>();
+  #sourceMapResourceUrls = new Set<string>();
+  #sourceMapDiagnostics: SourceMapDiagnostic[] = [];
+  #pendingSourceMapAttempts = new Map<string, SourceMapLoadAttempt>();
   #storage: StorageManager;
   #attached = false;
   #boundEventHandler: (source: chrome.debugger.Debuggee, method: string, params?: object) => void;
   #boundDetachHandler: (source: chrome.debugger.Debuggee, reason: string) => void;
   #sourceMapResolver = new SourceMapResolver();
   #sourceMapFetches = new Set<Promise<void>>();
-  #captureSettings: CaptureSettings = {
+  #privacySettings: PrivacyRedactionSettings = getPrivacyProfileSettings("standard");
+  #recordRedactionHits: (hits: RedactionHit[]) => void = () => {};
+  #captureSettings: RuntimeCaptureSettings = {
+    captureConsole: true,
+    captureNetwork: true,
+    captureRequestHeaders: "full",
+    captureResponseHeaders: "full",
     captureRequestBodies: true,
-    captureResponseBodies: true,
+    captureResponseBodyMode: "eligible",
+    maxResponseBodyBytes: null,
+    captureRedirectHeaders: "location",
+    captureInitiator: "summary",
+    suppressRecorderInternalRequests: true,
+    captureWebSockets: true,
     captureWebSocketFrames: true,
+    maxWebSocketFrameBytes: null,
+    captureWebSocketInitiator: false,
   };
 
   constructor(storage: StorageManager) {
@@ -268,13 +359,25 @@ export class CdpManager {
     return this.#sourceMapResolver;
   }
 
+  getSourceMapDiagnostics(): SourceMapDiagnostic[] {
+    return this.#sourceMapDiagnostics.map((diagnostic) => ({ ...diagnostic }));
+  }
+
   async flushSourceMaps(): Promise<void> {
+    this.#retryPendingSourceMapAttempts();
     await Promise.allSettled(Array.from(this.#sourceMapFetches));
+    this.#retryPendingSourceMapAttempts();
+    await Promise.allSettled(Array.from(this.#sourceMapFetches));
+    this.#failPendingSourceMapAttempts();
   }
 
   releaseSourceMaps(): void {
     this.#sourceMapFetches.clear();
+    this.#sourceMapResourceUrls.clear();
     this.#sourceMapResolver.clear();
+    this.#sourceMapDiagnostics = [];
+    this.#pendingSourceMapAttempts.clear();
+    this.#sessionTargetTypes.clear();
   }
 
   async attach(tabId: number): Promise<void> {
@@ -286,9 +389,15 @@ export class CdpManager {
     this.#pendingResponseExtraInfo.clear();
     this.#pendingEarlyHints.clear();
     this.#pendingServedFromCache.clear();
+    this.#suppressedRequestKeys.clear();
     this.#attachedSessions.clear();
+    this.#executionContextFrameIds.clear();
+    this.#sessionTargetTypes.clear();
+    this.#sourceMapResourceUrls.clear();
     this.#sourceMapResolver.clear();
     this.#sourceMapFetches.clear();
+    this.#sourceMapDiagnostics = [];
+    this.#pendingSourceMapAttempts.clear();
 
     await chrome.debugger.attach({ tabId }, "1.3");
     this.#attached = true;
@@ -321,22 +430,36 @@ export class CdpManager {
     this.#pendingResponseExtraInfo.clear();
     this.#pendingEarlyHints.clear();
     this.#pendingServedFromCache.clear();
+    this.#suppressedRequestKeys.clear();
+    this.#executionContextFrameIds.clear();
+    this.#sourceMapResourceUrls.clear();
+    this.#pendingSourceMapAttempts.clear();
 
     for (const [, ws] of this.#pendingWebSockets) {
       this.#storage.addWebSocketEntry(ws.entry);
     }
     this.#pendingWebSockets.clear();
     this.#attachedSessions.clear();
+    this.#sessionTargetTypes.clear();
 
     this.#attached = false;
   }
 
-  setCaptureSettings(settings: CaptureSettings): void {
+  setCaptureSettings(settings: Partial<RuntimeCaptureSettings>): void {
     this.#captureSettings = {
+      ...this.#captureSettings,
+      ...settings,
       captureRequestBodies: Boolean(settings.captureRequestBodies),
-      captureResponseBodies: Boolean(settings.captureResponseBodies),
       captureWebSocketFrames: Boolean(settings.captureWebSocketFrames),
     };
+  }
+
+  setPrivacySettings(
+    settings: PrivacyRedactionSettings,
+    recordRedactionHits?: (hits: RedactionHit[]) => void,
+  ): void {
+    this.#privacySettings = settings;
+    this.#recordRedactionHits = recordRedactionHits || (() => {});
   }
 
   #handleDetach(source: chrome.debugger.Debuggee, _reason: string): void {
@@ -396,6 +519,9 @@ export class CdpManager {
       case "Runtime.consoleAPICalled":
         this.#onConsoleAPICalled(params as CdpConsoleAPICalledParams);
         break;
+      case "Runtime.executionContextCreated":
+        this.#onExecutionContextCreated(source, params as CdpExecutionContextCreatedParams);
+        break;
       case "Runtime.exceptionThrown":
         this.#onExceptionThrown(params as CdpExceptionThrownParams);
         break;
@@ -421,12 +547,16 @@ export class CdpManager {
     }
 
     this.#attachedSessions.add(params.sessionId);
+    this.#sessionTargetTypes.set(params.sessionId, params.targetInfo?.type || "unknown");
 
     try {
       await this.#enableDomains(params.sessionId);
       await this.#configureAutoAttach(params.sessionId);
       if (params.waitingForDebugger) {
-        await this.#sendCommand(this.#getDebuggee(params.sessionId), "Runtime.runIfWaitingForDebugger");
+        await this.#sendCommand(
+          this.#getDebuggee(params.sessionId),
+          "Runtime.runIfWaitingForDebugger",
+        );
       }
     } catch {
       // Ignore child target setup failures and continue recording on the main target.
@@ -436,6 +566,7 @@ export class CdpManager {
   #onDetachedFromTarget(params: CdpDetachedFromTargetParams): void {
     if (!params.sessionId) return;
     this.#attachedSessions.delete(params.sessionId);
+    this.#sessionTargetTypes.delete(params.sessionId);
     const prefix = `${params.sessionId}:`;
     for (const key of Array.from(this.#pendingRequests.keys())) {
       if (key.startsWith(prefix) && !this.#responseBodyFetches.has(key)) {
@@ -451,11 +582,28 @@ export class CdpManager {
         this.#pendingWebSockets.delete(key);
       }
     }
+    for (const key of Array.from(this.#executionContextFrameIds.keys())) {
+      if (key.startsWith(prefix)) {
+        this.#executionContextFrameIds.delete(key);
+      }
+    }
+    for (const key of Array.from(this.#pendingSourceMapAttempts.keys())) {
+      if (key.startsWith(prefix)) {
+        this.#pendingSourceMapAttempts.delete(key);
+      }
+    }
     this.#pruneMetadataForPrefix(prefix);
   }
 
   #onRequestWillBeSent(source: chrome.debugger.Debuggee, params: CdpRequestWillBeSentParams): void {
     const key = this.#requestKey(source, params.requestId);
+    if (this.#shouldSuppressRecorderResource(params.request.url)) {
+      this.#suppressedRequestKeys.add(key);
+      return;
+    }
+    if (!this.#captureSettings.captureNetwork) {
+      return;
+    }
     if (params.redirectResponse) {
       const existing = this.#pendingRequests.get(key);
       if (existing) {
@@ -464,12 +612,20 @@ export class CdpManager {
           url: existing.entry.url,
           status: params.redirectResponse.status,
           statusText: params.redirectResponse.statusText,
-          headers: this.#redactHeaders(params.redirectResponse.headers) || {},
+          headers: this.#filterRedirectHeaders(params.redirectResponse.headers) || {},
         });
-        existing.entry.url = params.request.url;
+        existing.entry.url =
+          this.#redactUrlValue(params.request.url, "url", "network.request.url") ||
+          params.request.url;
         existing.entry.method = params.request.method;
-        existing.entry.requestHeaders = this.#redactHeaders(params.request.headers);
-        existing.entry.postData = this.#captureSettings.captureRequestBodies ? params.request.postData ?? null : null;
+        existing.entry.requestHeaders = this.#filterHeaders(
+          params.request.headers,
+          this.#captureSettings.captureRequestHeaders,
+          "request",
+        );
+        existing.entry.postData = this.#captureSettings.captureRequestBodies
+          ? this.#redactBodyValue(params.request.postData, "network.request.postData")
+          : null;
         existing.entry.timestamp = params.timestamp;
         existing.entry.wallTime = params.wallTime;
         this.#applyPendingRequestMetadata(key, existing.entry);
@@ -479,14 +635,22 @@ export class CdpManager {
 
     const entry: NetworkEntry = {
       requestId: params.requestId,
-      url: params.request.url,
+      url:
+        this.#redactUrlValue(params.request.url, "url", "network.request.url") ||
+        params.request.url,
       method: params.request.method,
-      requestHeaders: this.#redactHeaders(params.request.headers),
+      requestHeaders: this.#filterHeaders(
+        params.request.headers,
+        this.#captureSettings.captureRequestHeaders,
+        "request",
+      ),
       requestHeadersExtra: null,
-      postData: this.#captureSettings.captureRequestBodies ? params.request.postData ?? null : null,
+      postData: this.#captureSettings.captureRequestBodies
+        ? this.#redactBodyValue(params.request.postData, "network.request.postData")
+        : null,
       timestamp: params.timestamp,
       wallTime: params.wallTime,
-      initiator: params.initiator,
+      initiator: this.#filterInitiator(params.initiator),
       resourceType: params.type,
       status: null,
       statusText: null,
@@ -507,16 +671,30 @@ export class CdpManager {
     this.#applyPendingRequestMetadata(key, entry);
     this.#pendingRequests.set(key, { sessionId: this.#getSessionId(source), entry });
 
-    if (this.#captureSettings.captureRequestBodies && params.request.hasPostData && !params.request.postData) {
+    if (
+      this.#captureSettings.captureRequestBodies &&
+      params.request.hasPostData &&
+      !params.request.postData
+    ) {
       void this.#fetchPostData(source, params.requestId);
     }
   }
 
-  #onRequestWillBeSentExtraInfo(source: chrome.debugger.Debuggee, params: CdpRequestWillBeSentExtraInfoParams): void {
+  #onRequestWillBeSentExtraInfo(
+    source: chrome.debugger.Debuggee,
+    params: CdpRequestWillBeSentExtraInfoParams,
+  ): void {
+    if (!this.#captureSettings.captureNetwork) return;
     const key = this.#requestKey(source, params.requestId);
+    if (this.#suppressedRequestKeys.has(key)) return;
     if (params.headers) {
       const existing = this.#pendingRequests.get(key);
-      const redactedHeaders = this.#redactHeaders(params.headers) || {};
+      const redactedHeaders =
+        this.#filterHeaders(
+          params.headers,
+          this.#captureSettings.captureRequestHeaders,
+          "request",
+        ) || {};
       if (existing) {
         existing.entry.requestHeadersExtra = redactedHeaders;
       } else {
@@ -527,14 +705,12 @@ export class CdpManager {
 
   async #fetchPostData(source: chrome.debugger.Debuggee, requestId: string): Promise<void> {
     try {
-      const result = await this.#sendCommand(
-        source,
-        "Network.getRequestPostData",
-        { requestId }
-      ) as { postData?: string } | undefined;
+      const result = (await this.#sendCommand(source, "Network.getRequestPostData", {
+        requestId,
+      })) as { postData?: string } | undefined;
       const entry = this.#pendingRequests.get(this.#requestKey(source, requestId));
       if (entry && result) {
-        entry.entry.postData = result.postData ?? null;
+        entry.entry.postData = this.#redactBodyValue(result.postData, "network.request.postData");
       }
     } catch {
       // Request may have been completed already
@@ -542,11 +718,16 @@ export class CdpManager {
   }
 
   #onResponseReceived(source: chrome.debugger.Debuggee, params: CdpResponseReceivedParams): void {
+    if (!this.#captureSettings.captureNetwork) return;
     const entry = this.#pendingRequests.get(this.#requestKey(source, params.requestId));
     if (entry) {
       entry.entry.status = params.response.status;
       entry.entry.statusText = params.response.statusText;
-      entry.entry.responseHeaders = this.#redactHeaders(params.response.headers);
+      entry.entry.responseHeaders = this.#filterHeaders(
+        params.response.headers,
+        this.#captureSettings.captureResponseHeaders,
+        "response",
+      );
       entry.entry.mimeType = params.response.mimeType;
       entry.entry.timing = params.response.timing ?? null;
       entry.entry.protocol = params.response.protocol ?? null;
@@ -554,13 +735,27 @@ export class CdpManager {
     }
   }
 
-  #onResponseReceivedExtraInfo(source: chrome.debugger.Debuggee, params: CdpResponseReceivedExtraInfoParams): void {
+  #onResponseReceivedExtraInfo(
+    source: chrome.debugger.Debuggee,
+    params: CdpResponseReceivedExtraInfoParams,
+  ): void {
+    if (!this.#captureSettings.captureNetwork) return;
     const key = this.#requestKey(source, params.requestId);
-    const redactedHeaders = params.headers ? this.#redactHeaders(params.headers) || undefined : undefined;
+    if (this.#suppressedRequestKeys.has(key)) return;
+    const redactedHeaders = params.headers
+      ? this.#filterHeaders(
+          params.headers,
+          this.#captureSettings.captureResponseHeaders,
+          "response",
+        ) || undefined
+      : undefined;
     const existing = this.#pendingRequests.get(key);
     if (existing) {
       existing.entry.responseHeadersExtra = redactedHeaders ?? null;
-      if ((existing.entry.status == null || existing.entry.status === 0) && typeof params.statusCode === "number") {
+      if (
+        (existing.entry.status == null || existing.entry.status === 0) &&
+        typeof params.statusCode === "number"
+      ) {
         existing.entry.status = params.statusCode;
       }
     } else {
@@ -571,9 +766,20 @@ export class CdpManager {
     }
   }
 
-  #onResponseReceivedEarlyHints(source: chrome.debugger.Debuggee, params: CdpResponseReceivedEarlyHintsParams): void {
+  #onResponseReceivedEarlyHints(
+    source: chrome.debugger.Debuggee,
+    params: CdpResponseReceivedEarlyHintsParams,
+  ): void {
+    if (!this.#captureSettings.captureNetwork) return;
     const key = this.#requestKey(source, params.requestId);
-    const redactedHeaders = params.headers ? this.#redactHeaders(params.headers) || undefined : undefined;
+    if (this.#suppressedRequestKeys.has(key)) return;
+    const redactedHeaders = params.headers
+      ? this.#filterHeaders(
+          params.headers,
+          this.#captureSettings.captureResponseHeaders,
+          "response",
+        ) || undefined
+      : undefined;
     const existing = this.#pendingRequests.get(key);
     if (existing) {
       existing.entry.earlyHintsHeaders = redactedHeaders ?? null;
@@ -582,8 +788,13 @@ export class CdpManager {
     }
   }
 
-  #onRequestServedFromCache(source: chrome.debugger.Debuggee, params: CdpRequestServedFromCacheParams): void {
+  #onRequestServedFromCache(
+    source: chrome.debugger.Debuggee,
+    params: CdpRequestServedFromCacheParams,
+  ): void {
+    if (!this.#captureSettings.captureNetwork) return;
     const key = this.#requestKey(source, params.requestId);
+    if (this.#suppressedRequestKeys.has(key)) return;
     const existing = this.#pendingRequests.get(key);
     if (existing) {
       existing.entry.servedFromCache = true;
@@ -593,7 +804,12 @@ export class CdpManager {
   }
 
   #onLoadingFinished(source: chrome.debugger.Debuggee, params: CdpLoadingFinishedParams): void {
+    if (!this.#captureSettings.captureNetwork) return;
     const key = this.#requestKey(source, params.requestId);
+    if (this.#suppressedRequestKeys.has(key)) {
+      this.#suppressedRequestKeys.delete(key);
+      return;
+    }
     const entry = this.#pendingRequests.get(key);
     if (entry) {
       entry.entry.encodedDataLength = params.encodedDataLength;
@@ -611,9 +827,14 @@ export class CdpManager {
   }
 
   #shouldFetchBody(entry: NetworkEntry): boolean {
-    if (!this.#captureSettings.captureResponseBodies) return false;
+    if (this.#captureSettings.captureResponseBodyMode === "off") return false;
     if (!entry.mimeType) return false;
-    if (entry.encodedDataLength > 1024 * 1024) return false;
+    if (
+      this.#captureSettings.maxResponseBodyBytes != null &&
+      entry.encodedDataLength > this.#captureSettings.maxResponseBodyBytes
+    ) {
+      return false;
+    }
 
     const textTypes = [
       "text/",
@@ -626,7 +847,13 @@ export class CdpManager {
       "application/ld+json",
       "image/svg+xml",
     ];
-    return textTypes.some((t) => entry.mimeType!.startsWith(t));
+    if (this.#captureSettings.captureResponseBodyMode === "text") {
+      return entry.mimeType.startsWith("text/");
+    }
+    if (this.#captureSettings.captureResponseBodyMode === "text-json") {
+      return entry.mimeType.startsWith("text/") || entry.mimeType.includes("json");
+    }
+    return textTypes.some((t) => entry.mimeType?.startsWith(t));
   }
 
   async #fetchResponseBody(source: chrome.debugger.Debuggee, requestId: string): Promise<void> {
@@ -635,15 +862,15 @@ export class CdpManager {
     if (!pending) return;
 
     try {
-      const result = await this.#sendCommand(
-        source,
-        "Network.getResponseBody",
-        { requestId }
-      ) as { body?: string; base64Encoded?: boolean } | undefined;
+      const result = (await this.#sendCommand(source, "Network.getResponseBody", { requestId })) as
+        | { body?: string; base64Encoded?: boolean }
+        | undefined;
       const latestPending = this.#pendingRequests.get(key);
       if (latestPending && result) {
         latestPending.entry.responseBody = {
-          body: result.body ?? "",
+          body: result.base64Encoded
+            ? (result.body ?? "")
+            : this.#redactBodyValue(result.body ?? "", "network.response.body", true) || "",
           base64Encoded: result.base64Encoded ?? false,
         };
       }
@@ -654,7 +881,12 @@ export class CdpManager {
   }
 
   #onLoadingFailed(source: chrome.debugger.Debuggee, params: CdpLoadingFailedParams): void {
+    if (!this.#captureSettings.captureNetwork) return;
     const key = this.#requestKey(source, params.requestId);
+    if (this.#suppressedRequestKeys.has(key)) {
+      this.#suppressedRequestKeys.delete(key);
+      return;
+    }
     const entry = this.#pendingRequests.get(key);
     if (entry) {
       entry.entry.error = params.errorText;
@@ -668,12 +900,15 @@ export class CdpManager {
   // ════════════════════════════════════════════
 
   #onWebSocketCreated(source: chrome.debugger.Debuggee, params: CdpWebSocketCreatedParams): void {
+    if (!this.#captureSettings.captureWebSockets) return;
     this.#pendingWebSockets.set(this.#requestKey(source, params.requestId), {
       sessionId: this.#getSessionId(source),
       entry: {
         requestId: params.requestId,
-        url: params.url,
-        initiator: params.initiator,
+        url: this.#redactUrlValue(params.url, "url", "websocket.url") || params.url,
+        initiator: this.#captureSettings.captureWebSocketInitiator
+          ? (this.#filterInitiator(params.initiator) ?? undefined)
+          : undefined,
         frames: [],
         closed: false,
       },
@@ -681,30 +916,36 @@ export class CdpManager {
   }
 
   #onWebSocketFrameSent(source: chrome.debugger.Debuggee, params: CdpWebSocketFrameParams): void {
+    if (!this.#captureSettings.captureWebSockets) return;
     const ws = this.#pendingWebSockets.get(this.#requestKey(source, params.requestId));
     if (ws) {
       ws.entry.frames.push({
         direction: "sent",
         timestamp: params.timestamp,
         opcode: params.response.opcode,
-        payloadData: this.#captureSettings.captureWebSocketFrames ? params.response.payloadData : REDACTED_VALUE,
+        payloadData: this.#getWebSocketPayload(params.response.payloadData),
       });
     }
   }
 
-  #onWebSocketFrameReceived(source: chrome.debugger.Debuggee, params: CdpWebSocketFrameParams): void {
+  #onWebSocketFrameReceived(
+    source: chrome.debugger.Debuggee,
+    params: CdpWebSocketFrameParams,
+  ): void {
+    if (!this.#captureSettings.captureWebSockets) return;
     const ws = this.#pendingWebSockets.get(this.#requestKey(source, params.requestId));
     if (ws) {
       ws.entry.frames.push({
         direction: "received",
         timestamp: params.timestamp,
         opcode: params.response.opcode,
-        payloadData: this.#captureSettings.captureWebSocketFrames ? params.response.payloadData : REDACTED_VALUE,
+        payloadData: this.#getWebSocketPayload(params.response.payloadData),
       });
     }
   }
 
   #onWebSocketClosed(source: chrome.debugger.Debuggee, params: CdpWebSocketClosedParams): void {
+    if (!this.#captureSettings.captureWebSockets) return;
     const ws = this.#pendingWebSockets.get(this.#requestKey(source, params.requestId));
     if (ws) {
       ws.entry.closed = true;
@@ -713,22 +954,197 @@ export class CdpManager {
     }
   }
 
-  #redactHeaders(headers: Record<string, string> | null | undefined): Record<string, string> | null {
-    if (!headers) {
+  #filterHeaders(
+    headers: Record<string, string> | null | undefined,
+    mode: HeaderCaptureMode,
+    direction: "request" | "response",
+  ): Record<string, string> | null {
+    if (!headers || mode === "off") {
       return null;
     }
-
-    return Object.fromEntries(
-      Object.entries(headers).map(([name, value]) => [
-        name,
-        this.#isSensitiveHeaderName(name) ? REDACTED_VALUE : value,
-      ]),
+    const redaction = redactHeaderMap(headers, this.#privacySettings, "headers");
+    this.#recordRedactionHits(redaction.applied);
+    const redacted = redaction.value || {};
+    if (mode === "full") {
+      return redacted;
+    }
+    const allowed = direction === "request" ? MINIMAL_REQUEST_HEADERS : MINIMAL_RESPONSE_HEADERS;
+    const filtered = Object.fromEntries(
+      Object.entries(redacted).filter(([name]) => allowed.has(name.trim().toLowerCase())),
     );
+    return Object.keys(filtered).length > 0 ? filtered : null;
   }
 
-  #isSensitiveHeaderName(name: string): boolean {
-    const normalized = name.trim().toLowerCase();
-    return SENSITIVE_HEADER_PATTERNS.some((pattern) => normalized.includes(pattern));
+  #filterRedirectHeaders(
+    headers: Record<string, string> | null | undefined,
+  ): Record<string, string> | null {
+    if (!headers || this.#captureSettings.captureRedirectHeaders === "off") {
+      return null;
+    }
+    if (this.#captureSettings.captureRedirectHeaders === "full") {
+      const redaction = redactHeaderMap(headers, this.#privacySettings, "headers");
+      this.#recordRedactionHits(redaction.applied);
+      return redaction.value;
+    }
+    const redaction = redactHeaderMap(headers, this.#privacySettings, "headers");
+    this.#recordRedactionHits(redaction.applied);
+    const location = Object.entries(redaction.value || {}).find(
+      ([name]) => name.trim().toLowerCase() === "location",
+    );
+    return location ? { [location[0]]: location[1] } : null;
+  }
+
+  #filterInitiator(
+    initiator:
+      | {
+          type?: string;
+          url?: string;
+          lineNumber?: number;
+          columnNumber?: number;
+          stack?: CdpRawStackTrace;
+        }
+      | null
+      | undefined,
+  ): NetworkInitiator | null {
+    if (!initiator || this.#captureSettings.captureInitiator === "off") {
+      return null;
+    }
+    if (this.#captureSettings.captureInitiator === "full-stack") {
+      return this.#redactInitiator(initiator);
+    }
+    const filtered = {
+      type: initiator.type,
+      url: this.#redactUrlValue(initiator.url, "url", "network.initiator.url"),
+      lineNumber: initiator.lineNumber,
+      columnNumber: initiator.columnNumber,
+    } as NetworkInitiator;
+    this.#attachSourceMapResolveUrl(filtered, initiator.url);
+    if (this.#captureSettings.captureInitiator === "short-stack" && initiator.stack) {
+      filtered.stack = this.#redactStackTrace(
+        this.#limitStackTrace(initiator.stack, 5),
+        "network.initiator.stack",
+      );
+    }
+    return filtered;
+  }
+
+  #redactInitiator(initiator: {
+    type?: string;
+    url?: string;
+    lineNumber?: number;
+    columnNumber?: number;
+    stack?: CdpRawStackTrace;
+  }): NetworkInitiator {
+    const redacted = {
+      type: initiator.type,
+      url: this.#redactUrlValue(initiator.url, "url", "network.initiator.url"),
+      lineNumber: initiator.lineNumber,
+      columnNumber: initiator.columnNumber,
+      stack: initiator.stack
+        ? this.#redactStackTrace(initiator.stack, "network.initiator.stack")
+        : undefined,
+    };
+    this.#attachSourceMapResolveUrl(redacted, initiator.url);
+    return redacted;
+  }
+
+  #redactStackTrace(stack: CdpRawStackTrace, field: string): CdpRawStackTrace {
+    return {
+      callFrames: (stack.callFrames || []).map((frame, index) => {
+        const redacted = {
+          ...frame,
+          url: this.#redactUrlValue(frame.url, "url", `${field}.${index}.url`) || "",
+        };
+        this.#attachSourceMapResolveUrl(redacted, frame.url);
+        return redacted;
+      }),
+      description: stack.description,
+      parent: stack.parent ? this.#redactStackTrace(stack.parent, `${field}.parent`) : undefined,
+    };
+  }
+
+  #attachSourceMapResolveUrl<T extends object>(target: T, rawUrl: string | undefined): void {
+    if (!rawUrl) return;
+    Object.defineProperty(target, SOURCE_MAP_RESOLVE_URL_PROPERTY, {
+      value: rawUrl,
+      enumerable: false,
+      configurable: true,
+    });
+  }
+
+  #limitStackTrace(stack: CdpRawStackTrace, maxFrames: number): CdpRawStackTrace {
+    return {
+      callFrames: (stack.callFrames || []).slice(0, maxFrames),
+      description: stack.description,
+      parent:
+        stack.parent && maxFrames > 0
+          ? this.#limitStackTrace(stack.parent, Math.max(0, Math.floor(maxFrames / 2)))
+          : undefined,
+    };
+  }
+
+  #getWebSocketPayload(payload: string): string {
+    if (!this.#captureSettings.captureWebSocketFrames) {
+      return REDACTED_VALUE;
+    }
+    if (this.#captureSettings.maxWebSocketFrameBytes === 0) {
+      return REDACTED_VALUE;
+    }
+    const maybeTruncated =
+      this.#captureSettings.maxWebSocketFrameBytes == null ||
+      payload.length <= this.#captureSettings.maxWebSocketFrameBytes
+        ? payload
+        : `${payload.slice(0, this.#captureSettings.maxWebSocketFrameBytes)}...(truncated)`;
+    if (this.#privacySettings.redactWebSocketPayloads === "all") {
+      this.#recordRedactionHits([
+        {
+          artifact: "websocket",
+          class: "custom",
+          action: "redacted",
+          field: "websocket.payload",
+          ruleId: "websocket-payload-all",
+        },
+      ]);
+      return REDACTED_VALUE;
+    }
+    if (this.#privacySettings.redactWebSocketPayloads === "sensitive-fields") {
+      const redaction = redactBodyText(
+        maybeTruncated,
+        this.#privacySettings,
+        "websocket",
+        "websocket.payload",
+        "websocket",
+      );
+      this.#recordRedactionHits(redaction.applied);
+      return redaction.value || "";
+    }
+    return maybeTruncated;
+  }
+
+  #redactUrlValue(
+    value: string | undefined | null,
+    artifact: "url" | "body" | "console" | "websocket" | "events" | "report" = "url",
+    field = "url",
+  ): string | undefined {
+    const redaction = redactUrl(value, this.#privacySettings, artifact, field);
+    this.#recordRedactionHits(redaction.applied);
+    return redaction.value;
+  }
+
+  #redactBodyValue(
+    value: string | null | undefined,
+    field: string,
+    isResponse = false,
+  ): string | null {
+    const shouldRedact = isResponse
+      ? this.#privacySettings.redactResponseBodyFields
+      : this.#privacySettings.redactRequestBodyFields;
+    if (!shouldRedact) {
+      return value ?? null;
+    }
+    const redaction = redactBodyText(value, this.#privacySettings, "body", field, "body");
+    this.#recordRedactionHits(redaction.applied);
+    return redaction.value;
   }
 
   // ════════════════════════════════════════════
@@ -736,6 +1152,7 @@ export class CdpManager {
   // ════════════════════════════════════════════
 
   #onConsoleAPICalled(params: CdpConsoleAPICalledParams): void {
+    if (!this.#captureSettings.captureConsole) return;
     const entry: ConsoleEntry = {
       source: "console-api",
       level: this.#mapConsoleType(params.type),
@@ -748,15 +1165,14 @@ export class CdpManager {
   }
 
   #onExceptionThrown(params: CdpExceptionThrownParams): void {
+    if (!this.#captureSettings.captureConsole) return;
     const details = params.exceptionDetails || {};
     const entry: ConsoleEntry = {
       source: "exception",
       level: "error",
       timestamp: this.#toEpochMs(params.timestamp),
       message: details.text || "Uncaught exception",
-      args: details.exception
-        ? [this.#serializeRemoteObject(details.exception)]
-        : [],
+      args: details.exception ? [this.#serializeRemoteObject(details.exception)] : [],
       stackTrace: this.#serializeStackTrace(details.stackTrace),
       url: details.url,
       lineNumber: details.lineNumber,
@@ -767,7 +1183,9 @@ export class CdpManager {
   }
 
   #onLogEntryAdded(params: CdpLogEntryAddedParams): void {
+    if (!this.#captureSettings.captureConsole) return;
     const logEntry = params.entry || {};
+    if (this.#shouldSuppressRecorderLog(logEntry)) return;
     const entry: ConsoleEntry = {
       source: "browser",
       level: logEntry.level || "info",
@@ -779,6 +1197,17 @@ export class CdpManager {
     };
 
     this.#storage.addConsoleEntry(entry);
+  }
+
+  #onExecutionContextCreated(
+    source: chrome.debugger.Debuggee,
+    params: CdpExecutionContextCreatedParams,
+  ): void {
+    const contextId = params.context?.id;
+    const frameId = params.context?.auxData?.frameId;
+    if (typeof contextId !== "number" || !frameId) return;
+    this.#executionContextFrameIds.set(this.#executionContextKey(source, contextId), frameId);
+    this.#retryPendingSourceMapAttempts();
   }
 
   // ════════════════════════════════════════════
@@ -815,15 +1244,16 @@ export class CdpManager {
         type: p.type,
         value: p.value,
         subtype: p.subtype || undefined,
-        valuePreview: p.valuePreview
-          ? this.#serializePreview(p.valuePreview)
-          : undefined,
+        valuePreview: p.valuePreview ? this.#serializePreview(p.valuePreview) : undefined,
       })),
       entries: preview.entries
-        ? preview.entries.map((e) => ({
-            key: e.key ? this.#serializePreview(e.key) : undefined,
-            value: this.#serializePreview(e.value)!,
-          }))
+        ? preview.entries.map((e) => {
+            const valuePreview = this.#serializePreview(e.value);
+            return {
+              key: e.key ? this.#serializePreview(e.key) : undefined,
+              value: valuePreview ?? { type: e.value.type },
+            };
+          })
         : undefined,
     };
   }
@@ -842,7 +1272,13 @@ export class CdpManager {
       const parentDesc = stackTrace.parent.description;
       const parentFrames = this.#serializeStackTrace(stackTrace.parent);
       if (parentFrames && parentFrames.length > 0) {
-        frames.push({ asyncBoundary: parentDesc || "async", functionName: "", url: "", lineNumber: 0, columnNumber: 0 });
+        frames.push({
+          asyncBoundary: parentDesc || "async",
+          functionName: "",
+          url: "",
+          lineNumber: 0,
+          columnNumber: 0,
+        });
         frames.push(...parentFrames);
       }
     }
@@ -856,16 +1292,115 @@ export class CdpManager {
 
   #onScriptParsed(source: chrome.debugger.Debuggee, params: CdpScriptParsedParams): void {
     if (params.sourceMapURL && params.url) {
-      const promise = this.#trackSourceMapFetch(
-        this.#fetchAndRegisterSourceMap(
-          source,
+      const sessionId = this.#getSessionId(source);
+      const executionContextId =
+        typeof params.executionContextId === "number" ? params.executionContextId : undefined;
+      const resolvedUrl = this.#resolveSourceMapUrl(params.sourceMapURL, params.url);
+      const attempt: SourceMapLoadAttempt = {
+        source,
+        scriptUrl: params.url,
+        sourceMapURL: params.sourceMapURL,
+        resolvedUrl,
+        sessionId,
+        executionContextId,
+        frameId:
+          params.executionContextAuxData?.frameId ??
+          (executionContextId != null
+            ? this.#executionContextFrameIds.get(
+                this.#executionContextKey(source, executionContextId),
+              )
+            : undefined),
+        diagnostic: this.#createSourceMapDiagnostic(
           params.url,
-          params.sourceMapURL,
-          params.executionContextAuxData?.frameId,
+          resolvedUrl,
+          sessionId,
+          executionContextId,
+          params.executionContextAuxData?.frameId ??
+            (executionContextId != null
+              ? this.#executionContextFrameIds.get(
+                  this.#executionContextKey(source, executionContextId),
+                )
+              : undefined),
         ),
-      );
-      this.#sourceMapFetches.add(promise);
+      };
+      this.#recordSourceMapDiagnostic(attempt.diagnostic);
+      this.#scheduleSourceMapAttempt(attempt);
     }
+  }
+
+  #createSourceMapDiagnostic(
+    scriptUrl: string,
+    resolvedUrl: string,
+    sessionId: string | undefined,
+    executionContextId: number | undefined,
+    frameId: string | undefined,
+  ): SourceMapDiagnostic {
+    return {
+      generatedUrl: this.#redactUrlValue(scriptUrl, "url", "sourcemap.generatedUrl") || scriptUrl,
+      sourceMapUrl: resolvedUrl.startsWith("data:")
+        ? "data:"
+        : this.#redactUrlValue(resolvedUrl, "url", "sourcemap.sourceMapUrl") || resolvedUrl,
+      sourceType: resolvedUrl.startsWith("data:") ? "inline" : "external",
+      targetType: this.#getSourceMapTargetType(sessionId),
+      sessionId,
+      executionContextId,
+      frameId,
+      status: "pending",
+    };
+  }
+
+  #scheduleSourceMapAttempt(attempt: SourceMapLoadAttempt): void {
+    if (this.#shouldWaitForSourceMapFrameId(attempt)) {
+      attempt.diagnostic.status = "pending";
+      attempt.diagnostic.reason = "pending-frame-id";
+      this.#pendingSourceMapAttempts.set(this.#sourceMapAttemptKey(attempt), attempt);
+      return;
+    }
+
+    this.#startSourceMapFetch(attempt);
+  }
+
+  #startSourceMapFetch(attempt: SourceMapLoadAttempt): void {
+    attempt.diagnostic.status = "pending";
+    attempt.diagnostic.reason = undefined;
+    attempt.diagnostic.frameId = attempt.frameId;
+    this.#pendingSourceMapAttempts.delete(this.#sourceMapAttemptKey(attempt));
+    const promise = this.#trackSourceMapFetch(this.#fetchAndRegisterSourceMap(attempt));
+    this.#sourceMapFetches.add(promise);
+  }
+
+  #shouldWaitForSourceMapFrameId(attempt: SourceMapLoadAttempt): boolean {
+    return (
+      !attempt.resolvedUrl.startsWith("data:") &&
+      this.#sourceMapTargetNeedsFrameId(attempt.sessionId) &&
+      !attempt.frameId &&
+      attempt.executionContextId != null
+    );
+  }
+
+  #retryPendingSourceMapAttempts(): void {
+    for (const attempt of Array.from(this.#pendingSourceMapAttempts.values())) {
+      if (!attempt.frameId && attempt.executionContextId != null) {
+        attempt.frameId = this.#executionContextFrameIds.get(
+          this.#executionContextKey(attempt.source, attempt.executionContextId),
+        );
+      }
+      if (!this.#shouldWaitForSourceMapFrameId(attempt)) {
+        this.#startSourceMapFetch(attempt);
+      }
+    }
+  }
+
+  #failPendingSourceMapAttempts(): void {
+    for (const attempt of this.#pendingSourceMapAttempts.values()) {
+      attempt.diagnostic.status = "failed";
+      attempt.diagnostic.reason = "missing-frame-id";
+    }
+    this.#pendingSourceMapAttempts.clear();
+  }
+
+  #sourceMapAttemptKey(attempt: SourceMapLoadAttempt): string {
+    return `${attempt.sessionId || "root"}:${attempt.executionContextId ?? "none"}:${attempt.scriptUrl}:${attempt.sourceMapURL}`;
   }
 
   #trackSourceMapFetch(promise: Promise<void>): Promise<void> {
@@ -875,22 +1410,50 @@ export class CdpManager {
     return promise;
   }
 
-  async #fetchAndRegisterSourceMap(
-    source: chrome.debugger.Debuggee,
-    scriptUrl: string,
-    sourceMapURL: string,
-    frameId?: string,
-  ): Promise<void> {
+  async #fetchAndRegisterSourceMap(attempt: SourceMapLoadAttempt): Promise<void> {
+    const { source, scriptUrl, resolvedUrl, diagnostic } = attempt;
+    let content: string | null = null;
     try {
-      const resolvedUrl = this.#resolveSourceMapUrl(sourceMapURL, scriptUrl);
-      const content = await this.#fetchSourceMapContent(source, resolvedUrl, frameId);
-      if (content) {
-        const raw = JSON.parse(content);
-        this.#sourceMapResolver.addMap(scriptUrl, raw);
-      }
+      content = await this.#fetchSourceMapContent(source, resolvedUrl, diagnostic);
     } catch {
-      // Ignore sourcemap failures
+      diagnostic.status = "failed";
+      diagnostic.reason = "unsupported-url";
     }
+    if (!content) {
+      return;
+    }
+
+    const contentKind = this.#classifySourceMapContent(content);
+    if (contentKind) {
+      diagnostic.status = "failed";
+      diagnostic.reason = contentKind;
+      return;
+    }
+
+    try {
+      const raw = JSON.parse(content);
+      if (!this.#sourceMapResolver.addMap(scriptUrl, raw)) {
+        diagnostic.status = "failed";
+        diagnostic.reason = "unsupported-map";
+        return;
+      }
+      diagnostic.status = "success";
+      diagnostic.byteSize = content.length;
+      diagnostic.sourcesCount = Array.isArray(raw?.sources) ? raw.sources.length : undefined;
+      diagnostic.hasSourcesContent = Array.isArray(raw?.sourcesContent)
+        ? raw.sourcesContent.some((item: unknown) => typeof item === "string" && item.length > 0)
+        : undefined;
+    } catch {
+      diagnostic.status = "failed";
+      diagnostic.reason = "json-parse-failed";
+    }
+  }
+
+  #classifySourceMapContent(content: string): "html-fallback" | "non-json-response" | null {
+    const first = content.trimStart()[0];
+    if (first === "<") return "html-fallback";
+    if (first !== "{" && first !== "[") return "non-json-response";
+    return null;
   }
 
   #resolveSourceMapUrl(sourceMapURL: string, scriptUrl: string): string {
@@ -905,44 +1468,51 @@ export class CdpManager {
   async #fetchSourceMapContent(
     source: chrome.debugger.Debuggee,
     url: string,
-    frameId?: string,
+    diagnostic: SourceMapDiagnostic,
   ): Promise<string | null> {
     if (url.startsWith("data:")) {
       const commaIdx = url.indexOf(",");
-      if (commaIdx < 0) return null;
+      if (commaIdx < 0) {
+        diagnostic.status = "failed";
+        diagnostic.reason = "unsupported-url";
+        return null;
+      }
       const meta = url.slice(5, commaIdx);
       const data = url.slice(commaIdx + 1);
+      if (data.length > SOURCE_MAP_MAX_BYTES) {
+        diagnostic.status = "failed";
+        diagnostic.reason = "too-large";
+        return null;
+      }
       return meta.includes("base64") ? atob(data) : decodeURIComponent(data);
     }
 
-    if (!this.#attached || !this.#tabId) return null;
-    const cdpContent = await this.#loadSourceMapResource(source, url, frameId);
-    if (cdpContent) {
-      return cdpContent;
-    }
-
-    try {
-      const result = await this.#sendCommand(
-        source,
-        "Runtime.evaluate",
-        {
-          expression: `fetch(${JSON.stringify(url)}, { credentials: "include" }).then(r=>r.ok?r.text():null).then(t=>t&&t.length<=${SOURCE_MAP_MAX_BYTES}?t:null).catch(()=>null)`,
-          awaitPromise: true,
-          returnByValue: true,
-        }
-      ) as { result?: { value?: string } } | undefined;
-      return result?.result?.value || null;
-    } catch {
+    if (!this.#attached || !this.#tabId) {
+      diagnostic.status = "skipped";
+      diagnostic.reason = "network-failed";
       return null;
     }
+    return this.#loadSourceMapResource(source, url, diagnostic);
   }
 
   async #loadSourceMapResource(
     source: chrome.debugger.Debuggee,
     url: string,
-    frameId?: string,
+    diagnostic: SourceMapDiagnostic,
   ): Promise<string | null> {
+    this.#sourceMapResourceUrls.add(url);
+    const targetType = diagnostic.targetType;
+    const isWorkerTarget = targetType.includes("worker");
+    const needsFrameId = this.#sourceMapTargetNeedsFrameId(undefined, targetType);
+    if (needsFrameId && !diagnostic.frameId) {
+      diagnostic.status = "failed";
+      diagnostic.reason = "missing-frame-id";
+      return null;
+    }
+
     try {
+      // Load maps through CDP rather than page-context fetch so enrichment does
+      // not execute code in, or create requests from, the recorded page.
       const params: {
         frameId?: string;
         url: string;
@@ -954,34 +1524,73 @@ export class CdpManager {
           includeCredentials: true,
         },
       };
-      if (frameId) {
-        params.frameId = frameId;
+      if (!isWorkerTarget && diagnostic.frameId) {
+        params.frameId = diagnostic.frameId;
       }
 
-      const result = await this.#sendCommand(
-        source,
-        "Network.loadNetworkResource",
-        params,
-      ) as CdpLoadNetworkResourceResult | undefined;
+      const result = (await this.#sendCommand(source, "Network.loadNetworkResource", params)) as
+        | CdpLoadNetworkResourceResult
+        | undefined;
 
-      const stream = result?.resource?.success ? result.resource.stream : undefined;
-      return stream ? this.#readProtocolStream(source, stream) : null;
+      const resource = result?.resource;
+      diagnostic.httpStatusCode = resource?.httpStatusCode;
+      diagnostic.netError = resource?.netErrorName || resource?.netError?.toString();
+      const stream = resource?.success ? resource.stream : undefined;
+      if (!stream) {
+        diagnostic.status = "failed";
+        diagnostic.reason =
+          typeof resource?.httpStatusCode === "number" && resource.httpStatusCode >= 400
+            ? "http-error"
+            : "network-failed";
+        return null;
+      }
+      const content = await this.#readProtocolStream(source, stream);
+      if (!content) {
+        diagnostic.status = "failed";
+        diagnostic.reason = "stream-read-failed";
+      }
+      return content;
     } catch {
+      diagnostic.status = "failed";
+      diagnostic.reason = "network-failed";
       return null;
     }
   }
 
-  async #readProtocolStream(source: chrome.debugger.Debuggee, stream: string): Promise<string | null> {
+  #getSourceMapTargetType(sessionId: string | undefined): string {
+    if (!sessionId) return "page";
+    return this.#sessionTargetTypes.get(sessionId) || "unknown";
+  }
+
+  #sourceMapTargetNeedsFrameId(sessionId: string | undefined, targetType?: string): boolean {
+    const normalized = targetType || this.#getSourceMapTargetType(sessionId);
+    return !normalized.includes("worker") && normalized !== "unknown";
+  }
+
+  #recordSourceMapDiagnostic(diagnostic: SourceMapDiagnostic): void {
+    this.#sourceMapDiagnostics.push(diagnostic);
+    if (this.#sourceMapDiagnostics.length > SOURCE_MAP_DIAGNOSTIC_LIMIT) {
+      this.#sourceMapDiagnostics.splice(
+        0,
+        this.#sourceMapDiagnostics.length - SOURCE_MAP_DIAGNOSTIC_LIMIT,
+      );
+    }
+  }
+
+  async #readProtocolStream(
+    source: chrome.debugger.Debuggee,
+    stream: string,
+  ): Promise<string | null> {
     const decoder = new TextDecoder();
     let content = "";
     let bytesRead = 0;
 
     try {
       while (true) {
-        const chunk = await this.#sendCommand(source, "IO.read", {
+        const chunk = (await this.#sendCommand(source, "IO.read", {
           handle: stream,
           size: SOURCE_MAP_READ_CHUNK_BYTES,
-        }) as CdpIoReadResult | undefined;
+        })) as CdpIoReadResult | undefined;
 
         const data = chunk?.data || "";
         if (chunk?.base64Encoded) {
@@ -1016,6 +1625,24 @@ export class CdpManager {
       bytes[index] = binary.charCodeAt(index);
     }
     return bytes;
+  }
+
+  #shouldSuppressRecorderResource(url: string | undefined): boolean {
+    return Boolean(
+      this.#captureSettings.suppressRecorderInternalRequests &&
+        url &&
+        this.#sourceMapResourceUrls.has(url),
+    );
+  }
+
+  #shouldSuppressRecorderLog(entry: NonNullable<CdpLogEntryAddedParams["entry"]>): boolean {
+    if (!this.#captureSettings.suppressRecorderInternalRequests) return false;
+    const text = entry.text || "";
+    const url = entry.url || "";
+    if (!url || !this.#sourceMapResourceUrls.has(url)) return false;
+    return (
+      url.endsWith(".map") && (/source\s*map/i.test(text) || /failed to load resource/i.test(text))
+    );
   }
 
   #toEpochMs(ts: number | undefined): number {
@@ -1054,6 +1681,10 @@ export class CdpManager {
     return `${this.#getSessionId(source) || "root"}:${requestId}`;
   }
 
+  #executionContextKey(source: chrome.debugger.Debuggee, contextId: number): string {
+    return `${this.#getSessionId(source) || "root"}:${contextId}`;
+  }
+
   #getSessionId(source: chrome.debugger.Debuggee): string | undefined {
     return (source as chrome.debugger.Debuggee & { sessionId?: string }).sessionId;
   }
@@ -1071,6 +1702,9 @@ export class CdpManager {
     ]);
 
     try {
+      await this.#sendCommand(target, "Network.setAttachDebugStack", { enabled: true }).catch(
+        () => {},
+      );
       await this.#sendCommand(target, "Debugger.enable");
       await this.#sendCommand(target, "Debugger.setAsyncCallStackDepth", {
         maxDepth: 32,
@@ -1098,7 +1732,10 @@ export class CdpManager {
     const responseExtra = this.#pendingResponseExtraInfo.get(key);
     if (responseExtra) {
       entry.responseHeadersExtra = responseExtra.headers ?? null;
-      if ((entry.status == null || entry.status === 0) && typeof responseExtra.statusCode === "number") {
+      if (
+        (entry.status == null || entry.status === 0) &&
+        typeof responseExtra.statusCode === "number"
+      ) {
         entry.status = responseExtra.statusCode;
       }
       this.#pendingResponseExtraInfo.delete(key);

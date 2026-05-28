@@ -1,16 +1,53 @@
 /**
  * Buffers captured artifacts for a single recording session in memory.
  */
+
+import { getPrivacyProfileSettings, redactConsoleEntry } from "../shared/privacy-redaction";
+import type { PrivacyRedactionSettings, UploadSettings } from "../types/messages";
 import type {
+  CdpStackTrace,
   ConsoleEntry,
   NetworkEntry,
-  WebSocketEntry,
+  RedactionHit,
+  RedirectEntry,
+  SerializedRemoteObject,
+  SourceMapDiagnostic,
+  SourceMapFrameStatus,
+  SourceMapResolveResult,
   StackFrame,
-  CdpStackTrace,
+  WebSocketEntry,
 } from "../types/recording";
-import type { SourceMapResolver } from "./sourcemap-resolver";
+import { getSourceMapUrlKeys, type SourceMapResolver } from "./sourcemap-resolver";
 
-const MAX_CONSOLE_ENTRY_SIZE = 32768;
+type ConsoleCaptureSettings = Pick<
+  UploadSettings,
+  | "captureConsoleArgs"
+  | "consolePreviewDepth"
+  | "captureConsoleStacks"
+  | "captureConsoleSourceSnippets"
+  | "maxConsoleEntryBytes"
+>;
+
+const DEFAULT_CONSOLE_CAPTURE_SETTINGS: ConsoleCaptureSettings = {
+  captureConsoleArgs: true,
+  consolePreviewDepth: "shallow",
+  captureConsoleStacks: "warnings-errors",
+  captureConsoleSourceSnippets: "warnings-errors",
+  maxConsoleEntryBytes: null,
+};
+const SOURCE_MAP_RESOLVE_URL_PROPERTY = "__gnSourceMapResolveUrl";
+
+type SourceMapLocationTarget = {
+  url?: string;
+  lineNumber?: number;
+  columnNumber?: number;
+  originalSource?: string;
+  originalLine?: number;
+  originalColumn?: number;
+  originalName?: string;
+  sourceSnippet?: StackFrame["sourceSnippet"];
+  sourceMapStatus?: SourceMapFrameStatus;
+};
 
 /**
  * In-memory artifact buffer for the current recording.
@@ -32,6 +69,9 @@ export class StorageManager {
   #consoleLogs: ConsoleEntry[] = [];
   #networkEntries: NetworkEntry[] = [];
   #webSocketEntries: WebSocketEntry[] = [];
+  #captureSettings: ConsoleCaptureSettings = { ...DEFAULT_CONSOLE_CAPTURE_SETTINGS };
+  #privacySettings: PrivacyRedactionSettings = getPrivacyProfileSettings("standard");
+  #recordRedactionHits: (hits: RedactionHit[]) => void = () => {};
 
   beginSession(): void {
     this.#consoleLogs = [];
@@ -39,13 +79,38 @@ export class StorageManager {
     this.#webSocketEntries = [];
   }
 
+  setCaptureSettings(settings: Partial<ConsoleCaptureSettings>): void {
+    this.#captureSettings = {
+      ...DEFAULT_CONSOLE_CAPTURE_SETTINGS,
+      ...settings,
+    };
+  }
+
+  setPrivacySettings(
+    settings: PrivacyRedactionSettings,
+    recordRedactionHits?: (hits: RedactionHit[]) => void,
+  ): void {
+    this.#privacySettings = settings;
+    this.#recordRedactionHits = recordRedactionHits || (() => {});
+  }
+
   addConsoleEntry(entry: ConsoleEntry): void {
+    this.#prepareConsoleEntry(entry);
     const serialized = JSON.stringify(entry.args || entry.message);
-    if (serialized && serialized.length > MAX_CONSOLE_ENTRY_SIZE) {
+    if (
+      serialized &&
+      this.#captureSettings.maxConsoleEntryBytes != null &&
+      serialized.length > this.#captureSettings.maxConsoleEntryBytes
+    ) {
       if (entry.args) {
-        entry.args = [{ type: "string", value: `${serialized.slice(0, MAX_CONSOLE_ENTRY_SIZE)}...(truncated)` }];
+        entry.args = [
+          {
+            type: "string",
+            value: `${serialized.slice(0, this.#captureSettings.maxConsoleEntryBytes)}...(truncated)`,
+          },
+        ];
       } else if (entry.message) {
-        entry.message = `${entry.message.slice(0, MAX_CONSOLE_ENTRY_SIZE)}...(truncated)`;
+        entry.message = `${entry.message.slice(0, this.#captureSettings.maxConsoleEntryBytes)}...(truncated)`;
       }
     }
 
@@ -72,24 +137,24 @@ export class StorageManager {
     this.beginSession();
   }
 
-  resolveSourceMaps(resolver: SourceMapResolver): void {
+  resolveSourceMaps(resolver: SourceMapResolver, diagnostics: SourceMapDiagnostic[] = []): void {
     for (const entry of this.#consoleLogs) {
       if (entry.url && entry.lineNumber != null) {
-        const resolved = resolver.resolve(entry.url, entry.lineNumber, entry.columnNumber || 0);
-        if (resolved) {
-          entry.originalSource = resolved.source ?? undefined;
-          entry.originalLine = resolved.line;
-          entry.originalColumn = resolved.column;
-          entry.sourceSnippet = resolved.sourceSnippet;
-          if (resolved.name) {
-            entry.originalName = resolved.name;
-          }
-        }
+        this.#resolveLocation(
+          resolver,
+          diagnostics,
+          entry,
+          entry.url,
+          this.#getSourceMapResolveUrl(entry) || entry.url,
+          entry.lineNumber,
+          entry.columnNumber || 0,
+        );
       }
       if (entry.stackTrace) {
-        this.#resolveFrames(resolver, entry.stackTrace);
+        this.#resolveFrames(resolver, diagnostics, entry.stackTrace);
         this.#promoteStackFrameLocation(entry, this.#findFirstResolvedFrame(entry.stackTrace));
       }
+      this.#applyConsoleSourceSnippetPolicy(entry);
     }
 
     for (const entry of this.#networkEntries) {
@@ -98,106 +163,242 @@ export class StorageManager {
       }
 
       if (entry.initiator.url && entry.initiator.lineNumber != null) {
-        const resolved = resolver.resolve(
+        this.#resolveLocation(
+          resolver,
+          diagnostics,
+          entry.initiator,
           entry.initiator.url,
+          this.#getSourceMapResolveUrl(entry.initiator) || entry.initiator.url,
           entry.initiator.lineNumber,
           entry.initiator.columnNumber || 0,
         );
-        if (resolved) {
-          entry.initiator.originalSource = resolved.source ?? undefined;
-          entry.initiator.originalLine = resolved.line;
-          entry.initiator.originalColumn = resolved.column;
-          if (resolved.name) {
-            entry.initiator.originalName = resolved.name;
-          }
-        }
       }
 
       if (entry.initiator.stack) {
-        this.#resolveCdpStack(resolver, entry.initiator.stack);
-        this.#promoteStackFrameLocation(entry.initiator, this.#findFirstResolvedCdpFrame(entry.initiator.stack));
+        this.#resolveCdpStack(resolver, diagnostics, entry.initiator.stack);
+        this.#promoteStackFrameLocation(
+          entry.initiator,
+          this.#findFirstResolvedCdpFrame(entry.initiator.stack),
+        );
       }
     }
   }
 
   finalizeCurrentSession(): FinalizedRecordingArtifacts {
+    const consoleLogs = this.#consoleLogs.map((entry) => {
+      const redacted = redactConsoleEntry(entry, this.#privacySettings);
+      this.#recordRedactionHits(redacted.applied);
+      return redacted.value;
+    });
     const artifacts: FinalizedRecordingArtifacts = {
       consoleLogCount: this.#consoleLogs.length,
       networkRequestCount: this.#networkEntries.length,
-      consoleLogs: this.#consoleLogs.length > 0 ? JSON.stringify(this.#consoleLogs) : undefined,
-      networkRequests: this.#networkEntries.length > 0
-        ? JSON.stringify({
-            log: {
-              version: "1.0",
-              creator: { name: "gn-tracing", version: "1.0.0" },
-              entries: this.#networkEntries.map((entry) => ({
-                _requestId: entry.requestId,
-                request: {
-                  method: entry.method,
-                  url: entry.url,
-                  headers: (entry.requestHeadersExtra || entry.requestHeaders)
-                    ? Object.entries(entry.requestHeadersExtra || entry.requestHeaders || {}).map(([name, value]) => ({ name, value }))
-                    : [],
-                  postData: entry.postData ? { text: entry.postData } : undefined,
-                },
-                response: {
-                  status: entry.status,
-                  statusText: entry.statusText || "",
-                  headers: (entry.responseHeadersExtra || entry.responseHeaders)
-                    ? Object.entries(entry.responseHeadersExtra || entry.responseHeaders || {}).map(([name, value]) => ({ name, value }))
-                    : [],
-                  content: {
-                    size: entry.encodedDataLength,
-                    mimeType: entry.mimeType || "",
-                    text: entry.responseBody ? entry.responseBody.body : undefined,
-                    encoding: entry.responseBody?.base64Encoded ? "base64" : undefined,
-                  },
-                },
-                timings: entry.timing
-                  ? {
-                      dns: Math.max(0, entry.timing.dnsEnd - entry.timing.dnsStart),
-                      connect: Math.max(0, entry.timing.connectEnd - entry.timing.connectStart),
-                      ssl: Math.max(0, entry.timing.sslEnd - entry.timing.sslStart),
-                      send: Math.max(0, entry.timing.sendEnd - entry.timing.sendStart),
-                      wait: Math.max(0, entry.timing.receiveHeadersEnd - entry.timing.sendEnd),
-                    }
-                  : {},
-                time: entry.timing ? entry.timing.receiveHeadersEnd : 0,
-                resourceType: entry.resourceType,
-                serverIPAddress: entry.remoteIPAddress,
-                wallTime: entry.wallTime || null,
-                error: entry.error || undefined,
-                servedFromCache: entry.servedFromCache || undefined,
-                earlyHintsHeaders: entry.earlyHintsHeaders || undefined,
-                redirectChain: entry.redirectChain || undefined,
-                initiator: entry.initiator || undefined,
-              })),
-            },
-          })
-        : undefined,
-      webSocketLogs: this.#webSocketEntries.length > 0 ? JSON.stringify(this.#webSocketEntries) : undefined,
+      consoleLogs: consoleLogs.length > 0 ? JSON.stringify(consoleLogs) : undefined,
+      networkRequests:
+        this.#networkEntries.length > 0
+          ? JSON.stringify({
+              schemaVersion: 2,
+              entries: this.#networkEntries.map((entry) => this.#compactNetworkEntry(entry)),
+            })
+          : undefined,
+      webSocketLogs:
+        this.#webSocketEntries.length > 0 ? JSON.stringify(this.#webSocketEntries) : undefined,
     };
 
     this.beginSession();
     return artifacts;
   }
 
-  #resolveFrames(resolver: SourceMapResolver, frames: StackFrame[]): void {
+  #resolveFrames(
+    resolver: SourceMapResolver,
+    diagnostics: SourceMapDiagnostic[],
+    frames: StackFrame[],
+  ): void {
     for (const frame of frames) {
       if (frame.asyncBoundary || !frame.url) {
         continue;
       }
-      const resolved = resolver.resolve(frame.url, frame.lineNumber, frame.columnNumber || 0);
-      if (resolved) {
-        frame.originalSource = resolved.source ?? undefined;
-        frame.originalLine = resolved.line;
-        frame.originalColumn = resolved.column;
-        frame.sourceSnippet = resolved.sourceSnippet;
-        if (resolved.name) {
-          frame.originalName = resolved.name;
-        }
-      }
+      this.#resolveLocation(
+        resolver,
+        diagnostics,
+        frame,
+        frame.url,
+        this.#getSourceMapResolveUrl(frame) || frame.url,
+        frame.lineNumber,
+        frame.columnNumber || 0,
+      );
     }
+  }
+
+  #prepareConsoleEntry(entry: ConsoleEntry): void {
+    if (!this.#shouldKeepConsoleStack(entry.level)) {
+      entry.stackTrace = undefined;
+    }
+
+    if (!this.#captureSettings.captureConsoleArgs && entry.args?.length) {
+      entry.message = this.#formatConsoleArgs(entry.args);
+      entry.args = undefined;
+    } else if (entry.args) {
+      entry.args = entry.args.map((arg) => this.#compactRemoteObject(arg, 0));
+    }
+  }
+
+  #compactRemoteObject(arg: SerializedRemoteObject, depth: number): SerializedRemoteObject {
+    const maxDepth =
+      this.#captureSettings.consolePreviewDepth === "full"
+        ? 3
+        : this.#captureSettings.consolePreviewDepth === "shallow"
+          ? 1
+          : 0;
+    const compact: SerializedRemoteObject = {
+      type: arg.type,
+    };
+
+    if (arg.subtype) compact.subtype = arg.subtype;
+    if (arg.value != null) compact.value = arg.value;
+    if (arg.description) compact.description = arg.description;
+    if (this.#captureSettings.consolePreviewDepth !== "none" && arg.className) {
+      compact.className = arg.className;
+    }
+
+    if (arg.preview && depth < maxDepth) {
+      compact.preview = {
+        type: arg.preview.type,
+        subtype: arg.preview.subtype,
+        description: arg.preview.description,
+        overflow: arg.preview.overflow,
+        properties: arg.preview.properties?.slice(0, 12).map((property) => ({
+          name: property.name,
+          type: property.type,
+          value: property.value,
+          subtype: property.subtype,
+          valuePreview:
+            property.valuePreview && depth + 1 < maxDepth
+              ? this.#compactPreview(property.valuePreview, depth + 1)
+              : undefined,
+        })),
+        entries: arg.preview.entries?.slice(0, 12).map((entry) => ({
+          key:
+            entry.key && depth + 1 < maxDepth
+              ? this.#compactPreview(entry.key, depth + 1)
+              : undefined,
+          value: this.#compactPreview(entry.value, depth + 1),
+        })),
+      };
+    }
+
+    return compact;
+  }
+
+  #compactPreview(
+    preview: NonNullable<SerializedRemoteObject["preview"]>,
+    depth: number,
+  ): NonNullable<SerializedRemoteObject["preview"]> {
+    const maxDepth = this.#captureSettings.consolePreviewDepth === "full" ? 3 : 1;
+    return {
+      type: preview.type,
+      subtype: preview.subtype,
+      description: preview.description,
+      overflow: preview.overflow,
+      properties:
+        depth < maxDepth
+          ? preview.properties?.slice(0, 12).map((property) => ({
+              name: property.name,
+              type: property.type,
+              value: property.value,
+              subtype: property.subtype,
+            }))
+          : undefined,
+    };
+  }
+
+  #formatConsoleArgs(args: SerializedRemoteObject[]): string {
+    return args
+      .map((arg) => {
+        if (arg.value != null) return String(arg.value);
+        if (arg.description) return arg.description;
+        if (arg.subtype) return `${arg.type}:${arg.subtype}`;
+        return arg.type;
+      })
+      .join(" ");
+  }
+
+  #shouldKeepConsoleStack(level: string | undefined): boolean {
+    const normalized = String(level || "").toLowerCase();
+    const mode = this.#captureSettings.captureConsoleStacks;
+    if (mode === "all") return true;
+    if (mode === "off") return false;
+    if (mode === "errors") return normalized === "error";
+    return normalized === "error" || normalized === "warning" || normalized === "warn";
+  }
+
+  #shouldKeepConsoleSourceSnippet(level: string | undefined): boolean {
+    const normalized = String(level || "").toLowerCase();
+    const mode = this.#captureSettings.captureConsoleSourceSnippets;
+    if (mode === "all") return true;
+    if (mode === "off") return false;
+    if (mode === "errors") return normalized === "error";
+    return normalized === "error" || normalized === "warning" || normalized === "warn";
+  }
+
+  #applyConsoleSourceSnippetPolicy(entry: ConsoleEntry): void {
+    if (this.#shouldKeepConsoleSourceSnippet(entry.level)) {
+      return;
+    }
+    entry.sourceSnippet = undefined;
+    entry.stackTrace?.forEach((frame) => {
+      frame.sourceSnippet = undefined;
+    });
+  }
+
+  #compactNetworkEntry(entry: NetworkEntry): Record<string, unknown> {
+    const canonicalRequestHeaders = entry.requestHeadersExtra || entry.requestHeaders || null;
+    const canonicalResponseHeaders = entry.responseHeadersExtra || entry.responseHeaders || null;
+    return this.#omitEmptyFields({
+      requestId: entry.requestId,
+      url: entry.url,
+      method: entry.method,
+      requestHeaders: canonicalRequestHeaders,
+      postData: entry.postData,
+      timestamp: entry.timestamp,
+      wallTime: entry.wallTime,
+      initiator: entry.initiator,
+      resourceType: entry.resourceType,
+      status: entry.status,
+      statusText: entry.statusText,
+      responseHeaders: canonicalResponseHeaders,
+      earlyHintsHeaders: entry.earlyHintsHeaders,
+      mimeType: entry.mimeType,
+      timing: entry.timing,
+      protocol: entry.protocol,
+      remoteIPAddress: entry.remoteIPAddress,
+      encodedDataLength: entry.encodedDataLength,
+      error: entry.error,
+      responseBody: entry.responseBody,
+      redirectChain: entry.redirectChain?.map((redirect) => this.#compactRedirectEntry(redirect)),
+      servedFromCache: entry.servedFromCache,
+      canceled: entry.canceled,
+    });
+  }
+
+  #compactRedirectEntry(entry: RedirectEntry): Record<string, unknown> {
+    return this.#omitEmptyFields({
+      url: entry.url,
+      status: entry.status,
+      statusText: entry.statusText,
+      headers: entry.headers,
+    });
+  }
+
+  #omitEmptyFields<T extends Record<string, unknown>>(value: T): Partial<T> {
+    return Object.fromEntries(
+      Object.entries(value).filter(([, item]) => {
+        if (item == null || item === "" || item === false) return false;
+        if (Array.isArray(item)) return item.length > 0;
+        if (typeof item === "object") return Object.keys(item).length > 0;
+        return true;
+      }),
+    ) as Partial<T>;
   }
 
   #findFirstResolvedFrame(frames: StackFrame[]): StackFrame | undefined {
@@ -242,26 +443,94 @@ export class StorageManager {
     }
   }
 
-  #resolveCdpStack(resolver: SourceMapResolver, stack: CdpStackTrace): void {
+  #resolveCdpStack(
+    resolver: SourceMapResolver,
+    diagnostics: SourceMapDiagnostic[],
+    stack: CdpStackTrace,
+  ): void {
     if (stack.callFrames) {
       for (const frame of stack.callFrames) {
         if (!frame.url) {
           continue;
         }
-        const resolved = resolver.resolve(frame.url, frame.lineNumber || 0, frame.columnNumber || 0);
-        if (resolved) {
-          frame.originalSource = resolved.source ?? undefined;
-          frame.originalLine = resolved.line;
-          frame.originalColumn = resolved.column;
-          if (resolved.name) {
-            frame.originalName = resolved.name;
-          }
-        }
+        this.#resolveLocation(
+          resolver,
+          diagnostics,
+          frame,
+          frame.url,
+          this.#getSourceMapResolveUrl(frame) || frame.url,
+          frame.lineNumber || 0,
+          frame.columnNumber || 0,
+        );
       }
     }
 
     if (stack.parent) {
-      this.#resolveCdpStack(resolver, stack.parent);
+      this.#resolveCdpStack(resolver, diagnostics, stack.parent);
     }
+  }
+
+  #resolveLocation(
+    resolver: SourceMapResolver,
+    diagnostics: SourceMapDiagnostic[],
+    target: SourceMapLocationTarget,
+    artifactUrl: string,
+    resolveUrl: string,
+    line: number,
+    column: number,
+  ): void {
+    const result = resolver.resolveWithStatus(resolveUrl, line, column);
+    if (result.status === "mapped" && result.location) {
+      this.#applyResolvedLocation(target, result);
+      return;
+    }
+
+    const diagnostic = this.#findSourceMapDiagnostic(diagnostics, resolveUrl, artifactUrl);
+    if (result.status === "no-map-for-generated-url" && !diagnostic) {
+      return;
+    }
+
+    const reason: SourceMapFrameStatus["reason"] =
+      result.status === "no-map-for-generated-url" && diagnostic?.reason
+        ? diagnostic.reason
+        : (result.status as SourceMapFrameStatus["reason"]);
+    target.sourceMapStatus = {
+      status: "unresolved",
+      reason,
+      sourceMapUrl: diagnostic?.sourceMapUrl,
+      httpStatusCode: diagnostic?.httpStatusCode,
+    };
+  }
+
+  #applyResolvedLocation(target: SourceMapLocationTarget, result: SourceMapResolveResult): void {
+    const resolved = result.location;
+    if (!resolved) return;
+    target.originalSource = resolved.source ?? undefined;
+    target.originalLine = resolved.line;
+    target.originalColumn = resolved.column;
+    target.sourceSnippet = resolved.sourceSnippet;
+    if (resolved.name) {
+      target.originalName = resolved.name;
+    }
+    target.sourceMapStatus = undefined;
+  }
+
+  #findSourceMapDiagnostic(
+    diagnostics: SourceMapDiagnostic[],
+    resolveUrl: string,
+    artifactUrl: string,
+  ): SourceMapDiagnostic | undefined {
+    const candidateKeys = new Set([
+      ...getSourceMapUrlKeys(resolveUrl),
+      ...getSourceMapUrlKeys(artifactUrl),
+    ]);
+    return diagnostics.find((diagnostic) =>
+      getSourceMapUrlKeys(diagnostic.generatedUrl).some((key) => candidateKeys.has(key)),
+    );
+  }
+
+  #getSourceMapResolveUrl(value: object): string | undefined {
+    const raw = (value as Record<string, unknown>)[SOURCE_MAP_RESOLVE_URL_PROPERTY];
+    return typeof raw === "string" && raw ? raw : undefined;
   }
 }

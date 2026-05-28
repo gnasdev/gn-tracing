@@ -7,7 +7,7 @@
  * the shared player runtime.
  */
 
-import { getDriveDownloadUrl } from './extension-detector';
+import { getDriveDownloadUrl } from "./extension-detector";
 
 interface DriveFileEntry {
   id: string;
@@ -19,7 +19,7 @@ interface DriveFileEntry {
 declare global {
   interface Window {
     GN_TRACING_CONFIG: {
-      mode: 'extension' | 'standalone';
+      mode: "extension" | "standalone";
       driveApiKey?: string;
     };
     GN_DRIVE_ADAPTER?: {
@@ -39,7 +39,7 @@ function buildDriveApiUrl(pathname: string, params: Record<string, string>): str
 
   const apiKey = window.GN_TRACING_CONFIG.driveApiKey;
   if (apiKey) {
-    url.searchParams.set('key', apiKey);
+    url.searchParams.set("key", apiKey);
   }
 
   return url.toString();
@@ -62,12 +62,12 @@ export async function loadDriveBlob(fileId: string): Promise<Blob> {
 }
 
 export async function listDriveFolderFiles(folderId: string): Promise<DriveFileEntry[]> {
-  const url = buildDriveApiUrl('files', {
+  const url = buildDriveApiUrl("files", {
     q: `'${folderId}' in parents and trashed = false`,
-    fields: 'files(id,name,mimeType,size)',
-    supportsAllDrives: 'true',
-    includeItemsFromAllDrives: 'true',
-    pageSize: '1000',
+    fields: "files(id,name,mimeType,size)",
+    supportsAllDrives: "true",
+    includeItemsFromAllDrives: "true",
+    pageSize: "1000",
   });
 
   const response = await fetch(url);
@@ -75,7 +75,7 @@ export async function listDriveFolderFiles(folderId: string): Promise<DriveFileE
     throw new Error(`Failed to list Drive folder ${folderId}: HTTP ${response.status}`);
   }
 
-  const payload = await response.json() as { files?: DriveFileEntry[] };
+  const payload = (await response.json()) as { files?: DriveFileEntry[] };
   return Array.isArray(payload.files) ? payload.files : [];
 }
 
@@ -87,7 +87,7 @@ export function setupDriveAdapter(): void {
   };
 
   window.GN_TRACING_CONFIG = {
-    mode: 'standalone',
+    mode: "standalone",
     driveApiKey: import.meta.env.VITE_DRIVE_API_KEY || undefined,
   };
 }

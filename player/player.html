@@ -89,7 +89,10 @@
     <div id="player-state" class="player-container hidden">
       <!-- Header -->
       <header class="header">
-        <h1 id="player-title">GN Tracing</h1>
+        <div class="player-brand" aria-label="GN Tracing">
+          <img class="player-brand-logo" src="../icons/icon.svg" alt="" aria-hidden="true">
+          <h1 id="player-title">GN Tracing</h1>
+        </div>
         <div class="header-info">
           <span id="recording-duration"></span>
         </div>
@@ -99,14 +102,15 @@
       <div class="main-layout">
         <!-- Video section -->
         <section id="video-section" class="video-section">
-          <div class="video-container">
+          <div id="video-container" class="video-container">
+            <!-- biome-ignore lint/a11y/useMediaCaption: Replay videos are raw browser recordings without authored captions. -->
             <video id="video-player" ref="videoRef"></video>
           </div>
 
           <!-- Video controls -->
           <div class="video-controls">
             <!-- Play/Pause -->
-            <button id="play-pause-btn" class="control-btn" title="Play/Pause (Space)">
+            <button type="button" id="play-pause-btn" class="control-btn" title="Play/Pause (Space)">
               <i id="play-icon" class="ph ph-play-circle"></i>
               <i id="pause-icon" class="ph ph-pause-circle hidden"></i>
             </button>
@@ -130,20 +134,20 @@
 
             <!-- Speed control -->
             <div class="speed-control">
-              <button id="speed-btn" class="speed-btn">1x</button>
+              <button type="button" id="speed-btn" class="speed-btn">1x</button>
               <div id="speed-menu" class="speed-menu hidden">
-                <button class="speed-option" data-speed="0.5">0.5x</button>
-                <button class="speed-option" data-speed="0.75">0.75x</button>
-                <button class="speed-option" data-speed="1">1x</button>
-                <button class="speed-option" data-speed="1.25">1.25x</button>
-                <button class="speed-option" data-speed="1.5">1.5x</button>
-                <button class="speed-option" data-speed="2">2x</button>
+                <button type="button" class="speed-option" data-speed="0.5">0.5x</button>
+                <button type="button" class="speed-option" data-speed="0.75">0.75x</button>
+                <button type="button" class="speed-option" data-speed="1">1x</button>
+                <button type="button" class="speed-option" data-speed="1.25">1.25x</button>
+                <button type="button" class="speed-option" data-speed="1.5">1.5x</button>
+                <button type="button" class="speed-option" data-speed="2">2x</button>
               </div>
             </div>
 
             <!-- Volume -->
             <div class="volume-control">
-              <button id="mute-btn" class="control-btn" title="Mute">
+              <button type="button" id="mute-btn" class="control-btn" title="Mute">
                 <i id="volume-on" class="ph ph-speaker-simple-high"></i>
                 <i id="volume-off" class="ph ph-speaker-simple-x hidden"></i>
               </button>
@@ -151,13 +155,13 @@
             </div>
 
             <div class="layout-control-group" aria-label="Player layout controls">
-              <button id="layout-horizontal-btn" class="control-btn layout-btn active" title="Horizontal layout">
+              <button type="button" id="layout-horizontal-btn" class="control-btn layout-btn active" title="Horizontal layout">
                 <i class="ph ph-columns"></i>
               </button>
-              <button id="layout-vertical-btn" class="control-btn layout-btn" title="Vertical layout">
+              <button type="button" id="layout-vertical-btn" class="control-btn layout-btn" title="Vertical layout">
                 <i class="ph ph-rows"></i>
               </button>
-              <button id="video-fullscreen-btn" class="control-btn" title="Expand video in tab">
+              <button type="button" id="video-fullscreen-btn" class="control-btn" title="Expand video in tab">
                 <i id="fullscreen-enter-icon" class="ph ph-arrows-out-simple"></i>
                 <i id="fullscreen-exit-icon" class="ph ph-arrows-in-simple hidden"></i>
               </button>
@@ -171,6 +175,9 @@
           role="separator"
           aria-label="Resize player and logs panels"
           aria-orientation="vertical"
+          aria-valuemin="25"
+          aria-valuemax="75"
+          aria-valuenow="50"
           tabindex="0"
         ></div>
 
@@ -178,8 +185,29 @@
         <div id="logs-panel" class="logs-panel">
           <!-- Tab bar -->
           <div class="tab-bar">
-            <button id="console-tab" class="tab-btn active">Console</button>
-            <button id="network-tab" class="tab-btn">Network</button>
+            <button type="button" id="report-tab" class="tab-btn hidden">Report</button>
+            <button type="button" id="console-tab" class="tab-btn active">Console</button>
+            <button type="button" id="network-tab" class="tab-btn">Network</button>
+          </div>
+
+          <!-- Report viewer -->
+          <div id="report-viewer" class="viewer-container report-viewer hidden">
+            <div id="report-panel" class="report-panel hidden">
+              <div class="report-main">
+                <div class="report-heading">
+                  <span class="report-eyebrow">Report</span>
+                  <h2 id="report-title"></h2>
+                </div>
+                <a id="report-page-link" class="report-page-link" href="#" target="_blank" rel="noreferrer" aria-label="Open recorded page"></a>
+              </div>
+              <div id="report-meta" class="report-meta"></div>
+              <div id="privacy-summary" class="privacy-summary hidden"></div>
+              <img id="report-screenshot" class="report-screenshot hidden" alt="Recording screenshot">
+              <div id="event-timeline" class="event-timeline hidden">
+                <div class="event-timeline-title">Activity</div>
+                <div id="event-list" class="event-list"></div>
+              </div>
+            </div>
           </div>
 
           <!-- Console viewer -->
@@ -192,12 +220,12 @@
                 </label>
               </div>
               <div class="filter-buttons" id="console-filters">
-                <button class="filter-btn active" data-filter="all">All</button>
-                <button class="filter-btn" data-filter="log">Log</button>
-                <button class="filter-btn" data-filter="warn">Warn</button>
-                <button class="filter-btn" data-filter="error">Error</button>
-                <button class="filter-btn" data-filter="info">Info</button>
-                <button class="filter-btn" data-filter="debug">Debug</button>
+                <button type="button" class="filter-btn active" data-filter="all">All</button>
+                <button type="button" class="filter-btn" data-filter="log">Log</button>
+                <button type="button" class="filter-btn" data-filter="warn">Warn</button>
+                <button type="button" class="filter-btn" data-filter="error">Error</button>
+                <button type="button" class="filter-btn" data-filter="info">Info</button>
+                <button type="button" class="filter-btn" data-filter="debug">Debug</button>
               </div>
             </div>
             <div id="console-entries" class="entries-scroll"></div>
@@ -214,16 +242,16 @@
                 <span id="network-summary" class="network-summary"></span>
               </div>
               <div class="filter-buttons" id="network-filters">
-                <button class="filter-btn active" data-filter="all">All</button>
-                <button class="filter-btn" data-filter="fetch">Fetch/XHR</button>
-                <button class="filter-btn" data-filter="js">JS</button>
-                <button class="filter-btn" data-filter="css">CSS</button>
-                <button class="filter-btn" data-filter="img">Img</button>
-                <button class="filter-btn" data-filter="doc">Doc</button>
-                <button class="filter-btn" data-filter="font">Font</button>
-                <button class="filter-btn" data-filter="media">Media</button>
-                <button class="filter-btn" data-filter="ws">WS</button>
-                <button class="filter-btn" data-filter="other">Other</button>
+                <button type="button" class="filter-btn active" data-filter="all">All</button>
+                <button type="button" class="filter-btn" data-filter="fetch">Fetch/XHR</button>
+                <button type="button" class="filter-btn" data-filter="js">JS</button>
+                <button type="button" class="filter-btn" data-filter="css">CSS</button>
+                <button type="button" class="filter-btn" data-filter="img">Img</button>
+                <button type="button" class="filter-btn" data-filter="doc">Doc</button>
+                <button type="button" class="filter-btn" data-filter="font">Font</button>
+                <button type="button" class="filter-btn" data-filter="media">Media</button>
+                <button type="button" class="filter-btn" data-filter="ws">WS</button>
+                <button type="button" class="filter-btn" data-filter="other">Other</button>
               </div>
             </div>
             <div id="network-entries" class="entries-scroll">
@@ -241,6 +269,7 @@
               <div id="websocket-rows"></div>
             </div>
           </div>
+
         </div>
       </div>
     </div>
