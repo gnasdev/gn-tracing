@@ -58,7 +58,7 @@ related:
   calls: GitHub Releases API through the service worker for version comparison and release download discovery
 - `developer-tooling`
   reads: `DEVELOPER.md`, `Taskfile.yml`, `package.json`, `biome.json`
-  enforces: Biome format/lint/import checks through npm scripts, Task aliases, and a Husky pre-commit hook over staged files
+  enforces: Biome format/lint/import checks for supported source files, docs hygiene checks for Markdown files, Task aliases, and a Husky pre-commit hook over staged files
 
 ## Reader Path
 

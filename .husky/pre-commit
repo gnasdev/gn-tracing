@@ -7,4 +7,5 @@ if git status --short | grep --quiet '^MM'; then
 fi
 
 npm exec -- biome check --write --staged --files-ignore-unknown=true --no-errors-on-unmatched
+npm run docs:check
 git update-index --again

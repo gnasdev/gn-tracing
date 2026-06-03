@@ -7,9 +7,10 @@
     "prepare": "husky",
     "lint": "biome lint . --files-ignore-unknown=true",
     "format": "biome format --write . --files-ignore-unknown=true",
-    "format:check": "biome format . --files-ignore-unknown=true",
-    "check": "biome check . --files-ignore-unknown=true",
-    "check:write": "biome check --write . --files-ignore-unknown=true",
+    "format:check": "biome format . --files-ignore-unknown=true && npm run docs:check",
+    "check": "biome check . --files-ignore-unknown=true && npm run docs:check",
+    "check:write": "biome check --write . --files-ignore-unknown=true && npm run docs:check",
+    "docs:check": "node scripts/check-docs.mjs",
     "store:assets": "node scripts/generate-store-assets.mjs"
   },
   "devDependencies": {

@@ -22,22 +22,22 @@ tasks:
       - npx tsc --noEmit
 
   lint:
-    desc: Run Biome lint checks across the repository.
+    desc: Run Biome lint checks across supported source files.
     cmds:
       - npm run lint
 
   format:
-    desc: Format repository sources with Biome.
+    desc: Format Biome-supported repository sources.
     cmds:
       - npm run format
 
   format:check:
-    desc: Check repository formatting with Biome.
+    desc: Check Biome-supported formatting and docs hygiene.
     cmds:
       - npm run format:check
 
   check:
-    desc: Run Biome format, lint, and import checks across the repository.
+    desc: Run Biome checks and docs hygiene validation across the repository.
     cmds:
       - npm run check
 

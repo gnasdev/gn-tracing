@@ -59,9 +59,9 @@ task build          # Build extension into dist/ for development
 task dist           # Build extension into dist/ for production
 task watch          # Rebuild extension on source changes
 task typecheck      # Type-check root extension code
-task lint           # Run Biome lint checks
-task format         # Format repository sources with Biome
-task check          # Run Biome format, lint, and import checks
+task lint           # Run Biome lint checks for supported sources
+task format         # Format Biome-supported repository sources
+task check          # Run Biome checks plus docs hygiene validation
 task build:all      # Build extension and standalone player
 task dist:all       # Production build for extension and player
 task watch:all      # Extension watch plus player dev server
@@ -104,7 +104,7 @@ The hosted player downloads that zip through the Cloudflare Pages Drive proxy, u
 - Preserve message contracts across popup, service worker, and offscreen code unless all participants are updated together.
 - Treat MV3 service worker restarts as normal. UI state should recover from `chrome.storage.session` and runtime checks.
 - Keep user-facing docs aligned with the current flow: record, stop, upload to Google Drive, open replay link.
-- Biome owns repository formatting, linting, and import organization. The Husky pre-commit hook runs `biome check --write --staged` and re-stages safe fixes for staged files.
+- Biome owns formatting, linting, and import organization for its supported source types. Markdown docs are covered by `npm run docs:check`, and the Husky pre-commit hook runs Biome over staged supported files plus the docs check before re-staging safe fixes.
 - `task player:build`, `task player:dist`, and `task player:deploy` sync shared player assets automatically. Use `task player:sync` only when you need to refresh the mirrored standalone assets without building.
 - If manifest permissions, auth, Drive upload, or player loading changes, manually verify the affected browser flow.
 - Keep source comments in English and focused on runtime boundaries, browser API constraints, async lifecycle, or non-obvious contracts.
