@@ -8,6 +8,9 @@ related:
   - "./chrome-web-store-submission.md"
   - "../modules/recording-runtime.md"
   - "../modules/drive-and-player.md"
+  - "../modules/privacy-and-redaction.md"
+  - "../modules/replay-player.md"
+  - "../features/extension-surfaces.md"
   - "../shared/data-models.md"
 ---
 
@@ -19,7 +22,7 @@ related:
 - Phạm vi: public privacy policy language for capture, upload, replay, Google Drive access, storage, deletion, and sharing behavior
 - Nguồn code: `src/background/cdp-manager.ts`, `src/background/service-worker.ts`, `src/offscreen/offscreen.ts`, `src/types/recording.ts`
 - Tuân thủ: Google API Limited Use, Chrome Web Store data-use disclosure
-- Links: [Chrome Web Store Submission](./chrome-web-store-submission.md), [Recording Runtime](../modules/recording-runtime.md), [Drive And Player](../modules/drive-and-player.md), [Shared Data Models](../shared/data-models.md)
+- Links: [Chrome Web Store Submission](./chrome-web-store-submission.md), [Recording Runtime](../modules/recording-runtime.md), [Drive And Player](../modules/drive-and-player.md), [Privacy And Redaction](../modules/privacy-and-redaction.md), [Replay Player](../modules/replay-player.md), [Extension Surfaces](../features/extension-surfaces.md), [Shared Data Models](../shared/data-models.md)
 
 GN Tracing is a browser debugging extension that records a tab when the user explicitly starts a recording. It is designed to help users create a replayable bug report that includes the screen recording and selected debugging artifacts from that tab.
 

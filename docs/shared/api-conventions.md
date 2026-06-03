@@ -12,6 +12,9 @@ related:
   - "./data-models.md"
   - "../modules/recording-runtime.md"
   - "../modules/drive-and-player.md"
+  - "../modules/privacy-and-redaction.md"
+  - "../modules/replay-player.md"
+  - "../features/extension-surfaces.md"
   - "../features/release-and-update-checks.md"
 ---
 
@@ -23,14 +26,16 @@ related:
 - Phạm vi: internal message contracts and external browser/Drive/Cloudflare APIs
 - Nguồn code: `src/types/messages.ts`, `src/background/service-worker.ts`, `src/offscreen/offscreen.ts`
 - Tuân thủ: Không áp dụng
-- Links: [Shared Data Models](./data-models.md), [Recording Runtime](../modules/recording-runtime.md), [Drive And Player](../modules/drive-and-player.md), [Release And Update Checks](../features/release-and-update-checks.md)
+- Links: [Shared Data Models](./data-models.md), [Recording Runtime](../modules/recording-runtime.md), [Drive And Player](../modules/drive-and-player.md), [Privacy And Redaction](../modules/privacy-and-redaction.md), [Replay Player](../modules/replay-player.md), [Extension Surfaces](../features/extension-surfaces.md), [Release And Update Checks](../features/release-and-update-checks.md)
 
 ## Internal Message Contracts
 
 - popup and auth page never mutate shared state directly; they send commands to the service worker
+- Settings and History pages also use service-worker commands for shared settings/history state instead of directly owning durable contracts
 - offscreen messages must include `target: "offscreen"` so the service worker can ignore them in its main command handler
 - injected recording-event scripts receive only the safe privacy/redaction settings needed for event sanitization and visual masking; they send `RECORDING_USER_EVENT` messages to the service worker with sanitized events, redaction hit summaries, and optional limitation notes. The service worker accepts those messages only for the current recording tab/session and treats them as best-effort replay metadata
 - long-running flows return progress through fire-and-forget runtime messages plus `chrome.storage.session` state sync
+- replay player requests for `GET_GOOGLE_DRIVE_TOKEN` return an in-memory OAuth token only to extension replay code; tokens are not encoded into replay URLs, upload history, package metadata, or standalone proxy requests
 
 ## External APIs
 
@@ -52,3 +57,11 @@ related:
   proxies standalone replay downloads to `drive.usercontent.google.com`, resolves Google Drive confirmation pages for large public files, preserves range requests plus response content headers when the hosted player cannot use an OAuth token, and returns non-cacheable errors if Drive still responds with HTML instead of file bytes.
 - GitHub Releases API
   used by the service worker for popup update checks. The extension requests only public release metadata from `https://api.github.com/`, compares the installed version with the latest release version, and returns release/download URLs to the popup.
+
+## Boundary Rules
+
+- UI pages are command clients; service worker state is the shared runtime contract.
+- Offscreen document is the media/upload worker; it does not own popup state.
+- Content script is recording-scoped and receives no plaintext ZIP password or Drive credential.
+- Replay source-map rendering is artifact-backed; the player does not call page or source-map URLs during replay.
+- Standalone replay uses the same-origin Cloudflare proxy for Drive bytes because direct public Drive downloads can fail browser CORS/CORP or large-file confirmation flows.

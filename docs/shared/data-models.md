@@ -11,6 +11,9 @@ related:
   - "./api-conventions.md"
   - "../modules/recording-runtime.md"
   - "../modules/drive-and-player.md"
+  - "../modules/privacy-and-redaction.md"
+  - "../modules/replay-player.md"
+  - "../features/extension-surfaces.md"
 ---
 
 # Shared Data Models
@@ -21,7 +24,7 @@ related:
 - Phạm vi: message envelopes, recording state, upload state, capture payloads, and replay storage semantics
 - Nguồn code: `src/types/messages.ts`, `src/types/recording.ts`
 - Tuân thủ: Không áp dụng
-- Links: [API Conventions](./api-conventions.md), [Recording Runtime](../modules/recording-runtime.md), [Drive And Player](../modules/drive-and-player.md)
+- Links: [API Conventions](./api-conventions.md), [Recording Runtime](../modules/recording-runtime.md), [Drive And Player](../modules/drive-and-player.md), [Privacy And Redaction](../modules/privacy-and-redaction.md), [Replay Player](../modules/replay-player.md), [Extension Surfaces](../features/extension-surfaces.md)
 
 ## Messaging Models
 
@@ -77,6 +80,37 @@ related:
   replay privacy metadata written to `privacy.json`, including policy version, selected privacy profile, artifact flags, grouped redaction counts, and known limitations.
 - `SourceMapDiagnosticsArtifact`
   technical source-map load status written to optional `diagnostics.json`; URLs are privacy-redacted before serialization, and the artifact stores load outcomes rather than full sourcemap content.
+
+## Recording Package Artifact Taxonomy
+
+The current replay package is one Google Drive zip file identified by the replay URL path. Its internal artifacts are:
+
+- `recording-index.json`
+  replay entrypoint metadata with schema version, folder/package information, artifact paths, and video part paths
+- `manifest.json`
+  package layout source of truth with video mime type, part sizes, folder id, and artifact filenames
+- `metadata.json`
+  recording timestamp, duration, page URL, start time, extension label/version, storage provider metadata, and video summary
+- `video.part-XXX.webm`
+  ordered media chunks that the player combines into one local video blob
+- `console.json`
+  optional console/browser/exception entries with serialized args, source-map-enriched locations, parsed Error object stacks when available, source snippets, and unresolved-frame status
+- `network.json`
+  optional compact network entries with request/response metadata, selected headers/bodies, redirects, timing, initiators, and source-map-enriched stack data
+- `websocket.json`
+  optional WebSocket connection records and sent/received frame summaries
+- `report.json`
+  optional replay report metadata and captured environment context
+- `events.json`
+  optional redacted navigation/click/focus/submit timeline
+- `privacy.json`
+  optional privacy profile, artifact flags, redaction counts, and known limitations
+- `diagnostics.json`
+  optional source-map load outcomes and failure reasons
+- `screenshot.jpg`
+  optional visible-tab screenshot captured at stop time
+
+JSON/text entries may be DEFLATE-compressed inside the zip when compression reduces size. Media/image entries stay stored. Password-protected packages keep the same artifact shape but encrypt entry payloads with the configured ZIP password.
 
 ## Storage Semantics
 

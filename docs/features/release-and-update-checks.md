@@ -13,6 +13,7 @@ source_paths:
   - "popup/popup.html"
 related:
   - "../modules/drive-and-player.md"
+  - "./extension-surfaces.md"
   - "../shared/api-conventions.md"
   - "../compliance/chrome-web-store-submission.md"
 ---
@@ -25,7 +26,7 @@ related:
 - Phạm vi: release zip packaging, Store package validation, popup update check, and contribution links
 - Nguồn code: `Taskfile.yml`, `manifest.template.json`, `scripts/check-store-package.mjs`, `src/background/service-worker.ts`, `src/popup/popup.ts`, `popup/popup.html`
 - Tuân thủ: Chrome Web Store submission
-- Links: [Drive And Player](../modules/drive-and-player.md), [API Conventions](../shared/api-conventions.md), [Chrome Web Store Submission](../compliance/chrome-web-store-submission.md)
+- Links: [Drive And Player](../modules/drive-and-player.md), [Extension Surfaces](./extension-surfaces.md), [API Conventions](../shared/api-conventions.md), [Chrome Web Store Submission](../compliance/chrome-web-store-submission.md)
 
 ## Overview
 
@@ -50,6 +51,8 @@ The popup sends `CHECK_FOR_UPDATE` to the service worker. The service worker rea
 - extension zip download URL when a matching asset exists
 
 The popup exposes both an automatic lightweight check on open and a user-triggered check that reports the current state. The update badge changes when a newer release is available, and the UI links users to the release/download surface rather than silently installing anything.
+
+The popup behavior is part of [Extension Surfaces](./extension-surfaces.md). This feature doc owns the release/update contract; the extension surfaces doc owns where that contract is shown to the user.
 
 ## Contribution Links
 

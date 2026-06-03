@@ -15,6 +15,9 @@ source_paths:
   - "player-standalone"
 related:
   - "./recording-runtime.md"
+  - "./privacy-and-redaction.md"
+  - "./replay-player.md"
+  - "../features/extension-surfaces.md"
   - "../features/release-and-update-checks.md"
   - "../shared/data-models.md"
   - "../shared/api-conventions.md"
@@ -28,7 +31,7 @@ related:
 - Phạm vi: Google Drive auth, zip package upload, replay URL generation, release packaging, and built-in/standalone player integration
 - Nguồn code: `src/background/google-drive-auth.ts`, `src/drive-auth/drive-auth.ts`, `src/offscreen/offscreen.ts`, `src/shared/player-host.ts`, `player/`, `player-standalone/`
 - Tuân thủ: Không áp dụng
-- Links: [Recording Runtime](./recording-runtime.md), [Release And Update Checks](../features/release-and-update-checks.md), [Shared Data Models](../shared/data-models.md), [API Conventions](../shared/api-conventions.md)
+- Links: [Recording Runtime](./recording-runtime.md), [Privacy And Redaction](./privacy-and-redaction.md), [Replay Player](./replay-player.md), [Extension Surfaces](../features/extension-surfaces.md), [Release And Update Checks](../features/release-and-update-checks.md), [Shared Data Models](../shared/data-models.md), [API Conventions](../shared/api-conventions.md)
 
 ## 1. Overview
 
@@ -43,6 +46,8 @@ This module covers authentication, Google Drive upload, replay URL generation, b
 - `player-standalone/*`
 - fixed replay host wiring in `src/offscreen/offscreen.ts`, `src/shared/player-host.ts`, and popup display in `src/popup/popup.ts`
 - popup release discovery in `src/background/service-worker.ts` and `src/popup/popup.ts`
+
+Replay inspection behavior, package parsing, password prompts, and standalone Drive proxy details are documented in [Replay Player](./replay-player.md). Privacy profile semantics and redaction behavior are documented in [Privacy And Redaction](./privacy-and-redaction.md). This module stays focused on Drive auth, package creation/upload, sharing, replay URL generation, and release/deploy boundaries.
 
 ## 2. Functional & Non-Functional Requirements
 
@@ -172,6 +177,9 @@ This module covers authentication, Google Drive upload, replay URL generation, b
 ## 6. Relationships
 
 - consumes recording artifacts from `recording-runtime`
+- applies package content protection and privacy boundaries described by `privacy-and-redaction`
+- delegates replay package loading and inspection behavior to `replay-player`
+- receives user-facing configuration and upload/history commands through `extension-surfaces`
 - shares replay payload schema with built-in player and standalone player
 - depends on `shared/api-conventions` for Chrome identity + Drive API assumptions
 - exposes fixed player-host information to popup UX and release automation

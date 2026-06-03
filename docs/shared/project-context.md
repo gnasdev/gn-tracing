@@ -8,6 +8,9 @@ related:
   - "../overview.md"
   - "../modules/recording-runtime.md"
   - "../modules/drive-and-player.md"
+  - "../modules/privacy-and-redaction.md"
+  - "../modules/replay-player.md"
+  - "../features/extension-surfaces.md"
 ---
 
 # Project Context
@@ -18,7 +21,7 @@ related:
 - Phạm vi: product context, architectural shape, comment convention, and non-functional constraints
 - Nguồn code: `src/`, `player/`, `player-standalone/`
 - Tuân thủ: Không áp dụng
-- Links: [Overview](../overview.md), [Recording Runtime](../modules/recording-runtime.md), [Drive And Player](../modules/drive-and-player.md)
+- Links: [Overview](../overview.md), [Recording Runtime](../modules/recording-runtime.md), [Drive And Player](../modules/drive-and-player.md), [Privacy And Redaction](../modules/privacy-and-redaction.md), [Replay Player](../modules/replay-player.md), [Extension Surfaces](../features/extension-surfaces.md)
 
 ## Product Context
 
@@ -29,7 +32,21 @@ GN Tracing is designed for debugging and replaying real tab sessions without a b
 - MV3 extension with a service worker as the orchestration boundary
 - offscreen document for `MediaRecorder` because MV3 service workers cannot hold media capture directly
 - popup and auth page as thin UI clients driven by service-worker-owned state
+- Settings and full History pages as extension UI surfaces over service-worker settings/history contracts
+- injected content script as a recording-scoped collector for sanitized user-event summaries and visual masking only
+- shared privacy/redaction policy applied before supported text/JSON evidence becomes replay artifacts
 - standalone player kept separate from extension packaging, but fed by the same uploaded artifacts
+
+## Domain Reader Model
+
+Read the project as a capture-to-replay pipeline:
+
+1. `extension-surfaces` lets the user connect Drive, configure capture/privacy settings, start/stop recording, inspect pending uploads, and open local upload history.
+2. `recording-runtime` owns the active session, target validation, CDP collection, offscreen media capture, event collection, source-map enrichment, and temporary artifact lifecycle.
+3. `privacy-and-redaction` defines how supported evidence is sanitized and summarized before upload.
+4. `drive-and-player` owns Google Drive auth, folder resolution, zip package upload, link sharing, and replay URL generation.
+5. `replay-player` loads the package, unlocks protected zips when needed, and presents synchronized video plus debugging evidence.
+6. `shared/data-models` and `shared/api-conventions` are the contracts that keep those boundaries aligned.
 
 ## Code Comment Convention
 
@@ -40,5 +57,6 @@ Source comments are written in English so runtime decisions, browser constraints
 - recording state is ephemeral and memory-backed
 - service worker dormancy is mitigated with a `chrome.alarms` keepalive
 - upload success depends on Google Drive OAuth and publicly shareable file permissions
+- optional ZIP passwords protect package contents, not Drive file discoverability
 - external player hosting is fixed to `https://tracing.gnas.dev/`
 - standalone replay depends on the Cloudflare Pages `/api/drive` proxy to fetch public Drive artifacts without cross-origin download failures

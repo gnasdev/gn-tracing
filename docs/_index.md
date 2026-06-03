@@ -7,6 +7,9 @@ tags: ["docs", "index"]
 related:
   - "./overview.md"
   - "./_sync.md"
+  - "./modules/privacy-and-redaction.md"
+  - "./modules/replay-player.md"
+  - "./features/extension-surfaces.md"
 ---
 
 # Docs Index
@@ -20,20 +23,34 @@ related:
 - [shared/api-conventions.md](./shared/api-conventions.md)
 - [modules/recording-runtime.md](./modules/recording-runtime.md)
 - [modules/drive-and-player.md](./modules/drive-and-player.md)
+- [modules/privacy-and-redaction.md](./modules/privacy-and-redaction.md)
+- [modules/replay-player.md](./modules/replay-player.md)
+- [features/extension-surfaces.md](./features/extension-surfaces.md)
 - [features/release-and-update-checks.md](./features/release-and-update-checks.md)
 - [compliance/_summary.md](./compliance/_summary.md)
 - [compliance/privacy-policy.md](./compliance/privacy-policy.md)
 - [compliance/chrome-web-store-submission.md](./compliance/chrome-web-store-submission.md)
 - [_sync.md](./_sync.md)
 
+## Planning Docs
+
+- [specs/planning/domain-project-aspects.md](./specs/planning/domain-project-aspects.md)
+
 ## Dependency Map
 
 - `recording-runtime`
-  reads: `shared/data-models`, `shared/api-conventions`
+  reads: `shared/data-models`, `shared/api-conventions`, `privacy-and-redaction`, `extension-surfaces`
   calls: `drive-and-player` for auth token lookup, Drive zip package upload, and replay link generation during upload completion
 - `drive-and-player`
-  reads: `shared/data-models`, `shared/api-conventions`
+  reads: `shared/data-models`, `shared/api-conventions`, `replay-player`, `privacy-and-redaction`
   consumes: recording artifacts emitted by `recording-runtime`
+- `privacy-and-redaction`
+  shared by: service worker, CDP collector, storage manager, content script, Settings, replay player, compliance docs
+- `replay-player`
+  consumes: zip package artifacts, source-map-enriched console/network data, privacy summaries, report/events/screenshot artifacts, and Drive/proxy downloads
+- `extension-surfaces`
+  reads: `shared/data-models`, `recording-runtime`, `drive-and-player`, `privacy-and-redaction`
+  owns: popup commands, Settings controls, auth page state, and local upload-history rendering
 - `shared/data-models`
   shared by: service worker, popup, offscreen uploader, built-in player, standalone player
 - `release-and-update-checks`
@@ -42,6 +59,19 @@ related:
 - `developer-tooling`
   reads: `DEVELOPER.md`, `Taskfile.yml`, `package.json`, `biome.json`
   enforces: Biome format/lint/import checks through npm scripts, Task aliases, and a Husky pre-commit hook over staged files
+
+## Reader Path
+
+1. [overview.md](./overview.md)
+2. [shared/project-context.md](./shared/project-context.md)
+3. [shared/data-models.md](./shared/data-models.md)
+4. [modules/recording-runtime.md](./modules/recording-runtime.md)
+5. [modules/privacy-and-redaction.md](./modules/privacy-and-redaction.md)
+6. [modules/drive-and-player.md](./modules/drive-and-player.md)
+7. [modules/replay-player.md](./modules/replay-player.md)
+8. [features/extension-surfaces.md](./features/extension-surfaces.md)
+9. [features/release-and-update-checks.md](./features/release-and-update-checks.md)
+10. [compliance/_summary.md](./compliance/_summary.md)
 
 ## Runtime Topology
 
@@ -54,5 +84,6 @@ related:
 - `offscreen` -> Cloudflare Pages standalone player URL generation with one recording zip file ID path (`/<id>`)
 - `extension player` -> Google Drive API `files.get?alt=media` with the current OAuth token for Drive package fetches when available
 - `standalone player` -> same-origin `/api/drive?id=<file-id>` proxy for Drive package fetches when no OAuth token is available; password-protected packages are decrypted in-browser after user unlock
+- `privacy policy` -> service worker, CDP collector, storage manager, and content script: redaction, event sanitization, DOM masking limitations, and `privacy.json` summaries
 - `release workflow` -> root `Taskfile.yml`: extension build, Store package checks, and zip packaging with OAuth/extension identity from repository secrets; standalone player deploy stays manual via `player-standalone/deploy.sh`
 - `popup update check` -> `service-worker` -> GitHub Releases API: compare installed package version against the latest release and expose a manual download path when a newer extension zip is available

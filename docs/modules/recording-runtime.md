@@ -15,6 +15,9 @@ source_paths:
   - "src/shared/recording-target.ts"
 related:
   - "./drive-and-player.md"
+  - "./privacy-and-redaction.md"
+  - "./replay-player.md"
+  - "../features/extension-surfaces.md"
   - "../shared/data-models.md"
   - "../shared/api-conventions.md"
 ---
@@ -27,7 +30,7 @@ related:
 - Phạm vi: recording lifecycle, CDP capture, offscreen media capture, service-worker state, popup state rendering, and capture settings
 - Nguồn code: `src/background/service-worker.ts`, `src/background/recorder-manager.ts`, `src/background/cdp-manager.ts`, `src/background/storage-manager.ts`, `src/offscreen/offscreen.ts`, `src/popup/popup.ts`, `src/settings/settings.ts`, `src/shared/recording-target.ts`
 - Tuân thủ: Không áp dụng
-- Links: [Drive And Player](./drive-and-player.md), [Shared Data Models](../shared/data-models.md), [API Conventions](../shared/api-conventions.md)
+- Links: [Drive And Player](./drive-and-player.md), [Privacy And Redaction](./privacy-and-redaction.md), [Replay Player](./replay-player.md), [Extension Surfaces](../features/extension-surfaces.md), [Shared Data Models](../shared/data-models.md), [API Conventions](../shared/api-conventions.md)
 
 ## 1. Overview
 
@@ -42,6 +45,20 @@ This module covers the runtime capture path implemented by:
 - `src/shared/recording-target.ts`
 
 The service worker is the orchestration boundary. It owns session state, starts/stops capture, keeps the worker alive during recording, and exposes synchronized status to UI surfaces through `chrome.storage.session`.
+
+For a new reader, this module is the capture side of the product. It explains how a user-selected tab becomes temporary evidence artifacts. Drive upload, replay package viewing, privacy policy details, and UI-surface ownership are documented separately in [Drive And Player](./drive-and-player.md), [Replay Player](./replay-player.md), [Privacy And Redaction](./privacy-and-redaction.md), and [Extension Surfaces](../features/extension-surfaces.md).
+
+## 1.1 Runtime Lifecycle
+
+The primary lifecycle is:
+
+1. Popup validates that Google Drive is connected and the active tab is recordable.
+2. Service worker validates the target tab again before mutating recording state.
+3. Service worker creates a session id, loads upload/capture/privacy settings, clears old in-memory capture data, configures `StorageManager` and `CdpManager`, attaches CDP, and asks `RecorderManager` to start offscreen media capture.
+4. Service worker injects the recording-scoped event collector and visual masking settings into the page.
+5. During recording, CDP events are stored in memory, popup state is mirrored into `chrome.storage.session`, and `chrome.alarms` keeps the MV3 worker warm.
+6. Stop first tears down page-event capture and media recording, then flushes source maps while CDP is still attached, captures a best-effort visible-tab screenshot, resolves source maps into stored console/network data, and finalizes artifacts.
+7. If a valid Drive token is available, upload starts automatically; otherwise the completed local session stays pending while its temporary snapshot remains available.
 
 ## 2. Functional & Non-Functional Requirements
 
@@ -69,6 +86,23 @@ The service worker is the orchestration boundary. It owns session state, starts/
 - stores privacy redaction settings as part of `UploadSettings`, with standard/strict/custom profiles, built-in rule versioning, WebSocket payload redaction mode, event/report redaction toggles, and DOM masking selectors
 - accepts `RECORDING_USER_EVENT` messages from the injected page collector for navigation/click/focus/submit summaries that match the active tab and session
 - emits optional replay report artifacts: `report.json`, `events.json`, `privacy.json`, `diagnostics.json`, and `screenshot.jpg`
+
+## 3.1 Capture Evidence Boundaries
+
+Runtime capture produces evidence, but it does not make those artifacts durable by itself:
+
+- media is held by the offscreen document as a session snapshot until upload succeeds, the session is deleted, or extension runtime availability is lost
+- console, network, WebSocket, report, event, privacy, diagnostic, and screenshot artifacts are serialized only for the current post-recording flow
+- successful upload clears the in-memory service-worker capture buffers and releases the offscreen recorded video blob
+- restart recovery is best-effort because heavy artifacts are memory/offscreen-backed, not a durable local database
+
+The capture target must be a user-selected tab with an `http:`, `https:`, or `file:` URL. Browser system pages, extension pages, DevTools/internal URLs, Chrome Web Store pages, tabs without a normal URL, and unsupported URL schemes are rejected before capture starts.
+
+## 3.2 CDP Capture Model
+
+`CdpManager` attaches Chrome Debugger Protocol to the selected tab, enables Network, Runtime, Log, and best-effort Debugger domains, and auto-attaches child targets. It handles CDP ordering defensively because request extra-info, response bodies, redirects, early hints, cache events, target detach notifications, and WebSocket frames can arrive outside a simple request lifecycle.
+
+Capture settings control which console, network, body, initiator, and WebSocket details are stored. Privacy settings are applied while data is collected and again when console artifacts are finalized.
 
 ## 4. Business Rules
 
@@ -116,7 +150,9 @@ The service worker is the orchestration boundary. It owns session state, starts/
 
 ## 6. Relationships
 
-- provides captured artifacts, report metadata, event timeline entries, and optional screenshot data to `drive-and-player`
+- provides captured artifacts, report metadata, event timeline entries, privacy summaries, diagnostics, and optional screenshot data to `drive-and-player` and `replay-player`
+- consumes `privacy-and-redaction` for privacy profile defaults, redaction, event sanitization, DOM masking selectors, and privacy summary construction
+- receives commands and renders state through `extension-surfaces`
 - consumes shared message/data models from `shared/data-models`
 - depends on Chrome extension platform APIs and Google-auth-aware upload orchestration from the Drive module
 - emits state changes to popup, settings, and auth pages through `chrome.storage.session`
