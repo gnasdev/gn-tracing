@@ -263,7 +263,7 @@ export default defineConfig(({ mode }) => ({
   },
   publicDir: "public",
   server: {
-    port: 5173,
+    port: 5176,
     open: true,
   },
 }));

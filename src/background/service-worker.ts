@@ -824,7 +824,7 @@ async function getUploadHistory(): Promise<UploadHistoryEntry[]> {
     const result = await chrome.storage.local.get(STORAGE_KEY_HISTORY);
     const history = result[STORAGE_KEY_HISTORY];
     cachedUploadHistory = Array.isArray(history)
-      ? sortUploadHistory(history as UploadHistoryEntry[])
+      ? sortUploadHistory((history as UploadHistoryEntry[]).map(normalizeUploadHistoryEntry))
       : [];
   } catch {
     cachedUploadHistory = [];
@@ -1827,11 +1827,16 @@ function normalizeRecordingUrl(recordingUrl: string | null | undefined): string 
 
   try {
     const parsed = new URL(recordingUrl);
+    const legacyRecordingId = getLegacyRecordingIdFromUrl(parsed);
     if (
       parsed.protocol === "chrome-extension:" ||
       parsed.pathname.endsWith("/player/player.html")
     ) {
-      const legacyRecordingId = parsed.searchParams.get("id");
+      if (legacyRecordingId) {
+        return buildExternalPlayerUrl(legacyRecordingId);
+      }
+    }
+    if (parsed.protocol === "http:" && ["localhost", "127.0.0.1"].includes(parsed.hostname)) {
       if (legacyRecordingId) {
         return buildExternalPlayerUrl(legacyRecordingId);
       }
@@ -1840,6 +1845,31 @@ function normalizeRecordingUrl(recordingUrl: string | null | undefined): string 
   } catch {
     return recordingUrl;
   }
+}
+
+function getLegacyRecordingIdFromUrl(parsed: URL): string | null {
+  const queryId = parsed.searchParams.get("id");
+  if (queryId) {
+    return queryId;
+  }
+
+  const firstPathSegment = parsed.pathname.split("/").filter(Boolean)[0];
+  if (!firstPathSegment || firstPathSegment.endsWith(".html")) {
+    return null;
+  }
+
+  try {
+    return decodeURIComponent(firstPathSegment);
+  } catch {
+    return firstPathSegment;
+  }
+}
+
+function normalizeUploadHistoryEntry(entry: UploadHistoryEntry): UploadHistoryEntry {
+  return {
+    ...entry,
+    recordingUrl: normalizeRecordingUrl(entry.recordingUrl) || entry.recordingUrl,
+  };
 }
 
 async function getPopupSettingsResponse(): Promise<

@@ -37,7 +37,7 @@ const chromeExtensionId = getConfigValue(
   "CHROME_EXTENSION_ID",
   chromeExtensionPublicKey ? getChromeExtensionId(chromeExtensionPublicKey) : "",
 );
-const playerLocalPort = process.env.PLAYER_LOCAL_PORT || "5173";
+const playerLocalPort = getConfigValue("PLAYER_LOCAL_PORT", "5176");
 const STATIC_ASSET_ENTRIES = [
   { type: "text", src: "popup/popup.html", dest: "dist/popup/popup.html" },
   { type: "file", src: "popup/popup.css", dest: "dist/popup/popup.css" },

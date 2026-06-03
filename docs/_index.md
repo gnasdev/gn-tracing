@@ -24,8 +24,6 @@ related:
 - [compliance/_summary.md](./compliance/_summary.md)
 - [compliance/privacy-policy.md](./compliance/privacy-policy.md)
 - [compliance/chrome-web-store-submission.md](./compliance/chrome-web-store-submission.md)
-- [specs/planning/restore-request-call-stack-sourcemap-resolution.md](./specs/planning/restore-request-call-stack-sourcemap-resolution.md)
-- [specs/planning/fix-generated-only-sourcemap-replay.md](./specs/planning/fix-generated-only-sourcemap-replay.md)
 - [_sync.md](./_sync.md)
 
 ## Dependency Map

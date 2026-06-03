@@ -290,6 +290,7 @@ const SOURCE_MAP_MAX_BYTES = 50 * 1024 * 1024;
 const SOURCE_MAP_READ_CHUNK_BYTES = 1024 * 1024;
 const SOURCE_MAP_DIAGNOSTIC_LIMIT = 500;
 const SOURCE_MAP_RESOLVE_URL_PROPERTY = "__gnSourceMapResolveUrl";
+const MAX_PARSED_ERROR_STACK_FRAMES = 80;
 const MINIMAL_REQUEST_HEADERS = new Set([
   "accept",
   "content-type",
@@ -1224,6 +1225,11 @@ export class CdpManager {
       description: obj.description || undefined,
       className: obj.className || undefined,
     };
+    const errorStackTrace =
+      obj.subtype === "error" ? this.#parseErrorStackTrace(obj.description) : undefined;
+    if (errorStackTrace?.length) {
+      result.stackTrace = errorStackTrace;
+    }
 
     if (obj.preview) {
       result.preview = this.#serializePreview(obj.preview);
@@ -1256,6 +1262,56 @@ export class CdpManager {
           })
         : undefined,
     };
+  }
+
+  #parseErrorStackTrace(description: string | undefined): StackFrame[] | undefined {
+    if (!description?.includes("\n")) {
+      return undefined;
+    }
+
+    const frames: StackFrame[] = [];
+    for (const line of description.split(/\r?\n/)) {
+      const frame = this.#parseV8StackFrame(line);
+      if (!frame) {
+        continue;
+      }
+      frames.push(frame);
+      if (frames.length >= MAX_PARSED_ERROR_STACK_FRAMES) {
+        break;
+      }
+    }
+
+    return frames.length ? frames : undefined;
+  }
+
+  #parseV8StackFrame(line: string): StackFrame | null {
+    const withFunction = line.match(/^\s*at\s+(.+?)\s+\((.+):(\d+):(\d+)\)\s*$/);
+    const bare = withFunction ? null : line.match(/^\s*at\s+(.+):(\d+):(\d+)\s*$/);
+    const rawUrl = withFunction?.[2] ?? bare?.[1];
+    if (!rawUrl || !this.#isResolvableStackUrl(rawUrl)) {
+      return null;
+    }
+
+    const lineNumber = Number(withFunction?.[3] ?? bare?.[2]);
+    const columnNumber = Number(withFunction?.[4] ?? bare?.[3]);
+    if (!Number.isFinite(lineNumber) || lineNumber <= 0 || !Number.isFinite(columnNumber)) {
+      return null;
+    }
+
+    // V8 string stacks use one-based coordinates, while CDP structured stack
+    // frames and source maps in this code path use zero-based coordinates.
+    const frame: StackFrame = {
+      functionName: withFunction?.[1]?.trim() || "(anonymous)",
+      url: rawUrl,
+      lineNumber: lineNumber - 1,
+      columnNumber: Math.max(0, columnNumber - 1),
+    };
+    this.#attachSourceMapResolveUrl(frame, rawUrl);
+    return frame;
+  }
+
+  #isResolvableStackUrl(url: string): boolean {
+    return /^(https?:|file:|blob:|webpack:)/.test(url);
   }
 
   #serializeStackTrace(stackTrace: CdpRawStackTrace | undefined): StackFrame[] | undefined {

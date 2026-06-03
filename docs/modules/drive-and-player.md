@@ -62,6 +62,7 @@ This module covers authentication, Google Drive upload, replay URL generation, b
 - Allow the video pane to expand to an immersive tab-level mode inside the player surface without triggering OS/screen fullscreen.
 - Keep network response inspection readable with syntax-highlighted source views for JavaScript, HTML, CSS, and JSON payloads.
 - Show source-mapped console locations with a bounded source preview when the recording artifact includes sourcemap `sourcesContent` snippets.
+- Show source-mapped Error argument stacks when console artifacts include parsed `SerializedRemoteObject.stackTrace` frames, instead of replaying generated bundle stack strings from raw Error descriptions.
 - Show source-map availability diagnostics in console/network details when a frame remains generated-only, preferring frame-level `sourceMapStatus` and falling back to package-level `diagnostics.json`.
 - Show report metadata, environment chips, redacted interaction timeline rows, and the optional stop-time screenshot when a replay package includes Phase 1 report artifacts.
 - Show package privacy metadata when available, including policy version, privacy profile, artifact flags, redaction counts, and known limitations.
@@ -126,6 +127,7 @@ This module covers authentication, Google Drive upload, replay URL generation, b
 - video "fullscreen" is implemented as an in-tab immersive player mode that hides the header and logs pane instead of using browser/OS fullscreen APIs.
 - network detail derives response presentation from mime type plus URL extension, then renders either highlighted source, an inline preview, or both.
 - console detail renders source-mapped file/line metadata and, when present, a small highlighted source preview from the captured console artifact without fetching source files during replay.
+- console detail renders Error argument messages separately from parsed Error argument stacks; when `SerializedRemoteObject.stackTrace` is present, the player uses `originalSource/originalLine/originalColumn` and frame-level `sourceMapStatus` from the artifact instead of parsing or fetching source maps during replay. Older artifacts without parsed Error stacks keep rendering the raw Error description for compatibility.
 - console and network details render source-map diagnostic messages from frame-level `sourceMapStatus` first, then fall back to `diagnostics.json` when capture attempted to load a map but the stored frame still has only generated coordinates.
 - player source-map messages include HTML/non-JSON source-map responses, missing frame ids, HTTP load failures, missing generated lines, and loaded maps without matching generated columns.
 - HTML preview uses a sandboxed iframe, media preview uses inline data URLs when captured payloads are base64-backed, and request/response JSON preview is shown only after body text validates as JSON.
@@ -159,7 +161,7 @@ This module covers authentication, Google Drive upload, replay URL generation, b
 - local development extension builds may fall back to development OAuth/extension identity defaults, but production extension builds require explicit `GOOGLE_CLIENT_ID`, `CHROME_EXTENSION_ID`, and `CHROME_EXTENSION_PUBLIC_KEY`.
 - built-in player HTML and standalone wrapper HTML must stay markup-compatible because only `player.css` and `player.js` are synced automatically into `player-standalone/public/`; loading-state markup changes still require manual updates in `player-standalone/index.html`.
 - response preview intentionally stays dependency-free and lightweight; syntax highlighting is implemented in local player runtime helpers rather than external libraries.
-- console source previews are dependency-free and artifact-backed; replay does not fetch original sourcemaps or application source files from the recorded page.
+- console source previews and parsed Error argument stacks are dependency-free and artifact-backed; replay does not fetch original sourcemaps or application source files from the recorded page.
 - report metadata, user-event timelines, privacy summaries, and screenshots are optional package enrichments; the player must continue to load packages created before these artifacts existed.
 - manual Cloudflare Pages deployment expects project `gn-tracing-player`, root base path `/`, and secrets `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID`.
 - local deploys can source root `.env` / `.env.example` with `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_PAGES_PROJECT`, `PLAYER_HOST_URL`, and `VITE_BASE_PATH`.

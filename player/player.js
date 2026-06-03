@@ -1250,8 +1250,38 @@
       .filter((item) => !networkQuery || item.searchText.includes(networkQuery));
   }
 
+  function getRemoteObjectMessage(obj) {
+    const description = String(obj?.description || obj?.value || obj?.className || "Error");
+    const firstStackLine = description.search(/\n\s+at\s+/);
+    const message = firstStackLine >= 0 ? description.slice(0, firstStackLine) : description;
+    return message || "Error";
+  }
+
+  function renderRemoteObjectStackTrace(frames) {
+    if (!Array.isArray(frames) || frames.length === 0) {
+      return "";
+    }
+    const rows = frames
+      .map((frame) => {
+        if (frame.asyncBoundary) {
+          return `<div class="async-boundary">--- ${escapeHtml(frame.asyncBoundary)} ---</div>`;
+        }
+        const fnName = frame.originalName || frame.functionName || "(anonymous)";
+        const location = formatSourceLocation(frame);
+        const sourceMapStatus = getSourceMapDiagnosticMessage(frame);
+        return `
+          <div class="stack-frame">
+            at <span class="fn-name">${escapeHtml(fnName)}</span>${location ? ` <span class="location">(${escapeHtml(location)})</span>` : ""}
+            ${sourceMapStatus ? `<div class="source-map-note">${escapeHtml(sourceMapStatus)}</div>` : ""}
+          </div>
+        `;
+      })
+      .join("");
+    return `<div class="stack-trace remote-object-stack">${rows}</div>`;
+  }
+
   // Render remote object to HTML
-  function renderRemoteObject(obj) {
+  function renderRemoteObject(obj, options = {}) {
     if (!obj) return '<span class="gh-secondary">undefined</span>';
 
     switch (obj.type) {
@@ -1270,16 +1300,21 @@
       case "function":
         return `<span class="gh-purple italic">f ${escapeHtml(obj.description || "anonymous")}</span>`;
       case "object":
-        return renderObjectPreview(obj);
+        return renderObjectPreview(obj, options);
       default:
         return escapeHtml(obj.description || String(obj.value));
     }
   }
 
-  function renderObjectPreview(obj) {
+  function renderObjectPreview(obj, options = {}) {
     if (obj.subtype === "null") return '<span class="gh-secondary">null</span>';
-    if (obj.subtype === "error")
-      return `<span class="gh-error">${escapeHtml(obj.description || "Error")}</span>`;
+    if (obj.subtype === "error") {
+      if (!Array.isArray(obj.stackTrace) || obj.stackTrace.length === 0) {
+        return `<span class="gh-error">${escapeHtml(obj.description || "Error")}</span>`;
+      }
+      const stackTrace = options.includeStack ? renderRemoteObjectStackTrace(obj.stackTrace) : "";
+      return `<span class="gh-error">${escapeHtml(getRemoteObjectMessage(obj))}</span>${stackTrace}`;
+    }
     if (obj.subtype === "regexp")
       return `<span class="gh-orange">${escapeHtml(obj.description || "")}</span>`;
     if (obj.subtype === "date")
@@ -3337,7 +3372,7 @@
               (arg, i) => `
             <div class="arg-row">
               <span class="arg-index">[${i}]</span>
-              <span>${renderRemoteObject(arg)}</span>
+              <div class="arg-value">${renderRemoteObject(arg, { includeStack: true })}</div>
             </div>
           `,
             )

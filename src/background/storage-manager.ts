@@ -154,6 +154,11 @@ export class StorageManager {
         this.#resolveFrames(resolver, diagnostics, entry.stackTrace);
         this.#promoteStackFrameLocation(entry, this.#findFirstResolvedFrame(entry.stackTrace));
       }
+      if (entry.args) {
+        for (const arg of entry.args) {
+          this.#resolveRemoteObjectStacks(resolver, diagnostics, arg);
+        }
+      }
       this.#applyConsoleSourceSnippetPolicy(entry);
     }
 
@@ -230,8 +235,19 @@ export class StorageManager {
     }
   }
 
+  #resolveRemoteObjectStacks(
+    resolver: SourceMapResolver,
+    diagnostics: SourceMapDiagnostic[],
+    arg: SerializedRemoteObject,
+  ): void {
+    if (arg.stackTrace?.length) {
+      this.#resolveFrames(resolver, diagnostics, arg.stackTrace);
+    }
+  }
+
   #prepareConsoleEntry(entry: ConsoleEntry): void {
-    if (!this.#shouldKeepConsoleStack(entry.level)) {
+    const shouldKeepStack = this.#shouldKeepConsoleStack(entry.level);
+    if (!shouldKeepStack) {
       entry.stackTrace = undefined;
     }
 
@@ -240,6 +256,11 @@ export class StorageManager {
       entry.args = undefined;
     } else if (entry.args) {
       entry.args = entry.args.map((arg) => this.#compactRemoteObject(arg, 0));
+    }
+    if (!shouldKeepStack) {
+      entry.args?.forEach((arg) => {
+        arg.stackTrace = undefined;
+      });
     }
   }
 
@@ -257,6 +278,9 @@ export class StorageManager {
     if (arg.subtype) compact.subtype = arg.subtype;
     if (arg.value != null) compact.value = arg.value;
     if (arg.description) compact.description = arg.description;
+    if (arg.stackTrace?.length) {
+      compact.stackTrace = arg.stackTrace.map((frame) => ({ ...frame }));
+    }
     if (this.#captureSettings.consolePreviewDepth !== "none" && arg.className) {
       compact.className = arg.className;
     }
@@ -348,6 +372,11 @@ export class StorageManager {
     entry.sourceSnippet = undefined;
     entry.stackTrace?.forEach((frame) => {
       frame.sourceSnippet = undefined;
+    });
+    entry.args?.forEach((arg) => {
+      arg.stackTrace?.forEach((frame) => {
+        frame.sourceSnippet = undefined;
+      });
     });
   }
 

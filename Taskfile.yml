@@ -51,7 +51,7 @@ tasks:
     desc: Run and watch the standalone player dev server.
     dir: player-standalone
     cmds:
-      - npm exec -- vite --port 5173
+      - npm exec -- vite --port 5176
 
   player:build:
     desc: Sync and build the standalone player with the development environment.
@@ -163,6 +163,8 @@ tasks:
       - task: store:publish
 
   watch:all:
+    aliases:
+      - dev
     desc: Watch extension sources and run the standalone player dev server.
     cmds:
       - npx concurrently 'task watch' 'task player:dev'

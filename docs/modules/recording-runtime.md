@@ -84,6 +84,7 @@ The service worker is the orchestration boundary. It owns session state, starts/
 - service worker marks the extension badge with `REC` while recording is active.
 - `chrome.alarms` keepalive is created at 0.4 minutes and cleared after stop.
 - source maps are flushed before debugger detach, then applied to stored console/network initiator data. Inline `data:` maps are decoded directly; external `.map` files are loaded best-effort through target-aware CDP `Network.loadNetworkResource`/`IO.read` without page-context `fetch(...)`, and the resolver cache is released immediately after enrichment completes.
+- Error remote object descriptions captured as console arguments are parsed as conservative V8 stack strings into `SerializedRemoteObject.stackTrace` when the console stack capture setting keeps that entry level, then those parsed frames go through the same stop-time source-map resolver as structured console and network stacks. The raw Error description remains available for compatibility and redaction, while replay prefers the structured stack when present.
 - source-map load attempts that need a frame id can be deferred when `Debugger.scriptParsed` races ahead of `Runtime.executionContextCreated`; the runtime retries pending attempts when frame context arrives and again during flush before falling back to `missing-frame-id`.
 - source-map load attempts are recorded in redacted `diagnostics.json` when available, including target type, frame id presence, load status, failure reason, HTTP status, basic map shape, and classified HTML/non-JSON responses so the player can distinguish missing maps from unresolved frames.
 - generated-only console and network initiator frames can carry frame-level `sourceMapStatus` when the resolver can explain the unresolved location, including no loaded map, no generated line, no matching segment, or no original segment.
@@ -98,7 +99,7 @@ The service worker is the orchestration boundary. It owns session state, starts/
 - Settings UI text can switch between English and Vietnamese, and each capture field exposes a tester-oriented help dialog explaining when QC should enable, disable, or limit that evidence.
 - capture profiles include lean, balanced, full debug, and custom; full debug is the default, and profile selection expands into concrete settings so the runtime does not infer behavior from UI labels.
 - CDP collection applies capture settings before storing artifacts: disabled console/network/WebSocket groups are skipped, disabled bodies are not fetched, WebSocket payloads can be redacted or size-limited, blank byte-limit fields mean no limit, and network headers/initiators can be reduced.
-- CDP collection applies shared redaction before storage: header values, query params, request/response body fields, WebSocket payloads, initiator URLs, and redirect URLs go through the active privacy policy.
+- CDP collection applies shared redaction before storage: header values, query params, request/response body fields, WebSocket payloads, initiator URLs, redirect URLs, and parsed Error stack frame locations go through the active privacy policy.
 
 ## 5. Constraints & Assumptions
 

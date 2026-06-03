@@ -15,6 +15,7 @@ import type {
   RedactionHit,
   SerializedRemoteObject,
   SourceCodeSnippet,
+  StackFrame,
 } from "../types/recording";
 
 export const REDACTION_POLICY_VERSION = 1;
@@ -412,32 +413,7 @@ export function redactConsoleEntry(
     });
   }
   if (cloned.stackTrace) {
-    for (const [index, frame] of cloned.stackTrace.entries()) {
-      if (frame.url) {
-        const result = redactUrl(frame.url, settings, "console", `console.stack.${index}.url`);
-        frame.url = result.value || "";
-        applied.push(...result.applied);
-      }
-      if (frame.originalSource) {
-        const result = redactUrl(
-          frame.originalSource,
-          settings,
-          "console",
-          `console.stack.${index}.originalSource`,
-        );
-        frame.originalSource = result.value;
-        applied.push(...result.applied);
-      }
-      if (frame.sourceSnippet) {
-        const result = redactSourceSnippet(
-          frame.sourceSnippet,
-          settings,
-          `console.stack.${index}.sourceSnippet`,
-        );
-        frame.sourceSnippet = result.value;
-        applied.push(...result.applied);
-      }
-    }
+    redactStackFrames(cloned.stackTrace, settings, "console.stack", applied);
   }
   if (cloned.sourceSnippet) {
     const result = redactSourceSnippet(cloned.sourceSnippet, settings, "console.sourceSnippet");
@@ -445,6 +421,40 @@ export function redactConsoleEntry(
     applied.push(...result.applied);
   }
   return { value: cloned, applied };
+}
+
+function redactStackFrames(
+  frames: StackFrame[],
+  settings: PrivacyRedactionSettings,
+  field: string,
+  applied: RedactionHit[],
+): void {
+  for (const [index, frame] of frames.entries()) {
+    if (frame.url) {
+      const result = redactUrl(frame.url, settings, "console", `${field}.${index}.url`);
+      frame.url = result.value || "";
+      applied.push(...result.applied);
+    }
+    if (frame.originalSource) {
+      const result = redactUrl(
+        frame.originalSource,
+        settings,
+        "console",
+        `${field}.${index}.originalSource`,
+      );
+      frame.originalSource = result.value;
+      applied.push(...result.applied);
+    }
+    if (frame.sourceSnippet) {
+      const result = redactSourceSnippet(
+        frame.sourceSnippet,
+        settings,
+        `${field}.${index}.sourceSnippet`,
+      );
+      frame.sourceSnippet = result.value;
+      applied.push(...result.applied);
+    }
+  }
 }
 
 export function redactUserEvent(
@@ -636,6 +646,9 @@ function redactRemoteObject(
     );
     cloned.preview.description = result.value;
     applied.push(...result.applied);
+  }
+  if (cloned.stackTrace) {
+    redactStackFrames(cloned.stackTrace, settings, `${field}.stack`, applied);
   }
   if (cloned.preview?.properties) {
     for (const [index, property] of cloned.preview.properties.entries()) {

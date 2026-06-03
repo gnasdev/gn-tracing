@@ -8,6 +8,7 @@ export interface SerializedRemoteObject {
   description?: string;
   className?: string;
   preview?: ObjectPreview;
+  stackTrace?: StackFrame[];
 }
 
 export interface ObjectPreview {

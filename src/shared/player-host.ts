@@ -12,7 +12,7 @@ declare const __PLAYER_LOCAL_PORT__: string;
  * popup/service-worker/offscreen code from drifting on replay URL shape.
  */
 const APP_ENV = normalizeAppEnv(typeof __APP_ENV__ === "string" ? __APP_ENV__ : "production");
-const PLAYER_LOCAL_PORT = Number.parseInt(__PLAYER_LOCAL_PORT__ || "5173", 10) || 5173;
+const PLAYER_LOCAL_PORT = Number.parseInt(__PLAYER_LOCAL_PORT__ || "5176", 10) || 5176;
 const IS_DEVELOPMENT = APP_ENV === "development";
 const PRODUCTION_PLAYER_HOST_URL = "https://tracing.gnas.dev/";
 

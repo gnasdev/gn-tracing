@@ -1460,6 +1460,40 @@ body {
   font-size: 10px;
 }
 
+.console-detail .arg-value {
+  flex: 1;
+  min-width: 0;
+}
+
+.console-detail .remote-object-stack {
+  margin-top: 6px;
+  padding-left: 12px;
+}
+
+.console-detail .stack-frame {
+  color: var(--gh-muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.console-detail .stack-frame .fn-name {
+  color: var(--gh-purple);
+}
+
+.console-detail .stack-frame .location {
+  color: var(--gh-muted);
+}
+
+.console-detail .async-boundary,
+.console-detail .source-map-note {
+  color: #3d444d;
+  font-size: 10px;
+}
+
+.console-detail .async-boundary {
+  font-style: italic;
+}
+
 .console-stack {
   padding-left: 12px;
   color: var(--gh-muted);

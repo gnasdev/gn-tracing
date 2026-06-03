@@ -50,7 +50,9 @@ related:
 ## Capture Payload Models
 
 - `ConsoleEntry`
-  console/browser/exception payload with serialized args, optional source-mapped stack data, and bounded source snippets when acquired sourcemaps include `sourcesContent`.
+  console/browser/exception payload with serialized args, optional source-mapped stack data, and bounded source snippets when acquired sourcemaps include `sourcesContent`. Error objects inside `args` can carry parsed `stackTrace` frames derived from textual V8 stacks so logged errors use the same source-map enrichment path as structured CDP stacks.
+- `SerializedRemoteObject`
+  compact console argument model with primitive values, object previews, class/description metadata, and optional Error `stackTrace` frames that have already passed source-map resolution and privacy redaction before replay.
 - `NetworkEntry`
   request/response/timing/body/redirect metadata, plus initiator/source-map enrichment when inline or protocol-loaded external maps are available.
 - `WebSocketEntry`
