@@ -3,6 +3,7 @@
  */
 
 import { getRecordingTabTarget } from "../shared/recording-target";
+import { attachThemeToggle } from "../shared/theme";
 import {
   escapeHtml,
   formatDateTime,
@@ -1229,5 +1230,7 @@ githubLinkBtn.addEventListener("click", () => {
 contributeLinkBtn.addEventListener("click", () => {
   openExternalUrl(GITHUB_ISSUES_URL);
 });
+
+attachThemeToggle("theme-toggle-btn", "theme-toggle-icon");
 
 void initPopup();

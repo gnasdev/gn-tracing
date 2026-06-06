@@ -7,6 +7,8 @@
   <title>GN Tracing Player</title>
   <link rel="icon" type="image/svg+xml" href="../icons/icon.svg">
   <link rel="icon" type="image/png" sizes="32x32" href="../icons/icon32.png">
+  <link rel="stylesheet" href="../shared/theme.css">
+  <script src="../shared/theme-init.js"></script>
   <link rel="stylesheet" href="icons/phosphor-icons.css">
   <link rel="stylesheet" href="player.css">
 </head>
@@ -95,6 +97,9 @@
         </div>
         <div class="header-info">
           <span id="recording-duration"></span>
+          <button id="theme-toggle-btn" class="control-btn" type="button" aria-label="Toggle theme" title="Toggle light/dark mode">
+            <i id="theme-toggle-icon" class="ph ph-moon"></i>
+          </button>
         </div>
       </header>
 

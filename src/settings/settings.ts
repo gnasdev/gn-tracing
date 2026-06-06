@@ -3,6 +3,7 @@
  */
 
 import { getPrivacyProfileSettings, normalizeMaskDomSelectors } from "../shared/privacy-redaction";
+import { attachThemeToggle } from "../shared/theme";
 import type {
   CaptureProfile,
   MessageResponse,
@@ -748,6 +749,11 @@ function addFieldInfoButton(label: HTMLLabelElement, helpKey: string): void {
   if (!labelText) {
     return;
   }
+
+  const hasHelp = FIELD_HELP[helpKey]?.en || FIELD_HELP[helpKey]?.vi;
+  if (!hasHelp) {
+    return;
+  }
   const button = document.createElement("button");
   button.className = "field-info-btn";
   button.type = "button";
@@ -1224,3 +1230,5 @@ infoDialog.addEventListener("click", (event) => {
 setupFieldInfoButtons();
 applyTranslations();
 void loadSettings();
+
+attachThemeToggle("theme-toggle-btn", "theme-toggle-icon");

@@ -7,10 +7,7 @@ html.settings-root {
 body.settings-page {
   width: auto;
   min-height: 100vh;
-  background:
-    radial-gradient(circle at 12% 0%, rgba(67, 97, 238, 0.22), transparent 32rem),
-    radial-gradient(circle at 88% 12%, rgba(46, 196, 182, 0.12), transparent 28rem),
-    linear-gradient(180deg, #0f1728 0%, #0b1120 100%);
+  background: var(--gradient-hero);
 }
 
 body.settings-page #app.settings-app {
@@ -25,11 +22,11 @@ body.settings-page #app.settings-app {
 
 .settings-hero,
 .settings-panel-full {
-  border: 1px solid rgba(129, 149, 196, 0.2);
+  border: 1px solid var(--border-default);
   border-radius: 16px;
-  background: rgba(13, 22, 40, 0.86);
-  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.28);
-  backdrop-filter: blur(14px);
+  background: var(--glass-bg);
+  box-shadow: var(--shadow-lg);
+  backdrop-filter: var(--glass-blur);
 }
 
 .settings-hero {
@@ -46,25 +43,29 @@ body.settings-page #app.settings-app {
   gap: 12px;
 }
 
-.language-toggle-btn {
+.language-toggle-btn,
+.theme-toggle-btn {
   width: auto;
   min-width: 112px;
   min-height: 36px;
   padding: 8px 12px;
 }
 
-.settings-eyebrow {
-  margin-bottom: 8px;
-  color: #8cb4ff;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+.theme-toggle-btn {
+  min-width: 36px;
+  width: 36px;
+  padding: 8px;
+}
+
+.theme-toggle-btn svg {
+  width: 16px;
+  height: 16px;
+  display: block;
 }
 
 .settings-title {
   margin: 0;
-  color: #f8fbff;
+  color: var(--text-primary);
   font-size: 32px;
   line-height: 1.08;
   letter-spacing: 0;
@@ -72,7 +73,7 @@ body.settings-page #app.settings-app {
 
 .settings-lead {
   margin-top: 10px;
-  color: #b7c4df;
+  color: var(--text-secondary);
   font-size: 14px;
   line-height: 1.5;
 }
@@ -81,7 +82,7 @@ body.settings-page #app.settings-app {
   width: auto;
   min-width: 150px;
   min-height: 36px;
-  box-shadow: 0 10px 22px rgba(67, 97, 238, 0.26);
+  box-shadow: var(--shadow-accent);
 }
 
 .settings-panel-full {
@@ -90,7 +91,7 @@ body.settings-page #app.settings-app {
 
 .settings-panel-full h2 {
   margin: 0 0 16px;
-  color: #f8fbff;
+  color: var(--text-primary);
   font-size: 16px;
 }
 
@@ -112,9 +113,9 @@ body.settings-page #app.settings-app {
 
 .profile-option,
 .settings-group {
-  border: 1px solid rgba(122, 145, 196, 0.14);
+  border: 1px solid var(--border-subtle);
   border-radius: 12px;
-  background: rgba(8, 15, 30, 0.34);
+  background: var(--bg-card);
 }
 
 .profile-option {
@@ -123,9 +124,14 @@ body.settings-page #app.settings-app {
   padding: 14px 14px 14px 40px;
   cursor: pointer;
   transition:
-    border-color 0.15s ease,
-    background 0.15s ease,
-    transform 0.15s ease;
+    border-color 150ms ease,
+    background 150ms ease,
+    transform 150ms ease;
+}
+
+.profile-option:hover {
+  border-color: var(--border-hover);
+  background: var(--bg-card-hover);
 }
 
 .profile-option input {
@@ -136,36 +142,31 @@ body.settings-page #app.settings-app {
   height: 16px;
   margin: 0;
   appearance: none;
-  border: 1.5px solid #607199;
+  border: 1.5px solid var(--border-input-hover);
   border-radius: 50%;
-  background: #0b1221;
-  box-shadow: inset 0 0 0 3px #0b1221;
+  background: var(--bg-input);
+  box-shadow: inset 0 0 0 3px var(--bg-input);
   transition:
-    border-color 0.15s ease,
-    background 0.15s ease,
-    box-shadow 0.15s ease;
+    border-color 150ms ease,
+    background 150ms ease,
+    box-shadow 150ms ease;
 }
 
 .profile-option:has(input:checked) {
-  border-color: rgba(96, 165, 250, 0.62);
-  background: linear-gradient(180deg, rgba(37, 99, 235, 0.18), rgba(14, 165, 233, 0.08));
+  border-color: var(--accent-muted);
+  background: linear-gradient(180deg, var(--bg-accent-soft), rgba(14, 165, 233, 0.04));
 }
 
 .profile-option:has(input:checked) input {
-  border-color: #60a5fa;
-  background: #60a5fa;
-}
-
-.profile-option:hover {
-  border-color: rgba(129, 149, 196, 0.36);
-  background: rgba(14, 24, 45, 0.78);
+  border-color: var(--accent);
+  background: var(--accent);
 }
 
 .profile-option span {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  color: #f8fbff;
+  color: var(--text-primary);
   font-weight: 700;
   line-height: 1.3;
 }
@@ -173,7 +174,7 @@ body.settings-page #app.settings-app {
 .profile-option small {
   display: block;
   margin-top: 8px;
-  color: #9fb0cf;
+  color: var(--text-muted);
   line-height: 1.4;
 }
 
@@ -186,7 +187,7 @@ body.settings-page #app.settings-app {
   display: grid;
   gap: 7px;
   margin-top: 14px;
-  color: #dbe6ff;
+  color: var(--text-secondary);
 }
 
 .setting-field {
@@ -210,20 +211,22 @@ body.settings-page #app.settings-app {
   height: 16px;
   margin: 0;
   appearance: none;
-  border: 1.5px solid #607199;
+  border: 1.5px solid var(--border-input-hover);
   border-radius: 5px;
-  background: linear-gradient(135deg, transparent 50%, rgba(255, 255, 255, 0.08) 50%), #0b1221;
+  background:
+    linear-gradient(135deg, transparent 50%, rgba(128, 128, 128, 0.08) 50%), var(--bg-input);
   cursor: pointer;
   transition:
-    border-color 0.15s ease,
-    background 0.15s ease,
-    box-shadow 0.15s ease;
+    border-color 150ms ease,
+    background 150ms ease,
+    box-shadow 150ms ease;
 }
 
 .settings-check input[type="checkbox"]:checked {
-  border-color: #60a5fa;
-  background: linear-gradient(135deg, transparent 50%, rgba(255, 255, 255, 0.16) 50%), #3b82f6;
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.16);
+  border-color: var(--accent);
+  background:
+    linear-gradient(135deg, transparent 50%, rgba(128, 128, 128, 0.16) 50%), var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-ghost);
 }
 
 .settings-check input[type="checkbox"]:checked::after {
@@ -242,8 +245,9 @@ body.settings-page #app.settings-app {
 .setting-field input:focus-visible,
 .setting-field select:focus-visible,
 .setting-field textarea:focus-visible,
-.language-toggle-btn:focus-visible {
-  outline: 2px solid rgba(96, 165, 250, 0.72);
+.language-toggle-btn:focus-visible,
+.theme-toggle-btn:focus-visible {
+  outline: 2px solid var(--accent-muted);
   outline-offset: 3px;
 }
 
@@ -270,15 +274,16 @@ body.settings-page #app.settings-app {
   grid-column: 1 / -1;
   width: 100%;
   min-height: 38px;
-  border: 1px solid #304466;
+  border: 1px solid var(--border-input);
   border-radius: 8px;
   padding: 8px 11px;
-  background: rgba(11, 18, 33, 0.82);
-  color: #eef2ff;
+  background: var(--bg-input);
+  color: var(--text-primary);
   transition:
-    border-color 0.15s ease,
-    box-shadow 0.15s ease,
-    background 0.15s ease;
+    border-color 150ms ease,
+    box-shadow 150ms ease,
+    background 150ms ease;
+  outline: none;
 }
 
 .setting-field textarea {
@@ -289,12 +294,12 @@ body.settings-page #app.settings-app {
 
 .setting-field input:hover,
 .setting-field textarea:hover {
-  border-color: #46618d;
-  background: rgba(15, 25, 45, 0.92);
+  border-color: var(--border-input-hover);
+  background: var(--bg-input-hover);
 }
 
 .setting-field select:hover {
-  border-color: #46618d;
+  border-color: var(--border-input-hover);
 }
 
 .setting-field select {
@@ -302,19 +307,21 @@ body.settings-page #app.settings-app {
   padding-right: 36px;
   cursor: pointer;
   background:
-    linear-gradient(45deg, transparent 50%, #a9b8d8 50%) calc(100% - 18px) 16px / 6px 6px no-repeat,
-    linear-gradient(135deg, #a9b8d8 50%, transparent 50%) calc(100% - 13px) 16px / 6px 6px no-repeat,
-    rgba(11, 18, 33, 0.82);
+    linear-gradient(45deg, transparent 50%, var(--text-muted) 50%) calc(100% - 18px) 16px / 6px 6px
+    no-repeat,
+    linear-gradient(135deg, var(--text-muted) 50%, transparent 50%) calc(100% - 13px) 16px / 6px 6px
+    no-repeat,
+    var(--bg-input);
 }
 
 .setting-field select option {
-  background: #0f1728;
-  color: #eef2ff;
+  background: var(--bg-elevated);
+  color: var(--text-primary);
 }
 
 .setting-field input::placeholder,
 .setting-field textarea::placeholder {
-  color: #8190ad;
+  color: var(--text-dim);
 }
 
 .field-info-btn {
@@ -324,24 +331,24 @@ body.settings-page #app.settings-app {
   align-items: center;
   justify-content: center;
   vertical-align: text-bottom;
-  border: 1px solid #33446d;
+  border: 1px solid var(--border-input);
   border-radius: 50%;
-  background: #101a32;
-  color: #9fbfff;
+  background: var(--bg-input);
+  color: var(--info-soft);
   font-size: 12px;
   font-weight: 800;
   line-height: 1;
   cursor: pointer;
   transform: translateY(-1px);
   transition:
-    border-color 0.15s ease,
-    background 0.15s ease,
-    color 0.15s ease;
+    border-color 150ms ease,
+    background 150ms ease,
+    color 150ms ease;
 }
 
 .field-info-btn:hover {
-  background: #16213e;
-  color: #eef2ff;
+  background: var(--bg-input-hover);
+  color: var(--text-primary);
 }
 
 .setting-info-dialog {
@@ -350,17 +357,17 @@ body.settings-page #app.settings-app {
   margin: 0;
   width: min(460px, calc(100vw - 32px));
   max-height: calc(100vh - 32px);
-  border: 1px solid rgba(122, 145, 196, 0.24);
+  border: 1px solid var(--border-default);
   border-radius: 14px;
   padding: 0;
-  background: #101a32;
-  color: #eef2ff;
-  box-shadow: 0 22px 70px rgba(0, 0, 0, 0.48);
+  background: var(--bg-surface-solid);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-xl);
   transform: translate(-50%, -50%);
 }
 
 .setting-info-dialog::backdrop {
-  background: rgba(2, 6, 23, 0.72);
+  background: var(--bg-overlay);
 }
 
 .setting-info-card {
@@ -376,21 +383,21 @@ body.settings-page #app.settings-app {
 
 .setting-info-header h2 {
   margin: 0;
-  color: #f8fbff;
+  color: var(--text-primary);
   font-size: 17px;
   line-height: 1.3;
 }
 
 #setting-info-body {
   margin: 14px 0 0;
-  color: #b7c4df;
+  color: var(--text-secondary);
   font-size: 13px;
   line-height: 1.55;
 }
 
 .setting-hint {
   margin-top: 4px;
-  color: #adc0df;
+  color: var(--text-muted);
   line-height: 1.45;
 }
 
@@ -420,7 +427,22 @@ body.settings-page #error-msg {
     align-items: stretch;
   }
 
-  .language-toggle-btn {
+  .language-toggle-btn,
+  .theme-toggle-btn {
     width: 100%;
+  }
+
+  .theme-toggle-btn {
+    min-width: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms;
+    animation-iteration-count: 1;
+    transition-duration: 0.01ms;
   }
 }

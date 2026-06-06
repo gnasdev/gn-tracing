@@ -48,6 +48,8 @@ const STATIC_ASSET_ENTRIES = [
   { type: "text", src: "offscreen/offscreen.html", dest: "dist/offscreen/offscreen.html" },
   { type: "text", src: "drive-auth/drive-auth.html", dest: "dist/drive-auth/drive-auth.html" },
   { type: "dir", src: "icons", dest: "dist/icons" },
+  { type: "file", src: "shared/theme.css", dest: "dist/shared/theme.css" },
+  { type: "file", src: "shared/theme-init.js", dest: "dist/shared/theme-init.js" },
   { type: "file", src: "player/player.html", dest: "dist/player/player.html" },
   { type: "file", src: "player/player.css", dest: "dist/player/player.css" },
   { type: "file", src: "player/player.js", dest: "dist/player/player.js" },

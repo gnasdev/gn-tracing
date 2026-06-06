@@ -1,6 +1,7 @@
 /**
  * Controls the standalone Google Drive auth confirmation page.
  */
+import { attachThemeToggle } from "../shared/theme";
 import type { MessageResponse } from "../types/messages";
 
 /**
@@ -193,6 +194,8 @@ chrome.storage.session.onChanged.addListener((changes) => {
     }
   }
 });
+
+attachThemeToggle("theme-toggle-btn", "theme-toggle-icon");
 
 // Check status when page loads
 applyTranslations();

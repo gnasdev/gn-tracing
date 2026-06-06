@@ -4,6 +4,8 @@
 <head>
   <meta charset="UTF-8">
   <title>GN Tracing Upload History</title>
+  <link rel="stylesheet" href="../shared/theme.css">
+  <script src="../shared/theme-init.js"></script>
   <link rel="stylesheet" href="../popup/popup.css">
   <link rel="stylesheet" href="./history.css">
 </head>
@@ -11,15 +13,21 @@
   <div id="app" class="history-app">
     <header class="history-hero">
       <div class="history-hero-copy">
-        <div class="history-eyebrow">GN Tracing Library</div>
         <h1 class="history-title">Upload History</h1>
         <p class="history-lead">
           Review previous uploads, jump back into a replay, copy a shareable link, or clean up old items.
         </p>
       </div>
-      <div class="history-hero-stats">
-        <div class="history-stat-label">Saved Uploads</div>
-        <div id="history-count" class="history-stat-value">0</div>
+      <div class="history-hero-actions">
+        <button id="theme-toggle-btn" class="icon-btn" type="button" aria-label="Toggle theme" title="Toggle light/dark mode">
+          <svg id="theme-toggle-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+          </svg>
+        </button>
+        <div class="history-hero-stats">
+          <div class="history-stat-label">Saved Uploads</div>
+          <div id="history-count" class="history-stat-value">0</div>
+        </div>
       </div>
     </header>
 

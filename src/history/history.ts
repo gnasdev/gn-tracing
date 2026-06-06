@@ -2,6 +2,7 @@
  * Renders and manages the full upload history page.
  */
 
+import { attachThemeToggle } from "../shared/theme";
 import {
   handleUploadHistoryAction,
   renderUploadHistoryList,
@@ -125,3 +126,5 @@ uploadHistoryList.addEventListener("click", async (event) => {
 });
 
 void refreshHistory();
+
+attachThemeToggle("theme-toggle-btn", "theme-toggle-icon");

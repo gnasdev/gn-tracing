@@ -4442,6 +4442,29 @@
     setupPasswordListeners();
     setupReportListeners();
 
+    // Theme toggle
+    const themeToggleBtn = document.getElementById("theme-toggle-btn");
+    const themeToggleIcon = document.getElementById("theme-toggle-icon");
+    if (themeToggleBtn && themeToggleIcon) {
+      const savedTheme = localStorage.getItem("gn_tracing_theme");
+      const systemLight =
+        window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches;
+      const currentTheme =
+        savedTheme === "light" || savedTheme === "dark"
+          ? savedTheme
+          : systemLight
+            ? "light"
+            : "dark";
+      document.documentElement.setAttribute("data-theme", currentTheme);
+      themeToggleIcon.className = currentTheme === "light" ? "ph ph-sun" : "ph ph-moon";
+      themeToggleBtn.addEventListener("click", () => {
+        const newTheme = currentTheme === "dark" ? "light" : "dark";
+        document.documentElement.setAttribute("data-theme", newTheme);
+        localStorage.setItem("gn_tracing_theme", newTheme);
+        themeToggleIcon.className = newTheme === "light" ? "ph ph-sun" : "ph ph-moon";
+      });
+    }
+
     const urlParams = new URLSearchParams(window.location.search);
     const videos = urlParams.get("videos");
     const metadataFileId = urlParams.get("metadata");

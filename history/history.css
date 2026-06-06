@@ -7,10 +7,7 @@ html.history-root {
 body.history-page {
   width: auto;
   min-height: 100vh;
-  background:
-    radial-gradient(circle at 12% 0%, rgba(67, 97, 238, 0.22), transparent 32rem),
-    radial-gradient(circle at 88% 12%, rgba(46, 196, 182, 0.12), transparent 28rem),
-    linear-gradient(180deg, #0f1728 0%, #0b1120 100%);
+  background: var(--gradient-hero);
 }
 
 body.history-page #app.history-app {
@@ -31,29 +28,26 @@ body.history-page #app.history-app {
   gap: 24px;
   align-items: flex-end;
   padding: 28px 30px;
-  border: 1px solid rgba(129, 149, 196, 0.2);
+  border: 1px solid var(--border-default);
   border-radius: 16px;
-  background: rgba(13, 22, 40, 0.86);
-  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.28);
-  backdrop-filter: blur(14px);
+  background: var(--glass-bg);
+  box-shadow: var(--shadow-lg);
+  backdrop-filter: var(--glass-blur);
 }
 
 .history-hero-copy {
   max-width: 680px;
 }
 
-.history-eyebrow {
-  margin-bottom: 8px;
-  color: #8cb4ff;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+.history-hero-actions {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
 }
 
 .history-title {
   margin: 0;
-  color: #f8fbff;
+  color: var(--text-primary);
   font-size: 32px;
   line-height: 1.08;
   letter-spacing: 0;
@@ -61,7 +55,7 @@ body.history-page #app.history-app {
 
 .history-lead {
   margin-top: 10px;
-  color: #b7c4df;
+  color: var(--text-secondary);
   font-size: 14px;
   line-height: 1.5;
 }
@@ -70,12 +64,12 @@ body.history-page #app.history-app {
   min-width: 156px;
   padding: 16px 18px;
   border-radius: 12px;
-  border: 1px solid rgba(129, 149, 196, 0.18);
-  background: rgba(8, 15, 30, 0.34);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-card);
 }
 
 .history-stat-label {
-  color: #8d99ae;
+  color: var(--text-muted);
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -83,7 +77,7 @@ body.history-page #app.history-app {
 
 .history-stat-value {
   margin-top: 8px;
-  color: #ffffff;
+  color: var(--text-primary);
   font-size: 32px;
   line-height: 1;
   font-weight: 700;
@@ -91,12 +85,12 @@ body.history-page #app.history-app {
 }
 
 .history-panel {
-  border: 1px solid rgba(129, 149, 196, 0.2);
+  border: 1px solid var(--border-default);
   border-radius: 16px;
   padding: 22px;
-  background: rgba(13, 22, 40, 0.86);
-  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.28);
-  backdrop-filter: blur(14px);
+  background: var(--glass-bg);
+  box-shadow: var(--shadow-lg);
+  backdrop-filter: var(--glass-blur);
 }
 
 .history-panel-header {
@@ -109,13 +103,13 @@ body.history-page #app.history-app {
 
 .history-panel-title {
   margin: 0 0 6px;
-  color: #f8fbff;
+  color: var(--text-primary);
   font-size: 16px;
   font-weight: 700;
 }
 
 .history-summary {
-  color: #9fb0cf;
+  color: var(--text-muted);
   font-size: 13px;
   line-height: 1.5;
   margin: 0;
@@ -126,7 +120,7 @@ body.history-page #app.history-app {
 }
 
 #upload-history-section {
-  border-top: 1px solid rgba(129, 149, 196, 0.14);
+  border-top: 1px solid var(--border-subtle);
   padding-top: 18px;
 }
 
@@ -137,32 +131,32 @@ body.history-page .history-list {
 body.history-page .history-item {
   padding: 16px;
   gap: 12px;
-  border: 1px solid rgba(129, 149, 196, 0.16);
+  border: 1px solid var(--border-subtle);
   border-radius: 12px;
-  background: rgba(8, 15, 30, 0.34);
+  background: var(--bg-card);
   transition:
-    transform 0.16s ease,
-    border-color 0.16s ease,
-    background 0.16s ease,
-    box-shadow 0.16s ease;
+    transform 150ms ease,
+    border-color 150ms ease,
+    background 150ms ease,
+    box-shadow 150ms ease;
 }
 
 body.history-page .history-item:hover {
   transform: translateY(-1px);
-  border-color: rgba(96, 165, 250, 0.38);
-  background: rgba(14, 24, 45, 0.78);
-  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.22);
+  border-color: var(--border-hover);
+  background: var(--bg-card-hover);
+  box-shadow: var(--shadow-sm);
 }
 
 body.history-page .history-item-title {
   font-size: 14px;
   line-height: 1.35;
-  color: #f8fbff;
+  color: var(--text-primary);
 }
 
 body.history-page .history-item-meta {
   font-size: 12px;
-  color: #9fb0cf;
+  color: var(--text-muted);
 }
 
 body.history-page .history-item-actions {
@@ -182,41 +176,46 @@ body.history-page .history-icon-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid #304466;
+  border: 1px solid var(--border-input);
   border-radius: 8px;
-  background: rgba(11, 18, 33, 0.82);
-  color: #eef2ff;
+  background: var(--bg-input);
+  color: var(--text-primary);
   transition:
-    border-color 0.15s ease,
-    background 0.15s ease,
-    color 0.15s ease;
+    border-color 150ms ease,
+    background 150ms ease,
+    color 150ms ease,
+    transform 80ms ease;
 }
 
 body.history-page .history-icon-button:hover:not(:disabled) {
-  border-color: #46618d;
-  background: rgba(15, 25, 45, 0.92);
+  border-color: var(--border-input-hover);
+  background: var(--bg-input-hover);
+}
+
+body.history-page .history-icon-button:active:not(:disabled) {
+  transform: scale(0.95);
 }
 
 body.history-page .history-icon-button:focus-visible {
-  outline: 2px solid rgba(96, 165, 250, 0.72);
+  outline: 2px solid var(--accent-muted);
   outline-offset: 3px;
 }
 
 body.history-page .history-icon-button[data-action="delete-history"] {
-  color: #fecaca;
+  color: var(--danger-soft);
 }
 
 body.history-page .history-icon-button[data-action="delete-history"]:hover:not(:disabled) {
-  border-color: #7f1d1d;
-  background: rgba(69, 10, 10, 0.48);
+  border-color: var(--danger);
+  background: var(--bg-danger-soft);
 }
 
 body.history-page .history-empty {
   padding: 24px;
-  border: 1px dashed rgba(129, 149, 196, 0.24);
+  border: 1px dashed var(--border-default);
   border-radius: 12px;
-  color: #9fb0cf;
-  background: rgba(8, 15, 30, 0.34);
+  color: var(--text-muted);
+  background: var(--bg-card);
   text-align: center;
 }
 
@@ -227,6 +226,11 @@ body.history-page .history-empty {
 
   .history-hero {
     padding: 22px 18px;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .history-hero-actions {
     flex-direction: column;
     align-items: stretch;
   }
@@ -242,5 +246,15 @@ body.history-page .history-empty {
 
   .history-panel-header {
     margin-bottom: 14px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms;
+    animation-iteration-count: 1;
+    transition-duration: 0.01ms;
   }
 }

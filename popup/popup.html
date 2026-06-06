@@ -3,7 +3,9 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <link rel="stylesheet" href="../shared/theme.css">
   <link rel="stylesheet" href="popup.css">
+  <script src="../shared/theme-init.js"></script>
 </head>
 <body>
   <div id="app">
@@ -13,6 +15,11 @@
         <span class="app-title">GN Tracing</span>
       </div>
       <div class="header-actions">
+        <button id="theme-toggle-btn" class="icon-btn" type="button" aria-label="Toggle theme" title="Toggle light/dark mode">
+          <svg id="theme-toggle-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+          </svg>
+        </button>
         <button id="reload-btn" class="icon-btn" type="button" aria-label="Reload popup" title="Reload popup">
           <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M20 11a8.1 8.1 0 0 0-15.5-2M4 5v4h4"/>
