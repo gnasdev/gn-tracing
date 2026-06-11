@@ -84,6 +84,7 @@ The player renders:
 - searchable/filterable console, network, and WebSocket lists
 - source-mapped console locations, parsed Error argument stacks, bounded source snippets, and source-map diagnostic messages
 - network request/response details, headers, body text, cURL copy, response previews for HTML/media, syntax-highlighted source views, and JSON pretty preview when validation succeeds
+- network and WebSocket initiator sections with source-mapped locations, full stack frames including async parent stacks, and source-map diagnostic messages
 - draggable horizontal/vertical layout, persisted split percentage, and in-tab immersive video mode
 
 ## Source-Map Rendering

@@ -406,6 +406,7 @@ html[data-theme] {
 }
 
 /* Hidden */
+.hidden,
 .gn-hidden {
   display: none !important;
 }

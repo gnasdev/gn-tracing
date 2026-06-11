@@ -36,6 +36,25 @@ for (const file of filesToCopy) {
   }
 }
 
+// Copy shared theme assets. The standalone page loads /theme.css from the same
+// design-system source as the extension, so a stale copy breaks state toggles
+// that rely on shared utility classes like `.hidden`.
+const sharedDir = path.resolve(__dirname, "../../shared");
+const sharedFilesToCopy = ["theme.css", "theme-init.js"];
+
+for (const file of sharedFilesToCopy) {
+  const src = path.join(sharedDir, file);
+  const dest = path.join(targetDir, file);
+
+  if (fs.existsSync(src)) {
+    fs.copyFileSync(src, dest);
+    console.log(`  ✓ ${file}`);
+    copiedCount++;
+  } else {
+    console.error(`  ✗ Missing shared ${file}`);
+  }
+}
+
 // Copy icons directory
 const iconsSrc = path.join(sourceDir, "icons");
 const iconsDest = path.join(targetDir, "icons");

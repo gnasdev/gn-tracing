@@ -1041,6 +1041,71 @@
     return `${type} @ ${location}`;
   }
 
+  function collectInitiatorStackFrames(stack, frames = []) {
+    if (!stack) return frames;
+    frames.push(...(stack.callFrames || []));
+    return collectInitiatorStackFrames(stack.parent, frames);
+  }
+
+  function renderInitiatorStackFrames(stack) {
+    let html = (stack.callFrames || [])
+      .map((frame) => {
+        const fnName = frame.originalName || frame.functionName || "(anonymous)";
+        const location = formatSourceLocation(frame);
+        const isVendor = isNetworkVendorFrame(frame);
+        return `<div class="stack-frame ${isVendor ? "vendor-frame" : ""}">at <span class="fn-name">${escapeHtml(fnName)}</span>${location ? ` <span class="location">(${escapeHtml(location)})</span>` : ""}</div>`;
+      })
+      .join("");
+    if (stack.parent) {
+      html += `<div class="async-boundary">--- ${escapeHtml(stack.parent.description || "async")} ---</div>`;
+      html += renderInitiatorStackFrames(stack.parent);
+    }
+    return html;
+  }
+
+  // Shared initiator section for network and WebSocket details. The vendor
+  // toggle is opt-in because its click handler is wired to network rows only.
+  function renderInitiatorSection(initiator, options = {}) {
+    if (!initiator) return "";
+    let html = `
+      <div class="detail-section">
+        <h4>Initiator</h4>
+        <pre>${escapeHtml(initiator.type || "other")}</pre>
+    `;
+    const loc = getNetworkInitiatorLocation(initiator);
+    if (loc) {
+      html += `<pre class="initiator-location">${escapeHtml(loc)}</pre>`;
+    }
+    const sourceMapStatus = getNetworkSourceMapDiagnostic(initiator);
+    if (sourceMapStatus) {
+      html += `<pre class="initiator-location">${escapeHtml(sourceMapStatus)}</pre>`;
+    }
+    if (initiator.stack && initiator.stack.callFrames) {
+      const hideVendorFrames = Boolean(options.hideVendorFrames);
+      if (options.showVendorToggle) {
+        const vendorFrameCount = collectInitiatorStackFrames(initiator.stack).filter(
+          isNetworkVendorFrame,
+        ).length;
+        if (vendorFrameCount > 0) {
+          html += `
+            <button
+              class="initiator-filter-toggle ${hideVendorFrames ? "active" : ""}"
+              type="button"
+              aria-pressed="${hideVendorFrames}"
+            >
+              Hide gray frames (${vendorFrameCount})
+            </button>
+          `;
+        }
+      }
+      html += `<div class="initiator-stack ${hideVendorFrames ? "hide-vendor-frames" : ""}">`;
+      html += renderInitiatorStackFrames(initiator.stack);
+      html += "</div>";
+    }
+    html += "</div>";
+    return html;
+  }
+
   function getSourceMapUrlKeys(url) {
     const keys = new Set();
     if (!url) return [];
@@ -3612,50 +3677,10 @@
     }
 
     // Initiator
-    if (entry.initiator) {
-      detailHtml += `
-        <div class="detail-section">
-          <h4>Initiator</h4>
-          <pre>${escapeHtml(entry.initiator.type || "other")}</pre>
-      `;
-      const loc = getNetworkInitiatorLocation(entry.initiator);
-      if (loc) {
-        detailHtml += `<pre class="initiator-location">${escapeHtml(loc)}</pre>`;
-      }
-      const sourceMapStatus = getNetworkSourceMapDiagnostic(entry.initiator);
-      if (sourceMapStatus) {
-        detailHtml += `<pre class="initiator-location">${escapeHtml(sourceMapStatus)}</pre>`;
-      }
-      if (entry.initiator.stack && entry.initiator.stack.callFrames) {
-        const callFrames = entry.initiator.stack.callFrames;
-        const vendorFrameCount = callFrames.filter(isNetworkVendorFrame).length;
-        const hideVendorFrames = shouldHideNetworkVendorFrames(entry);
-        if (vendorFrameCount > 0) {
-          detailHtml += `
-            <button
-              class="initiator-filter-toggle ${hideVendorFrames ? "active" : ""}"
-              type="button"
-              aria-pressed="${hideVendorFrames}"
-            >
-              Hide gray frames (${vendorFrameCount})
-            </button>
-          `;
-        }
-        detailHtml += `<div class="initiator-stack ${hideVendorFrames ? "hide-vendor-frames" : ""}">`;
-        callFrames.forEach((frame, i) => {
-          const fnName = frame.originalName || frame.functionName || "(anonymous)";
-          const location = formatSourceLocation(frame);
-          const src = frame.originalSource || frame.url || "";
-          const isVendor = isNetworkVendorFrame(frame);
-          detailHtml += `<div class="stack-frame ${isVendor ? "vendor-frame" : ""}">at <span class="fn-name">${escapeHtml(fnName)}</span>${location ? ` <span class="location">(${escapeHtml(location)})</span>` : ""}</div>`;
-        });
-        if (entry.initiator.stack.parent) {
-          detailHtml += `<div class="async-boundary">--- ${escapeHtml(entry.initiator.stack.parent.description || "async")} ---</div>`;
-        }
-        detailHtml += "</div>";
-      }
-      detailHtml += "</div>";
-    }
+    detailHtml += renderInitiatorSection(entry.initiator, {
+      showVendorToggle: true,
+      hideVendorFrames: shouldHideNetworkVendorFrames(entry),
+    });
 
     // Error
     if (entry.error) {
@@ -3697,6 +3722,7 @@
           <h4>URL</h4>
           <pre>${escapeHtml(ws.url || "")}</pre>
         </div>
+        ${renderInitiatorSection(ws.initiator)}
         <div>
           <h4>Frames (${frames.length})</h4>
           <div class="ws-frames-table">

@@ -8,6 +8,7 @@ import type {
   CdpStackTrace,
   ConsoleEntry,
   NetworkEntry,
+  NetworkInitiator,
   RedactionHit,
   RedirectEntry,
   SerializedRemoteObject,
@@ -163,29 +164,38 @@ export class StorageManager {
     }
 
     for (const entry of this.#networkEntries) {
-      if (!entry.initiator) {
-        continue;
+      if (entry.initiator) {
+        this.#resolveInitiatorSourceMaps(resolver, diagnostics, entry.initiator);
       }
+    }
 
-      if (entry.initiator.url && entry.initiator.lineNumber != null) {
-        this.#resolveLocation(
-          resolver,
-          diagnostics,
-          entry.initiator,
-          entry.initiator.url,
-          this.#getSourceMapResolveUrl(entry.initiator) || entry.initiator.url,
-          entry.initiator.lineNumber,
-          entry.initiator.columnNumber || 0,
-        );
+    for (const entry of this.#webSocketEntries) {
+      if (entry.initiator) {
+        this.#resolveInitiatorSourceMaps(resolver, diagnostics, entry.initiator);
       }
+    }
+  }
 
-      if (entry.initiator.stack) {
-        this.#resolveCdpStack(resolver, diagnostics, entry.initiator.stack);
-        this.#promoteStackFrameLocation(
-          entry.initiator,
-          this.#findFirstResolvedCdpFrame(entry.initiator.stack),
-        );
-      }
+  #resolveInitiatorSourceMaps(
+    resolver: SourceMapResolver,
+    diagnostics: SourceMapDiagnostic[],
+    initiator: NetworkInitiator,
+  ): void {
+    if (initiator.url && initiator.lineNumber != null) {
+      this.#resolveLocation(
+        resolver,
+        diagnostics,
+        initiator,
+        initiator.url,
+        this.#getSourceMapResolveUrl(initiator) || initiator.url,
+        initiator.lineNumber,
+        initiator.columnNumber || 0,
+      );
+    }
+
+    if (initiator.stack) {
+      this.#resolveCdpStack(resolver, diagnostics, initiator.stack);
+      this.#promoteStackFrameLocation(initiator, this.#findFirstResolvedCdpFrame(initiator.stack));
     }
   }
 
