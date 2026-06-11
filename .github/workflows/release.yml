@@ -37,6 +37,15 @@ jobs:
       - name: Setup Task
         uses: go-task/setup-task@v2
 
+      - name: Verify required secrets
+        run: |
+          for secret in GOOGLE_CLIENT_ID CHROME_EXTENSION_ID CHROME_EXTENSION_PUBLIC_KEY CHROME_EXTENSION_PRIVATE_KEY; do
+            if [ -z "${!secret}" ]; then
+              echo "::error::Missing required secret: $secret"
+              exit 1
+            fi
+          done
+
       - name: Run release flow
         run: task release:ci
         env:
