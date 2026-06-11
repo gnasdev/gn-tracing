@@ -57,8 +57,8 @@ related:
   reads: `drive-and-player`, `shared/api-conventions`, `compliance/chrome-web-store-submission`
   calls: GitHub Releases API through the service worker for version comparison and release download discovery
 - `developer-tooling`
-  reads: `DEVELOPER.md`, `Taskfile.yml`, `package.json`, `biome.json`
-  enforces: Biome format/lint/import checks for supported source files, docs hygiene checks for Markdown files, Task aliases, and a Husky pre-commit hook over staged files
+  reads: `DEVELOPER.md`, `Taskfile.yml`, `package.json`, `biome.json`, `knip.json`
+  enforces: Biome format/lint/import checks for supported source files, docs hygiene checks for Markdown files, Task aliases, a Husky pre-commit hook over staged files, and `npm run deadcode` for unused export detection
 
 ## Reader Path
 
@@ -76,8 +76,10 @@ related:
 ## Runtime Topology
 
 - `popup` -> `service-worker`: start/stop recording, upload, auth status
+- `service-worker` (composition root) -> `settings-store`, `capture-environment`, `update-checker`, `upload-orchestrator`, `message-router`
 - `service-worker` -> `cdp-manager`: console/network/WebSocket capture
 - `service-worker` -> `recorder-manager` -> `offscreen`: tab media recording lifecycle
+- `service-worker` -> `google-drive-auth`: Chromium-wide Drive OAuth (Chrome identity + web auth flow with token expiry)
 - `service-worker` -> injected content script: active-tab, recording-scoped user-event collection and selector-based visual masking with safe privacy settings only
 - `service-worker` -> `chrome.storage.session`: state fan-out to popup and auth page
 - `offscreen` -> Google Drive APIs: target-folder resolution/creation, compact/DEFLATE zip package creation, optional ZIP password entry protection, package upload, and sharing permissions
