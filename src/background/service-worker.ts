@@ -3,7 +3,6 @@
  */
 
 import { parseGoogleDriveFolderInput } from "../shared/google-drive-folder";
-import { buildExternalPlayerUrl } from "../shared/player-host";
 import {
   buildRecordingPrivacySummary,
   getPrivacyProfileSettings,
@@ -28,7 +27,6 @@ import type {
   RecordingStatus,
   RedirectHeaderCaptureMode,
   ResponseBodyCaptureMode,
-  ServiceWorkerMessage,
   UploadHistoryEntry,
   UploadSettings,
 } from "../types/messages";
@@ -41,10 +39,37 @@ import type {
   RedactionHit,
   SourceMapDiagnosticsArtifact,
 } from "../types/recording";
+import {
+  buildFallbackEnvironment,
+  normalizeCaptureEnvironment,
+  normalizeRecordingUserEvent,
+  truncateEventString,
+} from "./capture-environment";
 import { CdpManager } from "./cdp-manager";
 import { GoogleDriveAuth } from "./google-drive-auth";
+import { registerMessageListeners } from "./message-router";
 import { RecorderManager } from "./recorder-manager";
+import type { UploadSettingsStore } from "./settings-store";
+import {
+  DEFAULT_PRIVACY_REDACTION_SETTINGS,
+  getCaptureProfileSettings,
+  getSettingsSnapshot,
+  getUploadHistory,
+  getUploadSettings,
+  loadPersistedPopupState,
+  MAX_UPLOAD_HISTORY_ITEMS,
+  normalizeBoolean,
+  normalizeEnum,
+  normalizeOptionalNumber,
+  normalizeRecordingUrl,
+  pickPrivacyRedactionSettings,
+  STORAGE_KEY_STATE,
+  saveUploadHistory,
+  saveUploadSettings,
+} from "./settings-store";
 import { StorageManager } from "./storage-manager";
+import type { UploadSuccessResult } from "./upload-orchestrator";
+import { getUploadArtifactChunk } from "./upload-orchestrator";
 
 /**
  * Service-worker coordinator for the MV3 extension.
@@ -78,7 +103,7 @@ interface ActiveRecordingState {
   recordingSettings: UploadSettingsStore | null;
 }
 
-interface SessionArtifacts {
+export interface SessionArtifacts {
   consoleLogs?: string;
   networkRequests?: string;
   webSocketLogs?: string;
@@ -93,8 +118,6 @@ interface SessionArtifacts {
   stopTime: number | null;
 }
 
-interface PersistedPopupState extends PopupState {}
-
 interface OffscreenCaptureState {
   ok: boolean;
   isRecording?: boolean;
@@ -102,95 +125,10 @@ interface OffscreenCaptureState {
   snapshotSessionIds?: string[];
 }
 
-interface UploadSettingsStore extends PrivacyRedactionSettings {
-  folderInput: string;
-  folderId: string | null;
-  folderPath: string[];
-  zipPassword: string;
-  captureProfile: CaptureProfile;
-  captureConsole: boolean;
-  captureConsoleArgs: boolean;
-  consolePreviewDepth: ConsolePreviewDepth;
-  captureConsoleStacks: ConsoleStackMode;
-  captureConsoleSourceSnippets: ConsoleSourceSnippetMode;
-  maxConsoleEntryBytes: number | null;
-  captureNetwork: boolean;
-  captureRequestHeaders: HeaderCaptureMode;
-  captureResponseHeaders: HeaderCaptureMode;
-  captureRequestBodies: boolean;
-  captureResponseBodies: boolean;
-  captureResponseBodyMode: ResponseBodyCaptureMode;
-  maxResponseBodyBytes: number | null;
-  captureRedirectHeaders: RedirectHeaderCaptureMode;
-  captureInitiator: InitiatorCaptureMode;
-  suppressRecorderInternalRequests: boolean;
-  captureWebSockets: boolean;
-  captureWebSocketFrames: boolean;
-  maxWebSocketFrameBytes: number | null;
-  captureWebSocketInitiator: boolean;
-}
-
-interface UploadSuccessResult {
-  ok: true;
-  recordingUrl?: string;
-  folderId?: string;
-  indexFileId?: string;
-  targetFolderId?: string | null;
-}
-
-type UploadArtifactKey =
-  | "consoleLogs"
-  | "networkRequests"
-  | "webSocketLogs"
-  | "report"
-  | "userEvents"
-  | "privacy"
-  | "diagnostics";
-
-interface UploadArtifactChunkResponse extends MessageResponse {
-  chunk?: string;
-  nextOffset?: number;
-  totalLength?: number;
-}
-
-const STORAGE_KEY_STATE = "gn_tracing_state";
 const STORAGE_KEY_ARTIFACTS = "gn_tracing_session_artifacts";
-const STORAGE_KEY_SETTINGS = "gn_tracing_upload_settings";
-const STORAGE_KEY_HISTORY = "gn_tracing_upload_history";
-const DEFAULT_UPLOAD_FOLDER_INPUT = "/gn-tracing";
-const MAX_UPLOAD_HISTORY_ITEMS = 100;
-const UPLOAD_ARTIFACT_CHUNK_CHARS = 1024 * 1024;
 const MAX_RECORDED_USER_EVENTS = 2000;
-const MAX_EVENT_STRING_LENGTH = 160;
 const MAX_SCREENSHOT_DATA_URL_CHARS = 1536 * 1024;
 const RECORDING_EVENTS_SCRIPT = "content/recording-events.js";
-const GITHUB_LATEST_RELEASE_URL = "https://api.github.com/repos/gnasdev/gn-tracing/releases/latest";
-const DEFAULT_UPLOAD_FOLDER = parseGoogleDriveFolderInput(DEFAULT_UPLOAD_FOLDER_INPUT);
-const DEFAULT_PRIVACY_REDACTION_SETTINGS = getPrivacyProfileSettings("standard");
-const DEFAULT_CAPTURE_PRIVACY_SETTINGS = {
-  captureProfile: "full" as CaptureProfile,
-  ...DEFAULT_PRIVACY_REDACTION_SETTINGS,
-  captureConsole: true,
-  captureConsoleArgs: true,
-  consolePreviewDepth: "full" as ConsolePreviewDepth,
-  captureConsoleStacks: "all" as ConsoleStackMode,
-  captureConsoleSourceSnippets: "all" as ConsoleSourceSnippetMode,
-  maxConsoleEntryBytes: null,
-  captureNetwork: true,
-  captureRequestHeaders: "full" as HeaderCaptureMode,
-  captureResponseHeaders: "full" as HeaderCaptureMode,
-  captureRequestBodies: true,
-  captureResponseBodies: true,
-  captureResponseBodyMode: "eligible" as ResponseBodyCaptureMode,
-  maxResponseBodyBytes: null,
-  captureRedirectHeaders: "full" as RedirectHeaderCaptureMode,
-  captureInitiator: "full-stack" as InitiatorCaptureMode,
-  suppressRecorderInternalRequests: true,
-  captureWebSockets: true,
-  captureWebSocketFrames: true,
-  maxWebSocketFrameBytes: null,
-  captureWebSocketInitiator: true,
-};
 
 const activeRecording: ActiveRecordingState = {
   sessionId: null,
@@ -218,17 +156,6 @@ const googleDriveState = {
   isConnected: false,
   checkedAt: 0,
 };
-
-let cachedUploadSettings: UploadSettingsStore = {
-  folderInput: DEFAULT_UPLOAD_FOLDER.normalizedInput,
-  folderId: DEFAULT_UPLOAD_FOLDER.folderId,
-  folderPath: [...DEFAULT_UPLOAD_FOLDER.folderPath],
-  zipPassword: "",
-  ...DEFAULT_CAPTURE_PRIVACY_SETTINGS,
-};
-let hasLoadedUploadSettings = false;
-let cachedUploadHistory: UploadHistoryEntry[] = [];
-let hasLoadedUploadHistory = false;
 
 function createSessionId(): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
@@ -282,32 +209,12 @@ function addActivePrivacyLimitation(message: string): void {
   activeRecording.privacyLimitations.push(message);
 }
 
-function pickPrivacyRedactionSettings(
-  settings: PrivacyRedactionSettings,
-): PrivacyRedactionSettings {
-  return {
-    privacyProfile: settings.privacyProfile,
-    redactSensitiveHeaders: settings.redactSensitiveHeaders,
-    redactSensitiveQueryParams: settings.redactSensitiveQueryParams,
-    redactRequestBodyFields: settings.redactRequestBodyFields,
-    redactResponseBodyFields: settings.redactResponseBodyFields,
-    redactConsoleValues: settings.redactConsoleValues,
-    redactWebSocketPayloads: settings.redactWebSocketPayloads,
-    redactEventMetadata: settings.redactEventMetadata,
-    maskDomSelectors: [...settings.maskDomSelectors],
-  };
-}
-
 function sortSessions(items: RecordingSessionSummary[]): RecordingSessionSummary[] {
   return [...items].sort((left, right) => {
     const rightTs = right.stopTime || right.startTime || 0;
     const leftTs = left.stopTime || left.startTime || 0;
     return rightTs - leftTs;
   });
-}
-
-function sortUploadHistory(items: UploadHistoryEntry[]): UploadHistoryEntry[] {
-  return [...items].sort((left, right) => (right.uploadedAt || 0) - (left.uploadedAt || 0));
 }
 
 function getSession(sessionId: string): RecordingSessionSummary | undefined {
@@ -361,532 +268,6 @@ function getRecordingStatus(): RecordingStatus | null {
     consoleLogCount: storage.getConsoleLogCount(),
     networkRequestCount: storage.getNetworkEntryCount(),
   };
-}
-
-function normalizeBoolean(value: unknown, fallback: boolean): boolean {
-  return typeof value === "boolean" ? value : fallback;
-}
-
-function normalizeOptionalNumber(
-  value: unknown,
-  fallback: number | null,
-  min: number,
-  max: number,
-): number | null {
-  if (value === undefined) {
-    return fallback;
-  }
-  // Null or an empty string means the user intentionally left the setting blank, disabling the size limit.
-  if (value === null || value === "") {
-    return null;
-  }
-  if (typeof value !== "number" || !Number.isFinite(value)) {
-    return fallback;
-  }
-  return Math.min(max, Math.max(min, Math.round(value)));
-}
-
-function normalizeEnum<T extends string>(value: unknown, allowed: readonly T[], fallback: T): T {
-  return typeof value === "string" && (allowed as readonly string[]).includes(value)
-    ? (value as T)
-    : fallback;
-}
-
-function truncateEventString(value: unknown, limit = MAX_EVENT_STRING_LENGTH): string | undefined {
-  if (typeof value !== "string") {
-    return undefined;
-  }
-  const normalized = value.replace(/\s+/g, " ").trim();
-  if (!normalized) {
-    return undefined;
-  }
-  return normalized.length > limit ? `${normalized.slice(0, limit)}...` : normalized;
-}
-
-function normalizeFiniteNumber(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
-}
-
-function parseBrowserFromUserAgent(userAgent: string): {
-  browserName?: string;
-  browserVersion?: string;
-} {
-  const matchers: Array<[string, RegExp]> = [
-    ["Edge", /Edg\/([0-9.]+)/],
-    ["Chrome", /Chrome\/([0-9.]+)/],
-    ["Firefox", /Firefox\/([0-9.]+)/],
-    ["Safari", /Version\/([0-9.]+).*Safari/],
-  ];
-
-  for (const [browserName, pattern] of matchers) {
-    const match = userAgent.match(pattern);
-    if (match?.[1]) {
-      return { browserName, browserVersion: match[1] };
-    }
-  }
-
-  return {};
-}
-
-function buildFallbackEnvironment(): CaptureEnvironment {
-  const userAgent = typeof navigator !== "undefined" ? navigator.userAgent : "";
-  return {
-    extensionVersion: chrome.runtime.getManifest().version,
-    userAgent,
-    language: typeof navigator !== "undefined" ? navigator.language : "",
-    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "",
-    ...parseBrowserFromUserAgent(userAgent),
-  };
-}
-
-function normalizeCaptureEnvironment(value: unknown): CaptureEnvironment | null {
-  if (!value || typeof value !== "object") {
-    return null;
-  }
-  const raw = value as Record<string, unknown>;
-  const userAgent = truncateEventString(raw.userAgent, 512) || "";
-  const viewport =
-    raw.viewport && typeof raw.viewport === "object"
-      ? (raw.viewport as Record<string, unknown>)
-      : null;
-  const screen =
-    raw.screen && typeof raw.screen === "object" ? (raw.screen as Record<string, unknown>) : null;
-
-  return {
-    extensionVersion: chrome.runtime.getManifest().version,
-    userAgent,
-    language: truncateEventString(raw.language, 64) || "",
-    timezone: truncateEventString(raw.timezone, 96) || "",
-    ...parseBrowserFromUserAgent(userAgent),
-    ...(viewport
-      ? {
-          viewport: {
-            width: Math.max(0, Math.round(normalizeFiniteNumber(viewport.width) || 0)),
-            height: Math.max(0, Math.round(normalizeFiniteNumber(viewport.height) || 0)),
-            devicePixelRatio: Math.max(0, normalizeFiniteNumber(viewport.devicePixelRatio) || 1),
-          },
-        }
-      : {}),
-    ...(screen
-      ? {
-          screen: {
-            width: Math.max(0, Math.round(normalizeFiniteNumber(screen.width) || 0)),
-            height: Math.max(0, Math.round(normalizeFiniteNumber(screen.height) || 0)),
-          },
-        }
-      : {}),
-  };
-}
-
-function normalizeRecordingUserEvent(value: unknown): RecordingUserEvent | null {
-  if (!value || typeof value !== "object") {
-    return null;
-  }
-
-  const raw = value as Record<string, unknown>;
-  const timestamp = normalizeFiniteNumber(raw.timestamp);
-  if (!timestamp) {
-    return null;
-  }
-
-  switch (raw.type) {
-    case "navigation": {
-      const url = truncateEventString(raw.url, 2048);
-      if (!url) {
-        return null;
-      }
-      return {
-        type: "navigation",
-        timestamp,
-        url,
-        title: truncateEventString(raw.title, 160),
-      };
-    }
-    case "click":
-      return {
-        type: "click",
-        timestamp,
-        selector: truncateEventString(raw.selector),
-        text: truncateEventString(raw.text),
-        role: truncateEventString(raw.role, 64),
-        x: normalizeFiniteNumber(raw.x),
-        y: normalizeFiniteNumber(raw.y),
-      };
-    case "focus":
-      return {
-        type: "focus",
-        timestamp,
-        selector: truncateEventString(raw.selector),
-        inputType: truncateEventString(raw.inputType, 64),
-      };
-    case "submit":
-      return {
-        type: "submit",
-        timestamp,
-        selector: truncateEventString(raw.selector),
-      };
-    default:
-      return null;
-  }
-}
-
-type CaptureSettingsStore = Omit<
-  UploadSettingsStore,
-  | "folderInput"
-  | "folderId"
-  | "folderPath"
-  | "zipPassword"
-  | "captureProfile"
-  | keyof PrivacyRedactionSettings
->;
-
-function getCaptureProfileSettings(profile: CaptureProfile): CaptureSettingsStore {
-  if (profile === "lean") {
-    return {
-      captureConsole: true,
-      captureConsoleArgs: false,
-      consolePreviewDepth: "none",
-      captureConsoleStacks: "errors",
-      captureConsoleSourceSnippets: "errors",
-      maxConsoleEntryBytes: 16384,
-      captureNetwork: true,
-      captureRequestHeaders: "minimal",
-      captureResponseHeaders: "minimal",
-      captureRequestBodies: false,
-      captureResponseBodies: false,
-      captureResponseBodyMode: "off",
-      maxResponseBodyBytes: 0,
-      captureRedirectHeaders: "location",
-      captureInitiator: "summary",
-      suppressRecorderInternalRequests: true,
-      captureWebSockets: true,
-      captureWebSocketFrames: false,
-      maxWebSocketFrameBytes: 0,
-      captureWebSocketInitiator: false,
-    };
-  }
-
-  if (profile === "full") {
-    return {
-      captureConsole: true,
-      captureConsoleArgs: true,
-      consolePreviewDepth: "full",
-      captureConsoleStacks: "all",
-      captureConsoleSourceSnippets: "all",
-      maxConsoleEntryBytes: null,
-      captureNetwork: true,
-      captureRequestHeaders: "full",
-      captureResponseHeaders: "full",
-      captureRequestBodies: true,
-      captureResponseBodies: true,
-      captureResponseBodyMode: "eligible",
-      maxResponseBodyBytes: null,
-      captureRedirectHeaders: "full",
-      captureInitiator: "full-stack",
-      suppressRecorderInternalRequests: true,
-      captureWebSockets: true,
-      captureWebSocketFrames: true,
-      maxWebSocketFrameBytes: null,
-      captureWebSocketInitiator: true,
-    };
-  }
-
-  return {
-    captureConsole: true,
-    captureConsoleArgs: true,
-    consolePreviewDepth: "shallow",
-    captureConsoleStacks: "warnings-errors",
-    captureConsoleSourceSnippets: "warnings-errors",
-    maxConsoleEntryBytes: 32768,
-    captureNetwork: true,
-    captureRequestHeaders: "full",
-    captureResponseHeaders: "full",
-    captureRequestBodies: true,
-    captureResponseBodies: true,
-    captureResponseBodyMode: "eligible",
-    maxResponseBodyBytes: 1024 * 1024,
-    captureRedirectHeaders: "location",
-    captureInitiator: "summary",
-    suppressRecorderInternalRequests: true,
-    captureWebSockets: true,
-    captureWebSocketFrames: true,
-    maxWebSocketFrameBytes: 65536,
-    captureWebSocketInitiator: false,
-  };
-}
-
-function normalizeUploadSettingsStore(
-  stored: Partial<UploadSettingsStore> | Partial<UploadSettings> | undefined,
-): UploadSettingsStore {
-  const storedUploadSettings = stored as Partial<UploadSettingsStore> | undefined;
-  const storedHasFolderInput = typeof stored?.folderInput === "string";
-  // Only missing folder settings use the default; saved blank values still mean Drive root.
-  const parsedFolder = storedHasFolderInput
-    ? parseGoogleDriveFolderInput(stored.folderInput)
-    : DEFAULT_UPLOAD_FOLDER;
-  const captureProfile = normalizeEnum<CaptureProfile>(
-    storedUploadSettings?.captureProfile,
-    ["lean", "balanced", "full", "custom"],
-    DEFAULT_CAPTURE_PRIVACY_SETTINGS.captureProfile,
-  );
-  const profileDefaults = getCaptureProfileSettings(
-    captureProfile === "custom" ? "full" : captureProfile,
-  );
-  const privacyProfile = normalizeEnum<PrivacyProfile>(
-    storedUploadSettings?.privacyProfile,
-    ["standard", "strict", "custom"],
-    DEFAULT_PRIVACY_REDACTION_SETTINGS.privacyProfile,
-  );
-  const privacyDefaults = getPrivacyProfileSettings(
-    privacyProfile === "custom" ? "standard" : privacyProfile,
-  );
-
-  return {
-    folderInput: parsedFolder.normalizedInput,
-    folderId: typeof stored?.folderId === "string" ? stored.folderId : parsedFolder.folderId,
-    folderPath: Array.isArray(storedUploadSettings?.folderPath)
-      ? storedUploadSettings.folderPath.filter((segment) => typeof segment === "string")
-      : [...parsedFolder.folderPath],
-    zipPassword:
-      typeof storedUploadSettings?.zipPassword === "string" ? storedUploadSettings.zipPassword : "",
-    captureProfile,
-    privacyProfile,
-    redactSensitiveHeaders: normalizeBoolean(
-      storedUploadSettings?.redactSensitiveHeaders,
-      privacyDefaults.redactSensitiveHeaders,
-    ),
-    redactSensitiveQueryParams: normalizeBoolean(
-      storedUploadSettings?.redactSensitiveQueryParams,
-      privacyDefaults.redactSensitiveQueryParams,
-    ),
-    redactRequestBodyFields: normalizeBoolean(
-      storedUploadSettings?.redactRequestBodyFields,
-      privacyDefaults.redactRequestBodyFields,
-    ),
-    redactResponseBodyFields: normalizeBoolean(
-      storedUploadSettings?.redactResponseBodyFields,
-      privacyDefaults.redactResponseBodyFields,
-    ),
-    redactConsoleValues: normalizeBoolean(
-      storedUploadSettings?.redactConsoleValues,
-      privacyDefaults.redactConsoleValues,
-    ),
-    redactWebSocketPayloads: normalizeEnum(
-      storedUploadSettings?.redactWebSocketPayloads,
-      ["off", "sensitive-fields", "all"],
-      privacyDefaults.redactWebSocketPayloads,
-    ),
-    redactEventMetadata: normalizeBoolean(
-      storedUploadSettings?.redactEventMetadata,
-      privacyDefaults.redactEventMetadata,
-    ),
-    maskDomSelectors: normalizeMaskDomSelectors(storedUploadSettings?.maskDomSelectors),
-    captureConsole: normalizeBoolean(
-      storedUploadSettings?.captureConsole,
-      profileDefaults.captureConsole,
-    ),
-    captureConsoleArgs: normalizeBoolean(
-      storedUploadSettings?.captureConsoleArgs,
-      profileDefaults.captureConsoleArgs,
-    ),
-    consolePreviewDepth: normalizeEnum<ConsolePreviewDepth>(
-      storedUploadSettings?.consolePreviewDepth,
-      ["none", "shallow", "full"],
-      profileDefaults.consolePreviewDepth,
-    ),
-    captureConsoleStacks: normalizeEnum<ConsoleStackMode>(
-      storedUploadSettings?.captureConsoleStacks,
-      ["off", "errors", "warnings-errors", "all"],
-      profileDefaults.captureConsoleStacks,
-    ),
-    captureConsoleSourceSnippets: normalizeEnum<ConsoleSourceSnippetMode>(
-      storedUploadSettings?.captureConsoleSourceSnippets,
-      ["off", "errors", "warnings-errors", "all"],
-      profileDefaults.captureConsoleSourceSnippets,
-    ),
-    maxConsoleEntryBytes: normalizeOptionalNumber(
-      storedUploadSettings?.maxConsoleEntryBytes,
-      profileDefaults.maxConsoleEntryBytes,
-      1024,
-      512 * 1024,
-    ),
-    captureNetwork: normalizeBoolean(
-      storedUploadSettings?.captureNetwork,
-      profileDefaults.captureNetwork,
-    ),
-    captureRequestHeaders: normalizeEnum<HeaderCaptureMode>(
-      storedUploadSettings?.captureRequestHeaders,
-      ["off", "minimal", "full"],
-      profileDefaults.captureRequestHeaders,
-    ),
-    captureResponseHeaders: normalizeEnum<HeaderCaptureMode>(
-      storedUploadSettings?.captureResponseHeaders,
-      ["off", "minimal", "full"],
-      profileDefaults.captureResponseHeaders,
-    ),
-    captureRequestBodies: normalizeBoolean(
-      stored?.captureRequestBodies,
-      profileDefaults.captureRequestBodies,
-    ),
-    captureResponseBodies: normalizeBoolean(
-      stored?.captureResponseBodies,
-      profileDefaults.captureResponseBodies,
-    ),
-    captureResponseBodyMode: normalizeEnum<ResponseBodyCaptureMode>(
-      storedUploadSettings?.captureResponseBodyMode,
-      ["off", "text", "text-json", "eligible"],
-      normalizeBoolean(stored?.captureResponseBodies, profileDefaults.captureResponseBodies)
-        ? profileDefaults.captureResponseBodyMode
-        : "off",
-    ),
-    maxResponseBodyBytes: normalizeOptionalNumber(
-      storedUploadSettings?.maxResponseBodyBytes,
-      profileDefaults.maxResponseBodyBytes,
-      0,
-      10 * 1024 * 1024,
-    ),
-    captureRedirectHeaders: normalizeEnum<RedirectHeaderCaptureMode>(
-      storedUploadSettings?.captureRedirectHeaders,
-      ["off", "location", "full"],
-      profileDefaults.captureRedirectHeaders,
-    ),
-    captureInitiator: normalizeEnum<InitiatorCaptureMode>(
-      storedUploadSettings?.captureInitiator,
-      ["off", "summary", "short-stack", "full-stack"],
-      profileDefaults.captureInitiator,
-    ),
-    suppressRecorderInternalRequests: normalizeBoolean(
-      storedUploadSettings?.suppressRecorderInternalRequests,
-      profileDefaults.suppressRecorderInternalRequests,
-    ),
-    captureWebSockets: normalizeBoolean(
-      storedUploadSettings?.captureWebSockets,
-      profileDefaults.captureWebSockets,
-    ),
-    captureWebSocketFrames: normalizeBoolean(
-      stored?.captureWebSocketFrames,
-      profileDefaults.captureWebSocketFrames,
-    ),
-    maxWebSocketFrameBytes: normalizeOptionalNumber(
-      storedUploadSettings?.maxWebSocketFrameBytes,
-      profileDefaults.maxWebSocketFrameBytes,
-      0,
-      1024 * 1024,
-    ),
-    captureWebSocketInitiator: normalizeBoolean(
-      storedUploadSettings?.captureWebSocketInitiator,
-      profileDefaults.captureWebSocketInitiator,
-    ),
-  };
-}
-
-async function getUploadSettings(): Promise<UploadSettingsStore> {
-  if (hasLoadedUploadSettings) {
-    return cachedUploadSettings;
-  }
-
-  try {
-    const result = await chrome.storage.local.get(STORAGE_KEY_SETTINGS);
-    let stored = result[STORAGE_KEY_SETTINGS] as Partial<UploadSettingsStore> | undefined;
-    let shouldBackfillLocalSettings = false;
-
-    if (!stored) {
-      const persistedState = await loadPersistedPopupState();
-      stored = persistedState?.settings;
-      shouldBackfillLocalSettings = Boolean(stored);
-    }
-
-    cachedUploadSettings = normalizeUploadSettingsStore(stored);
-
-    if (shouldBackfillLocalSettings) {
-      await chrome.storage.local.set({ [STORAGE_KEY_SETTINGS]: cachedUploadSettings });
-    }
-  } catch {
-    cachedUploadSettings = normalizeUploadSettingsStore(undefined);
-  }
-
-  hasLoadedUploadSettings = true;
-  return cachedUploadSettings;
-}
-
-async function saveUploadSettings(settings: UploadSettingsStore): Promise<void> {
-  cachedUploadSettings = settings;
-  hasLoadedUploadSettings = true;
-  await chrome.storage.local.set({ [STORAGE_KEY_SETTINGS]: settings });
-}
-
-async function getUploadHistory(): Promise<UploadHistoryEntry[]> {
-  if (hasLoadedUploadHistory) {
-    return cachedUploadHistory;
-  }
-
-  try {
-    const result = await chrome.storage.local.get(STORAGE_KEY_HISTORY);
-    const history = result[STORAGE_KEY_HISTORY];
-    cachedUploadHistory = Array.isArray(history)
-      ? sortUploadHistory((history as UploadHistoryEntry[]).map(normalizeUploadHistoryEntry))
-      : [];
-  } catch {
-    cachedUploadHistory = [];
-  }
-
-  hasLoadedUploadHistory = true;
-  return cachedUploadHistory;
-}
-
-async function saveUploadHistory(history: UploadHistoryEntry[]): Promise<void> {
-  cachedUploadHistory = sortUploadHistory(history).slice(0, MAX_UPLOAD_HISTORY_ITEMS);
-  hasLoadedUploadHistory = true;
-  await chrome.storage.local.set({
-    [STORAGE_KEY_HISTORY]: cachedUploadHistory,
-  });
-}
-
-function getSettingsSnapshot(settings: UploadSettingsStore): UploadSettings {
-  return {
-    folderInput: settings.folderInput,
-    folderId: settings.folderId,
-    zipPasswordConfigured: settings.zipPassword.length > 0,
-    captureProfile: settings.captureProfile,
-    privacyProfile: settings.privacyProfile,
-    redactSensitiveHeaders: settings.redactSensitiveHeaders,
-    redactSensitiveQueryParams: settings.redactSensitiveQueryParams,
-    redactRequestBodyFields: settings.redactRequestBodyFields,
-    redactResponseBodyFields: settings.redactResponseBodyFields,
-    redactConsoleValues: settings.redactConsoleValues,
-    redactWebSocketPayloads: settings.redactWebSocketPayloads,
-    redactEventMetadata: settings.redactEventMetadata,
-    maskDomSelectors: settings.maskDomSelectors,
-    captureConsole: settings.captureConsole,
-    captureConsoleArgs: settings.captureConsoleArgs,
-    consolePreviewDepth: settings.consolePreviewDepth,
-    captureConsoleStacks: settings.captureConsoleStacks,
-    captureConsoleSourceSnippets: settings.captureConsoleSourceSnippets,
-    maxConsoleEntryBytes: settings.maxConsoleEntryBytes,
-    captureNetwork: settings.captureNetwork,
-    captureRequestHeaders: settings.captureRequestHeaders,
-    captureResponseHeaders: settings.captureResponseHeaders,
-    captureRequestBodies: settings.captureRequestBodies,
-    captureResponseBodies: settings.captureResponseBodies,
-    captureResponseBodyMode: settings.captureResponseBodyMode,
-    maxResponseBodyBytes: settings.maxResponseBodyBytes,
-    captureRedirectHeaders: settings.captureRedirectHeaders,
-    captureInitiator: settings.captureInitiator,
-    suppressRecorderInternalRequests: settings.suppressRecorderInternalRequests,
-    captureWebSockets: settings.captureWebSockets,
-    captureWebSocketFrames: settings.captureWebSocketFrames,
-    maxWebSocketFrameBytes: settings.maxWebSocketFrameBytes,
-    captureWebSocketInitiator: settings.captureWebSocketInitiator,
-  };
-}
-
-async function loadPersistedPopupState(): Promise<PersistedPopupState | null> {
-  try {
-    const result = await chrome.storage.session.get(STORAGE_KEY_STATE);
-    return (result[STORAGE_KEY_STATE] as PersistedPopupState | undefined) || null;
-  } catch {
-    return null;
-  }
 }
 
 async function loadPersistedArtifacts(): Promise<Record<string, SessionArtifacts>> {
@@ -1083,38 +464,58 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   }
 });
 
-chrome.runtime.onMessage.addListener((message: ServiceWorkerMessage, sender, sendResponse) => {
-  if (message.target && message.target !== "service-worker") {
-    return false;
-  }
-
-  handleMessage(message, sender).then(sendResponse);
-  return true;
-});
-
-chrome.runtime.onMessage.addListener((message: any, _sender, sendResponse) => {
-  if (
-    message.target !== "offscreen" ||
-    message.type !== "UPLOAD_PROGRESS" ||
-    !message.data?.sessionId
-  ) {
-    return false;
-  }
-
-  const sessionId = String(message.data.sessionId);
+function patchUploadProgress(sessionId: string, data: Record<string, unknown>): void {
   patchSession(sessionId, {
     phase: "uploading",
-    progress: typeof message.data.percent === "number" ? message.data.percent : 0,
-    uploadedBytes: typeof message.data.uploadedBytes === "number" ? message.data.uploadedBytes : 0,
-    totalBytes: typeof message.data.totalBytes === "number" ? message.data.totalBytes : 0,
-    message:
-      typeof message.data.message === "string" ? message.data.message : "Uploading recording...",
-    items: Array.isArray(message.data.items) ? (message.data.items as ProgressItemSnapshot[]) : [],
+    progress: typeof data.percent === "number" ? data.percent : 0,
+    uploadedBytes: typeof data.uploadedBytes === "number" ? data.uploadedBytes : 0,
+    totalBytes: typeof data.totalBytes === "number" ? data.totalBytes : 0,
+    message: typeof data.message === "string" ? data.message : "Uploading recording...",
+    items: Array.isArray(data.items) ? (data.items as ProgressItemSnapshot[]) : [],
     error: null,
   });
   void saveStateToStorage();
-  sendResponse({ ok: true });
-  return true;
+}
+
+registerMessageListeners({
+  startRecording,
+  stopRecording,
+  removeRecording,
+  getRecordingStatus,
+  getPopupSettingsResponse,
+  updateUploadSettingsFromMessage,
+  deleteUploadHistoryEntry,
+  deleteSession,
+  handleRecordingUserEvent,
+  uploadSessionToGoogleDrive,
+  getUploadState: () => sortSessions(sessions),
+  googleDriveConnect: async () => {
+    const result = await googleAuth.launchOAuthFlow();
+    if (result.ok) {
+      await refreshGoogleDriveState();
+      await saveStateToStorage();
+    }
+    return result;
+  },
+  googleDriveDisconnect: async () => {
+    const result = await googleAuth.disconnect();
+    await refreshGoogleDriveState();
+    await saveStateToStorage();
+    return result;
+  },
+  googleDriveStatus: async () => {
+    const status = await googleAuth.getStatus();
+    googleDriveState.isConnected = status.isConnected;
+    googleDriveState.checkedAt = Date.now();
+    await saveStateToStorage();
+    return { ok: true, ...status };
+  },
+  getGoogleDriveToken: async () => ({ ok: true, token: await googleAuth.getAuthToken() }),
+  onRecordingComplete: (sessionId) => {
+    recorder.onRecordingComplete(sessionId);
+  },
+  getUploadArtifactChunk: (data) => getUploadArtifactChunk(sessionArtifacts, data),
+  patchUploadProgress,
 });
 
 chrome.tabs.onRemoved.addListener(async (tabId) => {
@@ -1152,220 +553,6 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     void startRecordingEventCapture(tabId, activeRecording.sessionId);
   }
 });
-
-async function handleMessage(
-  message: ServiceWorkerMessage,
-  sender: chrome.runtime.MessageSender,
-): Promise<
-  MessageResponse | UploadArtifactChunkResponse | RecordingStatus | PopupState["sessions"] | null
-> {
-  switch (message.action) {
-    case "START_RECORDING":
-      return typeof message.tabId === "number"
-        ? startRecording(message.tabId)
-        : { ok: false, error: "Open a browser tab before starting a recording." };
-    case "STOP_RECORDING":
-      return stopRecording();
-    case "REMOVE_RECORDING":
-      return removeRecording();
-    case "GET_STATUS":
-      return getRecordingStatus();
-    case "GET_SETTINGS":
-      return getPopupSettingsResponse();
-    case "UPDATE_SETTINGS":
-      return updateUploadSettingsFromMessage(message.data);
-    case "CHECK_FOR_UPDATE":
-      return checkForExtensionUpdate();
-    case "DELETE_UPLOAD_HISTORY_ENTRY":
-      return deleteUploadHistoryEntry(message.data);
-    case "DELETE_SESSION":
-      return deleteSession(message.data);
-    case "RECORDING_USER_EVENT":
-      return handleRecordingUserEvent(message.data, sender);
-    case "UPLOAD_TO_GOOGLE_DRIVE":
-      return uploadSessionToGoogleDrive(message.data);
-    case "GET_UPLOAD_STATE":
-      return sortSessions(sessions);
-    case "GOOGLE_DRIVE_CONNECT": {
-      const result = await googleAuth.launchOAuthFlow();
-      if (result.ok) {
-        await refreshGoogleDriveState();
-        await saveStateToStorage();
-      }
-      return result;
-    }
-    case "GOOGLE_DRIVE_DISCONNECT": {
-      const result = await googleAuth.disconnect();
-      await refreshGoogleDriveState();
-      await saveStateToStorage();
-      return result;
-    }
-    case "GOOGLE_DRIVE_STATUS": {
-      const status = await googleAuth.getStatus();
-      googleDriveState.isConnected = status.isConnected;
-      googleDriveState.checkedAt = Date.now();
-      await saveStateToStorage();
-      return { ok: true, ...status };
-    }
-    case "GET_GOOGLE_DRIVE_TOKEN":
-      return { ok: true, token: await googleAuth.getAuthToken() };
-    case "RECORDING_COMPLETE":
-      recorder.onRecordingComplete(
-        typeof message.data?.sessionId === "string" ? message.data.sessionId : undefined,
-      );
-      return { ok: true };
-    case "GET_UPLOAD_ARTIFACT_CHUNK":
-      return getUploadArtifactChunk(message.data);
-    default:
-      return { ok: false, error: "Unknown action" };
-  }
-}
-
-async function checkForExtensionUpdate(): Promise<MessageResponse> {
-  try {
-    const currentVersion = chrome.runtime.getManifest().version;
-    const response = await fetch(GITHUB_LATEST_RELEASE_URL, {
-      headers: {
-        Accept: "application/vnd.github+json",
-      },
-      cache: "no-store",
-    });
-
-    if (!response.ok) {
-      return { ok: false, error: `GitHub release check failed (${response.status}).` };
-    }
-
-    const latestRelease = (await response.json()) as {
-      tag_name?: unknown;
-      name?: unknown;
-      html_url?: unknown;
-      assets?: Array<{
-        name?: unknown;
-        browser_download_url?: unknown;
-      }>;
-    };
-    const latestVersion = normalizeReleaseVersion(
-      typeof latestRelease.tag_name === "string"
-        ? latestRelease.tag_name
-        : typeof latestRelease.name === "string"
-          ? latestRelease.name
-          : "",
-    );
-
-    if (!latestVersion) {
-      return { ok: false, error: "Latest GitHub release does not include a valid version." };
-    }
-
-    const comparison = compareVersions(currentVersion, latestVersion);
-    const downloadUrl = getReleaseDownloadUrl(latestRelease);
-    const update = {
-      currentVersion,
-      latestVersion,
-      isUpdateAvailable: comparison < 0,
-      downloadUrl,
-    };
-    if (comparison < 0) {
-      return {
-        ok: true,
-        message: `New version ${latestVersion} is available. Current ${currentVersion}.`,
-        update,
-      };
-    }
-    if (comparison > 0) {
-      return {
-        ok: true,
-        message: `Current ${currentVersion} is newer than GitHub release ${latestVersion}.`,
-        update,
-      };
-    }
-    return { ok: true, message: `GN Tracing is up to date (${currentVersion}).`, update };
-  } catch (error) {
-    return { ok: false, error: (error as Error).message };
-  }
-}
-
-function getReleaseDownloadUrl(release: {
-  html_url?: unknown;
-  assets?: Array<{
-    name?: unknown;
-    browser_download_url?: unknown;
-  }>;
-}): string | undefined {
-  const extensionZip = release.assets?.find((asset) => {
-    const name = typeof asset.name === "string" ? asset.name : "";
-    return /^gn-tracing-extension-.+\.zip$/i.test(name);
-  });
-  const assetUrl = extensionZip?.browser_download_url;
-  if (typeof assetUrl === "string" && assetUrl.trim()) {
-    return assetUrl;
-  }
-  return typeof release.html_url === "string" && release.html_url.trim()
-    ? release.html_url
-    : undefined;
-}
-
-function normalizeReleaseVersion(version: string): string {
-  const normalized = version.trim().replace(/^v/i, "");
-  return /^\d+(?:\.\d+){0,2}(?:[-+][0-9A-Za-z.-]+)?$/.test(normalized) ? normalized : "";
-}
-
-function compareVersions(currentVersion: string, latestVersion: string): number {
-  const currentParts = parseVersionParts(currentVersion);
-  const latestParts = parseVersionParts(latestVersion);
-  for (let index = 0; index < Math.max(currentParts.length, latestParts.length); index += 1) {
-    const currentPart = currentParts[index] || 0;
-    const latestPart = latestParts[index] || 0;
-    if (currentPart !== latestPart) {
-      return currentPart > latestPart ? 1 : -1;
-    }
-  }
-  return 0;
-}
-
-function parseVersionParts(version: string): number[] {
-  return normalizeReleaseVersion(version)
-    .split(/[.-]/)
-    .slice(0, 3)
-    .map((part) => Number.parseInt(part, 10) || 0);
-}
-
-function getUploadArtifactChunk(
-  data: Record<string, unknown> | undefined,
-): UploadArtifactChunkResponse {
-  const sessionId = typeof data?.sessionId === "string" ? data.sessionId : "";
-  const key = typeof data?.key === "string" ? data.key : "";
-  const offset =
-    typeof data?.offset === "number" && Number.isFinite(data.offset)
-      ? Math.max(0, Math.floor(data.offset))
-      : 0;
-
-  if (!sessionId || !isUploadArtifactKey(key)) {
-    return { ok: false, error: "Missing upload artifact reference." };
-  }
-
-  const value = sessionArtifacts[sessionId]?.[key] || "";
-  const totalLength = value.length;
-  const chunk = value.slice(offset, offset + UPLOAD_ARTIFACT_CHUNK_CHARS);
-
-  return {
-    ok: true,
-    chunk,
-    nextOffset: offset + chunk.length,
-    totalLength,
-  };
-}
-
-function isUploadArtifactKey(key: string): key is UploadArtifactKey {
-  return (
-    key === "consoleLogs" ||
-    key === "networkRequests" ||
-    key === "webSocketLogs" ||
-    key === "report" ||
-    key === "userEvents" ||
-    key === "privacy" ||
-    key === "diagnostics"
-  );
-}
 
 function buildDefaultReportTitle(tabTitle: string | null, tabUrl: string | null): string {
   const normalizedTitle = truncateEventString(tabTitle, 120);
@@ -1818,58 +1005,6 @@ async function removeRecording(): Promise<MessageResponse> {
     await saveStateToStorage();
     return { ok: false, error: (error as Error).message };
   }
-}
-
-function normalizeRecordingUrl(recordingUrl: string | null | undefined): string | null {
-  if (!recordingUrl) {
-    return null;
-  }
-
-  try {
-    const parsed = new URL(recordingUrl);
-    const legacyRecordingId = getLegacyRecordingIdFromUrl(parsed);
-    if (
-      parsed.protocol === "chrome-extension:" ||
-      parsed.pathname.endsWith("/player/player.html")
-    ) {
-      if (legacyRecordingId) {
-        return buildExternalPlayerUrl(legacyRecordingId);
-      }
-    }
-    if (parsed.protocol === "http:" && ["localhost", "127.0.0.1"].includes(parsed.hostname)) {
-      if (legacyRecordingId) {
-        return buildExternalPlayerUrl(legacyRecordingId);
-      }
-    }
-    return recordingUrl;
-  } catch {
-    return recordingUrl;
-  }
-}
-
-function getLegacyRecordingIdFromUrl(parsed: URL): string | null {
-  const queryId = parsed.searchParams.get("id");
-  if (queryId) {
-    return queryId;
-  }
-
-  const firstPathSegment = parsed.pathname.split("/").filter(Boolean)[0];
-  if (!firstPathSegment || firstPathSegment.endsWith(".html")) {
-    return null;
-  }
-
-  try {
-    return decodeURIComponent(firstPathSegment);
-  } catch {
-    return firstPathSegment;
-  }
-}
-
-function normalizeUploadHistoryEntry(entry: UploadHistoryEntry): UploadHistoryEntry {
-  return {
-    ...entry,
-    recordingUrl: normalizeRecordingUrl(entry.recordingUrl) || entry.recordingUrl,
-  };
 }
 
 async function getPopupSettingsResponse(): Promise<
