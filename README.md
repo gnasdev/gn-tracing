@@ -1,6 +1,6 @@
 # GN Tracing
 
-GN Tracing is a Chrome and Edge extension that records one browser tab and packages the useful debugging evidence into a shareable replay.
+GN Tracing is a Chromium-based browser extension that records one browser tab and packages the useful debugging evidence into a shareable replay. It works on Chrome, Edge, Brave, Vivaldi, Opera, and other Chromium-based browsers.
 
 It captures:
 
@@ -57,7 +57,7 @@ GN Tracing is distributed as a packaged release from this repository.
 
 1. Download the latest release `.zip`.
 2. Extract it.
-3. Open `chrome://extensions` or `edge://extensions`.
+3. Open your browser's extensions page (`chrome://extensions`, `edge://extensions`, or equivalent).
 4. Turn on `Developer mode`.
 5. Click `Load unpacked`.
 6. Select the extracted `gn-tracing-extension-v<version>/` folder.
@@ -80,6 +80,7 @@ Request bodies, response bodies, and WebSocket message payloads are captured onl
 - Cannot record browser system pages, extension pages, Chrome Web Store pages, DevTools/internal URLs, or tabs without a normal `http:`, `https:`, or `file:` URL.
 - Keeps unfinished recording data in extension memory until upload.
 - A browser or extension restart can interrupt an unfinished local recording.
+- On non-Chrome Chromium browsers, Google Drive tokens expire after approximately one hour and require reconnection. Brave Shields may block the OAuth popup; disable Shields for the extension page if Drive connect fails.
 
 ## Developers
 

@@ -39,7 +39,7 @@ flowchart LR
 Requirements:
 
 - Node.js 18+
-- Chrome or Edge
+- A Chromium-based browser (Chrome, Edge, Brave, Vivaldi, Opera, etc.)
 - Task, if you want to use the documented `task` commands
 
 Install dependencies:

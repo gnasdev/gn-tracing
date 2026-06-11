@@ -99,7 +99,7 @@ Replay inspection behavior, package parsing, password prompts, and standalone Dr
 
 ## 4. Business Rules
 
-- Chrome uses `chrome.identity.getAuthToken`; Edge uses `launchWebAuthFlow` and stores a verified access token locally.
+- Google Chrome uses `chrome.identity.getAuthToken`; all other Chromium browsers use `launchWebAuthFlow` with a local token cache that carries expiry (`expiresAt` from `expires_in` minus a 60-second buffer). The strategy is selected by capability detection (`navigator.userAgentData.brands` with UA regex fallback) and persisted to `gn_tracing_auth_strategy`. If the Chrome provider fails at runtime (e.g. Vivaldi spoofing Chrome brand), the auth module falls back to the web auth flow and persists the switch. Legacy `gn_tracing_edge_access_token` entries are migrated once to `gn_tracing_webauth_token` with a 55-minute expiry and then removed.
 - Chrome OAuth identity is configured by `GOOGLE_CLIENT_ID`, `CHROME_EXTENSION_ID`, and `CHROME_EXTENSION_PUBLIC_KEY`; the build validates that the configured extension id matches the public key before writing `dist/manifest.json`.
 - disconnect always attempts revocation but returns a success-style response even when the token is already invalid.
 - the uploaded recording zip is made world-readable before being referenced by the player; failed share-permission creation fails the upload instead of returning a broken replay link.
@@ -172,7 +172,7 @@ Replay inspection behavior, package parsing, password prompts, and standalone Dr
 - local deploys can source root `.env` / `.env.example` with `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_PAGES_PROJECT`, `PLAYER_HOST_URL`, and `VITE_BASE_PATH`.
 - intro/empty-state copy should stay aligned between extension and standalone player shells so the hosted root URL behaves as a clear product landing page.
 - service-worker restart recovery is intentionally best-effort: heavy artifacts still live in memory/offscreen only, but popup state is reconstructed from session snapshot plus offscreen probe when the capture document is still alive.
-- Manual extension installation depends on users extracting the release zip and loading the built `gn-tracing-extension-v<version>/` folder through Chrome or Edge developer mode.
+- Manual extension installation depends on users extracting the release zip and loading the built `gn-tracing-extension-v<version>/` folder through a Chromium-based browser's developer mode.
 
 ## 6. Relationships
 
