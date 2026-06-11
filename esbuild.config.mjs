@@ -18,20 +18,10 @@ const watch = process.argv.includes("--watch");
 const rawAppEnv = cliEnv || (watch ? "development" : "production");
 const appEnv = normalizeAppEnv(rawAppEnv);
 const isProductionBuild = appEnv === "production";
-const DEFAULT_GOOGLE_CLIENT_ID =
-  "95916347176-ulk25djm5l4g6ebq7vftjik8iv9a11vf.apps.googleusercontent.com";
-const DEFAULT_CHROME_EXTENSION_PUBLIC_KEY =
-  "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAjDxBQBIrG2c71RP7pfCDOIDtdcgHOTv4DFIXpFgH96fFdK7AQJ5jIgCfH5GR5+8EVgzFVk6MzJL6qjxIzJrB9APYHDpjeV64izWJIiwL6JOGBh10HqUWSPLu1dj/ccjJLmmxcBJRp4Dq5/MnKnKrLfuFyHtQMlB9jNXcozgAPBLiVD03FM7xgnf5AtMAXjjONhCaJT8eLkBEqlXk0NztNosUOy99i6TOro8ZXAM9Wlr1RlaL9iw/V62CDWC2AVYn3bD8pM42cf9vdaVfAYHfftp8T3V+sN2WZ0N0sZaYl6YoahAoXUQ9audQMQgSIX7cY0GAqsbcY/gQTiyDTtEuawIDAQAB";
 const packageJson = JSON.parse(fs.readFileSync(path.resolve(__dirname, "package.json"), "utf-8"));
 const packageVersion = typeof packageJson.version === "string" ? packageJson.version : "";
-const googleClientId = getConfigValue(
-  "GOOGLE_CLIENT_ID",
-  isProductionBuild ? "" : DEFAULT_GOOGLE_CLIENT_ID,
-);
-const chromeExtensionPublicKey = getConfigValue(
-  "CHROME_EXTENSION_PUBLIC_KEY",
-  isProductionBuild ? "" : DEFAULT_CHROME_EXTENSION_PUBLIC_KEY,
-);
+const googleClientId = getConfigValue("GOOGLE_CLIENT_ID");
+const chromeExtensionPublicKey = getConfigValue("CHROME_EXTENSION_PUBLIC_KEY");
 const chromeExtensionPrivateKey = getConfigValue("CHROME_EXTENSION_PRIVATE_KEY");
 const chromeExtensionId = getConfigValue(
   "CHROME_EXTENSION_ID",
@@ -130,8 +120,8 @@ function getChromeExtensionId(publicKey) {
 }
 
 function validateChromeExtensionIdentity() {
-  if (isProductionBuild && !googleClientId) {
-    throw new Error("GOOGLE_CLIENT_ID is required for production builds.");
+  if (!googleClientId) {
+    throw new Error("GOOGLE_CLIENT_ID is required. Set it in .env or the environment.");
   }
 
   if (isProductionBuild && !hasConfigValue("CHROME_EXTENSION_ID")) {
@@ -139,7 +129,9 @@ function validateChromeExtensionIdentity() {
   }
 
   if (!chromeExtensionPublicKey) {
-    throw new Error("CHROME_EXTENSION_PUBLIC_KEY is required to generate manifest.json.");
+    throw new Error(
+      "CHROME_EXTENSION_PUBLIC_KEY is required to generate manifest.json. Set it in .env or the environment.",
+    );
   }
 
   if (chromeExtensionPrivateKey && !chromeExtensionPrivateKey.includes("PRIVATE KEY")) {
@@ -147,7 +139,7 @@ function validateChromeExtensionIdentity() {
   }
 
   const derivedExtensionId = getChromeExtensionId(chromeExtensionPublicKey);
-  if (chromeExtensionId !== derivedExtensionId) {
+  if (chromeExtensionId && chromeExtensionId !== derivedExtensionId) {
     throw new Error(
       `CHROME_EXTENSION_ID (${chromeExtensionId}) does not match CHROME_EXTENSION_PUBLIC_KEY (${derivedExtensionId}).`,
     );
