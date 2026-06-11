@@ -38,6 +38,11 @@ jobs:
         uses: go-task/setup-task@v2
 
       - name: Verify required secrets
+        env:
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          CHROME_EXTENSION_ID: ${{ secrets.CHROME_EXTENSION_ID }}
+          CHROME_EXTENSION_PUBLIC_KEY: ${{ secrets.CHROME_EXTENSION_PUBLIC_KEY }}
+          CHROME_EXTENSION_PRIVATE_KEY: ${{ secrets.CHROME_EXTENSION_PRIVATE_KEY }}
         run: |
           for secret in GOOGLE_CLIENT_ID CHROME_EXTENSION_ID CHROME_EXTENSION_PUBLIC_KEY CHROME_EXTENSION_PRIVATE_KEY; do
             if [ -z "${!secret}" ]; then
