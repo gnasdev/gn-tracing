@@ -1,0 +1,23 @@
+{
+  "entry": [
+    "src/background/service-worker.ts",
+    "src/popup/popup.ts",
+    "src/offscreen/offscreen.ts",
+    "src/content/recording-events.ts",
+    "src/drive-auth/drive-auth.ts",
+    "src/history/history.ts",
+    "src/settings/settings.ts",
+    "scripts/*.mjs"
+  ],
+  "project": ["src/**/*.ts", "scripts/**/*.mjs"],
+  "ignore": [
+    "player/player.js",
+    "dist/**",
+    "graphify-out/**",
+    "player-standalone/**",
+    "shared/**",
+    "store-assets/**"
+  ],
+  "ignoreBinaries": ["vite", "task", "watch", "knip"],
+  "ignoreExportsUsedInFile": true
+}

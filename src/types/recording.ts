@@ -20,7 +20,7 @@ export interface ObjectPreview {
   entries?: PreviewEntry[];
 }
 
-export interface PreviewProperty {
+interface PreviewProperty {
   name: string;
   type: string;
   value?: string;
@@ -28,7 +28,7 @@ export interface PreviewProperty {
   valuePreview?: ObjectPreview;
 }
 
-export interface PreviewEntry {
+interface PreviewEntry {
   key?: ObjectPreview;
   value: ObjectPreview;
 }
@@ -42,9 +42,9 @@ export interface SourceCodeSnippet {
   truncated?: boolean;
 }
 
-export type SourceMapDiagnosticStatus = "pending" | "success" | "failed" | "skipped";
+type SourceMapDiagnosticStatus = "pending" | "success" | "failed" | "skipped";
 
-export type SourceMapDiagnosticReason =
+type SourceMapDiagnosticReason =
   | "pending-frame-id"
   | "missing-frame-id"
   | "unsupported-target"
@@ -62,7 +62,7 @@ export type SourceMapDiagnosticReason =
   | "no-segment-for-column"
   | "no-original-segment";
 
-export type SourceMapResolveStatus =
+type SourceMapResolveStatus =
   | "mapped"
   | "no-map-for-generated-url"
   | "no-generated-line"
@@ -190,7 +190,7 @@ export interface CdpStackTrace {
   description?: string;
 }
 
-export interface CdpCallFrame {
+interface CdpCallFrame {
   functionName: string;
   url: string;
   lineNumber: number;
@@ -202,7 +202,7 @@ export interface CdpCallFrame {
   sourceMapStatus?: SourceMapFrameStatus;
 }
 
-export interface NetworkTiming {
+interface NetworkTiming {
   dnsStart: number;
   dnsEnd: number;
   connectStart: number;
@@ -214,7 +214,7 @@ export interface NetworkTiming {
   receiveHeadersEnd: number;
 }
 
-export interface ResponseBody {
+interface ResponseBody {
   body: string;
   base64Encoded: boolean;
 }
@@ -234,7 +234,7 @@ export interface WebSocketEntry {
   closed: boolean;
 }
 
-export interface WebSocketFrame {
+interface WebSocketFrame {
   direction: "sent" | "received";
   timestamp: number;
   opcode: number;
@@ -251,7 +251,7 @@ export interface SourceMapRaw {
   sections?: SourceMapSection[];
 }
 
-export interface SourceMapSection {
+interface SourceMapSection {
   offset: {
     line: number;
     column: number;
@@ -268,13 +268,13 @@ export interface ResolvedLocation {
   sourceSnippet?: SourceCodeSnippet;
 }
 
-export interface CaptureViewport {
+interface CaptureViewport {
   width: number;
   height: number;
   devicePixelRatio: number;
 }
 
-export interface CaptureScreen {
+interface CaptureScreen {
   width: number;
   height: number;
 }
@@ -358,7 +358,7 @@ export type RedactionClass =
   | "opaque-id"
   | "custom";
 
-export type RedactionAction = "redacted" | "removed" | "masked" | "truncated" | "skipped";
+type RedactionAction = "redacted" | "removed" | "masked" | "truncated" | "skipped";
 
 export interface RedactionHit {
   artifact: RedactionArtifact;

@@ -1,7 +1,7 @@
 /**
  * Message contracts shared between extension UIs, service worker, and offscreen runtime.
  */
-export type MessageAction =
+type MessageAction =
   | "START_RECORDING"
   | "STOP_RECORDING"
   | "REMOVE_RECORDING"
@@ -21,30 +21,15 @@ export type MessageAction =
   | "GET_UPLOAD_ARTIFACT_CHUNK"
   | "GET_UPLOAD_STATE";
 
-export type OffscreenMessageType =
-  | "START_CAPTURE"
-  | "STOP_CAPTURE"
-  | "DISCARD_CAPTURE"
-  | "GET_CAPTURE_STATE"
-  | "UPLOAD_TO_GOOGLE_DRIVE"
-  | "DELETE_SESSION_SNAPSHOT"
-  | "UPLOAD_PROGRESS";
+type RecordingPhase = "idle" | "recording" | "interrupted";
 
-export type RecordingPhase = "idle" | "recording" | "interrupted";
-
-export type RecordingSessionPhase = "recorded" | "uploading" | "uploaded" | "failed";
+type RecordingSessionPhase = "recorded" | "uploading" | "uploaded" | "failed";
 
 export interface ServiceWorkerMessage {
   action: MessageAction;
   target?: string;
   tabId?: number;
   url?: string;
-  data?: Record<string, unknown>;
-}
-
-export interface OffscreenMessage {
-  target: "offscreen";
-  type: OffscreenMessageType;
   data?: Record<string, unknown>;
 }
 
@@ -125,17 +110,6 @@ export interface RecordingSessionSummary {
   error: string | null;
 }
 
-export interface UploadState {
-  isUploading: boolean;
-  progress: number;
-  uploadedBytes: number;
-  totalBytes: number;
-  message: string;
-  items: ProgressItemSnapshot[];
-  recordingUrl: string | null;
-  error: string | null;
-}
-
 export interface UploadSettings {
   folderInput: string;
   folderId: string | null;
@@ -174,7 +148,7 @@ export interface UploadSettings {
 
 export type CaptureProfile = "lean" | "balanced" | "full" | "custom";
 export type PrivacyProfile = "standard" | "strict" | "custom";
-export type WebSocketPayloadRedactionMode = "off" | "sensitive-fields" | "all";
+type WebSocketPayloadRedactionMode = "off" | "sensitive-fields" | "all";
 export interface PrivacyRedactionSettings {
   privacyProfile: PrivacyProfile;
   redactSensitiveHeaders: boolean;
@@ -212,19 +186,4 @@ export interface PopupState {
   };
   settings: UploadSettings;
   uploadHistory: UploadHistoryEntry[];
-}
-
-export interface UploadProgressMessage {
-  target: "offscreen";
-  type: "UPLOAD_PROGRESS";
-  data: {
-    sessionId: string;
-    step: number;
-    total: number;
-    percent: number;
-    uploadedBytes: number;
-    totalBytes: number;
-    message: string;
-    items: ProgressItemSnapshot[];
-  };
 }

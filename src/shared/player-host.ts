@@ -16,7 +16,7 @@ const PLAYER_LOCAL_PORT = Number.parseInt(__PLAYER_LOCAL_PORT__ || "5176", 10) |
 const IS_DEVELOPMENT = APP_ENV === "development";
 const PRODUCTION_PLAYER_HOST_URL = "https://tracing.gnas.dev/";
 
-export const PLAYER_HOST_URL = IS_DEVELOPMENT
+const PLAYER_HOST_URL = IS_DEVELOPMENT
   ? `http://localhost:${PLAYER_LOCAL_PORT}/`
   : PRODUCTION_PLAYER_HOST_URL;
 

@@ -6,12 +6,12 @@
 
 const THEME_STORAGE_KEY = "gn_tracing_theme";
 
-export type ThemeMode = "light" | "dark";
+type ThemeMode = "light" | "dark";
 
 /**
  * Get the current theme from storage or system preference.
  */
-export async function getTheme(): Promise<ThemeMode> {
+async function getTheme(): Promise<ThemeMode> {
   try {
     const result = await chrome.storage.local.get(THEME_STORAGE_KEY);
     if (result[THEME_STORAGE_KEY]) {
@@ -35,7 +35,7 @@ export async function getTheme(): Promise<ThemeMode> {
 /**
  * Set theme and persist to storage.
  */
-export async function setTheme(mode: ThemeMode): Promise<void> {
+async function setTheme(mode: ThemeMode): Promise<void> {
   document.documentElement.setAttribute("data-theme", mode);
 
   try {
@@ -49,7 +49,7 @@ export async function setTheme(mode: ThemeMode): Promise<void> {
 /**
  * Toggle between light and dark.
  */
-export async function toggleTheme(): Promise<ThemeMode> {
+async function toggleTheme(): Promise<ThemeMode> {
   const current = await getTheme();
   const next = current === "dark" ? "light" : "dark";
   await setTheme(next);
@@ -60,44 +60,15 @@ export async function toggleTheme(): Promise<ThemeMode> {
  * Initialize theme on page load.
  * Call this early (ideally in a script in <head> before any render).
  */
-export async function initTheme(): Promise<void> {
+async function initTheme(): Promise<void> {
   const theme = await getTheme();
   document.documentElement.setAttribute("data-theme", theme);
 }
 
 /**
- * Synchronous init for inline script use.
- * Reads from localStorage directly (no chrome.storage access).
- */
-export function initThemeSync(): void {
-  let theme: ThemeMode = "dark";
-  try {
-    const stored = localStorage.getItem(THEME_STORAGE_KEY);
-    if (stored === "light" || stored === "dark") {
-      theme = stored;
-    } else if (window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches) {
-      theme = "light";
-    }
-  } catch {
-    // localStorage unavailable
-  }
-  document.documentElement.setAttribute("data-theme", theme);
-}
-
-/**
- * Listen for system theme changes (optional).
- */
-export function watchSystemTheme(callback: (mode: ThemeMode) => void): void {
-  const mq = window.matchMedia("(prefers-color-scheme: light)");
-  mq.addEventListener("change", (e) => {
-    callback(e.matches ? "light" : "dark");
-  });
-}
-
-/**
  * Get sun/moon icon SVG string based on current theme.
  */
-export function getThemeIconSvg(mode: ThemeMode): string {
+function getThemeIconSvg(mode: ThemeMode): string {
   if (mode === "light") {
     return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>`;
   }
@@ -129,29 +100,4 @@ export function attachThemeToggle(buttonId: string, iconId?: string): void {
     const newTheme = await toggleTheme();
     updateIcon(newTheme);
   });
-}
-
-/**
- * Create and attach a theme toggle button.
- */
-export async function createThemeToggleButton(
-  container: HTMLElement,
-  options?: { className?: string; ariaLabel?: string },
-): Promise<HTMLButtonElement> {
-  const btn = document.createElement("button");
-  btn.type = "button";
-  btn.className = options?.className ?? "gn-theme-toggle";
-  btn.setAttribute("aria-label", options?.ariaLabel ?? "Toggle theme");
-  btn.title = "Toggle light/dark mode";
-
-  const currentTheme = await getTheme();
-  btn.innerHTML = getThemeIconSvg(currentTheme);
-
-  btn.addEventListener("click", async () => {
-    const newTheme = await toggleTheme();
-    btn.innerHTML = getThemeIconSvg(newTheme);
-  });
-
-  container.appendChild(btn);
-  return btn;
 }

@@ -18,9 +18,8 @@ import type {
   StackFrame,
 } from "../types/recording";
 
-export const REDACTION_POLICY_VERSION = 1;
+const REDACTION_POLICY_VERSION = 1;
 export const REDACTED_VALUE = "[redacted by GN Tracing]";
-export const MASKED_VALUE = "[masked by GN Tracing]";
 
 export interface RedactionResult<T> {
   value: T;
@@ -185,7 +184,7 @@ export function normalizeMaskDomSelectors(value: unknown): string[] {
   return selectors;
 }
 
-export function summarizeRedactionHits(hits: RedactionHit[]): RecordingPrivacySummary["counts"] {
+function summarizeRedactionHits(hits: RedactionHit[]): RecordingPrivacySummary["counts"] {
   const grouped = new Map<string, RecordingPrivacySummary["counts"][number]>();
   for (const hit of hits) {
     const key = `${hit.artifact}:${hit.class}:${hit.action}`;
@@ -544,7 +543,7 @@ export function redactReport(
   return { value: cloned, applied };
 }
 
-export function redactPlainText(
+function redactPlainText(
   value: string,
   settings: PrivacyRedactionSettings,
   artifact: RedactionArtifact,

@@ -10,7 +10,7 @@ import type { UploadHistoryEntry } from "../types/messages";
  * folder links, copy actions, and delete controls behave consistently across
  * both extension surfaces.
  */
-export const POPUP_UPLOAD_HISTORY_LIMIT = 1;
+const POPUP_UPLOAD_HISTORY_LIMIT = 1;
 export const HISTORY_PAGE_PATH = "history/history.html";
 
 export function sortUploadHistoryNewestFirst(

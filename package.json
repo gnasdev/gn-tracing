@@ -10,6 +10,7 @@
     "format:check": "biome format . --files-ignore-unknown=true && npm run docs:check",
     "check": "biome check . --files-ignore-unknown=true && npm run docs:check",
     "check:write": "biome check --write . --files-ignore-unknown=true && npm run docs:check",
+    "deadcode": "npx knip --no-progress",
     "docs:check": "node scripts/check-docs.mjs",
     "store:assets": "node scripts/generate-store-assets.mjs"
   },
