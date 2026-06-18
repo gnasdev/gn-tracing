@@ -5,6 +5,9 @@
   "license": "GPL-3.0-or-later",
   "scripts": {
     "prepare": "husky",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
     "lint": "biome lint . --files-ignore-unknown=true",
     "format": "biome format --write . --files-ignore-unknown=true",
     "format:check": "biome format . --files-ignore-unknown=true && npm run docs:check",
@@ -17,10 +20,13 @@
   "devDependencies": {
     "@biomejs/biome": "^2.4.15",
     "@types/chrome": "^0.0.287",
+    "@vitest/coverage-v8": "4.1.9",
     "concurrently": "^8.2.2",
     "esbuild": "^0.24.0",
+    "fast-check": "4.8.0",
     "husky": "^9.1.7",
     "sharp": "^0.34.5",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "vitest": "4.1.9"
   }
 }

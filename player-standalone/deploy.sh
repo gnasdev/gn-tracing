@@ -4,6 +4,13 @@
 
 set -euo pipefail
 
+ENV_FILE="$(cd "$(dirname "$0")/.." && pwd)/.env"
+if [ -f "$ENV_FILE" ]; then
+  set -a
+  source "$ENV_FILE"
+  set +a
+fi
+
 PROJECT_NAME="${CLOUDFLARE_PAGES_PROJECT:-gn-tracing-player}"
 PLAYER_HOST_URL="${PLAYER_HOST_URL:-https://tracing.gnas.dev/}"
 VITE_BASE_PATH="${VITE_BASE_PATH:-/}"

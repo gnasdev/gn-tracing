@@ -299,6 +299,21 @@ async function refreshGoogleDriveState(): Promise<void> {
   googleDriveState.checkedAt = Date.now();
 }
 
+/**
+ * Reads the persisted Google Drive connection mirror from `chrome.storage.local`
+ * so popup surfaces can paint the correct auth UI before the service worker
+ * finishes re-hydrating after a browser or extension restart.
+ */
+async function loadMirroredGoogleDriveState(): Promise<boolean | null> {
+  try {
+    const result = await chrome.storage.local.get("gn_tracing_google_drive_connected");
+    const value = result.gn_tracing_google_drive_connected;
+    return typeof value === "boolean" ? value : null;
+  } catch {
+    return null;
+  }
+}
+
 async function buildPopupState(): Promise<PopupState> {
   const [settings, uploadHistory] = await Promise.all([getUploadSettings(), getUploadHistory()]);
   return {
@@ -443,6 +458,10 @@ async function syncRuntimeState(): Promise<void> {
     }),
   );
 
+  const mirroredConnected = await loadMirroredGoogleDriveState();
+  if (mirroredConnected !== null) {
+    googleDriveState.isConnected = mirroredConnected;
+  }
   await refreshGoogleDriveState();
   await saveArtifactsToStorage();
   await saveStateToStorage();

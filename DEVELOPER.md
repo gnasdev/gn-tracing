@@ -64,7 +64,7 @@ task format         # Format Biome-supported repository sources
 task check          # Run Biome checks plus docs hygiene validation
 task build:all      # Build extension and standalone player
 task dist:all       # Production build for extension and player
-task watch:all      # Extension watch plus player dev server
+task dev            # Watch extension + standalone player + OAuth Worker together
 ```
 
 Standalone player:

@@ -41,6 +41,25 @@ tasks:
     cmds:
       - npm run check
 
+  test:
+    desc: Run the root extension context tests once.
+    cmds:
+      - npm run test
+
+  test:all:
+    desc: Run tests across all contexts (root, player, worker); attempts every context and fails if any fail.
+    cmds:
+      - cmd: |
+          failed=""
+          npm run test || failed="$failed root"
+          (cd player-standalone && npm run test) || failed="$failed player"
+          (cd worker && npm run test) || failed="$failed worker"
+          if [ -n "$failed" ]; then
+            echo "Failed contexts:$failed" >&2
+            exit 1
+          fi
+          echo "All contexts passed."
+
   player:sync:
     desc: Sync shared player assets into the standalone player.
     dir: player-standalone
@@ -93,6 +112,24 @@ tasks:
   player:deploy:
     desc: Deploy the standalone player to Cloudflare Pages.
     dir: player-standalone
+    cmds:
+      - ./deploy.sh
+
+  worker:dev:
+    desc: Run the OAuth token-exchange Worker locally with wrangler (hot reload, port 8787).
+    dir: worker
+    cmds:
+      - npm exec -- wrangler dev
+
+  worker:typecheck:
+    desc: Run OAuth Worker TypeScript checks.
+    dir: worker
+    cmds:
+      - npm exec -- tsc --noEmit
+
+  worker:deploy:
+    desc: Deploy the OAuth token-exchange Worker to Cloudflare.
+    dir: worker
     cmds:
       - ./deploy.sh
 
@@ -162,9 +199,7 @@ tasks:
       - task: store:upload
       - task: store:publish
 
-  watch:all:
-    aliases:
-      - dev
-    desc: Watch extension sources and run the standalone player dev server.
+  dev:
+    desc: Watch extension + standalone player + OAuth Worker together (hot reload).
     cmds:
-      - npx concurrently 'task watch' 'task player:dev'
+      - npx concurrently -n ext,player,worker 'task watch' 'task player:dev' 'task worker:dev'

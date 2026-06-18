@@ -23,6 +23,7 @@ related:
 - [shared/api-conventions.md](./shared/api-conventions.md)
 - [modules/recording-runtime.md](./modules/recording-runtime.md)
 - [modules/drive-and-player.md](./modules/drive-and-player.md)
+- [modules/oauth-token-proxy.md](./modules/oauth-token-proxy.md)
 - [modules/privacy-and-redaction.md](./modules/privacy-and-redaction.md)
 - [modules/replay-player.md](./modules/replay-player.md)
 - [features/extension-surfaces.md](./features/extension-surfaces.md)
@@ -44,6 +45,9 @@ related:
 - `drive-and-player`
   reads: `shared/data-models`, `shared/api-conventions`, `replay-player`, `privacy-and-redaction`
   consumes: recording artifacts emitted by `recording-runtime`
+- `oauth-token-proxy`
+  reads: `drive-and-player`, `shared/api-conventions`
+  holds: Google OAuth `client_secret` in a Cloudflare Worker and proxies the token exchange when the OAuth client requires a secret
 - `privacy-and-redaction`
   shared by: service worker, CDP collector, storage manager, content script, Settings, replay player, compliance docs
 - `replay-player`
@@ -80,6 +84,7 @@ related:
 - `service-worker` -> `cdp-manager`: console/network/WebSocket capture
 - `service-worker` -> `recorder-manager` -> `offscreen`: tab media recording lifecycle
 - `service-worker` -> `google-drive-auth`: Chromium-wide Drive OAuth (Chrome identity + web auth flow with token expiry)
+- `google-drive-auth` -> `oauth-token-proxy` (Cloudflare Worker) when `GOOGLE_TOKEN_PROXY_URL` is set: server-side token exchange that injects the OAuth `client_secret`; otherwise calls `https://oauth2.googleapis.com/token` directly
 - `service-worker` -> injected content script: active-tab, recording-scoped user-event collection and selector-based visual masking with safe privacy settings only
 - `service-worker` -> `chrome.storage.session`: state fan-out to popup and auth page
 - `offscreen` -> Google Drive APIs: target-folder resolution/creation, compact/DEFLATE zip package creation, optional ZIP password entry protection, package upload, and sharing permissions

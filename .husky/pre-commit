@@ -9,3 +9,29 @@ fi
 npm exec -- biome check --write --staged --files-ignore-unknown=true --no-errors-on-unmatched
 npm run docs:check
 git update-index --again
+
+# --- Run tests related to staged files (Requirement 8) ---
+# Collect staged TypeScript files (added/copied/modified/renamed) for the root
+# extension context. The player-standalone and worker contexts own their own
+# test runners, so their files are excluded here.
+staged_ts="$(git diff --cached --name-only --diff-filter=ACMR -- '*.ts' | grep -Ev '^(player-standalone|worker)/' || true)"
+
+# When no staged file belongs to the root context, there is nothing to run, so
+# allow the commit to proceed without invoking the test runner (Req 8.2).
+if [ -n "$staged_ts" ]; then
+  # Verify the test runner can actually be executed before invoking it. If it
+  # cannot run (e.g. vitest is not installed), block the commit with a clear
+  # error message (Req 8.5).
+  if ! npm exec -- vitest --version >/dev/null 2>&1; then
+    printf '%s\n' "ERROR: Unable to execute the test runner (vitest). Run 'npm install' and try again." >&2
+    exit 1
+  fi
+
+  # Run only the tests related to the staged files in single-run mode, without
+  # watch mode or interactive input (Req 8.1). '--passWithNoTests' lets the
+  # commit proceed when staged files have no related test (Req 8.2). A zero exit
+  # allows the commit (Req 8.4); under 'set -e' a non-zero exit blocks the commit
+  # while leaving the staged changes untouched (Req 8.3).
+  # shellcheck disable=SC2086
+  npm exec -- vitest related --run --passWithNoTests $staged_ts
+fi

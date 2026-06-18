@@ -1,0 +1,24 @@
+{
+  "name": "gn-tracing-oauth-proxy",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Cloudflare Worker that holds the Google OAuth client secret and proxies the token exchange for the GN Tracing extension.",
+  "license": "GPL-3.0-or-later",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "tail": "wrangler tail",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "0.5.41",
+    "@cloudflare/workers-types": "^4.20241106.0",
+    "@vitest/coverage-istanbul": "2.1.9",
+    "typescript": "^5.7.0",
+    "vitest": "2.1.9",
+    "wrangler": "^3.90.0"
+  }
+}

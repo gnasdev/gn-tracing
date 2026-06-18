@@ -36,6 +36,7 @@ const GITHUB_REPO_URL = "https://github.com/gnasdev/gn-tracing";
 const GITHUB_ISSUES_URL = `${GITHUB_REPO_URL}/issues`;
 const SERVICE_STATE_KEY = "gn_tracing_state";
 const RELOAD_TOAST_KEY = "gn_tracing_reload_toast";
+const MIRRORED_DRIVE_CONNECTED_KEY = "gn_tracing_google_drive_connected";
 
 const recordingActions = document.getElementById("recording-actions")!;
 const toggleBtn = document.getElementById("toggle-btn") as HTMLButtonElement;
@@ -106,6 +107,22 @@ async function loadStateFromStorage(): Promise<PopupState | null> {
   try {
     const result = await chrome.storage.session.get(SERVICE_STATE_KEY);
     return result[SERVICE_STATE_KEY] || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Reads the latest Google Drive connection state mirrored into
+ * `chrome.storage.local`. This survives browser restarts (unlike
+ * `chrome.storage.session`), so the popup can paint the correct auth UI
+ * before the service worker finishes its post-restart re-hydration.
+ */
+async function loadMirroredDriveConnected(): Promise<boolean | null> {
+  try {
+    const result = await chrome.storage.local.get(MIRRORED_DRIVE_CONNECTED_KEY);
+    const value = result[MIRRORED_DRIVE_CONNECTED_KEY];
+    return typeof value === "boolean" ? value : null;
   } catch {
     return null;
   }
@@ -1180,10 +1197,21 @@ async function initPopup(): Promise<void> {
     showToast("Popup reloaded.", 1800, { variant: "success" });
   }
 
+  // Paint the auth UI from the local-storage mirror first so the popup does
+  // not flash "Not connected" on browser or extension restart, even if the
+  // service worker has not finished re-hydrating from `chrome.storage.session`.
+  const mirroredConnected = await loadMirroredDriveConnected();
+  if (mirroredConnected !== null) {
+    updateGoogleDriveUI(mirroredConnected);
+    if (mirroredConnected) {
+      setCaptureUiVisibility(true);
+    }
+  }
+
   const initialState = await loadStateFromStorage();
   if (initialState) {
     handleStateUpdate(initialState);
-  } else {
+  } else if (mirroredConnected === null) {
     renderSessions([]);
     renderPopupUploadHistory([], { animateLatestSuccess: false });
   }

@@ -1,0 +1,59 @@
+name: Test
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            player-standalone/package-lock.json
+            worker/package-lock.json
+
+      # Install dependencies for all three contexts first. A failing step
+      # aborts the job, which skips every downstream typecheck/test step and
+      # completes with a non-zero status.
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Install player dependencies
+        run: npm ci
+        working-directory: player-standalone
+
+      - name: Install worker dependencies
+        run: npm ci
+        working-directory: worker
+
+      # Type-check all three contexts.
+      - name: Typecheck root
+        run: npx tsc --noEmit
+
+      - name: Typecheck player
+        run: npm exec -- tsc --noEmit
+        working-directory: player-standalone
+
+      - name: Typecheck worker
+        run: npm exec -- tsc --noEmit
+        working-directory: worker
+
+      # Run tests with coverage for all three contexts. A coverage threshold
+      # miss makes the script exit non-zero, failing the job.
+      - name: Test root
+        run: npm run test:coverage
+
+      - name: Test player
+        run: npm run test:coverage
+        working-directory: player-standalone
+
+      - name: Test worker
+        run: npm run test:coverage
+        working-directory: worker

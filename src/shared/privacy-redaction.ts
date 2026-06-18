@@ -26,7 +26,7 @@ export interface RedactionResult<T> {
   applied: RedactionHit[];
 }
 
-type RuleTarget = "header" | "query" | "body" | "console" | "websocket" | "event" | "report";
+export type RuleTarget = "header" | "query" | "body" | "console" | "websocket" | "event" | "report";
 
 interface ClassifiedRule {
   id: string;
@@ -117,6 +117,39 @@ const VALUE_RULES: ClassifiedRule[] = [
     targets: ["query", "body", "console", "websocket"],
   },
 ];
+
+/**
+ * Every redaction rule target. Exposed so callers (and tests) can enumerate the
+ * targets a rule may apply to without duplicating the union literal.
+ */
+export const REDACTION_RULE_TARGETS: RuleTarget[] = [
+  "header",
+  "query",
+  "body",
+  "console",
+  "websocket",
+  "event",
+  "report",
+];
+
+/**
+ * Returns the set of redaction rule ids enabled for a given privacy profile and
+ * target. Behavior-preserving introspection helper used to assert policy
+ * invariants (e.g. profile monotonicity) without exposing the internal rule
+ * tables. Combines both key-based and value-based rules.
+ */
+export function getEnabledRedactionRuleIds(
+  profile: PrivacyProfile,
+  target: RuleTarget,
+): Set<string> {
+  const ids = new Set<string>();
+  for (const rule of [...KEY_RULES, ...VALUE_RULES]) {
+    if (isRuleEnabled(rule, profile, target)) {
+      ids.add(rule.id);
+    }
+  }
+  return ids;
+}
 
 export function getPrivacyProfileSettings(profile: PrivacyProfile): PrivacyRedactionSettings {
   if (profile === "strict") {
@@ -574,7 +607,7 @@ function redactPlainText(
   return { value: output, applied };
 }
 
-function redactJsonValue(
+export function redactJsonValue(
   value: unknown,
   settings: PrivacyRedactionSettings,
   artifact: RedactionArtifact,

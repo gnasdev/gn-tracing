@@ -21,6 +21,7 @@ const isProductionBuild = appEnv === "production";
 const packageJson = JSON.parse(fs.readFileSync(path.resolve(__dirname, "package.json"), "utf-8"));
 const packageVersion = typeof packageJson.version === "string" ? packageJson.version : "";
 const googleClientId = getConfigValue("GOOGLE_CLIENT_ID");
+const googleTokenProxyUrl = normalizeProxyUrl(getConfigValue("GOOGLE_TOKEN_PROXY_URL"));
 const chromeExtensionPublicKey = getConfigValue("CHROME_EXTENSION_PUBLIC_KEY");
 const chromeExtensionPrivateKey = getConfigValue("CHROME_EXTENSION_PRIVATE_KEY");
 const chromeExtensionId = getConfigValue(
@@ -58,6 +59,7 @@ const commonOptions = {
   define: {
     __APP_ENV__: JSON.stringify(appEnv),
     __GOOGLE_CLIENT_ID__: JSON.stringify(googleClientId),
+    __GOOGLE_TOKEN_PROXY_URL__: JSON.stringify(googleTokenProxyUrl),
     __PLAYER_LOCAL_PORT__: JSON.stringify(playerLocalPort),
   },
 };
@@ -96,6 +98,13 @@ function normalizeEnvValue(value) {
     (value.startsWith("'") && value.endsWith("'"));
   const normalized = isQuoted ? value.slice(1, -1) : value;
   return normalized.replace(/\\n/g, "\n");
+}
+
+// Trims a trailing slash so the auth module can append paths predictably and the
+// proxy URL stays consistent regardless of how it is configured in .env.
+function normalizeProxyUrl(value) {
+  const trimmed = String(value || "").trim();
+  return trimmed.replace(/\/+$/, "");
 }
 
 function getConfigValue(name, fallback = "") {
@@ -212,13 +221,62 @@ function generateManifest(outputPath) {
     .replace(/{{CHROME_EXTENSION_PUBLIC_KEY}}/g, chromeExtensionPublicKey);
   const manifest = JSON.parse(template);
   manifest.version = packageVersion || manifest.version;
+  addTokenProxyHostPermission(manifest);
 
   fs.mkdirSync(path.dirname(manifestPath), { recursive: true });
   fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf-8");
   console.log("✓ manifest.json generated");
 }
 
+// Surfaces whether the OAuth token exchange (used by the popup and the
+// /drive-auth page) will go through the Cloudflare Worker or directly to
+// Google. Direct-to-Google only works for public/installed OAuth clients; a
+// "Web application" client requires the Worker or Google returns
+// "client_secret is missing".
+function logTokenProxyStatus() {
+  if (googleTokenProxyUrl) {
+    console.log(`✓ OAuth token exchange routed through Worker: ${googleTokenProxyUrl}`);
+    return;
+  }
+
+  const message =
+    "GOOGLE_TOKEN_PROXY_URL is not set — the extension (including the drive-auth page) " +
+    "will call https://oauth2.googleapis.com/token directly. This fails with " +
+    '"client_secret is missing" if the OAuth client is a Web application. Set ' +
+    "GOOGLE_TOKEN_PROXY_URL to the deployed Worker URL and rebuild to route auth through it.";
+  if (isProductionBuild) {
+    console.warn(`⚠️  ${message}`);
+  } else {
+    console.log(`ℹ️  ${message}`);
+  }
+}
+
+// When a token proxy Worker is configured, the service worker must be allowed
+// to call it. Append the Worker origin to host_permissions so the cross-origin
+// POST is not blocked. No-op when the proxy URL is unset (direct-to-Google).
+function addTokenProxyHostPermission(manifest) {
+  if (!googleTokenProxyUrl) {
+    return;
+  }
+
+  let proxyOrigin;
+  try {
+    proxyOrigin = `${new URL(googleTokenProxyUrl).origin}/`;
+  } catch {
+    throw new Error(`GOOGLE_TOKEN_PROXY_URL is not a valid URL: ${googleTokenProxyUrl}`);
+  }
+
+  if (!Array.isArray(manifest.host_permissions)) {
+    manifest.host_permissions = [];
+  }
+  if (!manifest.host_permissions.includes(proxyOrigin)) {
+    manifest.host_permissions.push(proxyOrigin);
+  }
+}
+
 async function build() {
+  logTokenProxyStatus();
+
   if (!watch) {
     fs.rmSync(path.resolve(__dirname, "dist"), { recursive: true, force: true });
   }
