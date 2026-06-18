@@ -20,10 +20,25 @@ export default defineWorkersConfig({
       // has no `node:inspector` module, so the shared V8 coverage provider
       // cannot run here. Per Cloudflare's guidance, the Worker Context uses the
       // instrumented Istanbul provider instead. This is the single, documented
-      // exception to the V8-everywhere default; every other shared coverage
-      // setting (reporters, the coverage floor, the file globs, and the globals
-      // flag) is inherited unchanged from the shared base via the spread above.
+      // exception to the V8-everywhere default; reporters, the coverage floor,
+      // the test globs, and the globals flag are all inherited from the shared
+      // base via the spread above.
       provider: "istanbul",
+      // Re-scope coverage for this Context: the shared base excludes `worker/**`
+      // so the repo-root coverage run never folds this Context's source into the
+      // root report. Running coverage *inside* this Context, that same glob would
+      // exclude this Context's own source, so we drop it here while still
+      // excluding the other Context and all non-source.
+      exclude: [
+        "player-standalone/**",
+        "**/*.{test,spec}.ts",
+        "**/*.config.{ts,mts,mjs,js}",
+        "test/**",
+        "scripts/**",
+        "dist/**",
+        "**/node_modules/**",
+        "**/.wrangler/**",
+      ],
     },
     poolOptions: {
       workers: {

@@ -28,12 +28,19 @@ const SHARED_OWNED_KEYS = ["globals", "coverage", "include", "exclude"] as const
 
 // Source-level tokens that would indicate a per-context config is redeclaring a
 // Shared_Config-owned setting rather than inheriting it via the spread.
+//
+// Note on `coverage.exclude`: re-scoping coverage per Context is a deliberate,
+// permitted lever (each sibling Context drops its OWN directory from the shared
+// cross-context exclude list so it can measure its own source). It is therefore
+// NOT one of the Shared_Config-owned settings enforced here. `provider:` is
+// likewise permitted for the worker Context only, which must use Istanbul
+// because the `workerd` runtime cannot run the V8 coverage provider. Both
+// exceptions are asserted explicitly in the per-Context blocks below.
 const FORBIDDEN_REDECLARATION_TOKENS = [
   "provider:",
   "reporter:",
   "thresholds",
   "include:",
-  "exclude:",
   "globals:",
 ];
 
@@ -97,7 +104,12 @@ describe("Vitest config inheritance", () => {
       expect(source).toContain('environment: "jsdom"');
     });
 
-    it("does not redeclare any Shared_Config-owned setting", () => {
+    it("re-scopes only coverage.exclude (per-context lever), inheriting all else", () => {
+      // Re-scoping `coverage.exclude` is permitted (it drops this Context's own
+      // directory from the shared cross-context exclude list so the Context can
+      // measure its own source). Every Shared_Config-owned setting — the
+      // coverage provider, reporters, thresholds, the test include/exclude
+      // globs, and the globals flag — must still be inherited via the spread.
       for (const token of FORBIDDEN_REDECLARATION_TOKENS) {
         expect(source).not.toContain(token);
       }
@@ -126,9 +138,12 @@ describe("Vitest config inheritance", () => {
       expect(source).toContain('provider: "istanbul"');
     });
 
-    it("does not redeclare any Shared_Config-owned setting other than the coverage provider", () => {
-      // `provider:` is permitted here (see the Istanbul exception above); every
-      // other Shared_Config-owned setting must still be inherited via the spread.
+    it("re-scopes coverage and overrides only the provider, inheriting all else", () => {
+      // The worker may re-scope `coverage.exclude` (per-context lever) and must
+      // override the coverage provider to Istanbul (the workerd runtime cannot
+      // run V8 coverage). Every other Shared_Config-owned setting — reporters,
+      // thresholds, the test include/exclude globs, and the globals flag — must
+      // still be inherited via the spread.
       const workerForbiddenTokens = FORBIDDEN_REDECLARATION_TOKENS.filter(
         (token) => token !== "provider:",
       );
