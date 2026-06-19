@@ -245,10 +245,11 @@ function logTokenProxyStatus() {
     '"client_secret is missing" if the OAuth client is a Web application. Set ' +
     "GOOGLE_TOKEN_PROXY_URL to the deployed Worker URL and rebuild to route auth through it.";
   if (isProductionBuild) {
-    console.warn(`⚠️  ${message}`);
-  } else {
-    console.log(`ℹ️  ${message}`);
+    // Fail hard: a production bundle without the proxy URL bypasses the Worker
+    // and is guaranteed to break Google Drive auth for "Web application" clients.
+    throw new Error(message);
   }
+  console.log(`ℹ️  ${message}`);
 }
 
 // When a token proxy Worker is configured, the service worker must be allowed

@@ -40,11 +40,12 @@ jobs:
       - name: Verify required secrets
         env:
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_TOKEN_PROXY_URL: ${{ secrets.GOOGLE_TOKEN_PROXY_URL }}
           CHROME_EXTENSION_ID: ${{ secrets.CHROME_EXTENSION_ID }}
           CHROME_EXTENSION_PUBLIC_KEY: ${{ secrets.CHROME_EXTENSION_PUBLIC_KEY }}
           CHROME_EXTENSION_PRIVATE_KEY: ${{ secrets.CHROME_EXTENSION_PRIVATE_KEY }}
         run: |
-          for secret in GOOGLE_CLIENT_ID CHROME_EXTENSION_ID CHROME_EXTENSION_PUBLIC_KEY CHROME_EXTENSION_PRIVATE_KEY; do
+          for secret in GOOGLE_CLIENT_ID GOOGLE_TOKEN_PROXY_URL CHROME_EXTENSION_ID CHROME_EXTENSION_PUBLIC_KEY CHROME_EXTENSION_PRIVATE_KEY; do
             if [ -z "${!secret}" ]; then
               echo "::error::Missing required secret: $secret"
               exit 1
@@ -55,6 +56,7 @@ jobs:
         run: task release:ci
         env:
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_TOKEN_PROXY_URL: ${{ secrets.GOOGLE_TOKEN_PROXY_URL }}
           CHROME_EXTENSION_ID: ${{ secrets.CHROME_EXTENSION_ID }}
           CHROME_EXTENSION_PUBLIC_KEY: ${{ secrets.CHROME_EXTENSION_PUBLIC_KEY }}
           CHROME_EXTENSION_PRIVATE_KEY: ${{ secrets.CHROME_EXTENSION_PRIVATE_KEY }}
