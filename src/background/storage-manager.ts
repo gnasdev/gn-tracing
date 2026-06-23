@@ -7,6 +7,8 @@ import type { PrivacyRedactionSettings, UploadSettings } from "../types/messages
 import type {
   CdpStackTrace,
   ConsoleEntry,
+  DomArtifact,
+  DomSnapshot,
   NetworkEntry,
   NetworkInitiator,
   RedactionHit,
@@ -16,6 +18,8 @@ import type {
   SourceMapFrameStatus,
   SourceMapResolveResult,
   StackFrame,
+  StorageArtifact,
+  StorageSnapshot,
   WebSocketEntry,
 } from "../types/recording";
 import { getSourceMapUrlKeys, type SourceMapResolver } from "./sourcemap-resolver";
@@ -62,6 +66,8 @@ interface FinalizedRecordingArtifacts {
   consoleLogs?: string;
   networkRequests?: string;
   webSocketLogs?: string;
+  storageSnapshots?: string;
+  domSnapshots?: string;
   consoleLogCount: number;
   networkRequestCount: number;
 }
@@ -70,6 +76,8 @@ export class StorageManager {
   #consoleLogs: ConsoleEntry[] = [];
   #networkEntries: NetworkEntry[] = [];
   #webSocketEntries: WebSocketEntry[] = [];
+  #storageSnapshots: StorageSnapshot[] = [];
+  #domSnapshots: DomSnapshot[] = [];
   #captureSettings: ConsoleCaptureSettings = { ...DEFAULT_CONSOLE_CAPTURE_SETTINGS };
   #privacySettings: PrivacyRedactionSettings = getPrivacyProfileSettings("standard");
   #recordRedactionHits: (hits: RedactionHit[]) => void = () => {};
@@ -78,6 +86,8 @@ export class StorageManager {
     this.#consoleLogs = [];
     this.#networkEntries = [];
     this.#webSocketEntries = [];
+    this.#storageSnapshots = [];
+    this.#domSnapshots = [];
   }
 
   setCaptureSettings(settings: Partial<ConsoleCaptureSettings>): void {
@@ -124,6 +134,35 @@ export class StorageManager {
 
   addWebSocketEntry(entry: WebSocketEntry): void {
     this.#webSocketEntries.push(entry);
+  }
+
+  /**
+   * Inserts or replaces a WebSocket entry keyed by `requestId`. In-page capture
+   * (captureMode === "in-page") emits a cumulative snapshot per frame/close for
+   * the same socket, so the latest snapshot supersedes earlier ones instead of
+   * appending duplicates.
+   */
+  upsertWebSocketEntry(entry: WebSocketEntry): void {
+    const existingIndex = this.#webSocketEntries.findIndex(
+      (candidate) => candidate.requestId === entry.requestId,
+    );
+    if (existingIndex >= 0) {
+      this.#webSocketEntries[existingIndex] = entry;
+    } else {
+      this.#webSocketEntries.push(entry);
+    }
+  }
+
+  setStorageSnapshot(snapshot: StorageSnapshot): void {
+    this.#storageSnapshots.push(snapshot);
+  }
+
+  /**
+   * Buffers a flattened DOM snapshot. Snapshots are serialized into a
+   * `DomArtifact` (dom.json) by `finalizeCurrentSession()` when non-empty.
+   */
+  addDomSnapshot(snapshot: DomSnapshot): void {
+    this.#domSnapshots.push(snapshot);
   }
 
   getConsoleLogCount(): number {
@@ -205,6 +244,14 @@ export class StorageManager {
       this.#recordRedactionHits(redacted.applied);
       return redacted.value;
     });
+    const storage: StorageArtifact | undefined =
+      this.#storageSnapshots.length > 0
+        ? { schemaVersion: 1, snapshots: this.#storageSnapshots }
+        : undefined;
+    const dom: DomArtifact | undefined =
+      this.#domSnapshots.length > 0
+        ? { schemaVersion: 1, snapshots: this.#domSnapshots }
+        : undefined;
     const artifacts: FinalizedRecordingArtifacts = {
       consoleLogCount: this.#consoleLogs.length,
       networkRequestCount: this.#networkEntries.length,
@@ -218,6 +265,8 @@ export class StorageManager {
           : undefined,
       webSocketLogs:
         this.#webSocketEntries.length > 0 ? JSON.stringify(this.#webSocketEntries) : undefined,
+      storageSnapshots: storage ? JSON.stringify(storage) : undefined,
+      domSnapshots: dom ? JSON.stringify(dom) : undefined,
     };
 
     this.beginSession();

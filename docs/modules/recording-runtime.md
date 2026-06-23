@@ -84,8 +84,11 @@ The primary lifecycle is:
 - uses `StorageManager` as the in-memory sink for console/network/WebSocket entries
 - stores capture settings as part of `UploadSettings`, with profile presets and advanced controls normalized by the service worker before each recording starts
 - stores privacy redaction settings as part of `UploadSettings`, with standard/strict/custom profiles, built-in rule versioning, WebSocket payload redaction mode, event/report redaction toggles, and DOM masking selectors
+- stores opt-in capture toggles in `UploadSettings`: `captureStorage`/`redactStorageValues` (storage snapshots) and `captureDomSnapshots`/`redactDomTextContent` (DOM snapshots), all capture toggles defaulting off and redaction toggles defaulting on
+- stores `captureMode` (`"cdp"` default, or `"in-page"`) in `UploadSettings` to select debugger-based versus in-page instrumentation capture
 - accepts `RECORDING_USER_EVENT` messages from the injected page collector for navigation/click/focus/submit summaries that match the active tab and session
 - emits optional replay report artifacts: `report.json`, `events.json`, `privacy.json`, `diagnostics.json`, and `screenshot.jpg`
+- emits optional inspector artifacts when their capture toggles are on: `storage.json` (a `StorageArtifact` of start/stop `StorageSnapshot` entries) and `dom.json` (a `DomArtifact` of start/stop/marker `DomSnapshot` trees)
 
 ## 3.1 Capture Evidence Boundaries
 
@@ -103,6 +106,15 @@ The capture target must be a user-selected tab with an `http:`, `https:`, or `fi
 `CdpManager` attaches Chrome Debugger Protocol to the selected tab, enables Network, Runtime, Log, and best-effort Debugger domains, and auto-attaches child targets. It handles CDP ordering defensively because request extra-info, response bodies, redirects, early hints, cache events, target detach notifications, and WebSocket frames can arrive outside a simple request lifecycle.
 
 Capture settings control which console, network, body, initiator, and WebSocket details are stored. Privacy settings are applied while data is collected and again when console artifacts are finalized.
+
+When `captureStorage` is on, `CdpManager` enables `DOMStorage`, snapshots `localStorage`/`sessionStorage` via `DOMStorage.getDOMStorageItems` and cookies via `Network.getAllCookies` at start and stop, and applies storage redaction before buffering. When `captureDomSnapshots` is on, it enables `DOMSnapshot`, captures and flattens `DOMSnapshot.captureSnapshot` into a well-formed `DomNode` tree at start/stop/markers, masks nodes matching the DOM mask selectors, and reduces or skips oversized snapshots. CDP failures for either capture are caught, recorded as privacy limitations, and do not interrupt recording.
+
+## 3.3 Capture Mode
+
+`captureMode` selects the collection mechanism:
+
+- `"cdp"` (default): attaches `chrome.debugger` for full-fidelity capture; the browser shows a debugging banner.
+- `"in-page"` (opt-in): the service worker does not attach `chrome.debugger`. Instead it injects MAIN-world instrumentation (`src/content/in-page-capture.ts`, relayed through `src/content/in-page-relay.ts`) that monkey-patches `console.*`, `fetch`, `XMLHttpRequest`, `WebSocket`, and storage, maps results into the same `ConsoleEntry`/`NetworkEntry`/`WebSocketEntry`/`StorageSnapshot` schemas the player reads, and restores every patched global on stop. The service worker applies redaction to relayed messages, records fidelity limitations (no cross-origin response bodies, no real source maps) in the privacy summary, and when a page CSP blocks MAIN-world injection records a limitation recommending `captureMode: "cdp"`.
 
 ## 4. Business Rules
 

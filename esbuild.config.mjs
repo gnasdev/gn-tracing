@@ -45,6 +45,7 @@ const STATIC_ASSET_ENTRIES = [
   { type: "file", src: "player/player.css", dest: "dist/player/player.css" },
   { type: "file", src: "player/player.js", dest: "dist/player/player.js" },
   { type: "dir", src: "player/icons", dest: "dist/player/icons" },
+  { type: "dir", src: "player/vendor", dest: "dist/player/vendor" },
 ];
 const staticAssetWatchers = [];
 
@@ -304,7 +305,11 @@ async function build() {
 
   const contentCtx = await esbuild.context({
     ...commonOptions,
-    entryPoints: [{ in: "src/content/recording-events.ts", out: "content/recording-events" }],
+    entryPoints: [
+      { in: "src/content/recording-events.ts", out: "content/recording-events" },
+      { in: "src/content/in-page-capture.ts", out: "content/in-page-capture" },
+      { in: "src/content/in-page-relay.ts", out: "content/in-page-relay" },
+    ],
     outdir: "dist",
     format: "iife",
     sourcemap: false,

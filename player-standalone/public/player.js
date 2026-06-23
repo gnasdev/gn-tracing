@@ -51,6 +51,12 @@
   let consoleLogs = [];
   let networkLogs = [];
   let webSocketLogs = [];
+  let storageArtifact = null;
+  let domArtifact = null;
+  // Track which snapshot each time-synced panel is currently showing, so the
+  // panels only re-render when the active (by-playback-time) snapshot changes.
+  let storageActiveKey = "";
+  let elementsActiveIndex = -1;
   let metadata = {};
   let report = null;
   let privacySummary = null;
@@ -189,6 +195,13 @@
     elements.reportViewer = document.getElementById("report-viewer");
     elements.consoleViewer = document.getElementById("console-viewer");
     elements.networkViewer = document.getElementById("network-viewer");
+    elements.storageTab = document.getElementById("storage-tab");
+    elements.storageViewer = document.getElementById("storage-viewer");
+    elements.storageContent = document.getElementById("storage-content");
+    elements.elementsTab = document.getElementById("elements-tab");
+    elements.elementsViewer = document.getElementById("elements-viewer");
+    elements.elementsSnapshotSelect = document.getElementById("elements-snapshot-select");
+    elements.elementsTree = document.getElementById("elements-tree");
 
     // Console
     elements.consoleFilters = document.getElementById("console-filters");
@@ -678,13 +691,361 @@
     const isReport = tabName === "report";
     const isConsole = tabName === "console";
     const isNetwork = tabName === "network";
+    const isStorage = tabName === "storage";
+    const isElements = tabName === "elements";
 
     elements.reportTab?.classList.toggle("active", isReport);
     elements.consoleTab.classList.toggle("active", isConsole);
     elements.networkTab.classList.toggle("active", isNetwork);
+    elements.storageTab?.classList.toggle("active", isStorage);
+    elements.elementsTab?.classList.toggle("active", isElements);
     elements.reportViewer?.classList.toggle("hidden", !isReport);
     elements.consoleViewer.classList.toggle("hidden", !isConsole);
     elements.networkViewer.classList.toggle("hidden", !isNetwork);
+    elements.storageViewer?.classList.toggle("hidden", !isStorage);
+    elements.elementsViewer?.classList.toggle("hidden", !isElements);
+  }
+
+  // Build a one-row-per-key diff between two storage groups. Every key present
+  // in start∪stop yields exactly one row (Property P4 / R5.2).
+  function diffStorageGroups(startItems, stopItems) {
+    const startMap = new Map((startItems || []).map((it) => [it.key, it.value]));
+    const stopMap = new Map((stopItems || []).map((it) => [it.key, it.value]));
+    const rows = [];
+    for (const [key, value] of stopMap) {
+      if (!startMap.has(key)) {
+        rows.push({ key, status: "added", value });
+      } else if (startMap.get(key) !== value) {
+        rows.push({ key, status: "changed", from: startMap.get(key), to: value });
+      } else {
+        rows.push({ key, status: "unchanged", value });
+      }
+    }
+    for (const [key, value] of startMap) {
+      if (!stopMap.has(key)) {
+        rows.push({ key, status: "removed", value });
+      }
+    }
+    return rows;
+  }
+
+  // Normalize a snapshot's group into a list of { key, value }. Cookies use the
+  // cookie `name` as the diff key.
+  function toStorageItems(snapshot, group) {
+    if (!snapshot) return [];
+    const raw = Array.isArray(snapshot[group]) ? snapshot[group] : [];
+    if (group === "cookies") {
+      return raw.map((c) => ({ key: c?.name ?? "", value: c?.value ?? "" }));
+    }
+    return raw.map((kv) => ({ key: kv?.key ?? "", value: kv?.value ?? "" }));
+  }
+
+  function getStorageDiffValueHtml(row) {
+    if (row.status === "changed") {
+      return [
+        `<span class="storage-value storage-value-from">${escapeHtml(row.from)}</span>`,
+        '<span class="storage-value-arrow" aria-hidden="true">→</span>',
+        `<span class="storage-value storage-value-to">${escapeHtml(row.to)}</span>`,
+      ].join("");
+    }
+    const value = row.value ?? "";
+    const legacy = `<span class="storage-value">${escapeHtml(value)}</span>`;
+    const parsed = tryParseJsonObject(value);
+    if (parsed === undefined) {
+      return legacy;
+    }
+    return buildLunaJsonMount(parsed, legacy, "storage-value-mount");
+  }
+
+  function getStorageGroupHtml(label, startItems, stopItems) {
+    const rows = diffStorageGroups(startItems, stopItems);
+    rows.sort((a, b) => String(a.key).localeCompare(String(b.key)));
+
+    const body = rows.length
+      ? rows
+          .map(
+            (row) => `
+        <div class="storage-row storage-row-${row.status}">
+          <span class="storage-status-badge storage-status-${row.status}">${escapeHtml(row.status)}</span>
+          <span class="storage-key">${escapeHtml(row.key)}</span>
+          <span class="storage-value-cell">${getStorageDiffValueHtml(row)}</span>
+        </div>`,
+          )
+          .join("")
+      : '<div class="storage-empty">No entries captured.</div>';
+
+    return `
+      <section class="storage-group" aria-label="${escapeHtml(label)}">
+        <h3 class="storage-group-title">${escapeHtml(label)} <span class="storage-group-count">(${rows.length})</span></h3>
+        <div class="storage-group-rows">${body}</div>
+      </section>`;
+  }
+
+  // Render the Storage tab with 3 groups (localStorage, sessionStorage, cookies)
+  // diffed between the start and stop snapshots. Hides the tab when there is no
+  // storage artifact (R5.1, R5.4).
+  // Returns the relative playback time (ms from recording start) of a snapshot,
+  // or null when its capture time cannot be related to the recording start.
+  function getSnapshotRelativeMs(snapshot) {
+    const capturedAt = Number(snapshot?.capturedAt);
+    if (!Number.isFinite(capturedAt) || capturedAt <= 0 || !Number.isFinite(startTime)) {
+      return null;
+    }
+    return capturedAt - startTime;
+  }
+
+  // Picks the snapshot active at the current playback time: the latest snapshot
+  // captured at or before `currentTimeMs`. Falls back to the earliest snapshot
+  // when playback is before the first capture. Returns its index.
+  function getActiveSnapshotIndexByTime(snapshots) {
+    let activeIndex = 0;
+    let bestRel = Number.NEGATIVE_INFINITY;
+    let earliestRel = Number.POSITIVE_INFINITY;
+    let earliestIndex = 0;
+    for (let i = 0; i < snapshots.length; i += 1) {
+      const rel = getSnapshotRelativeMs(snapshots[i]);
+      if (rel === null) continue;
+      if (rel < earliestRel) {
+        earliestRel = rel;
+        earliestIndex = i;
+      }
+      if (rel <= currentTimeMs && rel >= bestRel) {
+        bestRel = rel;
+        activeIndex = i;
+      }
+    }
+    return bestRel === Number.NEGATIVE_INFINITY ? earliestIndex : activeIndex;
+  }
+
+  function renderStorageTab() {
+    const snapshots = Array.isArray(storageArtifact?.snapshots) ? storageArtifact.snapshots : [];
+    const hasStorage = snapshots.length > 0;
+
+    elements.storageTab?.classList.toggle("hidden", !hasStorage);
+
+    if (!hasStorage) {
+      // If the storage tab was active but is now hidden, fall back to console.
+      if (elements.storageTab?.classList.contains("active")) {
+        showLogsTab("console");
+      }
+      if (elements.storageContent) {
+        elements.storageContent.innerHTML = "";
+      }
+      storageActiveKey = "";
+      return;
+    }
+
+    storageActiveKey = "";
+    updateStorageForTime();
+  }
+
+  // Renders the storage diff for the current playback time: localStorage /
+  // sessionStorage / cookies diffed between the start snapshot and the snapshot
+  // active at `currentTimeMs`. Before the stop snapshot's time the diff shows
+  // the start state (all "unchanged"); once playback passes stop, the full
+  // start↔stop diff is shown. Only re-renders when the active snapshot changes.
+  function updateStorageForTime() {
+    if (!elements.storageContent) return;
+    const snapshots = Array.isArray(storageArtifact?.snapshots) ? storageArtifact.snapshots : [];
+    if (snapshots.length === 0) return;
+
+    const startSnapshot = snapshots.find((s) => s?.phase === "start") || snapshots[0];
+    const activeIndex = getActiveSnapshotIndexByTime(snapshots);
+    const currentSnapshot = snapshots[activeIndex] || startSnapshot;
+
+    const key = String(activeIndex);
+    if (key === storageActiveKey) return;
+    storageActiveKey = key;
+
+    const groups = [
+      { label: "localStorage", group: "localStorage" },
+      { label: "sessionStorage", group: "sessionStorage" },
+      { label: "Cookies", group: "cookies" },
+    ];
+
+    elements.storageContent.innerHTML = groups
+      .map(({ label, group }) =>
+        getStorageGroupHtml(
+          label,
+          toStorageItems(startSnapshot, group),
+          toStorageItems(currentSnapshot, group),
+        ),
+      )
+      .join("");
+
+    mountLunaPlaceholders(elements.storageContent);
+  }
+
+  // --- Elements / DOM snapshot panel (Item 3, R8.1–R8.3) ---
+
+  // Human-readable label for a DOM snapshot dropdown option (R8.2).
+  function getDomSnapshotLabel(snapshot, index) {
+    const rawLabel = snapshot && typeof snapshot.label === "string" ? snapshot.label : "";
+    const label = rawLabel || `snapshot ${index + 1}`;
+    const capturedAt = Number(snapshot?.capturedAt);
+    if (Number.isFinite(capturedAt) && capturedAt > 0) {
+      const time = new Date(capturedAt).toLocaleTimeString();
+      return `${label} — ${time}`;
+    }
+    return label;
+  }
+
+  // Render a single DOM node (and its descendants) as a <details>/<summary>
+  // tree. Masked nodes never expose original text; they carry REDACTED_VALUE
+  // from capture and are flagged with a visible badge.
+  function renderDomNodeFallback(node) {
+    if (!node || typeof node !== "object") return "";
+
+    const nodeType = Number(node.nodeType);
+    const isMasked = node.masked === true;
+    const maskedBadge = isMasked
+      ? '<span class="dom-masked-badge" title="Content masked for privacy">masked</span>'
+      : "";
+
+    // Text node (nodeType 3) / CDATA (4) / comment (8): render value only.
+    if (nodeType === 3 || nodeType === 4 || nodeType === 8) {
+      const text = typeof node.nodeValue === "string" ? node.nodeValue : "";
+      const trimmed = text.trim();
+      if (!trimmed && !isMasked) return "";
+      const cls = nodeType === 8 ? "dom-comment" : "dom-text";
+      return `<div class="dom-leaf ${cls}">${maskedBadge}<span class="dom-text-value">${escapeHtml(trimmed)}</span></div>`;
+    }
+
+    const tagName = typeof node.nodeName === "string" ? node.nodeName.toLowerCase() : "node";
+
+    // Build attribute string (attribute values already redacted at capture).
+    let attrsHtml = "";
+    if (node.attributes && typeof node.attributes === "object") {
+      const parts = [];
+      for (const [name, value] of Object.entries(node.attributes)) {
+        parts.push(
+          ` <span class="dom-attr-name">${escapeHtml(name)}</span>=<span class="dom-attr-value">"${escapeHtml(String(value))}"</span>`,
+        );
+      }
+      attrsHtml = parts.join("");
+    }
+
+    const children = Array.isArray(node.children) ? node.children : [];
+    const childHtml = children.map((child) => renderDomNodeFallback(child)).join("");
+
+    const openTag = `<span class="dom-tag">&lt;${escapeHtml(tagName)}${attrsHtml}&gt;</span>`;
+
+    // Leaf element (no rendered children): single summary line.
+    if (!childHtml) {
+      return `<div class="dom-leaf dom-element">${maskedBadge}${openTag}<span class="dom-tag">&lt;/${escapeHtml(tagName)}&gt;</span></div>`;
+    }
+
+    return `
+      <details class="dom-node" open>
+        <summary class="dom-summary">${maskedBadge}${openTag}</summary>
+        <div class="dom-children">${childHtml}</div>
+        <div class="dom-leaf dom-close-tag"><span class="dom-tag">&lt;/${escapeHtml(tagName)}&gt;</span></div>
+      </details>`;
+  }
+
+  // Render a DOM snapshot's tree into a container. Prefers window.LunaDomViewer
+  // when present; otherwise falls back to a <details>/<summary> tree. MUST NOT
+  // throw when LunaDomViewer is undefined (R8.3).
+  function renderDomTree(rootNode, container) {
+    if (!container) return;
+    container.innerHTML = "";
+
+    if (!rootNode || typeof rootNode !== "object") {
+      container.innerHTML = '<div class="dom-empty">No DOM nodes captured.</div>';
+      return;
+    }
+
+    const DomViewer = window.LunaDomViewer;
+    if (typeof DomViewer === "function") {
+      try {
+        const viewer = new DomViewer(container, { node: rootNode });
+        if (viewer && typeof viewer.expand === "function") {
+          viewer.expand();
+        }
+        return;
+      } catch (error) {
+        // Fall through to the safe fallback renderer.
+        console.warn("[GN Tracing Player] LunaDomViewer failed, using fallback:", error);
+        container.innerHTML = "";
+      }
+    }
+
+    container.innerHTML = renderDomNodeFallback(rootNode);
+  }
+
+  // Render the Elements tab: hide when there is no DOM artifact/snapshot
+  // (R8.1 negative); otherwise populate the snapshot dropdown (R8.2) and render
+  // the selected snapshot's tree (R8.3).
+  function renderElementsTab() {
+    const snapshots = Array.isArray(domArtifact?.snapshots) ? domArtifact.snapshots : [];
+    const hasSnapshots = snapshots.length > 0;
+
+    elements.elementsTab?.classList.toggle("hidden", !hasSnapshots);
+
+    if (!hasSnapshots) {
+      // If the elements tab was active but is now hidden, fall back to console.
+      if (elements.elementsTab?.classList.contains("active")) {
+        showLogsTab("console");
+      }
+      if (elements.elementsSnapshotSelect) {
+        elements.elementsSnapshotSelect.innerHTML = "";
+      }
+      if (elements.elementsTree) {
+        elements.elementsTree.innerHTML = "";
+      }
+      elementsActiveIndex = -1;
+      return;
+    }
+
+    const select = elements.elementsSnapshotSelect;
+    if (select) {
+      select.innerHTML = snapshots
+        .map(
+          (snapshot, index) =>
+            `<option value="${index}">${escapeHtml(getDomSnapshotLabel(snapshot, index))}</option>`,
+        )
+        .join("");
+      // Manually picking a snapshot seeks playback to its capture time, so the
+      // dropdown and the timeline stay in sync (the timeupdate handler then
+      // keeps the selection following playback). When the snapshot has no
+      // relatable time, just render it directly.
+      select.onchange = () => {
+        const index = Number.parseInt(select.value, 10);
+        const safeIndex = Number.isFinite(index) ? index : 0;
+        const rel = getSnapshotRelativeMs(snapshots[safeIndex]);
+        if (rel !== null && elements.video) {
+          elements.video.currentTime = Math.max(0, rel / 1000);
+          currentTimeMs = elements.video.currentTime * 1000;
+        }
+        elementsActiveIndex = -1; // force re-render of the chosen snapshot
+        updateElementsForTime(safeIndex);
+      };
+    }
+
+    elementsActiveIndex = -1;
+    updateElementsForTime();
+  }
+
+  // Selects and renders the DOM snapshot active at the current playback time
+  // (or an explicit index when provided). Only re-renders when the active
+  // snapshot changes, so it is cheap to call on every timeupdate.
+  function updateElementsForTime(explicitIndex) {
+    const tree = elements.elementsTree;
+    if (!tree) return;
+    const snapshots = Array.isArray(domArtifact?.snapshots) ? domArtifact.snapshots : [];
+    if (snapshots.length === 0) return;
+
+    const index =
+      typeof explicitIndex === "number" && Number.isFinite(explicitIndex)
+        ? explicitIndex
+        : getActiveSnapshotIndexByTime(snapshots);
+    if (index === elementsActiveIndex) return;
+    elementsActiveIndex = index;
+
+    if (elements.elementsSnapshotSelect) {
+      elements.elementsSnapshotSelect.value = String(index);
+    }
+    renderDomTree(snapshots[index]?.root, tree);
   }
 
   function renderPrivacySummary() {
@@ -1433,6 +1794,289 @@
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // luna-* render adapters (Item 1 / R6.2–R6.5)
+  //
+  // The player is non-bundled vanilla JS, so the prebuilt luna UMD bundles are
+  // loaded via <script> and expose `window.LunaObjectViewer` /
+  // `window.LunaJsonEditor` (see player/vendor/luna/VERSIONS.md). These adapters
+  // mount a luna viewer into a live DOM container when the global is present and
+  // fall back to the existing legacy string renderers otherwise. They MUST NOT
+  // throw when the global is undefined (R6.3 / Property P1).
+  //
+  // Integration uses progressive enhancement: render functions emit a
+  // `.luna-mount` placeholder whose default content is the legacy HTML, and
+  // `mountLunaPlaceholders()` upgrades those placeholders to luna after the HTML
+  // is inserted into the DOM. If luna is missing (or anything throws) the legacy
+  // content stays visible.
+  //
+  // NOTE on the real luna API (verified against the vendored bundles, which
+  // differ from the design pseudocode):
+  //   - luna-object-viewer@0.3.2: `new LunaObjectViewer(el); viewer.set(value)`.
+  //   - luna-json-editor@0.1.0: `new LunaJsonEditor(el, options)` where options
+  //     take an initial `value` plus editability flags. There is NO `readOnly`
+  //     option and NO `set()` method; read-only is enforced via
+  //     `nameEditable/valueEditable/enableInsert/enableDelete = false`, and the
+  //     value is passed in the constructor then shown via `expand()`. We still
+  //     expose `options.readOnly === true` on the instance for the read-only
+  //     contract (R6.4 / Property P2).
+  function lunaObjectViewerAvailable() {
+    return typeof window !== "undefined" && typeof window.LunaObjectViewer === "function";
+  }
+
+  function lunaJsonEditorAvailable() {
+    return typeof window !== "undefined" && typeof window.LunaJsonEditor === "function";
+  }
+
+  // Legacy fallback for object values (console args are RemoteObject shapes).
+  function renderObjectValueLegacy(container, value) {
+    if (!container) return null;
+    container.innerHTML = renderRemoteObject(value, { includeStack: true });
+    return null;
+  }
+
+  // Render an object value (RemoteObject) using luna-object-viewer when present,
+  // else fall back to the legacy renderer. Never throws (R6.3 / Property P1).
+  function renderObjectValue(container, value) {
+    if (!container) return null;
+    const ObjectViewer = typeof window !== "undefined" ? window.LunaObjectViewer : undefined;
+    if (typeof ObjectViewer !== "function") {
+      return renderObjectValueLegacy(container, value);
+    }
+    try {
+      container.textContent = "";
+      const viewer = new ObjectViewer(container);
+      viewer.set(remoteObjectToPlain(value));
+      return viewer;
+    } catch {
+      return renderObjectValueLegacy(container, value);
+    }
+  }
+
+  // Legacy fallback for JSON values: highlighted, read-only <pre> block.
+  function renderJsonLegacy(container, jsonValue) {
+    if (!container) return null;
+    let text;
+    try {
+      text = JSON.stringify(jsonValue, null, 2);
+    } catch {
+      text = String(jsonValue);
+    }
+    container.innerHTML = `<pre class="json-preview-body response-code-block">${highlightJson(text)}</pre>`;
+    return null;
+  }
+
+  // Render a JSON value read-only using luna-json-editor when present, else fall
+  // back to the legacy renderer. Read-only per R6.4 / Property P2. Never throws.
+  function renderJsonReadonly(container, jsonValue) {
+    if (!container) return null;
+    const JsonEditor = typeof window !== "undefined" ? window.LunaJsonEditor : undefined;
+    if (typeof JsonEditor !== "function") {
+      return renderJsonLegacy(container, jsonValue);
+    }
+    try {
+      container.textContent = "";
+      // luna-json-editor API: `new LunaJsonEditor(container, options)` then
+      // `.set(data)`. The data MUST be passed via `.set()` — the constructor
+      // does not read a `value` option, so forgetting this renders an empty
+      // editor (looks like nothing changed). Read-only is enforced by disabling
+      // every edit affordance (the component has no `readOnly` option).
+      const editor = new JsonEditor(container, {
+        enableInsert: false,
+        enableDelete: false,
+        nameEditable: false,
+        valueEditable: false,
+      });
+      editor.set(jsonValue);
+      // Mirror the read-only intent on the instance options for the contract
+      // assertion in tests (R6.4 / Property P2).
+      editor.options = editor.options || {};
+      editor.options.readOnly = true;
+      if (typeof editor.expand === "function") {
+        editor.expand();
+      }
+      return editor;
+    } catch {
+      return renderJsonLegacy(container, jsonValue);
+    }
+  }
+
+  // Convert a CDP-style RemoteObject (the console arg shape consumed by the
+  // legacy renderers) into a plain JS value so luna-object-viewer can display
+  // it. Bounded in depth to avoid pathological previews. Used only on the luna
+  // path; the legacy fallback keeps using the RemoteObject directly (R6.5).
+  function remoteObjectToPlain(obj, depth) {
+    const d = depth || 0;
+    if (obj === null || obj === undefined) return obj;
+    if (typeof obj !== "object" || Array.isArray(obj)) return obj;
+    if (typeof obj.type !== "string") return obj;
+
+    switch (obj.type) {
+      case "undefined":
+        return undefined;
+      case "boolean":
+        return typeof obj.value === "boolean" ? obj.value : obj.description;
+      case "number":
+        return obj.value !== undefined ? obj.value : Number(obj.description);
+      case "bigint":
+        return obj.description ? `${obj.description}n` : String(obj.value);
+      case "string":
+        return obj.value != null ? String(obj.value) : obj.description || "";
+      case "symbol":
+        return obj.description || "Symbol()";
+      case "function":
+        return obj.description || "\u0192 anonymous";
+      case "object": {
+        if (obj.subtype === "null") return null;
+        if (d > 5) return obj.description || obj.className || "Object";
+        return remoteObjectPreviewToPlain(obj, d);
+      }
+      default:
+        return obj.description != null ? obj.description : (obj.value ?? null);
+    }
+  }
+
+  function remoteObjectPreviewToPlain(obj, d) {
+    const preview = obj.preview;
+    if (!preview || !Array.isArray(preview.properties)) {
+      return obj.description || obj.className || "Object";
+    }
+    const isArray = preview.subtype === "array" || obj.subtype === "array";
+    const result = isArray ? [] : {};
+    for (const prop of preview.properties) {
+      const value = previewPropToPlain(prop, d + 1);
+      if (isArray) {
+        result.push(value);
+      } else {
+        result[prop.name] = value;
+      }
+    }
+    if (preview.overflow) {
+      if (isArray) {
+        result.push("\u2026");
+      } else {
+        result["\u2026"] = "more properties";
+      }
+    }
+    return result;
+  }
+
+  function previewPropToPlain(prop, d) {
+    if (prop.valuePreview && d <= 5) {
+      const nestedPreview = prop.valuePreview;
+      const isArray = nestedPreview.subtype === "array";
+      const nested = isArray ? [] : {};
+      if (Array.isArray(nestedPreview.properties)) {
+        for (const nestedProp of nestedPreview.properties) {
+          const nestedValue = previewPropToPlain(nestedProp, d + 1);
+          if (isArray) {
+            nested.push(nestedValue);
+          } else {
+            nested[nestedProp.name] = nestedValue;
+          }
+        }
+      }
+      if (nestedPreview.overflow) {
+        if (isArray) {
+          nested.push("\u2026");
+        } else {
+          nested["\u2026"] = "more";
+        }
+      }
+      return nested;
+    }
+
+    switch (prop.type) {
+      case "string":
+        return prop.value != null ? String(prop.value) : "";
+      case "number":
+      case "bigint":
+        return prop.value !== undefined ? Number(prop.value) : prop.value;
+      case "boolean":
+        return prop.value === true || prop.value === "true";
+      case "undefined":
+        return undefined;
+      case "function":
+        return "\u0192";
+      case "object":
+        return prop.subtype === "null" ? null : prop.value || "Object";
+      default:
+        return prop.value != null ? prop.value : null;
+    }
+  }
+
+  // Parse text as a JSON object/array (not a bare primitive). Returns undefined
+  // when the text is not a JSON container, so callers keep their legacy output.
+  function tryParseJsonObject(text) {
+    if (typeof text !== "string") return undefined;
+    const trimmed = text.trim();
+    if (!(trimmed.startsWith("{") || trimmed.startsWith("["))) return undefined;
+    try {
+      const value = JSON.parse(trimmed);
+      return value && typeof value === "object" ? value : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  // Build a `.luna-mount` placeholder for an object (console arg RemoteObject).
+  // Default content is the legacy HTML; mountLunaPlaceholders upgrades it later.
+  function buildLunaObjectMount(remoteObject) {
+    const legacy = renderRemoteObject(remoteObject, { includeStack: true });
+    let payload;
+    try {
+      payload = encodeURIComponent(JSON.stringify(remoteObject));
+    } catch {
+      return legacy;
+    }
+    return `<div class="luna-mount" data-luna-kind="object" data-luna-payload="${payload}">${legacy}</div>`;
+  }
+
+  // Build a `.luna-mount` placeholder for a JSON value. Default content is the
+  // provided legacy HTML; mountLunaPlaceholders upgrades it later.
+  function buildLunaJsonMount(jsonValue, legacyHtml, extraClass) {
+    let payload;
+    try {
+      payload = encodeURIComponent(JSON.stringify(jsonValue));
+    } catch {
+      return legacyHtml;
+    }
+    const className = extraClass ? `luna-mount ${extraClass}` : "luna-mount";
+    return `<div class="${className}" data-luna-kind="json" data-luna-payload="${payload}">${legacyHtml}</div>`;
+  }
+
+  // Upgrade `.luna-mount` placeholders within `root` (default: document) to luna
+  // viewers. Already-upgraded placeholders are skipped. Keeps legacy content
+  // when luna is unavailable or the payload cannot be parsed (R6.3 / Property P1).
+  function mountLunaPlaceholders(root) {
+    const scope = root && typeof root.querySelectorAll === "function" ? root : document;
+    let nodes;
+    try {
+      nodes = scope.querySelectorAll(".luna-mount:not([data-luna-mounted])");
+    } catch {
+      return;
+    }
+    nodes.forEach((el) => {
+      el.setAttribute("data-luna-mounted", "1");
+      const kind = el.getAttribute("data-luna-kind");
+      const raw = el.getAttribute("data-luna-payload") || "";
+      if (!raw) return;
+      if (kind === "object" && !lunaObjectViewerAvailable()) return;
+      if (kind === "json" && !lunaJsonEditorAvailable()) return;
+      let value;
+      try {
+        value = JSON.parse(decodeURIComponent(raw));
+      } catch {
+        return;
+      }
+      if (kind === "object") {
+        renderObjectValue(el, value);
+      } else if (kind === "json") {
+        renderJsonReadonly(el, value);
+      }
+    });
+  }
+
   function renderArgs(entry) {
     // Handle new format with entry.source
     if (entry.source !== undefined) {
@@ -1626,9 +2270,16 @@
       return "";
     }
 
-    return `
+    const legacy = `
       <pre class="json-preview-body response-code-block">${highlightJson(validation.formatted)}</pre>
     `;
+    let parsed;
+    try {
+      parsed = JSON.parse(validation.formatted);
+    } catch {
+      return legacy;
+    }
+    return buildLunaJsonMount(parsed, legacy, "json-preview-mount");
   }
 
   function isJsonPreviewReplacingRaw(entry, bodyKind, validation) {
@@ -1866,8 +2517,11 @@
   }
 
   function isNetworkVendorFrame(frame) {
-    const src = frame.originalSource || frame.url || "";
-    return Boolean(src && src.includes("node_modules"));
+    // A frame is highlighted (not gray) only when it resolves to an original
+    // source file via source maps AND that source is not inside node_modules.
+    // Unresolved frames (no source map) and resolved-but-vendor frames are gray.
+    if (!frame || !frame.originalSource) return true;
+    return frame.originalSource.includes("node_modules");
   }
 
   function buildResponseTabs(entry, previewHtml, responseBodyHtml) {
@@ -2599,6 +3253,8 @@
       indexJson?.artifacts?.diagnosticsPath || manifestJson?.artifacts?.diagnostics;
     const screenshotPath =
       indexJson?.artifacts?.screenshotPath || manifestJson?.artifacts?.screenshot;
+    const storagePath = indexJson?.artifacts?.storagePath || manifestJson?.artifacts?.storage;
+    const domPath = indexJson?.artifacts?.domPath || manifestJson?.artifacts?.dom;
     const reportEntry = reportPath ? getPackageEntry(entries, reportPath, false) : null;
     const eventsEntry = eventsPath ? getPackageEntry(entries, eventsPath, false) : null;
     const privacyEntry = privacyPath ? getPackageEntry(entries, privacyPath, false) : null;
@@ -2606,6 +3262,8 @@
       ? getPackageEntry(entries, diagnosticsPath, false)
       : null;
     const screenshotEntry = screenshotPath ? getPackageEntry(entries, screenshotPath, false) : null;
+    const storageEntry = storagePath ? getPackageEntry(entries, storagePath, false) : null;
+    const domEntry = domPath ? getPackageEntry(entries, domPath, false) : null;
 
     const resolved = {
       packageId: indexId,
@@ -2621,6 +3279,8 @@
       console: consoleEntry ? { blob: consoleEntry } : null,
       network: networkEntry ? { blob: networkEntry } : null,
       websocket: websocketEntry ? { blob: websocketEntry } : null,
+      storage: storageEntry ? { blob: storageEntry } : null,
+      dom: domEntry ? { blob: domEntry } : null,
       videoParts: videoPartPaths.map((path) => ({
         name: path,
         blob: getPackageEntry(entries, path),
@@ -2868,6 +3528,12 @@
       if (recordingFiles.websocket) {
         registerLoadingEntry("websocket", "websocket.json", "other");
       }
+      if (recordingFiles.storage) {
+        registerLoadingEntry("storage", "storage.json", "other");
+      }
+      if (recordingFiles.dom) {
+        registerLoadingEntry("dom", "dom.json", "other");
+      }
 
       // Load metadata first (needed for processing other data)
       const metadataJson = await loadJsonDescriptor(recordingFiles.metadata, "metadata.json", {
@@ -3099,6 +3765,26 @@
               webSocketLogs = Array.isArray(wsJson) ? wsJson : wsJson.data || wsJson.logs || [];
             })
           : Promise.resolve(),
+
+        // Load storage snapshots
+        recordingFiles.storage
+          ? loadJsonDescriptor(recordingFiles.storage, "storage.json", {
+              onProgress: createLoadingProgressReporter("storage", "other", "storage.json"),
+            }).then((storageJson) => {
+              markLoadingEntryLoaded("storage", "storage.json", "other");
+              storageArtifact = storageJson;
+            })
+          : Promise.resolve(),
+
+        // Load DOM snapshots
+        recordingFiles.dom
+          ? loadJsonDescriptor(recordingFiles.dom, "dom.json", {
+              onProgress: createLoadingProgressReporter("dom", "other", "dom.json"),
+            }).then((domJson) => {
+              markLoadingEntryLoaded("dom", "dom.json", "other");
+              domArtifact = domJson;
+            })
+          : Promise.resolve(),
       ]);
 
       // Update UI
@@ -3162,6 +3848,8 @@
     renderReportPanel();
     renderConsoleEntries();
     renderNetworkEntries();
+    renderStorageTab();
+    renderElementsTab();
     renderMarkers();
   }
 
@@ -3399,6 +4087,8 @@
       (row, pe) => syncConsoleEntryState(row, pe, closestIdx),
     );
 
+    mountLunaPlaceholders(elements.consoleEntries);
+
     if (shouldStickToBottom) {
       scrollToBottom(elements.consoleEntries);
     }
@@ -3437,7 +4127,7 @@
               (arg, i) => `
             <div class="arg-row">
               <span class="arg-index">[${i}]</span>
-              <div class="arg-value">${renderRemoteObject(arg, { includeStack: true })}</div>
+              <div class="arg-value">${buildLunaObjectMount(arg)}</div>
             </div>
           `,
             )
@@ -3549,6 +4239,8 @@
       (row, pe) => syncNetworkEntryState(row, pe, closestIdx),
     );
 
+    mountLunaPlaceholders(elements.networkRows);
+
     if (shouldStickToBottom) {
       scrollToBottom(elements.networkEntries);
     }
@@ -3563,6 +4255,7 @@
         getWebSocketEntryHtml,
         syncWebSocketEntryState,
       );
+      mountLunaPlaceholders(elements.websocketRows);
     } else {
       elements.websocketRows.innerHTML = "";
       elements.websocketSection.classList.add("hidden");
@@ -3712,6 +4405,20 @@
     return detailHtml;
   }
 
+  // Build a WebSocket frame payload cell. JSON payloads are upgraded to a
+  // read-only luna-json-editor (R6.2); everything else keeps the legacy text
+  // span. The legacy (truncated, escaped) text remains as the mount's fallback.
+  function buildWsPayloadCell(rawData) {
+    const data = rawData || "";
+    const truncated = data.length > 200 ? `${data.slice(0, 200)}...` : data;
+    const legacy = `<span class="ws-payload">${escapeHtml(truncated)}</span>`;
+    const parsed = tryParseJsonObject(data);
+    if (parsed === undefined) {
+      return legacy;
+    }
+    return buildLunaJsonMount(parsed, legacy, "ws-payload-mount");
+  }
+
   function renderWsDetail(ws) {
     const frames = ws.frames || [];
     const maxFrames = 100;
@@ -3731,12 +4438,10 @@
               .map((f) => {
                 const dir = f.direction === "sent" ? "&uarr;" : "&darr;";
                 const dirClass = f.direction === "sent" ? "sent" : "received";
-                const data = f.payloadData || "";
-                const truncated = data.length > 200 ? data.slice(0, 200) + "..." : data;
                 return `
                 <div class="ws-frame-row">
                   <span class="ws-direction ${dirClass}">${dir}</span>
-                  <span class="ws-payload">${escapeHtml(truncated)}</span>
+                  ${buildWsPayloadCell(f.payloadData)}
                 </div>
               `;
               })
@@ -3934,6 +4639,8 @@
       updateProgress();
       renderConsoleEntries();
       renderNetworkEntries();
+      updateStorageForTime();
+      updateElementsForTime();
     });
 
     // Loaded metadata
@@ -4115,6 +4822,8 @@
     updateProgress();
     renderConsoleEntries();
     renderNetworkEntries();
+    updateStorageForTime();
+    updateElementsForTime();
   }
 
   function clampProgressPercent(value) {
@@ -4254,6 +4963,18 @@
 
     elements.networkTab.addEventListener("click", () => {
       showLogsTab("network");
+    });
+
+    elements.storageTab?.addEventListener("click", () => {
+      if (!elements.storageTab.classList.contains("hidden")) {
+        showLogsTab("storage");
+      }
+    });
+
+    elements.elementsTab?.addEventListener("click", () => {
+      if (!elements.elementsTab.classList.contains("hidden")) {
+        showLogsTab("elements");
+      }
     });
   }
 
@@ -4447,6 +5168,8 @@
       updateProgress();
       renderConsoleEntries();
       renderNetworkEntries();
+      updateStorageForTime();
+      updateElementsForTime();
     });
   }
 
@@ -4484,7 +5207,11 @@
       document.documentElement.setAttribute("data-theme", currentTheme);
       themeToggleIcon.className = currentTheme === "light" ? "ph ph-sun" : "ph ph-moon";
       themeToggleBtn.addEventListener("click", () => {
-        const newTheme = currentTheme === "dark" ? "light" : "dark";
+        // Read the live theme from the DOM each click so the toggle keeps
+        // working past the first press (a captured const would freeze it).
+        const activeTheme =
+          document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark";
+        const newTheme = activeTheme === "dark" ? "light" : "dark";
         document.documentElement.setAttribute("data-theme", newTheme);
         localStorage.setItem("gn_tracing_theme", newTheme);
         themeToggleIcon.className = newTheme === "light" ? "ph ph-sun" : "ph ph-moon";

@@ -39,6 +39,11 @@ const DEFAULT_SETTINGS: UploadSettings = {
   captureWebSocketFrames: true,
   maxWebSocketFrameBytes: null,
   captureWebSocketInitiator: true,
+  captureStorage: false,
+  redactStorageValues: true,
+  captureDomSnapshots: false,
+  redactDomTextContent: true,
+  captureMode: "in-page",
 };
 
 type CapturePresetSettings = Omit<
@@ -47,6 +52,11 @@ type CapturePresetSettings = Omit<
   | "folderId"
   | "zipPasswordConfigured"
   | "captureProfile"
+  | "captureStorage"
+  | "redactStorageValues"
+  | "captureDomSnapshots"
+  | "redactDomTextContent"
+  | "captureMode"
   | keyof PrivacyRedactionSettings
 >;
 
@@ -146,6 +156,7 @@ const TRANSLATIONS: Record<SettingsLanguage, Record<string, string>> = {
     "sections.console": "Console",
     "sections.network": "Network",
     "sections.websocket": "WebSocket",
+    "sections.inspector": "Inspector capture (preview)",
     "profile.lean.label": "Lean",
     "profile.lean.help": "Metadata, minimal headers, compact console, no bodies.",
     "profile.balanced.label": "Balanced",
@@ -190,6 +201,13 @@ const TRANSLATIONS: Record<SettingsLanguage, Record<string, string>> = {
     "fields.captureWebSocketFrames.label": "Store WebSocket frame payloads",
     "fields.maxWebSocketFrameBytes.label": "Max frame bytes",
     "fields.captureWebSocketInitiator.label": "Store WebSocket initiator",
+    "fields.captureStorage.label": "Capture storage snapshots",
+    "fields.redactStorageValues.label": "Redact storage values",
+    "fields.captureDomSnapshots.label": "Capture DOM snapshots",
+    "fields.redactDomTextContent.label": "Redact DOM text content",
+    "fields.captureMode.label": "Capture mode",
+    "options.captureModeCdp": "CDP (full fidelity, debugger banner)",
+    "options.captureModeInPage": "In-page (no banner, lower fidelity)",
     "options.none": "None",
     "options.shallow": "Shallow",
     "options.fullWithinLimit": "Full within limit",
@@ -219,6 +237,10 @@ const TRANSLATIONS: Record<SettingsLanguage, Record<string, string>> = {
     "hints.zipPasswordNone": "New uploads will not require a zip password.",
     "hints.visualMasking":
       "Selectors are applied before capture when possible. They do not cover canvas, video, or closed shadow DOM.",
+    "hints.inspectorCapture":
+      "Storage and DOM capture turn on automatically while network/request capture is enabled, and lock to it. They capture more sensitive data (storage, cookies, DOM text) and increase package size. Turn off network capture to disable them, and keep redaction on to mask values that match sensitive patterns.",
+    "hints.captureMode":
+      "In-page is the default and avoids the chrome.debugger banner, but has lower fidelity (no cross-origin response bodies, no real source maps). Switch to CDP for full fidelity if you accept the debugging banner.",
     "messages.settingsSaved": "Settings saved.",
     "messages.profileSaved": "Capture profile saved.",
     "messages.privacyProfileSaved": "Privacy profile saved.",
@@ -243,6 +265,7 @@ const TRANSLATIONS: Record<SettingsLanguage, Record<string, string>> = {
     "sections.console": "Console",
     "sections.network": "Network",
     "sections.websocket": "WebSocket",
+    "sections.inspector": "Thu thập inspector (xem trước)",
     "profile.lean.label": "Gọn nhẹ",
     "profile.lean.help": "Metadata, header tối thiểu, console gọn, không lưu body.",
     "profile.balanced.label": "Cân bằng",
@@ -287,6 +310,13 @@ const TRANSLATIONS: Record<SettingsLanguage, Record<string, string>> = {
     "fields.captureWebSocketFrames.label": "Lưu payload frame WebSocket",
     "fields.maxWebSocketFrameBytes.label": "Byte tối đa mỗi frame",
     "fields.captureWebSocketInitiator.label": "Lưu nguồn tạo WebSocket",
+    "fields.captureStorage.label": "Capture snapshot storage",
+    "fields.redactStorageValues.label": "Che giá trị storage",
+    "fields.captureDomSnapshots.label": "Capture snapshot DOM",
+    "fields.redactDomTextContent.label": "Che nội dung text DOM",
+    "fields.captureMode.label": "Chế độ capture",
+    "options.captureModeCdp": "CDP (fidelity đầy đủ, có banner debugger)",
+    "options.captureModeInPage": "In-page (không banner, fidelity thấp hơn)",
     "options.none": "Không lưu",
     "options.shallow": "Nông",
     "options.fullWithinLimit": "Đầy đủ trong giới hạn",
@@ -316,6 +346,10 @@ const TRANSLATIONS: Record<SettingsLanguage, Record<string, string>> = {
     "hints.zipPasswordNone": "Các upload mới sẽ không yêu cầu mật khẩu zip.",
     "hints.visualMasking":
       "Selector được áp dụng trước khi capture nếu có thể. Không che canvas, video hoặc closed shadow DOM.",
+    "hints.inspectorCapture":
+      "Capture storage và DOM tự động bật và khoá theo khi network/request capture đang bật. Chúng capture thêm dữ liệu nhạy cảm (storage, cookie, text DOM) và làm tăng kích thước package. Tắt network capture để tắt chúng, và giữ redaction bật để che các giá trị khớp pattern nhạy cảm.",
+    "hints.captureMode":
+      "In-page là mặc định, không hiện banner chrome.debugger nhưng fidelity thấp hơn (không có response body cross-origin, không có source map thật). Chuyển sang CDP nếu cần fidelity đầy đủ và chấp nhận banner debug.",
     "messages.settingsSaved": "Đã lưu cài đặt.",
     "messages.profileSaved": "Đã lưu hồ sơ capture.",
     "messages.privacyProfileSaved": "Đã lưu hồ sơ privacy.",
@@ -589,6 +623,46 @@ const FIELD_HELP: Record<string, Record<SettingsLanguage, { title: string; body:
       body: "Lưu nơi WebSocket connection được mở. Điều này giúp developer tìm màn hình hoặc module tạo connection realtime có vấn đề.",
     },
   },
+  "capture-storage-input": {
+    en: {
+      title: "Capture storage snapshots",
+      body: "Captures localStorage, sessionStorage, and cookies at recording start and stop so you can inspect how stored state changed. Off by default because storage often contains personal data, tokens, or session identifiers, and it adds a storage.json artifact to the package.",
+    },
+    vi: {
+      title: "Capture snapshot storage",
+      body: "Chụp localStorage, sessionStorage và cookie tại lúc bắt đầu và kết thúc recording để xem state lưu trữ thay đổi thế nào. Mặc định tắt vì storage thường chứa dữ liệu cá nhân, token hoặc session id, và sẽ thêm artifact storage.json vào package.",
+    },
+  },
+  "redact-storage-values-input": {
+    en: {
+      title: "Redact storage values",
+      body: "Masks storage and cookie values whose keys match sensitive patterns (password, token, secret, ...). Keep this on so shared replays do not leak credentials.",
+    },
+    vi: {
+      title: "Che giá trị storage",
+      body: "Che giá trị storage và cookie khi key khớp pattern nhạy cảm (password, token, secret, ...). Nên bật để bản replay chia sẻ không lộ credential.",
+    },
+  },
+  "capture-dom-snapshots-input": {
+    en: {
+      title: "Capture DOM snapshots",
+      body: "Captures a static DOM snapshot at start, stop, and key markers so you can inspect element structure at those moments. Off by default because DOM text can contain personal data and snapshots can grow large.",
+    },
+    vi: {
+      title: "Capture snapshot DOM",
+      body: "Chụp snapshot DOM tĩnh tại start, stop và các marker quan trọng để soi cấu trúc element tại các thời điểm đó. Mặc định tắt vì text DOM có thể chứa dữ liệu cá nhân và snapshot có thể rất lớn.",
+    },
+  },
+  "redact-dom-text-content-input": {
+    en: {
+      title: "Redact DOM text content",
+      body: "Masks text and attribute values for DOM nodes that match your masking selectors before they enter the snapshot. Keep this on to avoid leaking sensitive on-screen content.",
+    },
+    vi: {
+      title: "Che nội dung text DOM",
+      body: "Che text và attribute của các node DOM khớp selector che trước khi đưa vào snapshot. Nên bật để tránh lộ nội dung nhạy cảm hiển thị trên màn hình.",
+    },
+  },
 };
 
 const saveBtn = document.getElementById("save-settings-btn") as HTMLButtonElement;
@@ -685,6 +759,18 @@ const maxWebSocketFrameBytesInput = document.getElementById(
 const captureWebSocketInitiatorInput = document.getElementById(
   "capture-websocket-initiator-input",
 ) as HTMLInputElement;
+
+const captureStorageInput = document.getElementById("capture-storage-input") as HTMLInputElement;
+const redactStorageValuesInput = document.getElementById(
+  "redact-storage-values-input",
+) as HTMLInputElement;
+const captureDomSnapshotsInput = document.getElementById(
+  "capture-dom-snapshots-input",
+) as HTMLInputElement;
+const redactDomTextContentInput = document.getElementById(
+  "redact-dom-text-content-input",
+) as HTMLInputElement;
+const captureModeInput = document.getElementById("capture-mode-input") as HTMLSelectElement;
 
 let currentSettings: UploadSettings | null = null;
 let currentLanguage: SettingsLanguage = getInitialLanguage();
@@ -837,6 +923,11 @@ function withDefaultSettings(settings: Partial<UploadSettings>): UploadSettings 
       settings.maxWebSocketFrameBytes ?? DEFAULT_SETTINGS.maxWebSocketFrameBytes,
     captureWebSocketInitiator:
       settings.captureWebSocketInitiator ?? DEFAULT_SETTINGS.captureWebSocketInitiator,
+    captureStorage: settings.captureStorage ?? DEFAULT_SETTINGS.captureStorage,
+    redactStorageValues: settings.redactStorageValues ?? DEFAULT_SETTINGS.redactStorageValues,
+    captureDomSnapshots: settings.captureDomSnapshots ?? DEFAULT_SETTINGS.captureDomSnapshots,
+    redactDomTextContent: settings.redactDomTextContent ?? DEFAULT_SETTINGS.redactDomTextContent,
+    captureMode: settings.captureMode ?? DEFAULT_SETTINGS.captureMode,
   };
 }
 
@@ -949,6 +1040,27 @@ function renderSettings(settings: UploadSettings): void {
       ? ""
       : String(normalizedSettings.maxWebSocketFrameBytes);
   captureWebSocketInitiatorInput.checked = normalizedSettings.captureWebSocketInitiator;
+
+  captureStorageInput.checked = normalizedSettings.captureStorage;
+  redactStorageValuesInput.checked = normalizedSettings.redactStorageValues;
+  captureDomSnapshotsInput.checked = normalizedSettings.captureDomSnapshots;
+  redactDomTextContentInput.checked = normalizedSettings.redactDomTextContent;
+  captureModeInput.value = normalizedSettings.captureMode;
+  syncInspectorCaptureCoupling();
+}
+
+// When network/request capture is on, storage and DOM capture are forced on and
+// their checkboxes are locked to reflect that they cannot be turned off
+// independently. Mirrors the data-layer coupling in settings-store.ts and the
+// service worker.
+function syncInspectorCaptureCoupling(): void {
+  const coupled = captureNetworkInput.checked;
+  if (coupled) {
+    captureStorageInput.checked = true;
+    captureDomSnapshotsInput.checked = true;
+  }
+  captureStorageInput.disabled = coupled;
+  captureDomSnapshotsInput.disabled = coupled;
 }
 
 function getSettingsPayload(): Record<string, unknown> {
@@ -961,6 +1073,13 @@ function getSettingsPayload(): Record<string, unknown> {
     clearZipPassword: clearZipPasswordInput.checked,
     captureProfile,
     privacyProfile,
+    // Inspector toggles are profile-independent, so always persist their current state.
+    // Coupling: network/request capture forces storage + DOM capture on.
+    captureStorage: captureStorageInput.checked || captureNetworkInput.checked,
+    redactStorageValues: redactStorageValuesInput.checked,
+    captureDomSnapshots: captureDomSnapshotsInput.checked || captureNetworkInput.checked,
+    redactDomTextContent: redactDomTextContentInput.checked,
+    captureMode: captureModeInput.value,
   };
 
   if (privacyProfile === "custom") {
@@ -1177,17 +1296,28 @@ document.querySelectorAll<HTMLInputElement>('input[name="privacy-profile"]').for
 
 document.querySelectorAll("input, select, textarea").forEach((input) => {
   input.addEventListener("change", () => {
+    // Keep storage/DOM toggles locked-on while network capture is enabled.
+    if (input.getAttribute("id") === "capture-network-input") {
+      syncInspectorCaptureCoupling();
+    }
     const profile = getProfileInput();
     const privacyProfile = getPrivacyProfileInput();
     const inputName = input.getAttribute("name");
     const inputId = input.getAttribute("id") || "";
+    // Inspector capture toggles are profile-independent; toggling them must not switch profiles.
+    const isInspectorToggle =
+      inputId === "capture-storage-input" ||
+      inputId === "redact-storage-values-input" ||
+      inputId === "capture-dom-snapshots-input" ||
+      inputId === "redact-dom-text-content-input";
     if (
       profile &&
       profile.value !== "custom" &&
       inputName !== "capture-profile" &&
       inputName !== "privacy-profile" &&
       !inputId.startsWith("redact-") &&
-      inputId !== "mask-dom-selectors-input"
+      inputId !== "mask-dom-selectors-input" &&
+      !isInspectorToggle
     ) {
       setProfile("custom");
     }
@@ -1195,6 +1325,7 @@ document.querySelectorAll("input, select, textarea").forEach((input) => {
       privacyProfile &&
       privacyProfile.value !== "custom" &&
       inputName !== "privacy-profile" &&
+      !isInspectorToggle &&
       (inputId.startsWith("redact-") || inputId === "mask-dom-selectors-input")
     ) {
       setPrivacyProfile("custom");

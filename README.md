@@ -8,6 +8,7 @@ It captures:
 - console logs and runtime errors
 - network requests and responses
 - WebSocket activity
+- optional storage snapshots (localStorage, sessionStorage, cookies) and static DOM snapshots
 - an optional Google Drive upload with a replay link
 
 ## Screenshots
@@ -73,6 +74,26 @@ The player lets you review the video together with console, network, and WebSock
 Sensitive request and response headers are redacted by default.
 
 Request bodies, response bodies, and WebSocket message payloads are captured only when enabled in the popup privacy settings. Response body capture is limited to supported text-based content types and about `1 MB` per response.
+
+### Storage and DOM capture (opt-in)
+
+Two additional evidence sources are available in Settings. Both default to **off** and ship with redaction **on**, so nothing extra is captured until you turn it on:
+
+- `captureStorage` — snapshots `localStorage`, `sessionStorage`, and cookies at recording start and stop, packaged as `storage.json` and shown in the player `Storage` tab with a start↔stop diff. `redactStorageValues` (default on) replaces values whose key matches a sensitive pattern (password, token, secret, and similar) with a redacted placeholder before the snapshot is buffered.
+- `captureDomSnapshots` — captures a static DOM tree at start, stop, and key marker events (not a continuous recording), packaged as `dom.json` and shown in the player `Elements` tab. `redactDomTextContent` (default on) masks text and attribute values for nodes matching your DOM mask selectors. Oversized snapshots are reduced or skipped, and any skipped capture is noted in the recording's privacy limitations.
+
+Because both expand the captured surface of personal data, keep them off unless a bug genuinely depends on stored state or DOM structure, and prefer the default redaction.
+
+### Capture mode
+
+`captureMode` selects how evidence is collected and defaults to `"cdp"`:
+
+- `"cdp"` — full-fidelity capture through the Chrome Debugger Protocol. The browser shows a "debugging this tab" banner while recording.
+- `"in-page"` — opt-in, lower-fidelity capture that injects in-page instrumentation instead of attaching the debugger, so no debugging banner appears. Trade-offs: no cross-origin response bodies and no real source maps, and a page's Content Security Policy can block the injection. These limitations are recorded in the recording's privacy summary, and if CSP blocks injection the recording recommends switching back to `"cdp"`.
+
+### Third-party components and attribution
+
+The replay player renders objects and JSON with vendored, prebuilt [luna](https://github.com/liriliri/luna) components (`luna-object-viewer`, `luna-json-editor`) under `player/vendor/luna/`. These are MIT-licensed; the upstream license is kept at [`player/vendor/luna/LICENSE`](./player/vendor/luna/LICENSE) and pinned versions are recorded in `player/vendor/luna/VERSIONS.md`. The player falls back to its built-in renderers if a component is unavailable.
 
 ## Limits
 

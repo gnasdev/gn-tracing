@@ -2,6 +2,7 @@ import { parseGoogleDriveFolderInput } from "../shared/google-drive-folder";
 import { buildExternalPlayerUrl } from "../shared/player-host";
 import { getPrivacyProfileSettings, normalizeMaskDomSelectors } from "../shared/privacy-redaction";
 import type {
+  CaptureMode,
   CaptureProfile,
   ConsolePreviewDepth,
   ConsoleSourceSnippetMode,
@@ -43,6 +44,14 @@ export interface UploadSettingsStore extends PrivacyRedactionSettings {
   captureWebSocketFrames: boolean;
   maxWebSocketFrameBytes: number | null;
   captureWebSocketInitiator: boolean;
+  // Inspector capture toggles (privacy-first: capture OFF, redact ON by default).
+  // Independent of capture/privacy profiles so presets never re-enable them.
+  captureStorage: boolean;
+  redactStorageValues: boolean;
+  captureDomSnapshots: boolean;
+  redactDomTextContent: boolean;
+  // Capture mechanism is profile-independent (CDP vs in-page); presets never change it.
+  captureMode: CaptureMode;
 }
 
 type CaptureSettingsStore = Omit<
@@ -52,6 +61,11 @@ type CaptureSettingsStore = Omit<
   | "folderPath"
   | "zipPassword"
   | "captureProfile"
+  | "captureStorage"
+  | "redactStorageValues"
+  | "captureDomSnapshots"
+  | "redactDomTextContent"
+  | "captureMode"
   | keyof PrivacyRedactionSettings
 >;
 
@@ -87,6 +101,15 @@ export const DEFAULT_CAPTURE_PRIVACY_SETTINGS = {
   captureWebSocketFrames: true,
   maxWebSocketFrameBytes: null,
   captureWebSocketInitiator: true,
+  // Inspector capture defaults are privacy-first: capture OFF, redact ON.
+  captureStorage: false,
+  redactStorageValues: true,
+  captureDomSnapshots: false,
+  redactDomTextContent: true,
+  // Capture mechanism defaults to in-page so recordings do not show the
+  // chrome.debugger banner. CDP remains available for full fidelity (real
+  // source maps, cross-origin response bodies) when the user opts in.
+  captureMode: "in-page" as CaptureMode,
 };
 
 let cachedUploadSettings: UploadSettingsStore = {
@@ -234,6 +257,16 @@ function normalizeUploadSettingsStore(
     privacyProfile === "custom" ? "standard" : privacyProfile,
   );
 
+  // Coupling (product rule): when network/request capture is on, storage and
+  // DOM snapshot capture are forced on too. captureNetwork defaults to true in
+  // every profile, so in practice these inspector captures are on unless the
+  // user turns network capture off. Redaction toggles stay independent and ON
+  // by default, so sensitive values are still masked.
+  const captureNetwork = normalizeBoolean(
+    storedUploadSettings?.captureNetwork,
+    profileDefaults.captureNetwork,
+  );
+
   return {
     folderInput: parsedFolder.normalizedInput,
     folderId: typeof stored?.folderId === "string" ? stored.folderId : parsedFolder.folderId,
@@ -303,10 +336,7 @@ function normalizeUploadSettingsStore(
       1024,
       512 * 1024,
     ),
-    captureNetwork: normalizeBoolean(
-      storedUploadSettings?.captureNetwork,
-      profileDefaults.captureNetwork,
-    ),
+    captureNetwork,
     captureRequestHeaders: normalizeEnum<HeaderCaptureMode>(
       storedUploadSettings?.captureRequestHeaders,
       ["off", "minimal", "full"],
@@ -369,6 +399,32 @@ function normalizeUploadSettingsStore(
     captureWebSocketInitiator: normalizeBoolean(
       storedUploadSettings?.captureWebSocketInitiator,
       profileDefaults.captureWebSocketInitiator,
+    ),
+    // Inspector capture toggles migrate to privacy-first defaults when missing,
+    // but are forced on whenever network/request capture is enabled (coupling).
+    captureStorage:
+      normalizeBoolean(
+        storedUploadSettings?.captureStorage,
+        DEFAULT_CAPTURE_PRIVACY_SETTINGS.captureStorage,
+      ) || captureNetwork,
+    redactStorageValues: normalizeBoolean(
+      storedUploadSettings?.redactStorageValues,
+      DEFAULT_CAPTURE_PRIVACY_SETTINGS.redactStorageValues,
+    ),
+    captureDomSnapshots:
+      normalizeBoolean(
+        storedUploadSettings?.captureDomSnapshots,
+        DEFAULT_CAPTURE_PRIVACY_SETTINGS.captureDomSnapshots,
+      ) || captureNetwork,
+    redactDomTextContent: normalizeBoolean(
+      storedUploadSettings?.redactDomTextContent,
+      DEFAULT_CAPTURE_PRIVACY_SETTINGS.redactDomTextContent,
+    ),
+    // Capture mechanism falls back to "cdp" when missing or invalid (R9.1).
+    captureMode: normalizeEnum<CaptureMode>(
+      storedUploadSettings?.captureMode,
+      ["cdp", "in-page"],
+      DEFAULT_CAPTURE_PRIVACY_SETTINGS.captureMode,
     ),
   };
 }
@@ -470,6 +526,11 @@ export function getSettingsSnapshot(settings: UploadSettingsStore): UploadSettin
     captureWebSocketFrames: settings.captureWebSocketFrames,
     maxWebSocketFrameBytes: settings.maxWebSocketFrameBytes,
     captureWebSocketInitiator: settings.captureWebSocketInitiator,
+    captureStorage: settings.captureStorage,
+    redactStorageValues: settings.redactStorageValues,
+    captureDomSnapshots: settings.captureDomSnapshots,
+    redactDomTextContent: settings.redactDomTextContent,
+    captureMode: settings.captureMode,
   };
 }
 

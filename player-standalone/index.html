@@ -27,6 +27,9 @@
   </script>
   <link rel="stylesheet" href="/icons/phosphor-icons.css">
   <link rel="stylesheet" href="/player.css">
+  <!-- Vendored luna-* UI components (prebuilt UMD, MIT). See player/vendor/luna/VERSIONS.md. -->
+  <link rel="stylesheet" href="/vendor/luna/luna-object-viewer.css">
+  <link rel="stylesheet" href="/vendor/luna/luna-json-editor.css">
 </head>
 <body>
   <div id="app">
@@ -194,6 +197,8 @@
             <button type="button" id="report-tab" class="tab-btn hidden">Report</button>
             <button type="button" id="console-tab" class="tab-btn active">Console</button>
             <button type="button" id="network-tab" class="tab-btn">Network</button>
+            <button type="button" id="storage-tab" class="tab-btn hidden">Storage</button>
+            <button type="button" id="elements-tab" class="tab-btn hidden">Elements</button>
           </div>
 
           <div id="report-viewer" class="viewer-container report-viewer hidden">
@@ -273,6 +278,18 @@
             </div>
           </div>
 
+          <div id="storage-viewer" class="viewer-container storage-viewer hidden" aria-label="Storage snapshot diff">
+            <div id="storage-content" class="entries-scroll storage-content"></div>
+          </div>
+
+          <div id="elements-viewer" class="viewer-container elements-viewer hidden" aria-label="DOM snapshot tree">
+            <div class="filter-bar elements-toolbar">
+              <label class="elements-snapshot-label" for="elements-snapshot-select">Snapshot</label>
+              <select id="elements-snapshot-select" class="elements-snapshot-select" aria-label="Select DOM snapshot"></select>
+            </div>
+            <div id="elements-tree" class="entries-scroll elements-tree"></div>
+          </div>
+
         </div>
       </div>
     </div>
@@ -284,6 +301,11 @@
       driveApiKey: undefined,
     };
   </script>
+  <!-- Vendored luna-* UI components (prebuilt UMD, MIT). These synchronous scripts
+       run before the deferred main.ts module injects player.js, so
+       window.LunaObjectViewer / window.LunaJsonEditor are ready at player startup. -->
+  <script src="/vendor/luna/luna-object-viewer.js"></script>
+  <script src="/vendor/luna/luna-json-editor.js"></script>
   <script type="module" src="/src/main.ts"></script>
 </body>
 </html>

@@ -284,6 +284,8 @@ describe("buildRecordingPrivacySummary", () => {
     responseBodies: true,
     websocketPayloads: false,
     sourceSnippets: false,
+    storage: false,
+    dom: false,
   };
 
   it("groups and counts hits and dedupes limitations", () => {

@@ -43,6 +43,8 @@ interface ZipData {
   userEvents?: string;
   privacy?: string;
   diagnostics?: string;
+  storage?: string;
+  dom?: string;
   screenshotDataUrl?: string | null;
   duration: number;
   url: string;
@@ -63,6 +65,8 @@ interface GoogleDriveUploadData extends ZipData {
     userEvents?: boolean;
     privacy?: boolean;
     diagnostics?: boolean;
+    storage?: boolean;
+    dom?: boolean;
     screenshot?: boolean;
   };
 }
@@ -74,7 +78,9 @@ type UploadArtifactKey =
   | "report"
   | "userEvents"
   | "privacy"
-  | "diagnostics";
+  | "diagnostics"
+  | "storage"
+  | "dom";
 
 interface UploadArtifactChunkResponse {
   ok: boolean;
@@ -112,6 +118,8 @@ interface RecordingManifest {
     console?: string;
     network?: string;
     websocket?: string;
+    storage?: string;
+    dom?: string;
   };
 }
 
@@ -993,6 +1001,14 @@ async function uploadToGoogleDrive(data: GoogleDriveUploadData): Promise<{
       data.artifactKeys?.diagnostics || data.diagnostics
         ? await createArtifactBlob(sessionId, "diagnostics", data.diagnostics)
         : null;
+    const storageBlob =
+      data.artifactKeys?.storage || data.storage
+        ? await createArtifactBlob(sessionId, "storage", data.storage)
+        : null;
+    const domBlob =
+      data.artifactKeys?.dom || data.dom
+        ? await createArtifactBlob(sessionId, "dom", data.dom)
+        : null;
     const screenshotBlob = data.artifactKeys?.screenshot
       ? createBlobFromDataUrl(data.screenshotDataUrl)
       : null;
@@ -1007,6 +1023,8 @@ async function uploadToGoogleDrive(data: GoogleDriveUploadData): Promise<{
       ...(consoleBlob ? { console: "console.json" } : {}),
       ...(networkBlob ? { network: "network.json" } : {}),
       ...(websocketBlob ? { websocket: "websocket.json" } : {}),
+      ...(storageBlob ? { storage: "storage.json" } : {}),
+      ...(domBlob ? { dom: "dom.json" } : {}),
     };
     const videoDescriptors: DriveFileDescriptor[] = videoParts.map((part, index) => ({
       id: `video.part-${String(index).padStart(3, "0")}.webm`,
@@ -1069,6 +1087,8 @@ async function uploadToGoogleDrive(data: GoogleDriveUploadData): Promise<{
         ...(consoleBlob ? { consolePath: "console.json" } : {}),
         ...(networkBlob ? { networkPath: "network.json" } : {}),
         ...(websocketBlob ? { websocketPath: "websocket.json" } : {}),
+        ...(storageBlob ? { storagePath: "storage.json" } : {}),
+        ...(domBlob ? { domPath: "dom.json" } : {}),
       },
       video: {
         mimeType: snapshot.mimeType,
@@ -1107,6 +1127,12 @@ async function uploadToGoogleDrive(data: GoogleDriveUploadData): Promise<{
     }
     if (diagnosticsBlob) {
       zipEntries.push({ name: "diagnostics.json", blob: diagnosticsBlob });
+    }
+    if (storageBlob) {
+      zipEntries.push({ name: "storage.json", blob: storageBlob });
+    }
+    if (domBlob) {
+      zipEntries.push({ name: "dom.json", blob: domBlob });
     }
     if (screenshotBlob) {
       zipEntries.push({ name: "screenshot.jpg", blob: screenshotBlob });

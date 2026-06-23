@@ -44,6 +44,8 @@ The current policy version is `1`. It is implemented without Chrome API dependen
 
 Capture depth and privacy profile are separate choices. A user can keep full debug capture enabled while still applying standard, strict, or custom redaction before artifacts are uploaded.
 
+Storage and DOM capture are privacy-first opt-ins. `captureStorage` and `captureDomSnapshots` default off; their redaction companions `redactStorageValues` and `redactDomTextContent` default on. The `captureMode` setting (`"cdp"` default, `"in-page"` opt-in) does not change redaction, but `"in-page"` records additional fidelity limitations in `privacy.json`.
+
 ## Redaction Surfaces
 
 The shared policy redacts or transforms:
@@ -55,6 +57,8 @@ The shared policy redacts or transforms:
 - WebSocket text payloads, either by sensitive fields or by replacing all payload text
 - report metadata text and page URLs
 - event timeline selectors, labels, navigation URLs, and titles
+- storage snapshot values and cookie values whose key matches a sensitive pattern, under the `"storage"` redaction artifact (when `redactStorageValues` is on)
+- DOM snapshot text and attribute values for nodes matching the DOM mask selectors, under the `"dom"` redaction artifact (when `redactDomTextContent` is on)
 
 Redaction hits store only metadata: artifact class, data class, action, sanitized field path, and rule id. Raw secret values are not written into `privacy.json`.
 
@@ -71,9 +75,9 @@ DOM masking is best-effort. The configured selectors are normalized and validate
 `privacy.json` records:
 
 - policy version and selected privacy profile
-- artifact flags for video, screenshot, report, events, console, network, WebSocket, request/response bodies, WebSocket payloads, and source snippets
-- grouped redaction counts
-- bounded known limitations
+- artifact flags for video, screenshot, report, events, console, network, WebSocket, request/response bodies, WebSocket payloads, source snippets, storage, and DOM snapshots
+- grouped redaction counts, including `storage` and `dom` hits
+- bounded known limitations, including storage/DOM capture failures, skipped oversized DOM snapshots, and `in-page` capture-mode fidelity limits
 
 The privacy artifact is optional for replay compatibility. Packages without it still load through the legacy player path; packages with it render a compact privacy summary in the replay report panel.
 

@@ -30,6 +30,10 @@ export interface MessageHandlers {
     data: Record<string, unknown> | undefined,
     sender: chrome.runtime.MessageSender,
   ) => MessageResponse;
+  handleRecordingInPageEntry: (
+    data: Record<string, unknown> | undefined,
+    sender: chrome.runtime.MessageSender,
+  ) => MessageResponse;
   uploadSessionToGoogleDrive: (
     data: Record<string, unknown> | undefined,
   ) => Promise<MessageResponse>;
@@ -101,6 +105,8 @@ async function handleMessage(
       return handlers.deleteSession(message.data);
     case "RECORDING_USER_EVENT":
       return handlers.handleRecordingUserEvent(message.data, sender);
+    case "RECORDING_INPAGE_ENTRY":
+      return handlers.handleRecordingInPageEntry(message.data, sender);
     case "UPLOAD_TO_GOOGLE_DRIVE":
       return handlers.uploadSessionToGoogleDrive(message.data);
     case "GET_UPLOAD_STATE":

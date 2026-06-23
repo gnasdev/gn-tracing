@@ -1259,6 +1259,225 @@ body {
   background: var(--text-dim);
 }
 
+/* Storage viewer */
+.storage-content {
+  padding: 12px;
+  font-size: 12px;
+}
+
+.storage-group {
+  margin-bottom: 20px;
+}
+
+.storage-group-title {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-base);
+}
+
+.storage-group-count {
+  color: var(--text-dim);
+  font-weight: 400;
+}
+
+.storage-group-rows {
+  border: 1px solid var(--border-input);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.storage-row {
+  display: grid;
+  grid-template-columns: 90px minmax(120px, 1fr) 2fr;
+  gap: 8px;
+  align-items: start;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border-input);
+}
+
+.storage-row:last-child {
+  border-bottom: none;
+}
+
+.storage-status-badge {
+  text-transform: uppercase;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  align-self: center;
+}
+
+.storage-status-added {
+  color: var(--text-success, #2ea043);
+}
+
+.storage-status-removed {
+  color: var(--text-error, #f85149);
+}
+
+.storage-status-changed {
+  color: var(--text-warn, #d29922);
+}
+
+.storage-status-unchanged {
+  color: var(--text-dim);
+}
+
+.storage-key {
+  font-family: var(--font-mono, monospace);
+  color: var(--text-base);
+  word-break: break-all;
+}
+
+.storage-value-cell {
+  font-family: var(--font-mono, monospace);
+  color: var(--text-dim);
+  word-break: break-all;
+}
+
+.storage-value-arrow {
+  margin: 0 6px;
+  color: var(--text-dim);
+}
+
+.storage-value-from {
+  text-decoration: line-through;
+  opacity: 0.7;
+}
+
+.storage-empty {
+  padding: 10px;
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+/* Elements / DOM snapshot tree */
+
+.elements-viewer {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-base);
+}
+
+.elements-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.elements-snapshot-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.elements-snapshot-select {
+  padding: 5px 8px;
+  border: 1px solid var(--border-input);
+  border-radius: 6px;
+  color: var(--text-primary);
+  background: var(--bg-input);
+  font-size: 12px;
+}
+
+.elements-snapshot-select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-ghost);
+}
+
+.elements-tree {
+  flex: 1;
+  padding: 8px 10px;
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+
+.dom-node {
+  margin-left: 12px;
+}
+
+.dom-children {
+  margin-left: 12px;
+  border-left: 1px solid var(--border-subtle);
+  padding-left: 6px;
+}
+
+.dom-summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.dom-summary::-webkit-details-marker {
+  display: none;
+}
+
+.dom-summary::before {
+  content: "▸";
+  display: inline-block;
+  width: 12px;
+  color: var(--text-dim);
+}
+
+.dom-node[open] > .dom-summary::before {
+  content: "▾";
+}
+
+.dom-leaf {
+  margin-left: 12px;
+  padding-left: 12px;
+}
+
+.dom-close-tag {
+  margin-left: 0;
+}
+
+.dom-tag {
+  color: var(--accent);
+}
+
+.dom-attr-name {
+  color: var(--text-base);
+}
+
+.dom-attr-value {
+  color: var(--success-soft, var(--text-secondary));
+}
+
+.dom-text-value {
+  color: var(--text-secondary);
+}
+
+.dom-comment .dom-text-value {
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+.dom-masked-badge {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--bg-danger-soft, rgba(255, 99, 99, 0.18));
+  color: var(--danger, #ff6363);
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  vertical-align: middle;
+}
+
+.dom-empty {
+  padding: 10px;
+  color: var(--text-dim);
+  font-style: italic;
+}
+
 @media (max-width: 900px) {
   .main-layout {
     grid-template-columns: minmax(220px, calc(var(--player-split-percent) * 1%)) var(
@@ -1942,7 +2161,6 @@ body {
     background 150ms ease;
 }
 
-.network-detail .initiator-filter-toggle:hover,
 .network-detail .initiator-filter-toggle.active {
   border-color: var(--accent);
   color: var(--accent);
@@ -2177,5 +2395,71 @@ body {
     animation-duration: 0.01ms;
     animation-iteration-count: 1;
     transition-duration: 0.01ms;
+  }
+}
+
+/* Small screens: force a vertical, full-height scrolling layout.
+   The whole page scrolls instead of each panel scrolling inside a fixed 100vh
+   frame. The video section is capped at the viewport height; the remaining
+   panel grows to its full natural height with no limit. */
+@media (max-width: 720px) {
+  body {
+    overflow: auto;
+  }
+
+  .player-container {
+    height: auto;
+    min-height: 100vh;
+    overflow: visible;
+  }
+
+  /* Drop the resizable grid and stack as a normal flow column regardless of the
+     stored layout mode (the layout is locked to vertical here). */
+  .main-layout,
+  .player-container[data-layout-mode="horizontal"] .main-layout,
+  .player-container[data-layout-mode="vertical"] .main-layout {
+    display: flex;
+    flex-direction: column;
+    grid-template-columns: none;
+    grid-template-rows: none;
+    overflow: visible;
+  }
+
+  /* Video section: capped at the viewport height, sized to content otherwise. */
+  .player-container[data-layout-mode="horizontal"] .video-section,
+  .player-container[data-layout-mode="vertical"] .video-section {
+    grid-column: auto;
+    grid-row: auto;
+    flex: 0 0 auto;
+    max-height: 100vh;
+    border-right: none;
+    border-bottom: 1px solid var(--border-default);
+  }
+
+  /* Logs panel: full natural height, no internal scroll cap — the page scrolls. */
+  .player-container[data-layout-mode="horizontal"] .logs-panel,
+  .player-container[data-layout-mode="vertical"] .logs-panel {
+    grid-column: auto;
+    grid-row: auto;
+    flex: 1 0 auto;
+    min-height: 0;
+    overflow: visible;
+  }
+
+  .logs-panel .viewer-container {
+    flex: 1 0 auto;
+    min-height: 0;
+    overflow: visible;
+  }
+
+  .logs-panel .entries-scroll {
+    flex: 0 1 auto;
+    overflow: visible;
+  }
+
+  /* The resize splitter and layout toggle are meaningless when locked vertical. */
+  .layout-splitter,
+  .layout-control-group {
+    display: none;
   }
 }

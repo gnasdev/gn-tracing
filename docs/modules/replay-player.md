@@ -53,7 +53,7 @@ The primary package format is a single `gn-tracing-*.zip` containing:
 - `manifest.json`
 - `metadata.json`
 - one or more ordered `video.part-XXX.webm` entries
-- optional `report.json`, `events.json`, `privacy.json`, `diagnostics.json`, `screenshot.jpg`, `console.json`, `network.json`, and `websocket.json`
+- optional `report.json`, `events.json`, `privacy.json`, `diagnostics.json`, `screenshot.jpg`, `console.json`, `network.json`, `websocket.json`, `storage.json`, and `dom.json`
 
 The player reads the zip central directory in-browser, validates entry sizes and CRC32, supports stored media entries, and inflates DEFLATE-compressed JSON/text entries when the browser provides `DecompressionStream`.
 
@@ -85,6 +85,7 @@ The player renders:
 - source-mapped console locations, parsed Error argument stacks, bounded source snippets, and source-map diagnostic messages
 - network request/response details, headers, body text, cURL copy, response previews for HTML/media, syntax-highlighted source views, and JSON pretty preview when validation succeeds
 - network and WebSocket initiator sections with source-mapped locations, full stack frames including async parent stacks, and source-map diagnostic messages
+- when present, a `Storage` tab with localStorage/sessionStorage/cookie groups and a start↔stop diff (added/removed/changed/unchanged), and an `Elements` tab with a snapshot-selectable, inspectable DOM tree; both tabs are hidden when their artifact is absent
 - draggable horizontal/vertical layout, persisted split percentage, and in-tab immersive video mode
 
 ## Source-Map Rendering
@@ -97,6 +98,12 @@ Replay does not fetch original source maps or application source files. Source-m
 - package-level `diagnostics.json` fallback messages for missing maps, HTML/non-JSON map responses, HTTP failures, missing frame ids, or resolver misses
 
 Parsed Error object stacks stored on `SerializedRemoteObject.stackTrace` are rendered separately from the raw Error description when present, so logged Error arguments can show source-mapped frames without reparsing source maps in replay.
+
+## Vendored Rendering Components
+
+Object and JSON values can be rendered with prebuilt [luna](https://github.com/liriliri/luna) components vendored under `player/vendor/luna/` (`luna-object-viewer`, `luna-json-editor`). These standalone IIFE/UMD bundles expose globals (for example `window.LunaObjectViewer`) and are loaded by `<link>`/`<script>` tags before `player.js` in both `player/player.html` and `player-standalone/index.html`. `sync-player.js` mirrors the whole `vendor/` directory into the standalone player, and the extension build copies `player/vendor` into `dist/player/vendor`.
+
+The components are MIT-licensed; the upstream license text is kept at `player/vendor/luna/LICENSE` and exact versions are pinned in `player/vendor/luna/VERSIONS.md`. The player wraps each component in a thin adapter that falls back to the legacy hand-rolled renderer when the global is unavailable, so missing or failed vendor bundles never throw. The JSON viewer is configured read-only because the player only replays.
 
 ## Relationships
 

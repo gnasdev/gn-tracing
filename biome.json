@@ -17,6 +17,8 @@
       "!graphify-out",
       "!player/icons",
       "!player-standalone/public/icons",
+      "!player/vendor",
+      "!player-standalone/public/vendor",
       "!store-assets"
     ]
   },

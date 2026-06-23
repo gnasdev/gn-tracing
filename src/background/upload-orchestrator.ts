@@ -19,7 +19,9 @@ export type UploadArtifactKey =
   | "report"
   | "userEvents"
   | "privacy"
-  | "diagnostics";
+  | "diagnostics"
+  | "storage"
+  | "dom";
 
 export interface UploadArtifactChunkResponse extends MessageResponse {
   chunk?: string;
@@ -37,7 +39,9 @@ export function isUploadArtifactKey(key: string): key is UploadArtifactKey {
     key === "report" ||
     key === "userEvents" ||
     key === "privacy" ||
-    key === "diagnostics"
+    key === "diagnostics" ||
+    key === "storage" ||
+    key === "dom"
   );
 }
 

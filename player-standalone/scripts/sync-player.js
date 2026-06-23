@@ -10,6 +10,33 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const sourceDir = path.resolve(__dirname, "../../player");
 const targetDir = path.resolve(__dirname, "../public");
 
+/**
+ * Recursively copy a directory tree. Used to mirror vendored prebuilt assets
+ * (e.g. `player/vendor/luna/`) into the standalone player's public dir so the
+ * UMD bundles can be served alongside `player.js`.
+ * @param {string} src absolute source directory
+ * @param {string} dest absolute destination directory
+ * @returns {number} number of files copied
+ */
+function copyDirRecursive(src, dest) {
+  let count = 0;
+  if (!fs.existsSync(dest)) {
+    fs.mkdirSync(dest, { recursive: true });
+  }
+  const entries = fs.readdirSync(src, { withFileTypes: true });
+  for (const entry of entries) {
+    const srcPath = path.join(src, entry.name);
+    const destPath = path.join(dest, entry.name);
+    if (entry.isDirectory()) {
+      count += copyDirRecursive(srcPath, destPath);
+    } else {
+      fs.copyFileSync(srcPath, destPath);
+      count++;
+    }
+  }
+  return count;
+}
+
 console.log("🔄 Syncing player assets...");
 console.log("Source:", sourceDir);
 console.log("Target:", targetDir);
@@ -91,6 +118,19 @@ for (const file of sharedIconFiles) {
   } else {
     console.error(`  ✗ Missing shared icon ${file}`);
   }
+}
+
+// Copy vendored prebuilt bundles (luna-* UMD + CSS, license, version pins) so
+// the standalone player can load them via <link>/<script> before player.js.
+const vendorSrc = path.join(sourceDir, "vendor");
+const vendorDest = path.join(targetDir, "vendor");
+
+if (fs.existsSync(vendorSrc)) {
+  const vendorCount = copyDirRecursive(vendorSrc, vendorDest);
+  console.log(`  ✓ vendor/ (${vendorCount} files)`);
+  copiedCount++;
+} else {
+  console.error("  ✗ Missing vendor/");
 }
 
 console.log(`\\n✅ Synced ${copiedCount} items`);

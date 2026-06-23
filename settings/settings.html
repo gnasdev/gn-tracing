@@ -153,6 +153,19 @@
       </div>
     </section>
 
+    <section class="settings-panel-full">
+      <div class="settings-group">
+        <h2 data-i18n="sections.inspector">Inspector capture (preview)</h2>
+        <label class="settings-check"><input id="capture-storage-input" type="checkbox"><span data-i18n="fields.captureStorage.label">Capture storage snapshots</span></label>
+        <label class="settings-check"><input id="redact-storage-values-input" type="checkbox" checked><span data-i18n="fields.redactStorageValues.label">Redact storage values</span></label>
+        <label class="settings-check"><input id="capture-dom-snapshots-input" type="checkbox"><span data-i18n="fields.captureDomSnapshots.label">Capture DOM snapshots</span></label>
+        <label class="settings-check"><input id="redact-dom-text-content-input" type="checkbox" checked><span data-i18n="fields.redactDomTextContent.label">Redact DOM text content</span></label>
+        <p class="setting-hint" data-i18n="hints.inspectorCapture">Off by default. Enabling these captures more sensitive data (storage, cookies, DOM text) and increases package size. Keep redaction on to mask values that match sensitive patterns.</p>
+        <label class="setting-field"><span data-i18n="fields.captureMode.label">Capture mode</span><select id="capture-mode-input"><option value="cdp" data-i18n="options.captureModeCdp">CDP (full fidelity, debugger banner)</option><option value="in-page" selected data-i18n="options.captureModeInPage">In-page (no banner, lower fidelity)</option></select></label>
+        <p class="setting-hint" data-i18n="hints.captureMode">CDP is the default and captures with full fidelity, but shows a chrome.debugger banner. In-page mode avoids the banner but has lower fidelity (no cross-origin response bodies, no real source maps).</p>
+      </div>
+    </section>
+
     <div id="error-msg" class="hidden"></div>
     <dialog id="setting-info-dialog" class="setting-info-dialog" aria-labelledby="setting-info-title">
       <form method="dialog" class="setting-info-card">

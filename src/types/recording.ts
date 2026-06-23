@@ -348,7 +348,9 @@ export type RedactionArtifact =
   | "websocket"
   | "events"
   | "report"
-  | "visual";
+  | "visual"
+  | "storage"
+  | "dom";
 
 export type RedactionClass =
   | "credential"
@@ -385,6 +387,8 @@ export interface RecordingPrivacySummary {
     responseBodies: boolean;
     websocketPayloads: boolean;
     sourceSnippets: boolean;
+    storage: boolean;
+    dom: boolean;
   };
   counts: Array<{
     artifact: RedactionArtifact;
@@ -393,4 +397,56 @@ export interface RecordingPrivacySummary {
     count: number;
   }>;
   limitations: string[];
+}
+
+export interface StorageKeyValue {
+  key: string;
+  value: string;
+  redacted?: boolean;
+}
+
+export interface CookieRecord {
+  name: string;
+  value: string;
+  domain: string;
+  path: string;
+  expires?: number;
+  size?: number;
+  httpOnly?: boolean;
+  secure?: boolean;
+  sameSite?: "Strict" | "Lax" | "None";
+  redacted?: boolean;
+}
+
+export interface StorageSnapshot {
+  phase: "start" | "stop";
+  capturedAt: number;
+  localStorage: StorageKeyValue[];
+  sessionStorage: StorageKeyValue[];
+  cookies: CookieRecord[];
+}
+
+export interface StorageArtifact {
+  schemaVersion: 1;
+  snapshots: StorageSnapshot[];
+}
+export interface DomNode {
+  nodeType: number;
+  nodeName: string;
+  nodeValue?: string;
+  attributes?: Record<string, string>;
+  children?: DomNode[];
+  masked?: boolean;
+}
+
+export interface DomSnapshot {
+  label: "start" | "stop" | string;
+  capturedAt: number;
+  documentUrl: string;
+  root: DomNode;
+}
+
+export interface DomArtifact {
+  schemaVersion: 1;
+  snapshots: DomSnapshot[];
 }

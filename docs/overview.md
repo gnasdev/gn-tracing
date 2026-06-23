@@ -39,8 +39,8 @@ A new reader should understand GN Tracing in this order:
 2. Runtime topology: service worker, offscreen document, CDP collector, injected event collector, and thin UI clients.
 3. Shared data contracts: messages, recording state, settings, recording artifacts, and replay package layout.
 4. Recording lifecycle and target-tab restrictions.
-5. Evidence taxonomy: media, console, network, WebSocket, report, events, privacy, diagnostics, and screenshot artifacts.
-6. Privacy/redaction behavior and capture-depth profiles.
+5. Evidence taxonomy: media, console, network, WebSocket, report, events, privacy, diagnostics, screenshot, storage, and DOM-snapshot artifacts.
+6. Privacy/redaction behavior, capture-depth profiles, and the opt-in `cdp` vs `in-page` capture mode.
 7. Google Drive authentication, folder targeting, package upload, and optional ZIP password semantics.
 8. Replay player modes, package loading, inspection UX, and standalone Drive proxy.
 9. Release packaging, popup update checks, Chrome Web Store disclosure, and privacy compliance.
