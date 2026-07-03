@@ -71,7 +71,7 @@ related:
 - `CaptureEnvironment`
   browser/extension/page environment context collected at recording time, including viewport, screen, language, timezone, and user-agent-derived browser labels.
 - `RecordingUserEvent`
-  redacted navigation/click/focus/submit timeline entries captured by the injected page listener; the model stores selectors, short labels, relative timing, and coordinates when available, but not raw typed input.
+  redacted navigation/click/contextmenu/scroll/focus/submit timeline entries captured by the injected page listener; the model stores selectors, short labels, relative timing, and coordinates when available, but not raw typed input. `scroll` entries coalesce a continuous wheel burst into one entry with a `direction` (`up`/`down`) and accumulated `deltaY`.
 - `RecordingUserEventArtifact`
   wrapper artifact written to `events.json`, containing the session id, source page URL/title, and ordered `RecordingUserEvent` entries.
 - `RedactionHit`
@@ -102,7 +102,7 @@ The current replay package is one Google Drive zip file identified by the replay
 - `report.json`
   optional replay report metadata and captured environment context
 - `events.json`
-  optional redacted navigation/click/focus/submit timeline
+  optional redacted navigation/click/contextmenu/scroll/focus/submit timeline
 - `privacy.json`
   optional privacy profile, artifact flags, redaction counts, and known limitations
 - `diagnostics.json`

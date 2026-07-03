@@ -87,6 +87,7 @@ The player renders:
 - network and WebSocket initiator sections with source-mapped locations, full stack frames including async parent stacks, and source-map diagnostic messages
 - when present, a `Storage` tab with localStorage/sessionStorage/cookie groups and a start↔stop diff (added/removed/changed/unchanged), and an `Elements` tab with a snapshot-selectable, inspectable DOM tree; both tabs are hidden when their artifact is absent
 - draggable horizontal/vertical layout, persisted split percentage, and in-tab immersive video mode
+- an input-effects overlay on top of the video: a ripple for left clicks, a distinctly colored ripple for right clicks (`contextmenu`), and a directional arrow chip for scroll bursts, synchronized to `video.currentTime` against each event's `relativeMs`. Placement first maps the recorded `event.x`/`event.y` into the recorded page's sub-rectangle inside the captured video frame — Chrome's tab capture can letterbox a non-16:9 page viewport into a fixed-size video frame, so the page fraction is not the same as the frame fraction — then projects that onto the live on-screen video content rect (accounting for `object-fit` letterboxing from the player's own layout), so effects stay correctly placed across layout resizes, immersive mode, and captures with pillarboxing/letterboxing. Seeking resets the effect scheduler to a small trailing window instead of replaying every skipped effect.
 
 ## Source-Map Rendering
 

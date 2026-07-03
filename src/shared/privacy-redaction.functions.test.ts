@@ -244,6 +244,39 @@ describe("redactUserEvent", () => {
       expect(value.text).toContain(REDACTED_VALUE);
     }
   });
+
+  it("redacts contextmenu selector and text", () => {
+    const settings = makePrivacySettings("strict");
+    const event: RecordingUserEvent = {
+      type: "contextmenu",
+      timestamp: 1,
+      selector: "#email-field",
+      text: "person@example.com",
+    };
+    const { value } = redactUserEvent(event, settings);
+    if (value.type === "contextmenu") {
+      expect(value.text).toContain(REDACTED_VALUE);
+    }
+  });
+
+  it("redacts scroll selector without touching direction or deltaY", () => {
+    const settings = makePrivacySettings("strict");
+    const event: RecordingUserEvent = {
+      type: "scroll",
+      timestamp: 1,
+      selector: "person@example.com",
+      x: 10,
+      y: 20,
+      direction: "down",
+      deltaY: 120,
+    };
+    const { value } = redactUserEvent(event, settings);
+    if (value.type === "scroll") {
+      expect(value.selector).toContain(REDACTED_VALUE);
+      expect(value.direction).toBe("down");
+      expect(value.deltaY).toBe(120);
+    }
+  });
 });
 
 describe("redactReport", () => {

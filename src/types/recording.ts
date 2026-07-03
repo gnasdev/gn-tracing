@@ -324,6 +324,24 @@ export type RecordingUserEvent =
       y?: number;
     }
   | {
+      type: "contextmenu";
+      timestamp: number;
+      selector?: string;
+      text?: string;
+      role?: string;
+      x?: number;
+      y?: number;
+    }
+  | {
+      type: "scroll";
+      timestamp: number;
+      selector?: string;
+      x?: number;
+      y?: number;
+      direction: "up" | "down";
+      deltaY?: number;
+    }
+  | {
       type: "focus";
       timestamp: number;
       selector?: string;

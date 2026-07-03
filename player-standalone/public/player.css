@@ -732,6 +732,7 @@ body {
 }
 
 .video-container {
+  position: relative;
   flex: 1;
   min-height: 0;
   display: flex;
@@ -759,6 +760,105 @@ body {
 #video-player.video-fit-width {
   width: 100%;
   height: auto;
+}
+
+.video-effects-layer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.video-effect {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.video-effect-click {
+  width: 40px;
+  height: 40px;
+  border: 2px solid var(--accent, #58a6ff);
+  background: color-mix(in srgb, var(--accent, #58a6ff) 25%, transparent);
+  animation: video-effect-ripple 700ms ease-out forwards;
+}
+
+.video-effect-rclick {
+  width: 44px;
+  height: 44px;
+  border: 2px solid #f0883e;
+  box-shadow: 0 0 0 2px rgba(240, 136, 62, 0.4) inset;
+  background: rgba(240, 136, 62, 0.2);
+  animation: video-effect-ripple 700ms ease-out forwards;
+}
+
+@keyframes video-effect-ripple {
+  0% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(0.3);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(1.6);
+  }
+}
+
+.video-effect-scroll {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+  color: #ffffff;
+  font-size: 14px;
+  line-height: 1;
+  animation: video-effect-scroll-fade 750ms ease-out forwards;
+}
+
+.video-effect-scroll::before {
+  content: "";
+}
+
+.video-effect-scroll-up::before {
+  content: "\2191";
+}
+
+.video-effect-scroll-down::before {
+  content: "\2193";
+}
+
+@keyframes video-effect-scroll-fade {
+  0% {
+    opacity: 1;
+    transform: translate(-50%, -50%) translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) translateY(-16px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .video-effect-click,
+  .video-effect-rclick {
+    animation: video-effect-fade-only 700ms ease-out forwards;
+  }
+
+  .video-effect-scroll {
+    animation: video-effect-fade-only 750ms ease-out forwards;
+  }
+
+  @keyframes video-effect-fade-only {
+    0% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0;
+    }
+  }
 }
 
 /* Video controls */

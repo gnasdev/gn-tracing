@@ -128,6 +128,26 @@ export function normalizeRecordingUserEvent(value: unknown): RecordingUserEvent 
         x: normalizeFiniteNumber(raw.x),
         y: normalizeFiniteNumber(raw.y),
       };
+    case "contextmenu":
+      return {
+        type: "contextmenu",
+        timestamp,
+        selector: truncateEventString(raw.selector),
+        text: truncateEventString(raw.text),
+        role: truncateEventString(raw.role, 64),
+        x: normalizeFiniteNumber(raw.x),
+        y: normalizeFiniteNumber(raw.y),
+      };
+    case "scroll":
+      return {
+        type: "scroll",
+        timestamp,
+        selector: truncateEventString(raw.selector),
+        x: normalizeFiniteNumber(raw.x),
+        y: normalizeFiniteNumber(raw.y),
+        direction: raw.direction === "up" ? "up" : "down",
+        deltaY: normalizeFiniteNumber(raw.deltaY),
+      };
     case "focus":
       return {
         type: "focus",

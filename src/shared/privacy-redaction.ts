@@ -526,8 +526,14 @@ export function redactUserEvent(
       cloned.selector = selector.value;
       applied.push(...selector.applied);
     }
-    if (cloned.type === "click" && cloned.text) {
-      const text = redactPlainText(cloned.text, settings, "events", "events.click.text", "event");
+    if ((cloned.type === "click" || cloned.type === "contextmenu") && cloned.text) {
+      const text = redactPlainText(
+        cloned.text,
+        settings,
+        "events",
+        `events.${cloned.type}.text`,
+        "event",
+      );
       cloned.text = text.value;
       applied.push(...text.applied);
     }

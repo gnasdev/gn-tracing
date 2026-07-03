@@ -172,38 +172,49 @@ import type { RecordingUserEvent, RedactionHit } from "../types/recording";
     };
   }
 
+  // After an extension reload this stale capture instance keeps running in the
+  // page but its chrome.runtime is gone; sendMessage then throws synchronously
+  // ("Extension context invalidated"), so guard and swallow instead of spamming
+  // uncaught errors into the recorded page's console.
+  function sendRuntimeMessage(message: Record<string, unknown>): void {
+    if (!chrome.runtime?.id) {
+      return;
+    }
+    try {
+      chrome.runtime.sendMessage(message).catch(() => {});
+    } catch {
+      // Extension context invalidated between the guard and the call.
+    }
+  }
+
   function sendSessionEvent(
     sessionId: string,
     payload: Record<string, unknown>,
     redactionHits: RedactionHit[] = [],
   ): void {
-    chrome.runtime
-      .sendMessage({
-        target: "service-worker",
-        action: "RECORDING_USER_EVENT",
-        data: {
-          sessionId,
-          ...(redactionHits.length > 0 ? { redactionHits } : {}),
-          ...payload,
-        },
-      })
-      .catch(() => {});
+    sendRuntimeMessage({
+      target: "service-worker",
+      action: "RECORDING_USER_EVENT",
+      data: {
+        sessionId,
+        ...(redactionHits.length > 0 ? { redactionHits } : {}),
+        ...payload,
+      },
+    });
   }
 
   function sendPrivacyLimitations(sessionId: string, limitations: string[]): void {
     if (limitations.length === 0) {
       return;
     }
-    chrome.runtime
-      .sendMessage({
-        target: "service-worker",
-        action: "RECORDING_USER_EVENT",
-        data: {
-          sessionId,
-          limitations,
-        },
-      })
-      .catch(() => {});
+    sendRuntimeMessage({
+      target: "service-worker",
+      action: "RECORDING_USER_EVENT",
+      data: {
+        sessionId,
+        limitations,
+      },
+    });
   }
 
   function sanitizeEvent(
@@ -308,6 +319,97 @@ ${validSelectors.join(",\n")} {
       );
     };
 
+    const onContextMenu = (event: MouseEvent): void => {
+      const element = getElement(event.target);
+      const sanitized = sanitizeEvent(
+        {
+          type: "contextmenu",
+          timestamp: Date.now(),
+          selector: getSelector(element),
+          text: getSafeClickText(element),
+          role: getElementRole(element),
+          x: Math.round(event.clientX),
+          y: Math.round(event.clientY),
+        },
+        privacySettings,
+      );
+      sendSessionEvent(
+        sessionId,
+        {
+          event: sanitized.event,
+        },
+        sanitized.redactionHits,
+      );
+    };
+
+    let wheelBurst: {
+      timestamp: number;
+      x: number;
+      y: number;
+      selector?: string;
+      accumulatedDeltaY: number;
+      flushTimer: ReturnType<typeof window.setTimeout>;
+    } | null = null;
+
+    const flushWheelBurst = (): void => {
+      if (!wheelBurst) {
+        return;
+      }
+      const burst = wheelBurst;
+      wheelBurst = null;
+      window.clearTimeout(burst.flushTimer);
+      const sanitized = sanitizeEvent(
+        {
+          type: "scroll",
+          timestamp: burst.timestamp,
+          selector: burst.selector,
+          x: burst.x,
+          y: burst.y,
+          direction: burst.accumulatedDeltaY < 0 ? "up" : "down",
+          deltaY: Math.round(burst.accumulatedDeltaY),
+        },
+        privacySettings,
+      );
+      sendSessionEvent(
+        sessionId,
+        {
+          event: sanitized.event,
+        },
+        sanitized.redactionHits,
+      );
+    };
+
+    const WHEEL_BURST_IDLE_MS = 400;
+
+    const onWheel = (event: WheelEvent): void => {
+      const element = getElement(event.target);
+      const directionChanged =
+        wheelBurst !== null &&
+        Math.sign(wheelBurst.accumulatedDeltaY) !== 0 &&
+        Math.sign(event.deltaY) !== 0 &&
+        Math.sign(wheelBurst.accumulatedDeltaY) !== Math.sign(event.deltaY);
+
+      if (directionChanged) {
+        flushWheelBurst();
+      }
+
+      if (!wheelBurst) {
+        wheelBurst = {
+          timestamp: Date.now(),
+          x: Math.round(event.clientX),
+          y: Math.round(event.clientY),
+          selector: getSelector(element),
+          accumulatedDeltaY: 0,
+          flushTimer: window.setTimeout(flushWheelBurst, WHEEL_BURST_IDLE_MS),
+        };
+      } else {
+        window.clearTimeout(wheelBurst.flushTimer);
+        wheelBurst.flushTimer = window.setTimeout(flushWheelBurst, WHEEL_BURST_IDLE_MS);
+      }
+
+      wheelBurst.accumulatedDeltaY += event.deltaY;
+    };
+
     const onFocus = (event: FocusEvent): void => {
       const element = getElement(event.target);
       const sanitized = sanitizeEvent(
@@ -352,6 +454,8 @@ ${validSelectors.join(",\n")} {
     };
 
     document.addEventListener("click", onClick, true);
+    document.addEventListener("contextmenu", onContextMenu, true);
+    document.addEventListener("wheel", onWheel, { capture: true, passive: true });
     document.addEventListener("focusin", onFocus, true);
     document.addEventListener("submit", onSubmit, true);
     window.addEventListener("hashchange", onLocationChange);
@@ -365,6 +469,9 @@ ${validSelectors.join(",\n")} {
       maskStyle,
       cleanup: () => {
         document.removeEventListener("click", onClick, true);
+        document.removeEventListener("contextmenu", onContextMenu, true);
+        document.removeEventListener("wheel", onWheel, { capture: true });
+        flushWheelBurst();
         document.removeEventListener("focusin", onFocus, true);
         document.removeEventListener("submit", onSubmit, true);
         window.removeEventListener("hashchange", onLocationChange);

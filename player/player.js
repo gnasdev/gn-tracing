@@ -62,6 +62,12 @@
   let privacySummary = null;
   let sourceMapDiagnostics = [];
   let userEvents = [];
+  let effectEvents = [];
+  let effectsCursorIdx = 0;
+  let effectsRafId = null;
+  let liveEffectNodes = [];
+  const MAX_LIVE_EFFECT_NODES = 20;
+  const EFFECT_TRAILING_WINDOW_MS = 300;
   let screenshotUrl = null;
   let startTime = 0;
   let currentTimeMs = 0;
@@ -159,6 +165,7 @@
     elements.videoSection = document.getElementById("video-section");
     elements.videoContainer = document.getElementById("video-container");
     elements.video = document.getElementById("video-player");
+    elements.videoEffectsLayer = document.getElementById("video-effects-layer");
     elements.playPauseBtn = document.getElementById("play-pause-btn");
     elements.playIcon = document.getElementById("play-icon");
     elements.pauseIcon = document.getElementById("pause-icon");
@@ -619,6 +626,12 @@
     }
     if (event.type === "click") {
       return `Click ${event.text || event.selector || event.role || ""}`.trim();
+    }
+    if (event.type === "contextmenu") {
+      return `Right click ${event.text || event.selector || event.role || ""}`.trim();
+    }
+    if (event.type === "scroll") {
+      return `Scroll ${event.direction === "up" ? "up" : "down"} ${event.selector || ""}`.trim();
     }
     if (event.type === "focus") {
       return `Focus ${event.selector || event.inputType || ""}`.trim();
@@ -3591,6 +3604,14 @@
                   }))
                   .filter((event) => Number.isFinite(event.relativeMs))
                   .sort((a, b) => a.relativeMs - b.relativeMs);
+                effectEvents = userEvents.filter(
+                  (event) =>
+                    (event.type === "click" ||
+                      event.type === "contextmenu" ||
+                      event.type === "scroll") &&
+                    Number.isFinite(event.x) &&
+                    Number.isFinite(event.y),
+                );
               })
               .catch((error) => {
                 updateLoadingEntry("events", { status: "Failed" });
@@ -4616,6 +4637,190 @@
     );
   }
 
+  // CSS-pixel size of the recorded viewport, used as the coordinate space for
+  // captured event.x/event.y (which are clientX/clientY at record time). The
+  // tab video captures exactly this viewport, so a click at (x, y) maps to the
+  // fraction (x / viewport.width, y / viewport.height) of the displayed frame.
+  function getEffectViewportSize() {
+    const viewport = report?.environment?.viewport;
+    if (viewport && viewport.width > 0 && viewport.height > 0) {
+      return { width: viewport.width, height: viewport.height };
+    }
+    // Best-effort fallback for legacy recordings without a captured viewport.
+    // Intrinsic video pixels only equal CSS pixels at devicePixelRatio 1 and
+    // without downscaling, so this can be off on HiDPI captures.
+    const videoWidth = elements.video?.videoWidth || 0;
+    const videoHeight = elements.video?.videoHeight || 0;
+    if (videoWidth > 0 && videoHeight > 0) {
+      return { width: videoWidth, height: videoHeight };
+    }
+    return null;
+  }
+
+  // Live rectangle of the actually-displayed video pixels, relative to the
+  // effects layer (which covers the whole video-container). Recomputed on every
+  // effect so it can never drift from the current layout, and it accounts for
+  // object-fit letterboxing so coordinates land on real pixels even if the fit
+  // class has not been applied yet.
+  function getVideoContentRect() {
+    const video = elements.video;
+    const container = elements.videoContainer;
+    if (!video || !container) {
+      return null;
+    }
+    const elementRect = video.getBoundingClientRect();
+    const containerRect = container.getBoundingClientRect();
+    if (elementRect.width <= 0 || elementRect.height <= 0) {
+      return null;
+    }
+
+    let contentWidth = elementRect.width;
+    let contentHeight = elementRect.height;
+    const intrinsicWidth = video.videoWidth || 0;
+    const intrinsicHeight = video.videoHeight || 0;
+    if (intrinsicWidth > 0 && intrinsicHeight > 0) {
+      const intrinsicRatio = intrinsicWidth / intrinsicHeight;
+      const elementRatio = elementRect.width / elementRect.height;
+      if (elementRatio > intrinsicRatio) {
+        contentHeight = elementRect.height;
+        contentWidth = contentHeight * intrinsicRatio;
+      } else {
+        contentWidth = elementRect.width;
+        contentHeight = contentWidth / intrinsicRatio;
+      }
+    }
+
+    return {
+      left: elementRect.left - containerRect.left + (elementRect.width - contentWidth) / 2,
+      top: elementRect.top - containerRect.top + (elementRect.height - contentHeight) / 2,
+      width: contentWidth,
+      height: contentHeight,
+    };
+  }
+
+  // Chrome tab capture can letterbox the page inside a larger fixed-size frame
+  // (e.g. a 1036x884 viewport recorded into a 1920x1080 video with black bars),
+  // so a click's viewport fraction is NOT its fraction of the whole frame. Map
+  // the click into the contain-fitted, centered page sub-rectangle first, then
+  // express it as a fraction of the full frame. Degrades to a plain fraction
+  // when the aspect ratios already match (offsets become zero).
+  function getRecordedFrameFraction(event, viewport) {
+    const frameWidth = elements.video?.videoWidth || 0;
+    const frameHeight = elements.video?.videoHeight || 0;
+    const xFrac = Math.max(0, Math.min(1, event.x / viewport.width));
+    const yFrac = Math.max(0, Math.min(1, event.y / viewport.height));
+    if (frameWidth <= 0 || frameHeight <= 0) {
+      return { x: xFrac, y: yFrac };
+    }
+
+    const viewportRatio = viewport.width / viewport.height;
+    const frameRatio = frameWidth / frameHeight;
+    let innerWidth = frameWidth;
+    let innerHeight = frameHeight;
+    if (frameRatio > viewportRatio) {
+      innerWidth = frameHeight * viewportRatio;
+    } else {
+      innerHeight = frameWidth / viewportRatio;
+    }
+
+    return {
+      x: ((frameWidth - innerWidth) / 2 + xFrac * innerWidth) / frameWidth,
+      y: ((frameHeight - innerHeight) / 2 + yFrac * innerHeight) / frameHeight,
+    };
+  }
+
+  function spawnEffect(event) {
+    if (!elements.videoEffectsLayer) {
+      return;
+    }
+    const viewport = getEffectViewportSize();
+    const content = getVideoContentRect();
+    if (!viewport || !content) {
+      return;
+    }
+
+    const frac = getRecordedFrameFraction(event, viewport);
+    const leftPx = content.left + frac.x * content.width;
+    const topPx = content.top + frac.y * content.height;
+
+    const node = document.createElement("div");
+    if (event.type === "click") {
+      node.className = "video-effect video-effect-click";
+    } else if (event.type === "contextmenu") {
+      node.className = "video-effect video-effect-rclick";
+    } else {
+      node.className = `video-effect video-effect-scroll video-effect-scroll-${event.direction === "up" ? "up" : "down"}`;
+    }
+    node.style.left = `${leftPx}px`;
+    node.style.top = `${topPx}px`;
+
+    node.addEventListener(
+      "animationend",
+      () => {
+        node.remove();
+        liveEffectNodes = liveEffectNodes.filter((live) => live !== node);
+      },
+      { once: true },
+    );
+
+    if (liveEffectNodes.length >= MAX_LIVE_EFFECT_NODES) {
+      const oldest = liveEffectNodes.shift();
+      oldest?.remove();
+    }
+    liveEffectNodes.push(node);
+    elements.videoEffectsLayer.appendChild(node);
+  }
+
+  function resetEffectsCursor() {
+    const timeMs = elements.video.currentTime * 1000;
+    let idx = effectEvents.findIndex((event) => event.relativeMs > timeMs);
+    if (idx === -1) {
+      idx = effectEvents.length;
+    }
+    effectsCursorIdx = idx;
+
+    const windowStart = timeMs - EFFECT_TRAILING_WINDOW_MS;
+    for (let i = idx - 1; i >= 0 && effectEvents[i].relativeMs >= windowStart; i--) {
+      spawnEffect(effectEvents[i]);
+    }
+  }
+
+  function tickEffectsScheduler() {
+    if (elements.video.paused || elements.video.ended) {
+      effectsRafId = null;
+      return;
+    }
+
+    const timeMs = elements.video.currentTime * 1000;
+    const windowStart = timeMs - EFFECT_TRAILING_WINDOW_MS;
+    while (
+      effectsCursorIdx < effectEvents.length &&
+      effectEvents[effectsCursorIdx].relativeMs <= timeMs
+    ) {
+      const event = effectEvents[effectsCursorIdx];
+      if (event.relativeMs >= windowStart) {
+        spawnEffect(event);
+      }
+      effectsCursorIdx += 1;
+    }
+
+    effectsRafId = requestAnimationFrame(tickEffectsScheduler);
+  }
+
+  function startEffectsScheduler() {
+    if (effectsRafId !== null) {
+      return;
+    }
+    effectsRafId = requestAnimationFrame(tickEffectsScheduler);
+  }
+
+  function stopEffectsScheduler() {
+    if (effectsRafId !== null) {
+      cancelAnimationFrame(effectsRafId);
+      effectsRafId = null;
+    }
+  }
+
   // Video event handlers
   function setupVideoListeners() {
     let isDragging = false;
@@ -4655,18 +4860,29 @@
     elements.video.addEventListener("play", () => {
       elements.playIcon.classList.add("hidden");
       elements.pauseIcon.classList.remove("hidden");
+      startEffectsScheduler();
     });
 
     elements.video.addEventListener("pause", () => {
       elements.playIcon.classList.remove("hidden");
       elements.pauseIcon.classList.add("hidden");
+      stopEffectsScheduler();
     });
 
     elements.video.addEventListener("ended", () => {
       elements.playIcon.classList.remove("hidden");
       elements.pauseIcon.classList.add("hidden");
+      stopEffectsScheduler();
       currentTimeMs = syncDurationState(getVideoDurationMs());
       updateProgress();
+    });
+
+    elements.video.addEventListener("seeking", stopEffectsScheduler);
+    elements.video.addEventListener("seeked", () => {
+      resetEffectsCursor();
+      if (!elements.video.paused && !elements.video.ended) {
+        startEffectsScheduler();
+      }
     });
 
     // Progress bar interaction
