@@ -70,7 +70,7 @@ tasks:
     desc: Run and watch the standalone player dev server.
     dir: player-standalone
     cmds:
-      - npm exec -- vite --port 5176
+      - npx concurrently -n sync,vite 'node scripts/sync-player.js --watch' 'npm exec -- vite --port 5176'
 
   player:build:
     desc: Sync and build the standalone player with the development environment.

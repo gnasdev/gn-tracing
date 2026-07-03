@@ -21,7 +21,18 @@ const isProductionBuild = appEnv === "production";
 const packageJson = JSON.parse(fs.readFileSync(path.resolve(__dirname, "package.json"), "utf-8"));
 const packageVersion = typeof packageJson.version === "string" ? packageJson.version : "";
 const googleClientId = getConfigValue("GOOGLE_CLIENT_ID");
-const googleTokenProxyUrl = normalizeProxyUrl(getConfigValue("GOOGLE_TOKEN_PROXY_URL"));
+// Dev/watch builds default to the locally running Worker (`task worker:dev`,
+// port 8787) so `task dev` works out of the box without editing .env. Set
+// GOOGLE_TOKEN_PROXY_URL_DEV to override (e.g. a different local port).
+// Production builds always use GOOGLE_TOKEN_PROXY_URL (the deployed Worker),
+// never the dev default, so a stale/unset dev override cannot leak into a
+// release build.
+const DEFAULT_DEV_TOKEN_PROXY_URL = "http://localhost:8787";
+const googleTokenProxyUrl = normalizeProxyUrl(
+  isProductionBuild
+    ? getConfigValue("GOOGLE_TOKEN_PROXY_URL")
+    : getConfigValue("GOOGLE_TOKEN_PROXY_URL_DEV", DEFAULT_DEV_TOKEN_PROXY_URL),
+);
 const chromeExtensionPublicKey = getConfigValue("CHROME_EXTENSION_PUBLIC_KEY");
 const chromeExtensionPrivateKey = getConfigValue("CHROME_EXTENSION_PRIVATE_KEY");
 const chromeExtensionId = getConfigValue(
