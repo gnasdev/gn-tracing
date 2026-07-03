@@ -37,17 +37,27 @@ import { IN_PAGE_CAPTURE_MESSAGE_TAG, type InPageCaptureBridgeMessage } from "..
     if (typeof data.sessionId !== "string" || !data.kind || !data.entry) {
       return;
     }
-    chrome.runtime
-      .sendMessage({
-        target: "service-worker",
-        action: "RECORDING_INPAGE_ENTRY",
-        data: {
-          sessionId: data.sessionId,
-          kind: data.kind,
-          entry: data.entry,
-        },
-      })
-      .catch(() => {});
+    // After an extension reload this old relay instance keeps running in the
+    // page but its chrome.runtime is gone; sendMessage then throws
+    // synchronously ("Extension context invalidated"), so guard and swallow.
+    if (!chrome.runtime?.id) {
+      return;
+    }
+    try {
+      chrome.runtime
+        .sendMessage({
+          target: "service-worker",
+          action: "RECORDING_INPAGE_ENTRY",
+          data: {
+            sessionId: data.sessionId,
+            kind: data.kind,
+            entry: data.entry,
+          },
+        })
+        .catch(() => {});
+    } catch {
+      // Extension context invalidated between the guard and the call.
+    }
   });
 
   // Service worker → MAIN world: relay START/STOP lifecycle control.
