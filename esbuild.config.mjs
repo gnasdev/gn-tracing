@@ -320,6 +320,7 @@ async function build() {
       { in: "src/content/recording-events.ts", out: "content/recording-events" },
       { in: "src/content/in-page-capture.ts", out: "content/in-page-capture" },
       { in: "src/content/in-page-relay.ts", out: "content/in-page-relay" },
+      { in: "src/content/drawing-overlay.ts", out: "content/drawing-overlay" },
     ],
     outdir: "dist",
     format: "iife",

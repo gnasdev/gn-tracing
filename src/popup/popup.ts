@@ -41,6 +41,8 @@ const MIRRORED_DRIVE_CONNECTED_KEY = "gn_tracing_google_drive_connected";
 const recordingActions = document.getElementById("recording-actions")!;
 const toggleBtn = document.getElementById("toggle-btn") as HTMLButtonElement;
 const removeRecordingBtn = document.getElementById("remove-recording-btn") as HTMLButtonElement;
+const drawToggleBtn = document.getElementById("draw-toggle-btn") as HTMLButtonElement;
+const drawingSection = document.getElementById("drawing-section")!;
 const recordingUnavailableMsg = document.getElementById("recording-unavailable-msg")!;
 const reloadBtn = document.getElementById("reload-btn") as HTMLButtonElement;
 const checkUpdateBtn = document.getElementById("check-update-btn") as HTMLButtonElement;
@@ -713,6 +715,8 @@ function setCaptureUiVisibility(isVisible: boolean): void {
   }
 
   removeRecordingBtn.classList.add("hidden");
+  drawingSection.classList.add("hidden");
+  setDrawButtonActive(false);
   recordingActions.classList.remove("has-unavailable-reason");
   recordingUnavailableMsg.classList.add("hidden");
   recordingUnavailableMsg.textContent = "";
@@ -761,6 +765,8 @@ function renderStopAndUploadLoading(recording: RecordingStatus | null): void {
   recordingActions.classList.remove("has-unavailable-reason");
   removeRecordingBtn.classList.remove("hidden");
   removeRecordingBtn.disabled = true;
+  drawingSection.classList.add("hidden");
+  setDrawButtonActive(false);
   recordingUnavailableMsg.classList.add("hidden");
   recordingUnavailableMsg.textContent = "";
   statusBar.classList.remove("hidden");
@@ -812,6 +818,9 @@ function updateRecordingUI(recording: RecordingStatus | null): void {
     recordingActions.classList.remove("has-unavailable-reason");
     removeRecordingBtn.classList.remove("hidden");
     removeRecordingBtn.disabled = false;
+    drawingSection.classList.remove("hidden");
+    drawToggleBtn.disabled = false;
+    void syncDrawButtonState();
     recordingUnavailableMsg.classList.add("hidden");
     recordingUnavailableMsg.textContent = "";
     toggleBtn.disabled = toggleActionInFlight;
@@ -836,6 +845,8 @@ function updateRecordingUI(recording: RecordingStatus | null): void {
   recordingActions.classList.remove("is-recording");
   removeRecordingBtn.classList.add("hidden");
   removeRecordingBtn.disabled = false;
+  drawingSection.classList.add("hidden");
+  setDrawButtonActive(false);
   statusBar.classList.add("hidden");
   stats.classList.add("hidden");
   const unavailableReason = activeTabRecordingError;
@@ -960,6 +971,55 @@ toggleBtn.addEventListener("click", async () => {
       toggleBtn.removeAttribute("aria-busy");
       toggleBtn.disabled = false;
     }
+  }
+});
+
+function setDrawButtonActive(active: boolean): void {
+  const label = active ? "Drawing" : "Draw";
+  drawToggleBtn.classList.toggle("active", active);
+  drawToggleBtn.innerHTML = `
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 19l7-7 3 3-7 7-3-3z"/>
+      <path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/>
+      <path d="M2 2l7.586 7.586"/>
+      <circle cx="11" cy="11" r="2"/>
+    </svg>
+    <span>${escapeHtml(label)}</span>
+  `;
+}
+
+async function syncDrawButtonState(): Promise<void> {
+  try {
+    const response = (await chrome.runtime.sendMessage({
+      target: "service-worker",
+      action: "GET_DRAWING_OVERLAY_STATE",
+    })) as { ok: boolean; active?: boolean; error?: string };
+    if (response?.ok) {
+      setDrawButtonActive(Boolean(response.active));
+    }
+  } catch {
+    // Ignore warmup/injection errors.
+  }
+}
+
+drawToggleBtn.addEventListener("click", async () => {
+  drawToggleBtn.disabled = true;
+  errorMsg.classList.add("hidden");
+
+  try {
+    const response = (await chrome.runtime.sendMessage({
+      target: "service-worker",
+      action: "TOGGLE_DRAWING_OVERLAY",
+    })) as { ok: boolean; active?: boolean; error?: string };
+    if (!response?.ok) {
+      showError(response?.error || "Could not toggle drawing overlay.");
+      return;
+    }
+    setDrawButtonActive(Boolean(response.active));
+  } catch (error) {
+    showError((error as Error).message);
+  } finally {
+    drawToggleBtn.disabled = false;
   }
 });
 

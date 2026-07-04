@@ -770,6 +770,13 @@ body {
   z-index: 5;
 }
 
+.drawing-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 6;
+}
+
 .video-effect {
   position: absolute;
   transform: translate(-50%, -50%);

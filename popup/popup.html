@@ -69,6 +69,19 @@
       <div id="recording-unavailable-msg" class="recording-unavailable hidden" role="status"></div>
     </div>
 
+    <section id="drawing-section" class="drawing-section hidden" aria-label="Drawing overlay">
+      <button id="draw-toggle-btn" class="btn btn-secondary" type="button" title="Toggle drawing pen">
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 19l7-7 3 3-7 7-3-3z"/>
+          <path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/>
+          <path d="M2 2l7.586 7.586"/>
+          <circle cx="11" cy="11" r="2"/>
+        </svg>
+        <span>Draw</span>
+      </button>
+      <div class="drawing-hint">Toggle with Ctrl/Cmd+Shift+D</div>
+    </section>
+
     <div id="stats" class="hidden">
       <div class="stat-row">
         <span class="stat-label">Console</span>

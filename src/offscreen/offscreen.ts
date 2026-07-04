@@ -41,6 +41,7 @@ interface ZipData {
   webSocketLogs?: string;
   report?: string;
   userEvents?: string;
+  drawing?: string;
   privacy?: string;
   diagnostics?: string;
   storage?: string;
@@ -63,6 +64,7 @@ interface GoogleDriveUploadData extends ZipData {
     webSocketLogs?: boolean;
     report?: boolean;
     userEvents?: boolean;
+    drawing?: boolean;
     privacy?: boolean;
     diagnostics?: boolean;
     storage?: boolean;
@@ -77,6 +79,7 @@ type UploadArtifactKey =
   | "webSocketLogs"
   | "report"
   | "userEvents"
+  | "drawing"
   | "privacy"
   | "diagnostics"
   | "storage"
@@ -112,6 +115,7 @@ interface RecordingManifest {
     metadata: string;
     report?: string;
     events?: string;
+    drawing?: string;
     privacy?: string;
     diagnostics?: string;
     screenshot?: string;
@@ -993,6 +997,10 @@ async function uploadToGoogleDrive(data: GoogleDriveUploadData): Promise<{
       data.artifactKeys?.userEvents || data.userEvents
         ? await createArtifactBlob(sessionId, "userEvents", data.userEvents)
         : null;
+    const drawingBlob =
+      data.artifactKeys?.drawing || data.drawing
+        ? await createArtifactBlob(sessionId, "drawing", data.drawing)
+        : null;
     const privacyBlob =
       data.artifactKeys?.privacy || data.privacy
         ? await createArtifactBlob(sessionId, "privacy", data.privacy)
@@ -1017,6 +1025,7 @@ async function uploadToGoogleDrive(data: GoogleDriveUploadData): Promise<{
       metadata: "metadata.json",
       ...(reportBlob ? { report: "report.json" } : {}),
       ...(userEventsBlob ? { events: "events.json" } : {}),
+      ...(drawingBlob ? { drawing: "drawing.json" } : {}),
       ...(privacyBlob ? { privacy: "privacy.json" } : {}),
       ...(diagnosticsBlob ? { diagnostics: "diagnostics.json" } : {}),
       ...(screenshotBlob ? { screenshot: "screenshot.jpg" } : {}),
@@ -1081,6 +1090,7 @@ async function uploadToGoogleDrive(data: GoogleDriveUploadData): Promise<{
       artifacts: {
         ...(reportBlob ? { reportPath: "report.json" } : {}),
         ...(userEventsBlob ? { eventsPath: "events.json" } : {}),
+        ...(drawingBlob ? { drawingPath: "drawing.json" } : {}),
         ...(privacyBlob ? { privacyPath: "privacy.json" } : {}),
         ...(diagnosticsBlob ? { diagnosticsPath: "diagnostics.json" } : {}),
         ...(screenshotBlob ? { screenshotPath: "screenshot.jpg" } : {}),
@@ -1121,6 +1131,9 @@ async function uploadToGoogleDrive(data: GoogleDriveUploadData): Promise<{
     }
     if (userEventsBlob) {
       zipEntries.push({ name: "events.json", blob: userEventsBlob });
+    }
+    if (drawingBlob) {
+      zipEntries.push({ name: "drawing.json", blob: drawingBlob });
     }
     if (privacyBlob) {
       zipEntries.push({ name: "privacy.json", blob: privacyBlob });

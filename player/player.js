@@ -66,6 +66,9 @@
   let effectsCursorIdx = 0;
   let effectsRafId = null;
   let liveEffectNodes = [];
+  let drawingStrokes = [];
+  let drawingClears = [];
+  let drawingRafId = null;
   const MAX_LIVE_EFFECT_NODES = 20;
   const EFFECT_TRAILING_WINDOW_MS = 300;
   let screenshotUrl = null;
@@ -131,6 +134,7 @@
     console: null,
     network: null,
     websocket: null,
+    drawing: null,
   };
 
   // DOM Elements
@@ -166,6 +170,7 @@
     elements.videoContainer = document.getElementById("video-container");
     elements.video = document.getElementById("video-player");
     elements.videoEffectsLayer = document.getElementById("video-effects-layer");
+    elements.drawingCanvas = document.getElementById("drawing-overlay");
     elements.playPauseBtn = document.getElementById("play-pause-btn");
     elements.playIcon = document.getElementById("play-icon");
     elements.pauseIcon = document.getElementById("pause-icon");
@@ -3261,6 +3266,7 @@
       : null;
     const reportPath = indexJson?.artifacts?.reportPath || manifestJson?.artifacts?.report;
     const eventsPath = indexJson?.artifacts?.eventsPath || manifestJson?.artifacts?.events;
+    const drawingPath = indexJson?.artifacts?.drawingPath || manifestJson?.artifacts?.drawing;
     const privacyPath = indexJson?.artifacts?.privacyPath || manifestJson?.artifacts?.privacy;
     const diagnosticsPath =
       indexJson?.artifacts?.diagnosticsPath || manifestJson?.artifacts?.diagnostics;
@@ -3270,6 +3276,7 @@
     const domPath = indexJson?.artifacts?.domPath || manifestJson?.artifacts?.dom;
     const reportEntry = reportPath ? getPackageEntry(entries, reportPath, false) : null;
     const eventsEntry = eventsPath ? getPackageEntry(entries, eventsPath, false) : null;
+    const drawingEntry = drawingPath ? getPackageEntry(entries, drawingPath, false) : null;
     const privacyEntry = privacyPath ? getPackageEntry(entries, privacyPath, false) : null;
     const diagnosticsEntry = diagnosticsPath
       ? getPackageEntry(entries, diagnosticsPath, false)
@@ -3286,6 +3293,7 @@
       metadata: { blob: getPackageEntry(entries, metadataPath) },
       report: reportEntry ? { blob: reportEntry } : null,
       events: eventsEntry ? { blob: eventsEntry } : null,
+      drawing: drawingEntry ? { blob: drawingEntry } : null,
       privacy: privacyEntry ? { blob: privacyEntry } : null,
       diagnostics: diagnosticsEntry ? { blob: diagnosticsEntry } : null,
       screenshot: screenshotEntry ? { name: screenshotPath, blob: screenshotEntry } : null,
@@ -3424,6 +3432,9 @@
       metadata: indexJson?.metadataFileId ? { id: indexJson.metadataFileId } : null,
       report: indexJson?.artifacts?.reportFileId ? { id: indexJson.artifacts.reportFileId } : null,
       events: indexJson?.artifacts?.eventsFileId ? { id: indexJson.artifacts.eventsFileId } : null,
+      drawing: indexJson?.artifacts?.drawingFileId
+        ? { id: indexJson.artifacts.drawingFileId }
+        : null,
       privacy: indexJson?.artifacts?.privacyFileId
         ? { id: indexJson.artifacts.privacyFileId }
         : null,
@@ -3506,6 +3517,8 @@
       privacySummary = null;
       sourceMapDiagnostics = [];
       userEvents = [];
+      drawingStrokes = [];
+      drawingClears = [];
       releaseScreenshotResources();
       if (recordingFiles.packageId) {
         registerLoadingEntry("package", "recording.zip", "other", "Loaded");
@@ -3518,6 +3531,9 @@
       }
       if (recordingFiles.events) {
         registerLoadingEntry("events", "events.json", "other");
+      }
+      if (recordingFiles.drawing) {
+        registerLoadingEntry("drawing", "drawing.json", "other");
       }
       if (recordingFiles.privacy) {
         registerLoadingEntry("privacy", "privacy.json", "other");
@@ -3616,6 +3632,47 @@
               .catch((error) => {
                 updateLoadingEntry("events", { status: "Failed" });
                 console.warn("[GN Tracing Player] Failed to load optional event artifact:", error);
+              })
+          : Promise.resolve(),
+
+        recordingFiles.drawing
+          ? loadJsonDescriptor(recordingFiles.drawing, "drawing.json", {
+              onProgress: createLoadingProgressReporter("drawing", "other", "drawing.json"),
+            })
+              .then((drawingJson) => {
+                markLoadingEntryLoaded("drawing", "drawing.json", "other");
+                const rawStrokes = Array.isArray(drawingJson)
+                  ? drawingJson
+                  : Array.isArray(drawingJson?.strokes)
+                    ? drawingJson.strokes
+                    : [];
+                const rawClears =
+                  !Array.isArray(drawingJson) && Array.isArray(drawingJson?.clears)
+                    ? drawingJson.clears
+                    : [];
+                drawingStrokes = rawStrokes
+                  .map((stroke) => ({
+                    ...stroke,
+                    relativeMs: (stroke.timestamp || 0) - startTime,
+                  }))
+                  .filter(
+                    (stroke) =>
+                      Number.isFinite(stroke.relativeMs) &&
+                      Array.isArray(stroke.points) &&
+                      stroke.points.length > 0,
+                  )
+                  .sort((a, b) => a.relativeMs - b.relativeMs);
+                drawingClears = rawClears
+                  .map((ts) => (typeof ts === "number" ? ts - startTime : NaN))
+                  .filter((ms) => Number.isFinite(ms))
+                  .sort((a, b) => a - b);
+              })
+              .catch((error) => {
+                updateLoadingEntry("drawing", { status: "Failed" });
+                console.warn(
+                  "[GN Tracing Player] Failed to load optional drawing artifact:",
+                  error,
+                );
               })
           : Promise.resolve(),
 
@@ -4635,6 +4692,11 @@
     elements.video.classList.add(
       containerRatio > videoRatio ? "video-fit-height" : "video-fit-width",
     );
+
+    resizeDrawingCanvas();
+    if (elements.video && !Number.isNaN(elements.video.currentTime)) {
+      renderDrawingUpTo(elements.video.currentTime * 1000);
+    }
   }
 
   // CSS-pixel size of the recorded viewport, used as the coordinate space for
@@ -4821,6 +4883,138 @@
     }
   }
 
+  function resizeDrawingCanvas() {
+    const canvas = elements.drawingCanvas;
+    const container = elements.videoContainer;
+    if (!canvas || !container) {
+      return;
+    }
+    const rect = container.getBoundingClientRect();
+    const ratio = window.devicePixelRatio || 1;
+    canvas.width = Math.max(1, Math.floor(rect.width * ratio));
+    canvas.height = Math.max(1, Math.floor(rect.height * ratio));
+    canvas.style.width = `${rect.width}px`;
+    canvas.style.height = `${rect.height}px`;
+  }
+
+  function getDrawingContext() {
+    const canvas = elements.drawingCanvas;
+    if (!canvas) {
+      return null;
+    }
+    const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      return null;
+    }
+    const ratio = window.devicePixelRatio || 1;
+    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    return ctx;
+  }
+
+  function mapDrawingPoint(point, viewport) {
+    const frac = getRecordedFrameFraction({ x: point.x, y: point.y }, viewport);
+    const content = getVideoContentRect();
+    if (!content) {
+      return null;
+    }
+    return {
+      x: content.left + frac.x * content.width,
+      y: content.top + frac.y * content.height,
+    };
+  }
+
+  function getActiveDrawingClearMs(timeMs) {
+    let clearMs = null;
+    for (const ms of drawingClears) {
+      if (ms <= timeMs) {
+        clearMs = ms;
+      } else {
+        break;
+      }
+    }
+    return clearMs;
+  }
+
+  function renderDrawingUpTo(timeMs) {
+    const canvas = elements.drawingCanvas;
+    const ctx = getDrawingContext();
+    const viewport = getEffectViewportSize();
+    if (!canvas || !ctx || !viewport) {
+      return;
+    }
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    const activeClearMs = getActiveDrawingClearMs(timeMs);
+    for (const stroke of drawingStrokes) {
+      if (stroke.relativeMs > timeMs) {
+        continue;
+      }
+      if (activeClearMs !== null && stroke.relativeMs < activeClearMs) {
+        continue;
+      }
+      const elapsed = timeMs - stroke.relativeMs;
+      const points = stroke.points;
+      let lastIndex = -1;
+      for (let i = 0; i < points.length; i += 1) {
+        if (points[i].t <= elapsed) {
+          lastIndex = i;
+        } else {
+          break;
+        }
+      }
+      if (lastIndex < 1) {
+        continue;
+      }
+
+      const color = stroke.color || "#ff6b6b";
+      const width = stroke.width || 3;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = width;
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      ctx.beginPath();
+
+      const first = mapDrawingPoint(points[0], viewport);
+      if (!first) {
+        continue;
+      }
+      ctx.moveTo(first.x, first.y);
+
+      for (let i = 1; i <= lastIndex; i += 1) {
+        const mapped = mapDrawingPoint(points[i], viewport);
+        if (!mapped) {
+          continue;
+        }
+        ctx.lineTo(mapped.x, mapped.y);
+      }
+      ctx.stroke();
+    }
+  }
+
+  function tickDrawingScheduler() {
+    if (elements.video.paused || elements.video.ended) {
+      drawingRafId = null;
+      return;
+    }
+    renderDrawingUpTo(elements.video.currentTime * 1000);
+    drawingRafId = requestAnimationFrame(tickDrawingScheduler);
+  }
+
+  function startDrawingScheduler() {
+    if (drawingRafId !== null || drawingStrokes.length === 0) {
+      return;
+    }
+    drawingRafId = requestAnimationFrame(tickDrawingScheduler);
+  }
+
+  function stopDrawingScheduler() {
+    if (drawingRafId !== null) {
+      cancelAnimationFrame(drawingRafId);
+      drawingRafId = null;
+    }
+  }
+
   // Video event handlers
   function setupVideoListeners() {
     let isDragging = false;
@@ -4861,27 +5055,39 @@
       elements.playIcon.classList.add("hidden");
       elements.pauseIcon.classList.remove("hidden");
       startEffectsScheduler();
+      startDrawingScheduler();
     });
 
     elements.video.addEventListener("pause", () => {
       elements.playIcon.classList.remove("hidden");
       elements.pauseIcon.classList.add("hidden");
       stopEffectsScheduler();
+      stopDrawingScheduler();
     });
 
     elements.video.addEventListener("ended", () => {
       elements.playIcon.classList.remove("hidden");
       elements.pauseIcon.classList.add("hidden");
       stopEffectsScheduler();
+      stopDrawingScheduler();
       currentTimeMs = syncDurationState(getVideoDurationMs());
       updateProgress();
     });
 
-    elements.video.addEventListener("seeking", stopEffectsScheduler);
+    elements.video.addEventListener("seeking", () => {
+      stopEffectsScheduler();
+      stopDrawingScheduler();
+      if (elements.drawingCanvas) {
+        const ctx = elements.drawingCanvas.getContext("2d");
+        ctx?.clearRect(0, 0, elements.drawingCanvas.width, elements.drawingCanvas.height);
+      }
+    });
     elements.video.addEventListener("seeked", () => {
       resetEffectsCursor();
+      renderDrawingUpTo(elements.video.currentTime * 1000);
       if (!elements.video.paused && !elements.video.ended) {
         startEffectsScheduler();
+        startDrawingScheduler();
       }
     });
 

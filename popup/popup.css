@@ -267,6 +267,23 @@ body {
   line-height: 1.35;
 }
 
+.drawing-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.drawing-section .btn {
+  width: 100%;
+}
+
+.drawing-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-align: center;
+  line-height: 1.35;
+}
+
 .btn-start {
   background: var(--accent);
   border-color: rgba(79, 140, 255, 0.3);

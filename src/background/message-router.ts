@@ -30,6 +30,16 @@ export interface MessageHandlers {
     data: Record<string, unknown> | undefined,
     sender: chrome.runtime.MessageSender,
   ) => MessageResponse;
+  handleRecordingDrawStroke: (
+    data: Record<string, unknown> | undefined,
+    sender: chrome.runtime.MessageSender,
+  ) => MessageResponse;
+  handleRecordingDrawClear: (
+    data: Record<string, unknown> | undefined,
+    sender: chrome.runtime.MessageSender,
+  ) => MessageResponse;
+  toggleDrawingOverlay: (data?: Record<string, unknown>) => Promise<MessageResponse>;
+  getDrawingOverlayState: () => Promise<MessageResponse & { active?: boolean }>;
   handleRecordingInPageEntry: (
     data: Record<string, unknown> | undefined,
     sender: chrome.runtime.MessageSender,
@@ -105,6 +115,14 @@ async function handleMessage(
       return handlers.deleteSession(message.data);
     case "RECORDING_USER_EVENT":
       return handlers.handleRecordingUserEvent(message.data, sender);
+    case "RECORDING_DRAW_STROKE":
+      return handlers.handleRecordingDrawStroke(message.data, sender);
+    case "RECORDING_DRAW_CLEAR":
+      return handlers.handleRecordingDrawClear(message.data, sender);
+    case "TOGGLE_DRAWING_OVERLAY":
+      return handlers.toggleDrawingOverlay(message.data);
+    case "GET_DRAWING_OVERLAY_STATE":
+      return handlers.getDrawingOverlayState();
     case "RECORDING_INPAGE_ENTRY":
       return handlers.handleRecordingInPageEntry(message.data, sender);
     case "UPLOAD_TO_GOOGLE_DRIVE":

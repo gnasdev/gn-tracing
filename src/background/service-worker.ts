@@ -41,6 +41,8 @@ import type {
   ConsoleEntry,
   CookieRecord,
   NetworkEntry,
+  RecordingDrawingArtifact,
+  RecordingDrawStroke,
   RecordingPrivacySummary,
   RecordingReport,
   RecordingUserEvent,
@@ -54,6 +56,7 @@ import type {
 import {
   buildFallbackEnvironment,
   normalizeCaptureEnvironment,
+  normalizeFiniteNumber,
   normalizeRecordingUserEvent,
   truncateEventString,
 } from "./capture-environment";
@@ -109,6 +112,9 @@ interface ActiveRecordingState {
   tabTitle: string | null;
   environment: CaptureEnvironment | null;
   userEvents: RecordingUserEvent[];
+  drawingStrokes: RecordingDrawStroke[];
+  drawingClears: number[];
+  drawingOverlayActive: boolean;
   redactionHits: RedactionHit[];
   privacyLimitations: string[];
   privacySettings: PrivacyRedactionSettings;
@@ -121,6 +127,7 @@ export interface SessionArtifacts {
   webSocketLogs?: string;
   report?: string;
   userEvents?: string;
+  drawing?: string;
   privacy?: string;
   diagnostics?: string;
   storage?: string;
@@ -141,8 +148,13 @@ interface OffscreenCaptureState {
 
 const STORAGE_KEY_ARTIFACTS = "gn_tracing_session_artifacts";
 const MAX_RECORDED_USER_EVENTS = 2000;
+const MAX_DRAWING_STROKES = 2000;
+const MAX_DRAWING_POINTS_PER_STROKE = 500;
+const MAX_TOTAL_DRAWING_POINTS = 100_000;
+const MAX_DRAWING_CLEARS = 100;
 const MAX_SCREENSHOT_DATA_URL_CHARS = 1536 * 1024;
 const RECORDING_EVENTS_SCRIPT = "content/recording-events.js";
+const DRAWING_OVERLAY_SCRIPT = "content/drawing-overlay.js";
 // In-page capture (captureMode === "in-page") content scripts. The relay runs in
 // the ISOLATED world (it needs `chrome.runtime`), while the capture script runs
 // in the page's MAIN world so it can see the real console/fetch/XHR/WebSocket.
@@ -163,6 +175,9 @@ const activeRecording: ActiveRecordingState = {
   tabTitle: null,
   environment: null,
   userEvents: [],
+  drawingStrokes: [],
+  drawingClears: [],
+  drawingOverlayActive: false,
   redactionHits: [],
   privacyLimitations: [],
   privacySettings: DEFAULT_PRIVACY_REDACTION_SETTINGS,
@@ -208,6 +223,9 @@ function resetActiveRecordingState(): void {
   activeRecording.tabTitle = null;
   activeRecording.environment = null;
   activeRecording.userEvents = [];
+  activeRecording.drawingStrokes = [];
+  activeRecording.drawingClears = [];
+  activeRecording.drawingOverlayActive = false;
   activeRecording.redactionHits = [];
   activeRecording.privacyLimitations = [];
   activeRecording.privacySettings = DEFAULT_PRIVACY_REDACTION_SETTINGS;
@@ -529,6 +547,10 @@ registerMessageListeners({
   deleteUploadHistoryEntry,
   deleteSession,
   handleRecordingUserEvent,
+  handleRecordingDrawStroke,
+  handleRecordingDrawClear,
+  toggleDrawingOverlay,
+  getDrawingOverlayState,
   handleRecordingInPageEntry,
   uploadSessionToGoogleDrive,
   getUploadState: () => sortSessions(sessions),
@@ -594,6 +616,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     // Page navigations replace the injected listener context, so re-arm it on
     // complete while keeping the recording alive.
     void startRecordingEventCapture(tabId, activeRecording.sessionId);
+    void startDrawingOverlay(tabId, activeRecording.sessionId);
     if (activeRecording.recordingSettings?.captureMode === "in-page") {
       // Re-inject the in-page capture pair after navigation tears down the
       // previous MAIN-world instrumentation.
@@ -703,6 +726,200 @@ async function stopRecordingEventCapture(tabId: number | null): Promise<void> {
       type: "STOP",
     })
     .catch(() => {});
+}
+
+async function startDrawingOverlay(tabId: number, sessionId: string): Promise<void> {
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: [DRAWING_OVERLAY_SCRIPT],
+    });
+    await chrome.tabs.sendMessage(tabId, {
+      target: "drawing-overlay",
+      type: "START",
+      sessionId,
+    });
+    activeRecording.drawingOverlayActive = false;
+  } catch (error) {
+    console.warn("[GN Tracing] Drawing overlay injection unavailable:", error);
+  }
+}
+
+async function stopDrawingOverlay(tabId: number | null): Promise<void> {
+  if (tabId == null) {
+    return;
+  }
+  await chrome.tabs
+    .sendMessage(tabId, {
+      target: "drawing-overlay",
+      type: "STOP",
+    })
+    .catch(() => {});
+}
+
+async function toggleDrawingOverlay(): Promise<MessageResponse> {
+  if (!activeRecording.isRecording || !activeRecording.sessionId || activeRecording.tabId == null) {
+    return { ok: false, error: "No active recording." };
+  }
+
+  try {
+    const response = (await chrome.tabs.sendMessage(activeRecording.tabId, {
+      target: "drawing-overlay",
+      type: "TOGGLE",
+    })) as { active?: boolean };
+    activeRecording.drawingOverlayActive = Boolean(response?.active);
+    return { ok: true, active: activeRecording.drawingOverlayActive } as MessageResponse;
+  } catch (error) {
+    return { ok: false, error: (error as Error).message };
+  }
+}
+
+async function getDrawingOverlayState(): Promise<MessageResponse & { active?: boolean }> {
+  if (!activeRecording.isRecording || activeRecording.tabId == null) {
+    return { ok: true, active: false };
+  }
+
+  try {
+    const response = (await chrome.tabs.sendMessage(activeRecording.tabId, {
+      target: "drawing-overlay",
+      type: "GET_STATE",
+    })) as { active?: boolean };
+    activeRecording.drawingOverlayActive = Boolean(response?.active);
+    return { ok: true, active: activeRecording.drawingOverlayActive };
+  } catch (error) {
+    return { ok: false, error: (error as Error).message };
+  }
+}
+
+function normalizeDrawingStroke(value: unknown): RecordingDrawStroke | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const raw = value as Record<string, unknown>;
+  if (typeof raw.strokeId !== "string" || !raw.strokeId) {
+    return null;
+  }
+  const timestamp = normalizeFiniteNumber(raw.timestamp);
+  if (!timestamp) {
+    return null;
+  }
+  const color = typeof raw.color === "string" ? raw.color : "#ff6b6b";
+  const width = normalizeFiniteNumber(raw.width) ?? 3;
+  if (!Array.isArray(raw.points)) {
+    return null;
+  }
+  const points: RecordingDrawStroke["points"] = [];
+  for (const point of raw.points) {
+    if (!point || typeof point !== "object") {
+      continue;
+    }
+    const p = point as Record<string, unknown>;
+    const x = normalizeFiniteNumber(p.x);
+    const y = normalizeFiniteNumber(p.y);
+    const t = normalizeFiniteNumber(p.t);
+    if (x == null || y == null || t == null) {
+      continue;
+    }
+    points.push({ x, y, t });
+  }
+  if (points.length === 0) {
+    return null;
+  }
+  return {
+    strokeId: raw.strokeId,
+    timestamp,
+    color,
+    width,
+    points: points.slice(0, MAX_DRAWING_POINTS_PER_STROKE),
+  };
+}
+
+function handleRecordingDrawStroke(
+  data: Record<string, unknown> | undefined,
+  sender: chrome.runtime.MessageSender,
+): MessageResponse {
+  const sessionId = typeof data?.sessionId === "string" ? data.sessionId : "";
+  if (
+    !sessionId ||
+    sessionId !== activeRecording.sessionId ||
+    sender.tab?.id !== activeRecording.tabId ||
+    !activeRecording.isRecording
+  ) {
+    return { ok: true };
+  }
+
+  const stroke = normalizeDrawingStroke(data?.stroke);
+  if (!stroke) {
+    return { ok: true };
+  }
+
+  activeRecording.drawingStrokes.push(stroke);
+  if (activeRecording.drawingStrokes.length > MAX_DRAWING_STROKES) {
+    activeRecording.drawingStrokes.splice(
+      0,
+      activeRecording.drawingStrokes.length - MAX_DRAWING_STROKES,
+    );
+  }
+
+  const totalPoints = activeRecording.drawingStrokes.reduce((sum, s) => sum + s.points.length, 0);
+  if (totalPoints > MAX_TOTAL_DRAWING_POINTS) {
+    addActivePrivacyLimitation(
+      "Drawing capture reached the point budget; older strokes were dropped.",
+    );
+    while (
+      activeRecording.drawingStrokes.length > 1 &&
+      activeRecording.drawingStrokes.reduce((sum, s) => sum + s.points.length, 0) >
+        MAX_TOTAL_DRAWING_POINTS
+    ) {
+      activeRecording.drawingStrokes.shift();
+    }
+  }
+
+  return { ok: true };
+}
+
+function handleRecordingDrawClear(
+  data: Record<string, unknown> | undefined,
+  sender: chrome.runtime.MessageSender,
+): MessageResponse {
+  const sessionId = typeof data?.sessionId === "string" ? data.sessionId : "";
+  if (
+    !sessionId ||
+    sessionId !== activeRecording.sessionId ||
+    sender.tab?.id !== activeRecording.tabId ||
+    !activeRecording.isRecording
+  ) {
+    return { ok: true };
+  }
+
+  const timestamp = normalizeFiniteNumber(data?.timestamp);
+  if (!timestamp) {
+    return { ok: true };
+  }
+
+  activeRecording.drawingClears.push(timestamp);
+  if (activeRecording.drawingClears.length > MAX_DRAWING_CLEARS) {
+    activeRecording.drawingClears.splice(
+      0,
+      activeRecording.drawingClears.length - MAX_DRAWING_CLEARS,
+    );
+  }
+
+  return { ok: true };
+}
+
+function buildDrawingArtifact(
+  strokes: RecordingDrawStroke[],
+  clears: number[],
+): string | undefined {
+  if (strokes.length === 0 && clears.length === 0) {
+    return undefined;
+  }
+  const artifact: RecordingDrawingArtifact = { schemaVersion: 1, strokes };
+  if (clears.length > 0) {
+    artifact.clears = clears;
+  }
+  return JSON.stringify(artifact);
 }
 
 /**
@@ -1184,6 +1401,7 @@ async function startRecording(tabId: number): Promise<MessageResponse> {
     activeRecording.isRecording = true;
     recorder.hydrateActiveSession(sessionId);
     void startRecordingEventCapture(tabId, sessionId, activeRecording.privacySettings);
+    void startDrawingOverlay(tabId, sessionId);
 
     chrome.action.setBadgeText({ text: "REC" });
     chrome.action.setBadgeBackgroundColor({ color: "#ef233c" });
@@ -1224,6 +1442,7 @@ async function stopRecording(): Promise<MessageResponse> {
     activeRecording.isRecording = false;
     activeRecording.stopTime = stopTime;
 
+    await stopDrawingOverlay(activeRecording.tabId);
     await stopRecordingEventCapture(activeRecording.tabId);
     await recorder.stopCapture();
     const screenshotDataUrl = await captureVisibleTabScreenshot(activeRecording.tabId);
@@ -1268,6 +1487,10 @@ async function stopRecording(): Promise<MessageResponse> {
     const finalizedArtifacts = storage.finalizeCurrentSession();
     const report = buildRecordingReport(stopTime);
     const userEventArtifact = buildUserEventArtifact(activeRecording.userEvents);
+    const drawingArtifact = buildDrawingArtifact(
+      activeRecording.drawingStrokes,
+      activeRecording.drawingClears,
+    );
     const recordingSettings = activeRecording.recordingSettings || {
       ...(await getUploadSettings()),
       ...activeRecording.privacySettings,
@@ -1285,6 +1508,7 @@ async function stopRecording(): Promise<MessageResponse> {
       webSocketLogs: finalizedArtifacts.webSocketLogs,
       report: JSON.stringify(report),
       userEvents: userEventArtifact ? JSON.stringify(userEventArtifact) : undefined,
+      drawing: drawingArtifact,
       privacy: JSON.stringify(privacy),
       diagnostics: sourceMapDiagnostics ? JSON.stringify(sourceMapDiagnostics) : undefined,
       storage: finalizedArtifacts.storageSnapshots,
@@ -1347,6 +1571,7 @@ async function removeRecording(): Promise<MessageResponse> {
   try {
     activeRecording.isRecording = false;
 
+    await stopDrawingOverlay(activeRecording.tabId);
     await stopRecordingEventCapture(activeRecording.tabId);
     if (activeRecording.recordingSettings?.captureMode === "in-page") {
       // R9.4: restore patched page globals even when the recording is discarded.
@@ -1356,6 +1581,8 @@ async function removeRecording(): Promise<MessageResponse> {
 
     storage.clear();
     cdp.releaseSourceMaps();
+    activeRecording.drawingStrokes = [];
+    activeRecording.drawingOverlayActive = false;
     delete sessionArtifacts[sessionId];
 
     chrome.action.setBadgeText({ text: "" });
@@ -1774,6 +2001,7 @@ async function runSessionUpload(sessionId: string, authToken: string): Promise<v
           webSocketLogs: Boolean(artifacts.webSocketLogs),
           report: Boolean(artifacts.report),
           userEvents: Boolean(artifacts.userEvents),
+          drawing: Boolean(artifacts.drawing),
           privacy: Boolean(artifacts.privacy),
           diagnostics: Boolean(artifacts.diagnostics),
           storage: Boolean(artifacts.storage),

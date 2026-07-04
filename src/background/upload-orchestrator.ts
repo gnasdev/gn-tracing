@@ -18,6 +18,7 @@ export type UploadArtifactKey =
   | "webSocketLogs"
   | "report"
   | "userEvents"
+  | "drawing"
   | "privacy"
   | "diagnostics"
   | "storage"
@@ -38,6 +39,7 @@ export function isUploadArtifactKey(key: string): key is UploadArtifactKey {
     key === "webSocketLogs" ||
     key === "report" ||
     key === "userEvents" ||
+    key === "drawing" ||
     key === "privacy" ||
     key === "diagnostics" ||
     key === "storage" ||

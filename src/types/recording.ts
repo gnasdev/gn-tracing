@@ -358,6 +358,30 @@ export interface RecordingUserEventArtifact {
   events: RecordingUserEvent[];
 }
 
+export interface RecordingDrawPoint {
+  x: number;
+  y: number;
+  /** Milliseconds offset from the stroke start timestamp. */
+  t: number;
+}
+
+export interface RecordingDrawStroke {
+  /** Unique id, useful for debugging/deduplication. */
+  strokeId: string;
+  /** Epoch ms — start of the stroke (pointerdown). */
+  timestamp: number;
+  color: string;
+  width: number;
+  points: RecordingDrawPoint[];
+}
+
+export interface RecordingDrawingArtifact {
+  schemaVersion: 1;
+  strokes: RecordingDrawStroke[];
+  /** Epoch ms timestamps when the overlay canvas was cleared (e.g. Esc/undraw). */
+  clears?: number[];
+}
+
 export type RedactionArtifact =
   | "headers"
   | "url"
