@@ -18,6 +18,7 @@ related:
 
 - [README.md](./README.md)
 - [overview.md](./overview.md)
+- [build-from-scratch/README.md](./build-from-scratch/README.md) — step-by-step build-from-scratch guide (extension + player + Worker).
 - [shared/project-context.md](./shared/project-context.md)
 - [shared/data-models.md](./shared/data-models.md)
 - [shared/api-conventions.md](./shared/api-conventions.md)
