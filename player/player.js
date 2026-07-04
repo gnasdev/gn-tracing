@@ -76,8 +76,8 @@
   let currentTimeMs = 0;
   let duration = 0;
 
-  let activeConsoleFilter = "all";
-  let activeNetworkFilter = "all";
+  const activeConsoleFilters = new Set();
+  const activeNetworkFilters = new Set();
   let consoleSearchQuery = "";
   let networkSearchQuery = "";
   let expandedConsoleIndex = null;
@@ -86,8 +86,20 @@
   const networkDetailTabs = new Map();
   const networkInitiatorVendorFilters = new Map();
   const networkJsonPreviewToggles = new Map();
+  // Row element caches keyed by String(item.index), one per log list, so
+  // syncLogRows can look up/reuse existing rows in O(1) instead of scanning the
+  // container with querySelector on every playback tick.
+  const consoleRowMap = new Map();
+  const networkRowMap = new Map();
+  const wsRowMap = new Map();
   let closestConsoleIndex = -1;
   let closestNetworkIndex = -1;
+  // Which logs tab is currently visible, plus dirty flags for the hidden ones so
+  // playback ticks skip rendering panels the user can't see and catch up once
+  // the tab is switched back to instead of paying the cost every tick.
+  let activeLogsTab = "console";
+  let consolePanelDirty = false;
+  let networkPanelDirty = false;
   let layoutState = loadLayoutState();
   let isVideoFullscreen = false;
   let loadingProgressMessage = "Loading recording...";
@@ -722,6 +734,15 @@
     elements.networkViewer.classList.toggle("hidden", !isNetwork);
     elements.storageViewer?.classList.toggle("hidden", !isStorage);
     elements.elementsViewer?.classList.toggle("hidden", !isElements);
+
+    activeLogsTab = tabName;
+    if (isConsole && consolePanelDirty) {
+      consolePanelDirty = false;
+      renderConsoleEntries();
+    } else if (isNetwork && networkPanelDirty) {
+      networkPanelDirty = false;
+      renderNetworkEntries();
+    }
   }
 
   // Build a one-row-per-key diff between two storage groups. Every key present
@@ -1650,48 +1671,134 @@
     return normalizeSearchQuery([ws.url, ws.closed ? "closed" : "open", frameText].join(" "));
   }
 
-  function getVisibleConsoleEntries() {
-    const consoleQuery = normalizeSearchQuery(consoleSearchQuery);
+  // Attaches a lazy, self-caching `searchText` getter so building it (which can
+  // walk response bodies, stack frames, and stringify headers) only happens for
+  // entries a user actually searches, and never more than once per entry.
+  function defineLazySearchText(target, compute) {
+    Object.defineProperty(target, "searchText", {
+      configurable: true,
+      get() {
+        const value = compute();
+        Object.defineProperty(target, "searchText", {
+          value,
+          configurable: true,
+          enumerable: true,
+        });
+        return value;
+      },
+    });
+    return target;
+  }
 
-    return consoleLogs
-      .map((entry, i) => ({
+  // Index of the first entry whose relativeMs exceeds timeMs, in an array
+  // sorted ascending by entry.relativeMs. Equivalent to (but O(log n) vs O(n)
+  // for) `items.filter((pe) => pe.entry.relativeMs <= timeMs).length`.
+  function findTimeBoundaryIndex(items, timeMs) {
+    let lo = 0;
+    let hi = items.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >>> 1;
+      if (items[mid].entry.relativeMs <= timeMs) {
+        lo = mid + 1;
+      } else {
+        hi = mid;
+      }
+    }
+    return lo;
+  }
+
+  // Prepared-entry caches, keyed by the array identity they were built from.
+  // consoleLogs/networkLogs/webSocketLogs are only ever replaced (not mutated)
+  // when a new recording loads, so an identity check is a correct and free
+  // invalidation signal — no explicit cache-busting calls needed.
+  let preparedConsoleCache = null;
+  let preparedNetworkCache = null;
+  let preparedWsCache = null;
+
+  function getPreparedConsoleEntries() {
+    if (preparedConsoleCache && preparedConsoleCache.source === consoleLogs) {
+      return preparedConsoleCache.items;
+    }
+    const items = consoleLogs.map((entry, index) => {
+      const pe = {
         entry,
-        index: i,
+        index,
         level: getConsoleLevel(entry),
         filterLevel: getFilterLevel(entry),
-        searchText: getConsoleSearchText(entry),
-      }))
-      .filter((pe) => pe.entry.relativeMs <= currentTimeMs)
-      .filter((pe) => activeConsoleFilter === "all" || pe.filterLevel === activeConsoleFilter)
-      .filter((pe) => !consoleQuery || pe.searchText.includes(consoleQuery));
+      };
+      return defineLazySearchText(pe, () => getConsoleSearchText(entry));
+    });
+    preparedConsoleCache = { source: consoleLogs, items };
+    return items;
+  }
+
+  function getPreparedNetworkEntries() {
+    if (preparedNetworkCache && preparedNetworkCache.source === networkLogs) {
+      return preparedNetworkCache.items;
+    }
+    const items = networkLogs.map((entry, index) => {
+      const pe = {
+        entry,
+        index,
+        filterType: getNetworkFilterType(entry),
+      };
+      return defineLazySearchText(pe, () => getNetworkSearchText(entry));
+    });
+    preparedNetworkCache = { source: networkLogs, items };
+    return items;
+  }
+
+  function getPreparedWebSocketEntries() {
+    if (preparedWsCache && preparedWsCache.source === webSocketLogs) {
+      return preparedWsCache.items;
+    }
+    const items = webSocketLogs.map((ws, index) => {
+      const item = { ws, index };
+      return defineLazySearchText(item, () => getWsSearchText(ws));
+    });
+    preparedWsCache = { source: webSocketLogs, items };
+    return items;
+  }
+
+  function getVisibleConsoleEntries() {
+    const consoleQuery = normalizeSearchQuery(consoleSearchQuery);
+    const prepared = getPreparedConsoleEntries();
+    let visible = prepared.slice(0, findTimeBoundaryIndex(prepared, currentTimeMs));
+
+    if (activeConsoleFilters.size > 0) {
+      visible = visible.filter((pe) => activeConsoleFilters.has(pe.filterLevel));
+    }
+    if (consoleQuery) {
+      visible = visible.filter((pe) => pe.searchText.includes(consoleQuery));
+    }
+    return visible;
   }
 
   function getVisibleNetworkEntries() {
     const networkQuery = normalizeSearchQuery(networkSearchQuery);
+    const prepared = getPreparedNetworkEntries();
+    let visible = prepared.slice(0, findTimeBoundaryIndex(prepared, currentTimeMs));
 
-    return networkLogs
-      .map((entry, i) => ({
-        entry,
-        index: i,
-        filterType: getNetworkFilterType(entry),
-        searchText: getNetworkSearchText(entry),
-      }))
-      .filter((pe) => pe.entry.relativeMs <= currentTimeMs)
-      .filter((pe) => activeNetworkFilter === "all" || pe.filterType === activeNetworkFilter)
-      .filter((pe) => !networkQuery || pe.searchText.includes(networkQuery));
+    if (activeNetworkFilters.size > 0) {
+      visible = visible.filter((pe) => activeNetworkFilters.has(pe.filterType));
+    }
+    if (networkQuery) {
+      visible = visible.filter((pe) => pe.searchText.includes(networkQuery));
+    }
+    return visible;
   }
 
   function getVisibleWebSocketEntries() {
     const networkQuery = normalizeSearchQuery(networkSearchQuery);
+    let visible = getPreparedWebSocketEntries();
 
-    return webSocketLogs
-      .map((ws, index) => ({
-        ws,
-        index,
-        searchText: getWsSearchText(ws),
-      }))
-      .filter(() => activeNetworkFilter === "all" || activeNetworkFilter === "ws")
-      .filter((item) => !networkQuery || item.searchText.includes(networkQuery));
+    if (activeNetworkFilters.size > 0 && !activeNetworkFilters.has("ws")) {
+      visible = [];
+    }
+    if (networkQuery) {
+      visible = visible.filter((item) => item.searchText.includes(networkQuery));
+    }
+    return visible;
   }
 
   function getRemoteObjectMessage(obj) {
@@ -1828,16 +1935,16 @@
   // is inserted into the DOM. If luna is missing (or anything throws) the legacy
   // content stays visible.
   //
-  // NOTE on the real luna API (verified against the vendored bundles, which
-  // differ from the design pseudocode):
+  // NOTE on the real luna API (verified against the vendored bundles' own
+  // prototypes via Object.getOwnPropertyNames, which differ from the design
+  // pseudocode):
   //   - luna-object-viewer@0.3.2: `new LunaObjectViewer(el); viewer.set(value)`.
-  //   - luna-json-editor@0.1.0: `new LunaJsonEditor(el, options)` where options
-  //     take an initial `value` plus editability flags. There is NO `readOnly`
-  //     option and NO `set()` method; read-only is enforced via
-  //     `nameEditable/valueEditable/enableInsert/enableDelete = false`, and the
-  //     value is passed in the constructor then shown via `expand()`. We still
-  //     expose `options.readOnly === true` on the instance for the read-only
-  //     contract (R6.4 / Property P2).
+  //   - luna-json-editor@0.1.0: `new LunaJsonEditor(el, options)` then
+  //     `editor.setValue(value)` — there is NO `set()` method (only
+  //     `setValue`/`getValue`), and NO `readOnly` option; read-only is enforced
+  //     via `nameEditable/valueEditable/enableInsert/enableDelete = false`. We
+  //     still expose `options.readOnly === true` on the instance for the
+  //     read-only contract (R6.4 / Property P2).
   function lunaObjectViewerAvailable() {
     return typeof window !== "undefined" && typeof window.LunaObjectViewer === "function";
   }
@@ -1861,12 +1968,18 @@
     if (typeof ObjectViewer !== "function") {
       return renderObjectValueLegacy(container, value);
     }
+    const originalClassName = container.className;
     try {
       container.textContent = "";
       const viewer = new ObjectViewer(container);
       viewer.set(remoteObjectToPlain(value));
       return viewer;
     } catch {
+      // The constructor above already stamps `container.className` with its
+      // own classes before `.set()` runs, so a caught error must restore the
+      // pre-mount classes — otherwise the legacy fallback below inherits
+      // vendor CSS (e.g. `user-select: none`) meant for the aborted widget.
+      container.className = originalClassName;
       return renderObjectValueLegacy(container, value);
     }
   }
@@ -1892,20 +2005,23 @@
     if (typeof JsonEditor !== "function") {
       return renderJsonLegacy(container, jsonValue);
     }
+    const originalClassName = container.className;
     try {
       container.textContent = "";
       // luna-json-editor API: `new LunaJsonEditor(container, options)` then
-      // `.set(data)`. The data MUST be passed via `.set()` — the constructor
-      // does not read a `value` option, so forgetting this renders an empty
-      // editor (looks like nothing changed). Read-only is enforced by disabling
-      // every edit affordance (the component has no `readOnly` option).
+      // `.setValue(data)` — NOT `.set()`. Verified against the vendored
+      // bundle's prototype (`Object.getOwnPropertyNames`): it exposes
+      // `setValue`/`getValue`, not `set`; calling `.set()` throws and silently
+      // falls back to the legacy renderer every time. Read-only is enforced by
+      // disabling every edit affordance (the component has no `readOnly`
+      // option).
       const editor = new JsonEditor(container, {
         enableInsert: false,
         enableDelete: false,
         nameEditable: false,
         valueEditable: false,
       });
-      editor.set(jsonValue);
+      editor.setValue(jsonValue);
       // Mirror the read-only intent on the instance options for the contract
       // assertion in tests (R6.4 / Property P2).
       editor.options = editor.options || {};
@@ -1915,6 +2031,12 @@
       }
       return editor;
     } catch {
+      // See renderObjectValue: the constructor already stamps `container`
+      // with luna's own classes before `.setValue()` runs, so a caught error
+      // must restore the pre-mount classes — otherwise the legacy fallback
+      // below inherits vendor CSS (e.g. `user-select: none`) meant for the
+      // aborted widget.
+      container.className = originalClassName;
       return renderJsonLegacy(container, jsonValue);
     }
   }
@@ -4102,24 +4224,29 @@
     }
   }
 
-  // Keep existing rows alive while playback advances; only new/hidden rows are inserted or removed.
-  function syncLogRows(container, items, rowSelector, getRowHtml, syncRowState) {
+  // Keep existing rows alive while playback advances; only new/hidden rows are
+  // inserted or removed. `rowMap` is a String(item.index) -> row Map persisted
+  // across calls (one per log list) so lookups and removals are O(1)/O(visible)
+  // instead of re-scanning the whole container with querySelector every tick.
+  function syncLogRows(container, rowMap, items, getRowHtml, syncRowState) {
     const visibleKeys = new Set(items.map((item) => String(item.index)));
-    container.querySelectorAll(rowSelector).forEach((row) => {
-      if (!visibleKeys.has(row.dataset.index)) {
+    for (const [key, row] of rowMap) {
+      if (!visibleKeys.has(key)) {
         row.remove();
+        rowMap.delete(key);
       }
-    });
+    }
 
     let previousRow = null;
     items.forEach((item) => {
       const key = String(item.index);
-      let row = container.querySelector(`${rowSelector}[data-index="${CSS.escape(key)}"]`);
+      let row = rowMap.get(key);
 
       if (!row) {
         const template = document.createElement("template");
         template.innerHTML = getRowHtml(item).trim();
         row = template.content.firstElementChild;
+        rowMap.set(key, row);
       }
 
       if (previousRow) {
@@ -4159,8 +4286,8 @@
 
     syncLogRows(
       elements.consoleEntries,
+      consoleRowMap,
       visible,
-      ".console-entry",
       (pe) => getConsoleEntryHtml(pe, closestIdx),
       (row, pe) => syncConsoleEntryState(row, pe, closestIdx),
     );
@@ -4301,7 +4428,7 @@
 
     // Summary text
     let summaryText = `${visibleCount}/${networkLogs.length} requests`;
-    if (activeNetworkFilter !== "all") summaryText += ` (${activeNetworkFilter})`;
+    if (activeNetworkFilters.size > 0) summaryText += ` (${[...activeNetworkFilters].join(", ")})`;
     if (networkSearchQuery) summaryText += ` | search`;
     if (webSocketLogs.length > 0)
       summaryText += ` | ${visibleWs.length}/${webSocketLogs.length} WS`;
@@ -4311,8 +4438,8 @@
 
     syncLogRows(
       elements.networkRows,
+      networkRowMap,
       filtered,
-      ".network-row",
       (pe) => getNetworkEntryHtml(pe, closestIdx),
       (row, pe) => syncNetworkEntryState(row, pe, closestIdx),
     );
@@ -4328,14 +4455,15 @@
       elements.websocketSection.classList.remove("hidden");
       syncLogRows(
         elements.websocketRows,
+        wsRowMap,
         visibleWs,
-        ".ws-row",
         getWebSocketEntryHtml,
         syncWebSocketEntryState,
       );
       mountLunaPlaceholders(elements.websocketRows);
     } else {
       elements.websocketRows.innerHTML = "";
+      wsRowMap.clear();
       elements.websocketSection.classList.add("hidden");
     }
   }
@@ -4895,6 +5023,9 @@
     canvas.height = Math.max(1, Math.floor(rect.height * ratio));
     canvas.style.width = `${rect.width}px`;
     canvas.style.height = `${rect.height}px`;
+    // Resizing the backing buffer wipes its pixels, so the next render must
+    // repaint even if the drawing-state signature hasn't changed.
+    drawingCanvasNeedsRepaint = true;
   }
 
   function getDrawingContext() {
@@ -4911,12 +5042,11 @@
     return ctx;
   }
 
-  function mapDrawingPoint(point, viewport) {
+  // `content` is the live video content rect, computed once per render call
+  // (not once per point — see renderDrawingUpTo) since it costs two
+  // getBoundingClientRect() layout reads.
+  function mapDrawingPoint(point, viewport, content) {
     const frac = getRecordedFrameFraction({ x: point.x, y: point.y }, viewport);
-    const content = getVideoContentRect();
-    if (!content) {
-      return null;
-    }
     return {
       x: content.left + frac.x * content.width,
       y: content.top + frac.y * content.height,
@@ -4935,6 +5065,38 @@
     return clearMs;
   }
 
+  // Largest index i such that points[i].t <= elapsedMs, or -1 if none qualify.
+  // Points within a stroke are recorded in increasing `t` order, so a binary
+  // search stays O(log n) even for a finished stroke re-checked every frame.
+  function findLastDrawingPointIndex(points, elapsedMs) {
+    let lo = 0;
+    let hi = points.length - 1;
+    let result = -1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (points[mid].t <= elapsedMs) {
+        result = mid;
+        lo = mid + 1;
+      } else {
+        hi = mid - 1;
+      }
+    }
+    return result;
+  }
+
+  // Signature of the last frame actually painted to the canvas: which strokes
+  // were visible and how far each was drawn, plus the active clear boundary and
+  // the strokes array identity (a new recording replaces the array). Comparing
+  // against this lets renderDrawingUpTo skip clearRect+redraw entirely on
+  // frames where nothing on screen would change — the common case once a
+  // stroke finishes drawing and no clear/resize/seek has happened since.
+  let lastDrawingSignature = { source: null, clearMs: undefined, indices: new Map() };
+  // Forces the next renderDrawingUpTo call to redraw regardless of the
+  // signature — set whenever the canvas pixels were wiped out-of-band (layout
+  // resize, fullscreen, splitter drag, seek-start clear) so the blank canvas
+  // gets repainted even when the logical drawing state hasn't changed.
+  let drawingCanvasNeedsRepaint = true;
+
   function renderDrawingUpTo(timeMs) {
     const canvas = elements.drawingCanvas;
     const ctx = getDrawingContext();
@@ -4942,10 +5104,23 @@
     if (!canvas || !ctx || !viewport) {
       return;
     }
-
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const content = getVideoContentRect();
+    if (!content) {
+      // Video isn't laid out yet (e.g. zero-size during a transient resize).
+      // Blank the canvas like before, and force a full repaint once content
+      // becomes available again since the signature no longer matches reality.
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      drawingCanvasNeedsRepaint = true;
+      return;
+    }
 
     const activeClearMs = getActiveDrawingClearMs(timeMs);
+    let stateChanged =
+      drawingCanvasNeedsRepaint ||
+      lastDrawingSignature.source !== drawingStrokes ||
+      lastDrawingSignature.clearMs !== activeClearMs;
+
+    const visible = [];
     for (const stroke of drawingStrokes) {
       if (stroke.relativeMs > timeMs) {
         continue;
@@ -4954,19 +5129,28 @@
         continue;
       }
       const elapsed = timeMs - stroke.relativeMs;
-      const points = stroke.points;
-      let lastIndex = -1;
-      for (let i = 0; i < points.length; i += 1) {
-        if (points[i].t <= elapsed) {
-          lastIndex = i;
-        } else {
-          break;
-        }
-      }
+      const lastIndex = findLastDrawingPointIndex(stroke.points, elapsed);
       if (lastIndex < 1) {
         continue;
       }
+      visible.push({ stroke, lastIndex });
+      if (lastDrawingSignature.indices.get(stroke) !== lastIndex) {
+        stateChanged = true;
+      }
+    }
+    if (visible.length !== lastDrawingSignature.indices.size) {
+      stateChanged = true;
+    }
 
+    if (!stateChanged) {
+      return;
+    }
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const nextIndices = new Map();
+
+    for (const { stroke, lastIndex } of visible) {
+      const points = stroke.points;
       const color = stroke.color || "#ff6b6b";
       const width = stroke.width || 3;
       ctx.strokeStyle = color;
@@ -4975,21 +5159,19 @@
       ctx.lineJoin = "round";
       ctx.beginPath();
 
-      const first = mapDrawingPoint(points[0], viewport);
-      if (!first) {
-        continue;
-      }
+      const first = mapDrawingPoint(points[0], viewport, content);
       ctx.moveTo(first.x, first.y);
 
       for (let i = 1; i <= lastIndex; i += 1) {
-        const mapped = mapDrawingPoint(points[i], viewport);
-        if (!mapped) {
-          continue;
-        }
+        const mapped = mapDrawingPoint(points[i], viewport, content);
         ctx.lineTo(mapped.x, mapped.y);
       }
       ctx.stroke();
+      nextIndices.set(stroke, lastIndex);
     }
+
+    lastDrawingSignature = { source: drawingStrokes, clearMs: activeClearMs, indices: nextIndices };
+    drawingCanvasNeedsRepaint = false;
   }
 
   function tickDrawingScheduler() {
@@ -5036,8 +5218,16 @@
 
       currentTimeMs = elements.video.currentTime * 1000;
       updateProgress();
-      renderConsoleEntries();
-      renderNetworkEntries();
+      if (activeLogsTab === "console") {
+        renderConsoleEntries();
+      } else {
+        consolePanelDirty = true;
+      }
+      if (activeLogsTab === "network") {
+        renderNetworkEntries();
+      } else {
+        networkPanelDirty = true;
+      }
       updateStorageForTime();
       updateElementsForTime();
     });
@@ -5080,6 +5270,7 @@
       if (elements.drawingCanvas) {
         const ctx = elements.drawingCanvas.getContext("2d");
         ctx?.clearRect(0, 0, elements.drawingCanvas.width, elements.drawingCanvas.height);
+        drawingCanvasNeedsRepaint = true;
       }
     });
     elements.video.addEventListener("seeked", () => {
@@ -5294,42 +5485,62 @@
   }
 
   // Filter handlers
-  function setupFilterListeners() {
-    // Console filters
-    elements.consoleFilters.querySelectorAll(".filter-btn").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        elements.consoleFilters.querySelectorAll(".filter-btn").forEach((b) => {
-          b.classList.remove("active");
-        });
-        btn.classList.add("active");
-        activeConsoleFilter = btn.dataset.filter;
-        renderConsoleEntries();
-      });
+  function syncFilterButtonsUI(container, activeFilters) {
+    container.querySelectorAll(".filter-btn").forEach((b) => {
+      const value = b.dataset.filter;
+      const isActive = value === "all" ? activeFilters.size === 0 : activeFilters.has(value);
+      b.classList.toggle("active", isActive);
     });
+  }
 
-    // Network filters
-    elements.networkFilters.querySelectorAll(".filter-btn").forEach((btn) => {
+  function setupFilterToggleGroup(container, activeFilters, onChange) {
+    container.querySelectorAll(".filter-btn").forEach((btn) => {
       btn.addEventListener("click", () => {
-        elements.networkFilters.querySelectorAll(".filter-btn").forEach((b) => {
-          b.classList.remove("active");
-        });
-        btn.classList.add("active");
-        activeNetworkFilter = btn.dataset.filter;
-        renderNetworkEntries();
+        const value = btn.dataset.filter;
+        if (value === "all") {
+          activeFilters.clear();
+        } else if (activeFilters.has(value)) {
+          activeFilters.delete(value);
+        } else {
+          activeFilters.add(value);
+        }
+        syncFilterButtonsUI(container, activeFilters);
+        onChange();
       });
     });
+  }
+
+  const SEARCH_INPUT_DEBOUNCE_MS = 200;
+
+  function debounce(fn, delayMs) {
+    let timer = null;
+    return (...args) => {
+      clearTimeout(timer);
+      timer = setTimeout(() => fn(...args), delayMs);
+    };
+  }
+
+  function setupFilterListeners() {
+    setupFilterToggleGroup(elements.consoleFilters, activeConsoleFilters, renderConsoleEntries);
+    setupFilterToggleGroup(elements.networkFilters, activeNetworkFilters, renderNetworkEntries);
+
+    const debouncedRenderConsoleEntries = debounce(renderConsoleEntries, SEARCH_INPUT_DEBOUNCE_MS);
+    const debouncedRenderNetworkEntries = debounce(renderNetworkEntries, SEARCH_INPUT_DEBOUNCE_MS);
 
     elements.consoleSearch.addEventListener("input", () => {
       consoleSearchQuery = elements.consoleSearch.value || "";
-      renderConsoleEntries();
+      debouncedRenderConsoleEntries();
     });
 
     elements.networkSearch.addEventListener("input", () => {
       networkSearchQuery = elements.networkSearch.value || "";
-      renderNetworkEntries();
+      debouncedRenderNetworkEntries();
     });
   }
 
+  // Toggling a row's expanded state only needs that one row patched — not a
+  // full re-render of every visible row — since neither the visible set nor
+  // any other row's active/expanded state changes as a result.
   function setupLogRowListeners() {
     elements.consoleEntries.addEventListener("click", (e) => {
       const toggle = e.target.closest(".toggle-expand");
@@ -5341,7 +5552,11 @@
       e.stopPropagation();
       const index = parseInt(row.dataset.index);
       expandedConsoleIndex = expandedConsoleIndex === index ? null : index;
-      renderConsoleEntries();
+      const pe = getPreparedConsoleEntries()[index];
+      if (pe) {
+        syncConsoleEntryState(row, pe, closestConsoleIndex);
+        mountLunaPlaceholders(row);
+      }
     });
 
     elements.networkRows.addEventListener("click", (e) => {
@@ -5354,7 +5569,11 @@
       e.stopPropagation();
       const index = parseInt(row.dataset.index);
       expandedNetworkIndex = expandedNetworkIndex === index ? null : index;
-      renderNetworkEntries();
+      const pe = getPreparedNetworkEntries()[index];
+      if (pe) {
+        syncNetworkEntryState(row, pe, closestNetworkIndex);
+        mountLunaPlaceholders(row);
+      }
     });
 
     elements.websocketRows.addEventListener("click", (e) => {
@@ -5367,7 +5586,11 @@
       e.stopPropagation();
       const index = parseInt(row.dataset.index);
       expandedWsIndex = expandedWsIndex === index ? null : index;
-      renderNetworkEntries();
+      const item = getPreparedWebSocketEntries()[index];
+      if (item) {
+        syncWebSocketEntryState(row, item);
+        mountLunaPlaceholders(row);
+      }
     });
   }
 

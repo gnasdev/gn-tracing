@@ -1459,6 +1459,18 @@ body {
   font-style: italic;
 }
 
+/* The vendored luna-json-editor defaults to `user-select: none` (it's built
+   for click-to-edit interactions), but every mount in this player is a
+   read-only viewer, so restore text selection for copying values. This must
+   win over vendor/luna/luna-json-editor.css despite player.css loading first
+   in player.html/index.html, hence the extra specificity instead of relying
+   on source order. */
+.luna-mount.luna-json-editor,
+.luna-mount .luna-json-editor {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
 /* Elements / DOM snapshot tree */
 
 .elements-viewer {
@@ -1620,6 +1632,9 @@ body {
   font-size: 12px;
   line-height: 1.5;
   align-items: flex-start;
+  /* Isolate each row's layout/paint so expanding one entry (or repainting the
+     active-entry highlight) doesn't force the browser to recheck siblings. */
+  contain: content;
 }
 
 .console-entry .toggle-expand {
@@ -1899,6 +1914,9 @@ body {
   border-bottom: 1px solid var(--border-subtle);
   font-size: 12px;
   align-items: center;
+  /* Isolate each row's layout/paint so expanding one entry (or repainting the
+     active-row highlight) doesn't force the browser to recheck siblings. */
+  contain: content;
 }
 
 .network-row .toggle-expand {
@@ -2372,6 +2390,9 @@ body {
   border-bottom: 1px solid var(--border-subtle);
   font-size: 12px;
   align-items: center;
+  /* Isolate each row's layout/paint so expanding one entry doesn't force the
+     browser to recheck siblings. */
+  contain: content;
 }
 
 .ws-row .toggle-expand {
