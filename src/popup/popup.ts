@@ -2,6 +2,7 @@
  * Drives the extension popup UI and service-worker message interactions.
  */
 
+import { DEFAULT_DRAW_COLOR, DRAW_COLOR_PRESETS, normalizeDrawColor } from "../shared/drawing";
 import { getRecordingTabTarget } from "../shared/recording-target";
 import { attachThemeToggle } from "../shared/theme";
 import {
@@ -43,6 +44,8 @@ const toggleBtn = document.getElementById("toggle-btn") as HTMLButtonElement;
 const removeRecordingBtn = document.getElementById("remove-recording-btn") as HTMLButtonElement;
 const drawToggleBtn = document.getElementById("draw-toggle-btn") as HTMLButtonElement;
 const drawingSection = document.getElementById("drawing-section")!;
+const drawColorSwatches = document.getElementById("draw-color-swatches")!;
+const drawColorInput = document.getElementById("draw-color-input") as HTMLInputElement;
 const recordingUnavailableMsg = document.getElementById("recording-unavailable-msg")!;
 const reloadBtn = document.getElementById("reload-btn") as HTMLButtonElement;
 const checkUpdateBtn = document.getElementById("check-update-btn") as HTMLButtonElement;
@@ -94,6 +97,8 @@ let activeTabRecordingError: string | null = "Checking whether this tab can be r
 let toggleActionInFlight = false;
 let toggleActionMode: "start" | "stop" | null = null;
 let activeTabRecordingCheckId = 0;
+let selectedDrawColor = DEFAULT_DRAW_COLOR;
+let drawColorUpdateInFlight = false;
 
 type ToastVariant = "success" | "info" | "error";
 
@@ -988,19 +993,114 @@ function setDrawButtonActive(active: boolean): void {
   `;
 }
 
+function expandShortHex(color: string): string {
+  const match = /^#([0-9a-f]{3})$/i.exec(color);
+  if (!match) {
+    return color;
+  }
+  const [r, g, b] = match[1].split("");
+  return `#${r}${r}${g}${g}${b}${b}`;
+}
+
+function setSelectedDrawColor(color: string, options: { updateInput?: boolean } = {}): void {
+  const normalized = normalizeDrawColor(color) || DEFAULT_DRAW_COLOR;
+  selectedDrawColor = normalized;
+  const expanded = expandShortHex(normalized);
+
+  for (const swatch of drawColorSwatches.querySelectorAll<HTMLButtonElement>(
+    ".drawing-color-swatch",
+  )) {
+    const isSelected = swatch.dataset.color === normalized;
+    swatch.classList.toggle("is-selected", isSelected);
+    swatch.setAttribute("aria-pressed", isSelected ? "true" : "false");
+  }
+
+  if (options.updateInput !== false) {
+    drawColorInput.value = expanded.length === 7 ? expanded : DEFAULT_DRAW_COLOR;
+  }
+}
+
+function renderDrawColorSwatches(): void {
+  drawColorSwatches.innerHTML = "";
+  for (const color of DRAW_COLOR_PRESETS) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "drawing-color-swatch";
+    button.dataset.color = color;
+    button.style.backgroundColor = color;
+    button.title = color;
+    button.setAttribute("aria-label", `Pen color ${color}`);
+    button.setAttribute("aria-pressed", "false");
+    button.addEventListener("click", () => {
+      void applyDrawColor(color);
+    });
+    drawColorSwatches.appendChild(button);
+  }
+  setSelectedDrawColor(selectedDrawColor);
+}
+
+async function applyDrawColor(color: string): Promise<void> {
+  const normalized = normalizeDrawColor(color);
+  if (!normalized || drawColorUpdateInFlight) {
+    return;
+  }
+
+  const previous = selectedDrawColor;
+  setSelectedDrawColor(normalized);
+  drawColorUpdateInFlight = true;
+  errorMsg.classList.add("hidden");
+
+  try {
+    const response = (await chrome.runtime.sendMessage({
+      target: "service-worker",
+      action: "SET_DRAWING_COLOR",
+      data: { color: normalized },
+    })) as { ok: boolean; color?: string; error?: string };
+    if (!response?.ok) {
+      setSelectedDrawColor(previous);
+      showError(response?.error || "Could not update drawing color.");
+      return;
+    }
+    if (response.color) {
+      setSelectedDrawColor(response.color);
+    }
+  } catch (error) {
+    setSelectedDrawColor(previous);
+    showError((error as Error).message);
+  } finally {
+    drawColorUpdateInFlight = false;
+  }
+}
+
 async function syncDrawButtonState(): Promise<void> {
   try {
     const response = (await chrome.runtime.sendMessage({
       target: "service-worker",
       action: "GET_DRAWING_OVERLAY_STATE",
-    })) as { ok: boolean; active?: boolean; error?: string };
+    })) as { ok: boolean; active?: boolean; color?: string; error?: string };
     if (response?.ok) {
       setDrawButtonActive(Boolean(response.active));
+      if (response.color) {
+        setSelectedDrawColor(response.color);
+      }
     }
   } catch {
     // Ignore warmup/injection errors.
   }
 }
+
+renderDrawColorSwatches();
+
+drawColorInput.addEventListener("input", () => {
+  const color = normalizeDrawColor(drawColorInput.value);
+  if (color) {
+    setSelectedDrawColor(color, { updateInput: false });
+  }
+});
+
+drawColorInput.addEventListener("change", () => {
+  void applyDrawColor(drawColorInput.value);
+});
 
 drawToggleBtn.addEventListener("click", async () => {
   drawToggleBtn.disabled = true;

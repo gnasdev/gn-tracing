@@ -1,13 +1,34 @@
 import { describe, expect, it } from "vitest";
-import { addStrokePoint, createStroke, downsamplePoints } from "../../src/shared/drawing";
+import {
+  addStrokePoint,
+  createStroke,
+  DEFAULT_DRAW_COLOR,
+  downsamplePoints,
+  normalizeDrawColor,
+} from "../../src/shared/drawing";
 
 describe("drawing helpers", () => {
+  describe("normalizeDrawColor", () => {
+    it("accepts 3, 6, and 8 digit hex colors", () => {
+      expect(normalizeDrawColor("#F00")).toBe("#f00");
+      expect(normalizeDrawColor("#Ff6B6B")).toBe("#ff6b6b");
+      expect(normalizeDrawColor("#ff6b6b80")).toBe("#ff6b6b80");
+    });
+
+    it("rejects invalid colors", () => {
+      expect(normalizeDrawColor("red")).toBeNull();
+      expect(normalizeDrawColor("#gg0000")).toBeNull();
+      expect(normalizeDrawColor("")).toBeNull();
+      expect(normalizeDrawColor(null)).toBeNull();
+    });
+  });
+
   describe("createStroke", () => {
     it("creates a stroke with defaults", () => {
       const stroke = createStroke({ strokeId: "s1", timestamp: 1000 });
       expect(stroke.strokeId).toBe("s1");
       expect(stroke.timestamp).toBe(1000);
-      expect(stroke.color).toBe("#ff6b6b");
+      expect(stroke.color).toBe(DEFAULT_DRAW_COLOR);
       expect(stroke.width).toBe(3);
       expect(stroke.points).toEqual([]);
     });

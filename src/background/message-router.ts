@@ -39,7 +39,10 @@ export interface MessageHandlers {
     sender: chrome.runtime.MessageSender,
   ) => MessageResponse;
   toggleDrawingOverlay: (data?: Record<string, unknown>) => Promise<MessageResponse>;
-  getDrawingOverlayState: () => Promise<MessageResponse & { active?: boolean }>;
+  getDrawingOverlayState: () => Promise<MessageResponse & { active?: boolean; color?: string }>;
+  setDrawingColor: (
+    data?: Record<string, unknown>,
+  ) => Promise<MessageResponse & { color?: string }>;
   handleRecordingInPageEntry: (
     data: Record<string, unknown> | undefined,
     sender: chrome.runtime.MessageSender,
@@ -123,6 +126,8 @@ async function handleMessage(
       return handlers.toggleDrawingOverlay(message.data);
     case "GET_DRAWING_OVERLAY_STATE":
       return handlers.getDrawingOverlayState();
+    case "SET_DRAWING_COLOR":
+      return handlers.setDrawingColor(message.data);
     case "RECORDING_INPAGE_ENTRY":
       return handlers.handleRecordingInPageEntry(message.data, sender);
     case "UPLOAD_TO_GOOGLE_DRIVE":

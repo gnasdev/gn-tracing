@@ -2,6 +2,36 @@
  * Pure drawing-stroke helpers shared by the overlay content script and tests.
  */
 
+export const DEFAULT_DRAW_COLOR = "#ff6b6b";
+export const DEFAULT_DRAW_WIDTH = 3;
+
+/** Preset pen colors shown in the popup draw section. */
+export const DRAW_COLOR_PRESETS = [
+  "#ff6b6b",
+  "#f59e0b",
+  "#22c55e",
+  "#3b82f6",
+  "#a855f7",
+  "#ffffff",
+  "#111827",
+] as const;
+
+const HEX_COLOR_RE = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
+
+/**
+ * Normalize a CSS hex color for stroke storage. Returns null when invalid.
+ */
+export function normalizeDrawColor(value: unknown): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const trimmed = value.trim();
+  if (!HEX_COLOR_RE.test(trimmed)) {
+    return null;
+  }
+  return trimmed.toLowerCase();
+}
+
 export interface RawDrawPoint {
   x: number;
   y: number;
@@ -28,8 +58,8 @@ export function createStroke(options: CreateStrokeOptions): RawDrawStroke {
   return {
     strokeId: options.strokeId,
     timestamp: options.timestamp,
-    color: options.color || "#ff6b6b",
-    width: options.width ?? 3,
+    color: normalizeDrawColor(options.color) || DEFAULT_DRAW_COLOR,
+    width: options.width ?? DEFAULT_DRAW_WIDTH,
     points: options.points ? [...options.points] : [],
   };
 }

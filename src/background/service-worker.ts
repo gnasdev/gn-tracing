@@ -2,6 +2,7 @@
  * Main extension service worker for recording, state, upload, and message routing.
  */
 
+import { DEFAULT_DRAW_COLOR, normalizeDrawColor } from "../shared/drawing";
 import { parseGoogleDriveFolderInput } from "../shared/google-drive-folder";
 import {
   buildRecordingPrivacySummary,
@@ -147,6 +148,7 @@ interface OffscreenCaptureState {
 }
 
 const STORAGE_KEY_ARTIFACTS = "gn_tracing_session_artifacts";
+const STORAGE_KEY_DRAWING_COLOR = "gn_tracing_drawing_color";
 const MAX_RECORDED_USER_EVENTS = 2000;
 const MAX_DRAWING_STROKES = 2000;
 const MAX_DRAWING_POINTS_PER_STROKE = 500;
@@ -183,6 +185,9 @@ const activeRecording: ActiveRecordingState = {
   privacySettings: DEFAULT_PRIVACY_REDACTION_SETTINGS,
   recordingSettings: null,
 };
+
+/** Pen color for the active drawing overlay; survives popup close within the worker. */
+let drawingColor = DEFAULT_DRAW_COLOR;
 
 let sessions: RecordingSessionSummary[] = [];
 let sessionArtifacts: Record<string, SessionArtifacts> = {};
@@ -551,6 +556,7 @@ registerMessageListeners({
   handleRecordingDrawClear,
   toggleDrawingOverlay,
   getDrawingOverlayState,
+  setDrawingColor,
   handleRecordingInPageEntry,
   uploadSessionToGoogleDrive,
   getUploadState: () => sortSessions(sessions),
@@ -728,8 +734,41 @@ async function stopRecordingEventCapture(tabId: number | null): Promise<void> {
     .catch(() => {});
 }
 
+async function loadDrawingColorPreference(): Promise<void> {
+  try {
+    const stored = await chrome.storage.local.get(STORAGE_KEY_DRAWING_COLOR);
+    const color = normalizeDrawColor(stored[STORAGE_KEY_DRAWING_COLOR]);
+    if (color) {
+      drawingColor = color;
+    }
+  } catch {
+    // Keep default when storage is unavailable.
+  }
+}
+
+const drawingColorReady = loadDrawingColorPreference();
+
+async function persistDrawingColorPreference(color: string): Promise<void> {
+  try {
+    await chrome.storage.local.set({ [STORAGE_KEY_DRAWING_COLOR]: color });
+  } catch {
+    // Preference is best-effort.
+  }
+}
+
+async function applyDrawingColorToOverlay(tabId: number, color: string): Promise<void> {
+  await chrome.tabs
+    .sendMessage(tabId, {
+      target: "drawing-overlay",
+      type: "SET_COLOR",
+      color,
+    })
+    .catch(() => {});
+}
+
 async function startDrawingOverlay(tabId: number, sessionId: string): Promise<void> {
   try {
+    await drawingColorReady;
     await chrome.scripting.executeScript({
       target: { tabId },
       files: [DRAWING_OVERLAY_SCRIPT],
@@ -738,7 +777,9 @@ async function startDrawingOverlay(tabId: number, sessionId: string): Promise<vo
       target: "drawing-overlay",
       type: "START",
       sessionId,
+      color: drawingColor,
     });
+    await applyDrawingColorToOverlay(tabId, drawingColor);
     activeRecording.drawingOverlayActive = false;
   } catch (error) {
     console.warn("[GN Tracing] Drawing overlay injection unavailable:", error);
@@ -774,9 +815,12 @@ async function toggleDrawingOverlay(): Promise<MessageResponse> {
   }
 }
 
-async function getDrawingOverlayState(): Promise<MessageResponse & { active?: boolean }> {
+async function getDrawingOverlayState(): Promise<
+  MessageResponse & { active?: boolean; color?: string }
+> {
+  await drawingColorReady;
   if (!activeRecording.isRecording || activeRecording.tabId == null) {
-    return { ok: true, active: false };
+    return { ok: true, active: false, color: drawingColor };
   }
 
   try {
@@ -785,10 +829,33 @@ async function getDrawingOverlayState(): Promise<MessageResponse & { active?: bo
       type: "GET_STATE",
     })) as { active?: boolean };
     activeRecording.drawingOverlayActive = Boolean(response?.active);
-    return { ok: true, active: activeRecording.drawingOverlayActive };
+    return {
+      ok: true,
+      active: activeRecording.drawingOverlayActive,
+      color: drawingColor,
+    };
   } catch (error) {
-    return { ok: false, error: (error as Error).message };
+    return { ok: false, error: (error as Error).message, color: drawingColor };
   }
+}
+
+async function setDrawingColor(
+  data?: Record<string, unknown>,
+): Promise<MessageResponse & { color?: string }> {
+  await drawingColorReady;
+  const color = normalizeDrawColor(data?.color);
+  if (!color) {
+    return { ok: false, error: "Invalid drawing color. Use a CSS hex value such as #ff6b6b." };
+  }
+
+  drawingColor = color;
+  void persistDrawingColorPreference(color);
+
+  if (activeRecording.isRecording && activeRecording.tabId != null) {
+    await applyDrawingColorToOverlay(activeRecording.tabId, color);
+  }
+
+  return { ok: true, color };
 }
 
 function normalizeDrawingStroke(value: unknown): RecordingDrawStroke | null {
@@ -803,7 +870,7 @@ function normalizeDrawingStroke(value: unknown): RecordingDrawStroke | null {
   if (!timestamp) {
     return null;
   }
-  const color = typeof raw.color === "string" ? raw.color : "#ff6b6b";
+  const color = normalizeDrawColor(raw.color) || DEFAULT_DRAW_COLOR;
   const width = normalizeFiniteNumber(raw.width) ?? 3;
   if (!Array.isArray(raw.points)) {
     return null;

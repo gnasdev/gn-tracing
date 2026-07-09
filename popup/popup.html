@@ -79,6 +79,14 @@
         </svg>
         <span>Draw</span>
       </button>
+      <div class="drawing-color-row" role="group" aria-label="Drawing pen color">
+        <span class="drawing-color-label">Color</span>
+        <div id="draw-color-swatches" class="drawing-color-swatches"></div>
+        <label class="drawing-color-custom" title="Custom color">
+          <span class="sr-only">Custom pen color</span>
+          <input id="draw-color-input" type="color" value="#ff6b6b" aria-label="Custom pen color">
+        </label>
+      </div>
       <div class="drawing-hint">Toggle with Ctrl/Cmd+Shift+D</div>
     </section>
 

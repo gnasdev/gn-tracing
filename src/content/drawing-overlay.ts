@@ -6,7 +6,14 @@
  * The overlay is not captured by tabCapture; strokes are replayed by the player.
  */
 
-import { addStrokePoint, createStroke, type RawDrawStroke } from "../shared/drawing";
+import {
+  addStrokePoint,
+  createStroke,
+  DEFAULT_DRAW_COLOR,
+  DEFAULT_DRAW_WIDTH,
+  normalizeDrawColor,
+  type RawDrawStroke,
+} from "../shared/drawing";
 
 (() => {
   type DrawingState = {
@@ -28,8 +35,6 @@ import { addStrokePoint, createStroke, type RawDrawStroke } from "../shared/draw
 
   const CONTAINER_ID = "gn-tracing-drawing-overlay";
   const CANVAS_ID = "gn-tracing-drawing-canvas";
-  const DEFAULT_COLOR = "#ff6b6b";
-  const DEFAULT_WIDTH = 3;
 
   const pageWindow = window as DrawingWindow;
 
@@ -176,7 +181,7 @@ import { addStrokePoint, createStroke, type RawDrawStroke } from "../shared/draw
     }
   }
 
-  function install(sessionId: string): DrawingState {
+  function install(sessionId: string, color = DEFAULT_DRAW_COLOR): DrawingState {
     pageWindow.__gnTracingDrawingOverlay?.cleanup();
 
     const container = createOverlay();
@@ -189,8 +194,8 @@ import { addStrokePoint, createStroke, type RawDrawStroke } from "../shared/draw
     const state: DrawingState = {
       sessionId,
       active: false,
-      color: DEFAULT_COLOR,
-      width: DEFAULT_WIDTH,
+      color: normalizeDrawColor(color) || DEFAULT_DRAW_COLOR,
+      width: DEFAULT_DRAW_WIDTH,
       currentStroke: null,
       container,
       canvas,
@@ -334,7 +339,8 @@ import { addStrokePoint, createStroke, type RawDrawStroke } from "../shared/draw
           message.sessionId
         ) {
           try {
-            install(message.sessionId);
+            const color = normalizeDrawColor(message.color) || DEFAULT_DRAW_COLOR;
+            install(message.sessionId, color);
             sendResponse({ ok: true });
           } catch (error) {
             sendResponse({ ok: false, error: (error as Error).message });
@@ -372,10 +378,11 @@ import { addStrokePoint, createStroke, type RawDrawStroke } from "../shared/draw
 
         if (message.type === "SET_COLOR" && typeof message.color === "string") {
           const state = pageWindow.__gnTracingDrawingOverlay;
-          if (state) {
-            state.color = message.color;
+          const color = normalizeDrawColor(message.color);
+          if (state && color) {
+            state.color = color;
           }
-          sendResponse({ ok: true });
+          sendResponse({ ok: Boolean(color) });
           return false;
         }
 
