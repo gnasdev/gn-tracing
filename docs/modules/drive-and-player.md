@@ -169,8 +169,8 @@ Replay inspection behavior, package parsing, password prompts, and standalone Dr
 - response preview intentionally stays dependency-free and lightweight; syntax highlighting is implemented in local player runtime helpers rather than external libraries.
 - console source previews and parsed Error argument stacks are dependency-free and artifact-backed; replay does not fetch original sourcemaps or application source files from the recorded page.
 - report metadata, user-event timelines, privacy summaries, and screenshots are optional package enrichments; the player must continue to load packages created before these artifacts existed.
-- manual Cloudflare Pages deployment expects project `gn-tracing-player`, root base path `/`, and secrets `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID`.
-- local deploys can source root `.env` / `.env.example` with `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_PAGES_PROJECT`, `PLAYER_HOST_URL`, and `VITE_BASE_PATH`.
+- manual Cloudflare Pages deployment expects project `gn-tracing-player`, root base path `/`, and secrets `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` exported in the process environment (`deploy.sh` does not load `.env`).
+- optional deploy overrides: `CLOUDFLARE_PAGES_PROJECT`, `PLAYER_HOST_URL`, and `VITE_BASE_PATH`.
 - intro/empty-state copy should stay aligned between extension and standalone player shells so the hosted root URL behaves as a clear product landing page.
 - service-worker restart recovery is intentionally best-effort: heavy artifacts still live in memory/offscreen only, but popup state is reconstructed from session snapshot plus offscreen probe when the capture document is still alive.
 - Manual extension installation depends on users extracting the release zip and loading the built `gn-tracing-extension-v<version>/` folder through a Chromium-based browser's developer mode.

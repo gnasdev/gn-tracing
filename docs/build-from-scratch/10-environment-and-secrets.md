@@ -57,6 +57,8 @@ Production builds hard-fail when `GOOGLE_TOKEN_PROXY_URL` is empty because a "We
 | `CLOUDFLARE_ACCOUNT_ID` | alphanumeric | required for both deploys | `wrangler` commands |
 | `CLOUDFLARE_PAGES_PROJECT` | string | required for player deploy | defaults to `gn-tracing-player` |
 
+`player-standalone/deploy.sh` and `worker/deploy.sh` read these from the **process environment only** (they do not source repository `.env`). Export them in the shell or CI before `task player:deploy` / `task worker:deploy`.
+
 ### Player Hosting
 
 | Key | Type | Required | Consumed by |

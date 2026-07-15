@@ -5,20 +5,12 @@
 # The Worker holds GOOGLE_CLIENT_SECRET and proxies the Google OAuth token
 # exchange so the extension (a public client) never ships the secret.
 #
-# Reads configuration from the repository root .env, mirroring
-# player-standalone/deploy.sh.
+# Reads configuration from the process environment (export vars in the shell
+# or CI). Does not load a repository .env file.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-ENV_FILE="$(cd "${SCRIPT_DIR}/.." && pwd)/.env"
-
-if [ -f "$ENV_FILE" ]; then
-  set -a
-  # shellcheck disable=SC1090
-  source "$ENV_FILE"
-  set +a
-fi
 
 if ! command -v wrangler >/dev/null 2>&1; then
   echo "wrangler CLI not found. Install it with: npm i -g wrangler"
@@ -26,17 +18,17 @@ if ! command -v wrangler >/dev/null 2>&1; then
 fi
 
 if [ -z "${CLOUDFLARE_API_TOKEN:-}" ] || [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]; then
-  echo "CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID must be set in .env."
+  echo "CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID must be set in the environment."
   exit 1
 fi
 
 if [ -z "${GOOGLE_CLIENT_ID:-}" ]; then
-  echo "GOOGLE_CLIENT_ID must be set in .env."
+  echo "GOOGLE_CLIENT_ID must be set in the environment."
   exit 1
 fi
 
 if [ -z "${GOOGLE_CLIENT_SECRET:-}" ]; then
-  echo "GOOGLE_CLIENT_SECRET must be set in .env (the OAuth client secret)."
+  echo "GOOGLE_CLIENT_SECRET must be set in the environment (the OAuth client secret)."
   echo "Find it in Google Cloud Console > APIs & Services > Credentials > your OAuth 2.0 Client."
   exit 1
 fi

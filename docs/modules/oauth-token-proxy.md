@@ -43,7 +43,7 @@ For local development, `task worker:dev` runs `wrangler dev` with hot reload on 
 - Relay Google's status code and JSON body verbatim so the extension's existing error handling is unchanged.
 - Restrict callers to configured extension origin(s) so the endpoint cannot be used as an open token-minting proxy.
 - Stay stateless: never persist tokens, codes, or verifiers.
-- Deploy from the repository-root `.env`, matching `player-standalone/deploy.sh`.
+- Deploy from the process environment (export secrets in the shell or CI), matching `player-standalone/deploy.sh`.
 
 ## 3. Data Models & APIs
 
@@ -64,7 +64,7 @@ For local development, `task worker:dev` runs `wrangler dev` with hot reload on 
 ## 5. Constraints & Assumptions
 
 - The Worker is only required when the Google OAuth client is a Web application type; public/installed clients can continue calling Google directly without the Worker.
-- `GOOGLE_CLIENT_SECRET` must be set in the deploy environment (`.env` or shell); it is intentionally git-ignored and never committed.
+- `GOOGLE_CLIENT_SECRET` must be set in the process environment before deploy; it is intentionally git-ignored and never committed.
 - The configured `GOOGLE_TOKEN_PROXY_URL` must match the deployed Worker URL exactly, because its origin is baked into `host_permissions` at build time; changing the Worker domain requires rebuilding the extension.
 - `redirect_uri` is still produced by `chrome.identity.getRedirectURL()` in the extension and must remain an authorized redirect URI on the Google OAuth client.
 - Deploying requires `wrangler`, `CLOUDFLARE_API_TOKEN`, and `CLOUDFLARE_ACCOUNT_ID`, matching the player deploy prerequisites.
@@ -74,7 +74,7 @@ For local development, `task worker:dev` runs `wrangler dev` with hot reload on 
 
 - Supports the web auth flow described in [Drive And Player](./drive-and-player.md) by performing its token exchange when a secret is required.
 - Shares Google OAuth assumptions with [API Conventions](../shared/api-conventions.md).
-- Reuses the repository `.env` configuration and `wrangler`/Cloudflare tooling already used by the standalone player deploy.
+- Reuses the same process-environment secrets and `wrangler`/Cloudflare tooling as the standalone player deploy.
 
 ## 7. Related Decisions
 

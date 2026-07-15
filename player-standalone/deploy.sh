@@ -1,15 +1,12 @@
 #!/usr/bin/env bash
 #
 # Deploys the hosted GN Tracing replay player to Cloudflare Pages.
+#
+# Reads CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID, and optional overrides
+# from the process environment (export them in the shell or CI). Does not
+# load a repository .env file.
 
 set -euo pipefail
-
-ENV_FILE="$(cd "$(dirname "$0")/.." && pwd)/.env"
-if [ -f "$ENV_FILE" ]; then
-  set -a
-  source "$ENV_FILE"
-  set +a
-fi
 
 PROJECT_NAME="${CLOUDFLARE_PAGES_PROJECT:-gn-tracing-player}"
 PLAYER_HOST_URL="${PLAYER_HOST_URL:-https://tracing.gnas.dev/}"
@@ -24,7 +21,7 @@ if ! command -v wrangler >/dev/null 2>&1; then
 fi
 
 if [ -z "${CLOUDFLARE_API_TOKEN:-}" ] || [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]; then
-  echo "CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID must be set."
+  echo "CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID must be set in the environment."
   exit 1
 fi
 
