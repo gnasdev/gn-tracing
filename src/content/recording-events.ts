@@ -2,11 +2,12 @@
  * Ephemeral page instrumentation for a single GN Tracing recording session.
  *
  * The service worker injects this file only after the user starts recording a
- * tab. It captures interaction summaries, never raw typed input, then removes
- * listeners when the recording stops or when a new session starts in the same
- * page context.
+ * tab. It captures interaction summaries — named keys and shortcuts only for
+ * keyboard, never raw typed form/password input — then removes listeners when
+ * the recording stops or when a new session starts in the same page context.
  */
 
+import { formatKeyLabel } from "../shared/key-event";
 import {
   getPrivacyProfileSettings,
   normalizeMaskDomSelectors,
@@ -155,14 +156,28 @@ import type { RecordingUserEvent, RedactionHit } from "../types/recording";
     return field instanceof HTMLInputElement ? field.type || "text" : field.tagName.toLowerCase();
   }
 
+  function getViewportSize(): { width: number; height: number } {
+    return {
+      width: Math.max(1, Math.round(window.innerWidth || 0)),
+      height: Math.max(1, Math.round(window.innerHeight || 0)),
+    };
+  }
+
+  function getKeyTargetElement(event: KeyboardEvent): Element | null {
+    // Prefer the event target; fall back to activeElement when target is not an
+    // Element (e.g. document) so form/sensitive checks still apply correctly.
+    return getElement(event.target) || getElement(document.activeElement);
+  }
+
   function getEnvironment() {
+    const viewport = getViewportSize();
     return {
       userAgent: navigator.userAgent,
       language: navigator.language,
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "",
       viewport: {
-        width: window.innerWidth,
-        height: window.innerHeight,
+        width: viewport.width,
+        height: viewport.height,
         devicePixelRatio: window.devicePixelRatio || 1,
       },
       screen: {
@@ -298,6 +313,7 @@ ${validSelectors.join(",\n")} {
 
     const onClick = (event: MouseEvent): void => {
       const element = getElement(event.target);
+      const viewport = getViewportSize();
       const sanitized = sanitizeEvent(
         {
           type: "click",
@@ -307,12 +323,16 @@ ${validSelectors.join(",\n")} {
           role: getElementRole(element),
           x: Math.round(event.clientX),
           y: Math.round(event.clientY),
+          viewportWidth: viewport.width,
+          viewportHeight: viewport.height,
         },
         privacySettings,
       );
       sendSessionEvent(
         sessionId,
         {
+          // Keep report.environment.viewport fresh for replay mapping fallbacks.
+          environment: getEnvironment(),
           event: sanitized.event,
         },
         sanitized.redactionHits,
@@ -321,6 +341,7 @@ ${validSelectors.join(",\n")} {
 
     const onContextMenu = (event: MouseEvent): void => {
       const element = getElement(event.target);
+      const viewport = getViewportSize();
       const sanitized = sanitizeEvent(
         {
           type: "contextmenu",
@@ -330,12 +351,15 @@ ${validSelectors.join(",\n")} {
           role: getElementRole(element),
           x: Math.round(event.clientX),
           y: Math.round(event.clientY),
+          viewportWidth: viewport.width,
+          viewportHeight: viewport.height,
         },
         privacySettings,
       );
       sendSessionEvent(
         sessionId,
         {
+          environment: getEnvironment(),
           event: sanitized.event,
         },
         sanitized.redactionHits,
@@ -347,6 +371,8 @@ ${validSelectors.join(",\n")} {
       x: number;
       y: number;
       selector?: string;
+      viewportWidth: number;
+      viewportHeight: number;
       accumulatedDeltaY: number;
       flushTimer: ReturnType<typeof window.setTimeout>;
     } | null = null;
@@ -367,12 +393,15 @@ ${validSelectors.join(",\n")} {
           y: burst.y,
           direction: burst.accumulatedDeltaY < 0 ? "up" : "down",
           deltaY: Math.round(burst.accumulatedDeltaY),
+          viewportWidth: burst.viewportWidth,
+          viewportHeight: burst.viewportHeight,
         },
         privacySettings,
       );
       sendSessionEvent(
         sessionId,
         {
+          environment: getEnvironment(),
           event: sanitized.event,
         },
         sanitized.redactionHits,
@@ -394,11 +423,14 @@ ${validSelectors.join(",\n")} {
       }
 
       if (!wheelBurst) {
+        const viewport = getViewportSize();
         wheelBurst = {
           timestamp: Date.now(),
           x: Math.round(event.clientX),
           y: Math.round(event.clientY),
           selector: getSelector(element),
+          viewportWidth: viewport.width,
+          viewportHeight: viewport.height,
           accumulatedDeltaY: 0,
           flushTimer: window.setTimeout(flushWheelBurst, WHEEL_BURST_IDLE_MS),
         };
@@ -449,6 +481,38 @@ ${validSelectors.join(",\n")} {
       );
     };
 
+    const onKeyDown = (event: KeyboardEvent): void => {
+      const element = getKeyTargetElement(event);
+      const label = formatKeyLabel(event, {
+        isFormControl: isFormControl(element),
+        isSensitive: isSensitiveElement(element),
+      });
+      if (!label) {
+        return;
+      }
+      const sanitized = sanitizeEvent(
+        {
+          type: "key",
+          timestamp: Date.now(),
+          key: label,
+          code: event.code || undefined,
+          ctrlKey: event.ctrlKey || undefined,
+          altKey: event.altKey || undefined,
+          shiftKey: event.shiftKey || undefined,
+          metaKey: event.metaKey || undefined,
+          selector: getSelector(element),
+        },
+        privacySettings,
+      );
+      sendSessionEvent(
+        sessionId,
+        {
+          event: sanitized.event,
+        },
+        sanitized.redactionHits,
+      );
+    };
+
     const onLocationChange = (): void => {
       window.setTimeout(sendNavigation, 0);
     };
@@ -456,6 +520,7 @@ ${validSelectors.join(",\n")} {
     document.addEventListener("click", onClick, true);
     document.addEventListener("contextmenu", onContextMenu, true);
     document.addEventListener("wheel", onWheel, { capture: true, passive: true });
+    document.addEventListener("keydown", onKeyDown, true);
     document.addEventListener("focusin", onFocus, true);
     document.addEventListener("submit", onSubmit, true);
     window.addEventListener("hashchange", onLocationChange);
@@ -472,6 +537,7 @@ ${validSelectors.join(",\n")} {
         document.removeEventListener("contextmenu", onContextMenu, true);
         document.removeEventListener("wheel", onWheel, { capture: true });
         flushWheelBurst();
+        document.removeEventListener("keydown", onKeyDown, true);
         document.removeEventListener("focusin", onFocus, true);
         document.removeEventListener("submit", onSubmit, true);
         window.removeEventListener("hashchange", onLocationChange);

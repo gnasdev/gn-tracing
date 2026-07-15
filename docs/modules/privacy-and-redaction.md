@@ -64,9 +64,9 @@ Redaction hits store only metadata: artifact class, data class, action, sanitize
 
 ## Event Timeline And Visual Masking
 
-The page event collector is injected only after the user starts a recording. It records sanitized navigation, click, focus, and submit summaries for the active session, then removes listeners when recording stops, is removed, or a new session replaces it in the same page context.
+The page event collector is injected only after the user starts a recording. It records sanitized navigation, click, contextmenu, scroll, focus, submit, and named-key/shortcut summaries for the active session, then removes listeners when recording stops, is removed, or a new session replaces it in the same page context.
 
-The collector deliberately avoids raw typed input. Form and sensitive targets are label-limited, and event strings are bounded before they cross back to the service worker.
+The collector deliberately avoids raw typed input. Keyboard capture records only named keys and shortcuts (for example `Enter`, `Esc`, `Ctrl+S`), never character-by-character form or password typing. Form and sensitive targets are label-limited, and event strings are bounded before they cross back to the service worker.
 
 DOM masking is best-effort. The configured selectors are normalized and validated in the page context, then a temporary style element blurs matching content during capture. Invalid selectors, injection failures, closed shadow DOM, canvas/video pixels, and pixels outside matched elements are represented as limitations in the privacy summary when known.
 

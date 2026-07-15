@@ -656,6 +656,9 @@
     if (event.type === "submit") {
       return `Submit ${event.selector || ""}`.trim();
     }
+    if (event.type === "key") {
+      return `Key ${event.key || ""}`.trim();
+    }
     return event.type;
   }
 
@@ -3744,11 +3747,12 @@
                   .sort((a, b) => a.relativeMs - b.relativeMs);
                 effectEvents = userEvents.filter(
                   (event) =>
-                    (event.type === "click" ||
+                    event.type === "key" ||
+                    ((event.type === "click" ||
                       event.type === "contextmenu" ||
                       event.type === "scroll") &&
-                    Number.isFinite(event.x) &&
-                    Number.isFinite(event.y),
+                      Number.isFinite(event.x) &&
+                      Number.isFinite(event.y)),
                 );
               })
               .catch((error) => {
@@ -4828,10 +4832,20 @@
   }
 
   // CSS-pixel size of the recorded viewport, used as the coordinate space for
-  // captured event.x/event.y (which are clientX/clientY at record time). The
-  // tab video captures exactly this viewport, so a click at (x, y) maps to the
-  // fraction (x / viewport.width, y / viewport.height) of the displayed frame.
-  function getEffectViewportSize() {
+  // captured event.x/event.y (which are clientX/clientY at record time). Prefer
+  // per-event viewport (accurate across mid-session resizes); fall back to the
+  // report snapshot, then intrinsic video size for legacy packages.
+  function getEffectViewportSize(event) {
+    const eventWidth = Number(event?.viewportWidth);
+    const eventHeight = Number(event?.viewportHeight);
+    if (
+      Number.isFinite(eventWidth) &&
+      eventWidth > 0 &&
+      Number.isFinite(eventHeight) &&
+      eventHeight > 0
+    ) {
+      return { width: eventWidth, height: eventHeight };
+    }
     const viewport = report?.environment?.viewport;
     if (viewport && viewport.width > 0 && viewport.height > 0) {
       return { width: viewport.width, height: viewport.height };
@@ -4893,18 +4907,25 @@
   // so a click's viewport fraction is NOT its fraction of the whole frame. Map
   // the click into the contain-fitted, centered page sub-rectangle first, then
   // express it as a fraction of the full frame. Degrades to a plain fraction
-  // when the aspect ratios already match (offsets become zero).
+  // when the aspect ratios already match (or are within a small epsilon so
+  // rounding noise does not invent fake pillar/letter boxes).
   function getRecordedFrameFraction(event, viewport) {
     const frameWidth = elements.video?.videoWidth || 0;
     const frameHeight = elements.video?.videoHeight || 0;
     const xFrac = Math.max(0, Math.min(1, event.x / viewport.width));
     const yFrac = Math.max(0, Math.min(1, event.y / viewport.height));
-    if (frameWidth <= 0 || frameHeight <= 0) {
+    if (frameWidth <= 0 || frameHeight <= 0 || viewport.width <= 0 || viewport.height <= 0) {
       return { x: xFrac, y: yFrac };
     }
 
     const viewportRatio = viewport.width / viewport.height;
     const frameRatio = frameWidth / frameHeight;
+    // ~2% aspect slack: HiDPI scaling / integer rounding should not trigger
+    // letterbox offsets when the stream is effectively the same shape.
+    if (Math.abs(frameRatio - viewportRatio) / frameRatio < 0.02) {
+      return { x: xFrac, y: yFrac };
+    }
+
     let innerWidth = frameWidth;
     let innerHeight = frameHeight;
     if (frameRatio > viewportRatio) {
@@ -4919,27 +4940,66 @@
     };
   }
 
+  // Bottom-right key-chip stack: newest always at the bottom slot; older chips
+  // shift upward. Re-run after spawn and after a chip fades out so the column
+  // collapses cleanly.
+  const KEY_CHIP_RIGHT_PAD = 16;
+  const KEY_CHIP_BOTTOM_PAD = 16;
+  const KEY_CHIP_STACK_GAP = 30;
+
+  function layoutKeyChips(content) {
+    if (!content) {
+      return;
+    }
+    const leftPx = content.left + content.width - KEY_CHIP_RIGHT_PAD;
+    const bottomBase = content.top + content.height - KEY_CHIP_BOTTOM_PAD;
+    const keyNodes = liveEffectNodes.filter((live) => live.classList.contains("video-effect-key"));
+    // liveEffectNodes is oldest→newest; newest gets fromBottom = 0.
+    keyNodes.forEach((chip, index) => {
+      const fromBottom = keyNodes.length - 1 - index;
+      chip.style.left = `${leftPx}px`;
+      chip.style.top = `${bottomBase - fromBottom * KEY_CHIP_STACK_GAP}px`;
+    });
+  }
+
   function spawnEffect(event) {
     if (!elements.videoEffectsLayer) {
       return;
     }
-    const viewport = getEffectViewportSize();
     const content = getVideoContentRect();
-    if (!viewport || !content) {
+    if (!content || content.width <= 0 || content.height <= 0) {
       return;
     }
 
-    const frac = getRecordedFrameFraction(event, viewport);
-    const leftPx = content.left + frac.x * content.width;
-    const topPx = content.top + frac.y * content.height;
-
     const node = document.createElement("div");
-    if (event.type === "click") {
-      node.className = "video-effect video-effect-click";
-    } else if (event.type === "contextmenu") {
-      node.className = "video-effect video-effect-rclick";
+    let leftPx;
+    let topPx;
+    const isKeyEffect = event.type === "key";
+
+    if (isKeyEffect) {
+      // Temporary coords; layoutKeyChips assigns the real stack after insert.
+      leftPx = content.left + content.width - KEY_CHIP_RIGHT_PAD;
+      topPx = content.top + content.height - KEY_CHIP_BOTTOM_PAD;
+      node.className = "video-effect video-effect-key";
+      node.textContent = event.key || "Key";
     } else {
-      node.className = `video-effect video-effect-scroll video-effect-scroll-${event.direction === "up" ? "up" : "down"}`;
+      const viewport = getEffectViewportSize(event);
+      if (!viewport) {
+        return;
+      }
+      if (!Number.isFinite(event.x) || !Number.isFinite(event.y)) {
+        return;
+      }
+      const frac = getRecordedFrameFraction(event, viewport);
+      leftPx = content.left + frac.x * content.width;
+      topPx = content.top + frac.y * content.height;
+      if (event.type === "click") {
+        node.className = "video-effect video-effect-click";
+      } else if (event.type === "contextmenu") {
+        node.className = "video-effect video-effect-rclick";
+      } else {
+        node.className = `video-effect video-effect-scroll video-effect-scroll-${event.direction === "up" ? "up" : "down"}`;
+      }
     }
     node.style.left = `${leftPx}px`;
     node.style.top = `${topPx}px`;
@@ -4949,6 +5009,9 @@
       () => {
         node.remove();
         liveEffectNodes = liveEffectNodes.filter((live) => live !== node);
+        if (isKeyEffect) {
+          layoutKeyChips(getVideoContentRect());
+        }
       },
       { once: true },
     );
@@ -4959,6 +5022,9 @@
     }
     liveEffectNodes.push(node);
     elements.videoEffectsLayer.appendChild(node);
+    if (isKeyEffect) {
+      layoutKeyChips(content);
+    }
   }
 
   function resetEffectsCursor() {
@@ -5046,7 +5112,18 @@
   // (not once per point — see renderDrawingUpTo) since it costs two
   // getBoundingClientRect() layout reads.
   function mapDrawingPoint(point, viewport, content) {
-    const frac = getRecordedFrameFraction({ x: point.x, y: point.y }, viewport);
+    const frac = getRecordedFrameFraction(
+      {
+        x: point.x,
+        y: point.y,
+        viewportWidth: point.viewportWidth,
+        viewportHeight: point.viewportHeight,
+      },
+      // Prefer per-point viewport when present; otherwise the shared snapshot.
+      point.viewportWidth > 0 && point.viewportHeight > 0
+        ? { width: point.viewportWidth, height: point.viewportHeight }
+        : viewport,
+    );
     return {
       x: content.left + frac.x * content.width,
       y: content.top + frac.y * content.height,
@@ -5100,7 +5177,7 @@
   function renderDrawingUpTo(timeMs) {
     const canvas = elements.drawingCanvas;
     const ctx = getDrawingContext();
-    const viewport = getEffectViewportSize();
+    const viewport = getEffectViewportSize(null);
     if (!canvas || !ctx || !viewport) {
       return;
     }

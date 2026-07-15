@@ -23,6 +23,14 @@ export function normalizeFiniteNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
+function normalizePositiveViewportSize(value: unknown): number | undefined {
+  const size = normalizeFiniteNumber(value);
+  if (size === undefined || size <= 0) {
+    return undefined;
+  }
+  return Math.round(size);
+}
+
 export function parseBrowserFromUserAgent(userAgent: string): {
   browserName?: string;
   browserVersion?: string;
@@ -127,6 +135,8 @@ export function normalizeRecordingUserEvent(value: unknown): RecordingUserEvent 
         role: truncateEventString(raw.role, 64),
         x: normalizeFiniteNumber(raw.x),
         y: normalizeFiniteNumber(raw.y),
+        viewportWidth: normalizePositiveViewportSize(raw.viewportWidth),
+        viewportHeight: normalizePositiveViewportSize(raw.viewportHeight),
       };
     case "contextmenu":
       return {
@@ -137,6 +147,8 @@ export function normalizeRecordingUserEvent(value: unknown): RecordingUserEvent 
         role: truncateEventString(raw.role, 64),
         x: normalizeFiniteNumber(raw.x),
         y: normalizeFiniteNumber(raw.y),
+        viewportWidth: normalizePositiveViewportSize(raw.viewportWidth),
+        viewportHeight: normalizePositiveViewportSize(raw.viewportHeight),
       };
     case "scroll":
       return {
@@ -147,6 +159,8 @@ export function normalizeRecordingUserEvent(value: unknown): RecordingUserEvent 
         y: normalizeFiniteNumber(raw.y),
         direction: raw.direction === "up" ? "up" : "down",
         deltaY: normalizeFiniteNumber(raw.deltaY),
+        viewportWidth: normalizePositiveViewportSize(raw.viewportWidth),
+        viewportHeight: normalizePositiveViewportSize(raw.viewportHeight),
       };
     case "focus":
       return {
@@ -161,6 +175,23 @@ export function normalizeRecordingUserEvent(value: unknown): RecordingUserEvent 
         timestamp,
         selector: truncateEventString(raw.selector),
       };
+    case "key": {
+      const key = truncateEventString(raw.key, 32);
+      if (!key) {
+        return null;
+      }
+      return {
+        type: "key",
+        timestamp,
+        key,
+        code: truncateEventString(raw.code, 32),
+        ctrlKey: raw.ctrlKey === true ? true : undefined,
+        altKey: raw.altKey === true ? true : undefined,
+        shiftKey: raw.shiftKey === true ? true : undefined,
+        metaKey: raw.metaKey === true ? true : undefined,
+        selector: truncateEventString(raw.selector),
+      };
+    }
     default:
       return null;
   }

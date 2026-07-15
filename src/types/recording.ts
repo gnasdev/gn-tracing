@@ -322,6 +322,9 @@ export type RecordingUserEvent =
       role?: string;
       x?: number;
       y?: number;
+      /** CSS viewport size at event time (for accurate replay mapping). */
+      viewportWidth?: number;
+      viewportHeight?: number;
     }
   | {
       type: "contextmenu";
@@ -331,6 +334,8 @@ export type RecordingUserEvent =
       role?: string;
       x?: number;
       y?: number;
+      viewportWidth?: number;
+      viewportHeight?: number;
     }
   | {
       type: "scroll";
@@ -340,6 +345,8 @@ export type RecordingUserEvent =
       y?: number;
       direction: "up" | "down";
       deltaY?: number;
+      viewportWidth?: number;
+      viewportHeight?: number;
     }
   | {
       type: "focus";
@@ -350,6 +357,17 @@ export type RecordingUserEvent =
   | {
       type: "submit";
       timestamp: number;
+      selector?: string;
+    }
+  | {
+      type: "key";
+      timestamp: number;
+      key: string;
+      code?: string;
+      ctrlKey?: boolean;
+      altKey?: boolean;
+      shiftKey?: boolean;
+      metaKey?: boolean;
       selector?: string;
     };
 

@@ -1427,7 +1427,9 @@ async function startRecording(tabId: number): Promise<MessageResponse> {
     activeRecording.sessionId = sessionId;
     activeRecording.isRecording = false;
     activeRecording.tabId = tabId;
-    activeRecording.startTime = Date.now();
+    // startTime is set only after MediaRecorder actually starts so event
+    // relativeMs stays aligned with video.currentTime (not setup latency).
+    activeRecording.startTime = null;
     activeRecording.stopTime = null;
     activeRecording.tabUrl = target.url;
     activeRecording.tabTitle = typeof tab.title === "string" ? tab.title : null;
@@ -1465,6 +1467,8 @@ async function startRecording(tabId: number): Promise<MessageResponse> {
       }
     }
 
+    // Align wall-clock origin with the first captured video frame timeline.
+    activeRecording.startTime = Date.now();
     activeRecording.isRecording = true;
     recorder.hydrateActiveSession(sessionId);
     void startRecordingEventCapture(tabId, sessionId, activeRecording.privacySettings);

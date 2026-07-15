@@ -86,7 +86,7 @@ The primary lifecycle is:
 - stores privacy redaction settings as part of `UploadSettings`, with standard/strict/custom profiles, built-in rule versioning, WebSocket payload redaction mode, event/report redaction toggles, and DOM masking selectors
 - stores opt-in capture toggles in `UploadSettings`: `captureStorage`/`redactStorageValues` (storage snapshots) and `captureDomSnapshots`/`redactDomTextContent` (DOM snapshots), all capture toggles defaulting off and redaction toggles defaulting on
 - stores `captureMode` (`"cdp"` default, or `"in-page"`) in `UploadSettings` to select debugger-based versus in-page instrumentation capture
-- accepts `RECORDING_USER_EVENT` messages from the injected page collector for navigation/click/contextmenu/scroll/focus/submit summaries that match the active tab and session
+- accepts `RECORDING_USER_EVENT` messages from the injected page collector for navigation/click/contextmenu/scroll/focus/submit/key summaries that match the active tab and session
 - emits optional replay report artifacts: `report.json`, `events.json`, `privacy.json`, `diagnostics.json`, and `screenshot.jpg`
 - emits optional inspector artifacts when their capture toggles are on: `storage.json` (a `StorageArtifact` of start/stop `StorageSnapshot` entries) and `dom.json` (a `DomArtifact` of start/stop/marker `DomSnapshot` trees)
 
@@ -125,6 +125,9 @@ When `captureStorage` is on, `CdpManager` enables `DOMStorage`, snapshots `local
 - only safe privacy settings are sent to the injected collector; plaintext zip passwords and Drive credentials never cross into the page context.
 - user-event capture stores redacted selectors, short labels, roles, event types, timing, and coordinates when available; it does not store raw typed input, and form/sensitive targets are deliberately label-limited.
 - right-click (`contextmenu`) events capture the same safe metadata shape as left clicks. Continuous wheel input is coalesced client-side into one `scroll` event per burst (flushed after ~400ms of inactivity or on direction reversal) to bound event volume before the shared `MAX_RECORDED_USER_EVENTS` cap applies.
+- keyboard capture listens for `keydown` in the capture phase and records only privacy-safe `key` events: navigation/editing keys (`Enter`, `Esc`, `Tab`, arrows, …), function keys, Space outside form controls, and chords with Ctrl/Meta/Alt. Auto-repeat, solo modifiers, password/sensitive targets, and printable single keys typed into form controls are skipped so the timeline never stores raw typed form input.
+- pointer events (`click` / `contextmenu` / `scroll`) store the CSS viewport size at event time (`viewportWidth` / `viewportHeight`) so replay mapping stays accurate if the window is resized mid-session; the collector also refreshes `environment.viewport` with those events.
+- recording `startTime` is stamped only after tab MediaRecorder has started, so event `relativeMs` aligns with `video.currentTime` rather than including capture setup latency.
 - selector-based visual masking applies CSS before or during capture when configured, is re-applied after navigation, and records privacy limitations when injection or selector validation fails.
 - redaction hits record only counts, sanitized field paths, data classes, and rule ids; raw secret values are never written into `privacy.json`.
 - stop-time screenshot capture is optional, size-limited, and non-blocking; upload/replay continue when screenshot capture is unavailable.

@@ -277,6 +277,39 @@ describe("redactUserEvent", () => {
       expect(value.deltaY).toBe(120);
     }
   });
+
+  it("redacts key event selector and sensitive patterns in the key label", () => {
+    const settings = makePrivacySettings("strict");
+    const event: RecordingUserEvent = {
+      type: "key",
+      timestamp: 1,
+      key: "person@example.com",
+      code: "KeyA",
+      selector: "#email-field",
+      ctrlKey: true,
+    };
+    const { value } = redactUserEvent(event, settings);
+    if (value.type === "key") {
+      expect(value.key).toContain(REDACTED_VALUE);
+      expect(value.selector).toBeDefined();
+      expect(value.ctrlKey).toBe(true);
+      expect(value.code).toBe("KeyA");
+    }
+  });
+
+  it("keeps ordinary key labels when no redaction rule matches", () => {
+    const settings = makePrivacySettings("strict");
+    const event: RecordingUserEvent = {
+      type: "key",
+      timestamp: 1,
+      key: "Enter",
+      code: "Enter",
+    };
+    const { value } = redactUserEvent(event, settings);
+    if (value.type === "key") {
+      expect(value.key).toBe("Enter");
+    }
+  });
 });
 
 describe("redactReport", () => {

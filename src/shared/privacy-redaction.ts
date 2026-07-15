@@ -537,6 +537,11 @@ export function redactUserEvent(
       cloned.text = text.value;
       applied.push(...text.applied);
     }
+    if (cloned.type === "key" && cloned.key) {
+      const key = redactPlainText(cloned.key, settings, "events", "events.key.key", "event");
+      cloned.key = key.value || "";
+      applied.push(...key.applied);
+    }
   }
   return { value: cloned, applied };
 }

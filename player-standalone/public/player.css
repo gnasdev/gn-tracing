@@ -848,6 +848,43 @@ body {
   }
 }
 
+.video-effect-key {
+  width: auto;
+  height: auto;
+  min-width: 1.5em;
+  padding: 4px 10px;
+  border-radius: 6px;
+  /* Anchor to bottom-right of the positioned point (stack grows upward). */
+  transform: translate(-100%, -100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.78);
+  color: #f0f6fc;
+  font-family:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
+    monospace;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 1.2;
+  white-space: nowrap;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  animation: video-effect-key-fade 900ms ease-out forwards;
+}
+
+@keyframes video-effect-key-fade {
+  0% {
+    opacity: 1;
+    transform: translate(-100%, -100%) translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-100%, -100%) translateY(-14px);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .video-effect-click,
   .video-effect-rclick {
@@ -856,6 +893,10 @@ body {
 
   .video-effect-scroll {
     animation: video-effect-fade-only 750ms ease-out forwards;
+  }
+
+  .video-effect-key {
+    animation: video-effect-fade-only 900ms ease-out forwards;
   }
 
   @keyframes video-effect-fade-only {

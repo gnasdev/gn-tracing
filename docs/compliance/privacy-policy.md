@@ -32,7 +32,7 @@ GN Tracing may collect the following data for the tab being recorded:
 
 - tab video and tab audio when available
 - page URL, page title, recording timestamps, duration, and basic browser/page environment context such as extension version, browser label, viewport, screen size, language, and timezone
-- a redacted interaction timeline with navigation, click, focus, and submit summaries; GN Tracing does not store raw typed input in this timeline
+- a redacted interaction timeline with navigation, click, focus, submit, and named keyboard key/shortcut summaries; GN Tracing records keys such as Enter, Escape, and Ctrl/Meta chords for debugging, but does not store raw typed form or password input in this timeline
 - an optional visible-tab screenshot captured when the user stops recording
 - console logs, runtime errors, stack traces, and source-map-enhanced locations
 - network request metadata such as URL, method, status, timing, resource type, protocol, remote IP address, and encoded size
