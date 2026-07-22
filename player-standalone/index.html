@@ -4,7 +4,14 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>GN Tracing Player</title>
+  <title>GN Tracing — Browser Session Recording &amp; Debug Replay</title>
+  <meta name="description" content="GN Tracing is a browser debugging extension that records a tab you choose, captures video and debugging artifacts, uploads them to your Google Drive, and opens a shareable replay in the hosted player.">
+  <meta name="application-name" content="GN Tracing">
+  <meta property="og:title" content="GN Tracing">
+  <meta property="og:description" content="GN Tracing records browser tabs for debugging, uploads packages to Google Drive, and replays sessions with video, console, network, and WebSocket data.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://tracing.gnas.dev/">
+  <link rel="canonical" href="https://tracing.gnas.dev/">
   <link rel="icon" type="image/svg+xml" href="/icons/icon.svg">
   <link rel="icon" type="image/png" sizes="32x32" href="/icons/icon32.png">
   <link rel="stylesheet" href="/theme.css">
@@ -70,38 +77,84 @@
 
     <div id="intro-state" class="state-container hidden">
       <div class="intro-card">
-        <span class="intro-eyebrow">Session Replay Player</span>
-        <h1>GN Tracing</h1>
+        <span class="intro-eyebrow">Browser debugging extension</span>
+        <div class="intro-brand">
+          <img class="intro-brand-logo" src="/icons/icon.svg" alt="GN Tracing logo" width="48" height="48">
+          <h1>GN Tracing</h1>
+        </div>
         <p class="intro-lead">
-          Replay a recorded browser session with synced video, console logs, network traffic, and WebSocket activity.
+          <strong>GN Tracing</strong> is a browser extension that helps developers and QA create
+          shareable bug reports. When you start a recording, GN Tracing captures the selected tab’s
+          video, console logs, network activity, and related debugging artifacts, then packages them
+          for review.
         </p>
+        <section class="intro-purpose" aria-labelledby="intro-purpose-heading">
+          <h2 id="intro-purpose-heading">Purpose of GN Tracing</h2>
+          <p>
+            The purpose of <strong>GN Tracing</strong> is to record a user-selected browser tab on
+            demand, build a replayable debugging package, store that package in the user’s own
+            Google Drive (after the user connects Drive), and open a hosted replay so teammates can
+            inspect what happened without reproducing the bug locally.
+          </p>
+          <p>
+            GN Tracing does not run continuous background surveillance. Recording starts only when
+            you click record in the extension popup and stops when you stop recording or close the
+            tab.
+          </p>
+        </section>
         <div class="intro-actions">
           <a class="intro-link intro-link-primary" href="https://github.com/gnasdev/gn-tracing" target="_blank" rel="noreferrer">
-            View on GitHub
+            View GN Tracing on GitHub
           </a>
           <a class="intro-link" href="/privacy/">Privacy Policy</a>
           <a class="intro-link" href="/terms/">Terms of Service</a>
         </div>
-        <div class="intro-grid">
+        <div class="intro-grid intro-grid-3">
           <section class="intro-panel">
-            <h2>How to use</h2>
+            <h2>What GN Tracing does</h2>
+            <ul>
+              <li>Records tab video and optional tab audio</li>
+              <li>Captures console, network, and WebSocket debugging data</li>
+              <li>Applies client-side redaction based on your privacy settings</li>
+              <li>Uploads a zip package to <strong>your</strong> Google Drive</li>
+              <li>Generates a shareable replay link for this hosted player</li>
+            </ul>
+          </section>
+          <section class="intro-panel">
+            <h2>How to use GN Tracing</h2>
             <ol>
-              <li>Install the GN Tracing extension and start recording a tab.</li>
-              <li>Upload the capture to Google Drive from the extension popup.</li>
-              <li>Open the generated replay link to load the player with recording params.</li>
+              <li>Install the <strong>GN Tracing</strong> browser extension.</li>
+              <li>Connect Google Drive in the extension popup (OAuth with limited Drive file access).</li>
+              <li>Start recording the tab you want to debug, then stop when finished.</li>
+              <li>Upload the package to Drive and open the generated replay URL on this site.</li>
             </ol>
           </section>
           <section class="intro-panel">
-            <h2>Expected params</h2>
+            <h2>Google Drive access</h2>
             <ul>
-              <li><code>videos</code> and <code>metadata</code> are required.</li>
-              <li><code>console</code>, <code>network</code>, and <code>websocket</code> are optional.</li>
-              <li>Links are generated automatically after a successful upload.</li>
+              <li>GN Tracing requests the Google Drive <code>drive.file</code> scope only.</li>
+              <li>It creates and opens files that GN Tracing itself creates or you open with it.</li>
+              <li>It does not request full access to every file in your Drive.</li>
+              <li>Replay files are link-readable so shared URLs work; you control deletion in Drive.</li>
             </ul>
           </section>
         </div>
+        <section class="intro-panel intro-panel-wide">
+          <h2>Hosted replay player</h2>
+          <p>
+            This website (<strong>tracing.gnas.dev</strong>) is the public homepage and hosted replay
+            player for <strong>GN Tracing</strong>. Open a replay link from the extension to load
+            synced video, console logs, network traffic, and WebSocket activity. Without recording
+            parameters in the URL, you are viewing the GN Tracing product homepage.
+          </p>
+        </section>
         <p class="intro-footnote">
-          Contributions are welcome if you want to help improve replay quality, debugging ergonomics, or sharing flow.
+          Source code, issues, and contributions:
+          <a href="https://github.com/gnasdev/gn-tracing" target="_blank" rel="noreferrer">github.com/gnasdev/gn-tracing</a>.
+          Legal:
+          <a href="/privacy/">Privacy Policy</a>
+          ·
+          <a href="/terms/">Terms of Service</a>.
         </p>
       </div>
     </div>
