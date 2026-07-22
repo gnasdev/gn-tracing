@@ -19,7 +19,8 @@
   const CONFIG = window.GN_TRACING_CONFIG || {};
   const PLAYER_LAYOUT_STORAGE_KEY = "gn-tracing-player-layout";
   const PLAYER_BRAND_TITLE = "GN Tracing";
-  const DEFAULT_PLAYER_TITLE = "GN Tracing Player";
+  // Must match the OAuth consent-screen app name for Google branding checks.
+  const DEFAULT_PLAYER_TITLE = "GN Tracing";
   const GITHUB_REPO_URL = "https://github.com/gnasdev/gn-tracing";
   const DEFAULT_LAYOUT_MODE = "horizontal";
   const DEFAULT_SPLIT_PERCENT = {

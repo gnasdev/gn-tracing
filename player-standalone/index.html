@@ -4,9 +4,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>GN Tracing — Browser Session Recording &amp; Debug Replay</title>
-  <meta name="description" content="GN Tracing is a browser debugging extension that records a tab you choose, captures video and debugging artifacts, uploads them to your Google Drive, and opens a shareable replay in the hosted player.">
+  <!-- Title must match OAuth consent-screen app name ("GN Tracing") for branding review. -->
+  <title>GN Tracing</title>
+  <meta name="description" content="GN Tracing is a browser debugging extension that records a user-selected browser tab, captures video and debugging artifacts, uploads the package to the user's Google Drive, and opens a shareable session replay.">
   <meta name="application-name" content="GN Tracing">
+  <meta name="apple-mobile-web-app-title" content="GN Tracing">
+  <meta property="og:site_name" content="GN Tracing">
   <meta property="og:title" content="GN Tracing">
   <meta property="og:description" content="GN Tracing records browser tabs for debugging, uploads packages to Google Drive, and replays sessions with video, console, network, and WebSocket data.">
   <meta property="og:type" content="website">
@@ -37,10 +40,32 @@
   <!-- Vendored luna-* UI components (prebuilt UMD, MIT). See player/vendor/luna/VERSIONS.md. -->
   <link rel="stylesheet" href="/vendor/luna/luna-object-viewer.css">
   <link rel="stylesheet" href="/vendor/luna/luna-json-editor.css">
+  <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "GN Tracing",
+      "applicationCategory": "BrowserApplication",
+      "operatingSystem": "Chrome, Chromium, Edge, Brave",
+      "url": "https://tracing.gnas.dev/",
+      "description": "GN Tracing is a browser debugging extension that records a user-selected browser tab, captures video and debugging artifacts, uploads the package to the user's Google Drive, and opens a shareable session replay.",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      }
+    }
+  </script>
 </head>
 <body>
+  <!--
+    Branding is visible in static HTML (no JS required). Google OAuth branding
+    review crawls the homepage and ignores content that only appears after JS.
+    Default state: product homepage. Player JS switches to loading/player only
+    when recording parameters are present in the URL.
+  -->
   <div id="app">
-    <div id="loading-state" class="state-container">
+    <div id="loading-state" class="state-container hidden">
       <div class="spinner"></div>
       <p id="loading-message">Loading recording...</p>
       <div class="loading-progress-bar">
@@ -75,26 +100,27 @@
       <p id="error-message">The recording parameters are missing or invalid.</p>
     </div>
 
-    <div id="intro-state" class="state-container hidden">
+    <div id="intro-state" class="state-container">
       <div class="intro-card">
         <span class="intro-eyebrow">Browser debugging extension</span>
         <div class="intro-brand">
           <img class="intro-brand-logo" src="/icons/icon.svg" alt="GN Tracing logo" width="48" height="48">
+          <!-- Exact OAuth consent-screen app name -->
           <h1>GN Tracing</h1>
         </div>
         <p class="intro-lead">
-          <strong>GN Tracing</strong> is a browser extension that helps developers and QA create
-          shareable bug reports. When you start a recording, GN Tracing captures the selected tab’s
-          video, console logs, network activity, and related debugging artifacts, then packages them
-          for review.
+          <strong>GN Tracing</strong> is a browser debugging extension and hosted replay product.
+          It helps developers and QA create shareable bug reports from a real browser session.
         </p>
         <section class="intro-purpose" aria-labelledby="intro-purpose-heading">
           <h2 id="intro-purpose-heading">Purpose of GN Tracing</h2>
           <p>
-            The purpose of <strong>GN Tracing</strong> is to record a user-selected browser tab on
-            demand, build a replayable debugging package, store that package in the user’s own
-            Google Drive (after the user connects Drive), and open a hosted replay so teammates can
-            inspect what happened without reproducing the bug locally.
+            The purpose of the <strong>GN Tracing</strong> application is to record a user-selected
+            browser tab on demand, capture screen video plus debugging artifacts (console logs,
+            network activity, and related session data), package that evidence for review, upload the
+            package to the user’s own Google Drive after the user connects Drive, and open a
+            shareable hosted replay so teammates can inspect what happened without reproducing the
+            bug locally.
           </p>
           <p>
             GN Tracing does not run continuous background surveillance. Recording starts only when
@@ -158,6 +184,22 @@
         </p>
       </div>
     </div>
+
+    <noscript>
+      <main class="intro-card" style="margin: 24px auto; width: min(1080px, calc(100% - 2rem));">
+        <h1>GN Tracing</h1>
+        <h2>Purpose of GN Tracing</h2>
+        <p>
+          GN Tracing is a browser debugging extension that records a user-selected browser tab on
+          demand, captures video and debugging artifacts, uploads the package to the user's Google
+          Drive, and opens a shareable hosted session replay.
+        </p>
+        <p>
+          <a href="/privacy/">Privacy Policy</a> · <a href="/terms/">Terms of Service</a> ·
+          <a href="https://github.com/gnasdev/gn-tracing">GitHub</a>
+        </p>
+      </main>
+    </noscript>
 
     <div id="player-state" class="player-container hidden">
       <header class="header">

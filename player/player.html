@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>GN Tracing Player</title>
+  <title>GN Tracing</title>
   <link rel="icon" type="image/svg+xml" href="../icons/icon.svg">
   <link rel="icon" type="image/png" sizes="32x32" href="../icons/icon32.png">
   <link rel="stylesheet" href="../shared/theme.css">
@@ -17,8 +17,8 @@
 </head>
 <body>
   <div id="app">
-    <!-- Loading state -->
-    <div id="loading-state" class="state-container">
+    <!-- Loading state (hidden until recording params are present) -->
+    <div id="loading-state" class="state-container hidden">
       <div class="spinner"></div>
       <p id="loading-message">Loading recording...</p>
       <div class="loading-progress-bar">
@@ -54,7 +54,7 @@
       <p id="error-message">The recording parameters are missing or invalid.</p>
     </div>
 
-    <div id="intro-state" class="state-container hidden">
+    <div id="intro-state" class="state-container">
       <div class="intro-card">
         <span class="intro-eyebrow">Browser debugging extension</span>
         <div class="intro-brand">
