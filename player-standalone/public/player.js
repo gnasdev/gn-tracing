@@ -3348,7 +3348,7 @@
     }
 
     const reservedPathSegments = new Set([
-      "play",
+      "app",
       "privacy",
       "terms",
       "icons",
