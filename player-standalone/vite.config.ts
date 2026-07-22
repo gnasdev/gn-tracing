@@ -238,7 +238,8 @@ function shouldRewriteToReplay(urlPath: string): boolean {
     urlPath.startsWith("/assets/") ||
     urlPath.startsWith("/privacy") ||
     urlPath.startsWith("/terms") ||
-    urlPath === "/replay.html" ||
+    urlPath === "/play" ||
+    urlPath.startsWith("/play/") ||
     urlPath === "/player.js" ||
     urlPath === "/player.css" ||
     urlPath === "/theme.css" ||
@@ -261,7 +262,7 @@ function replaySpaFallbackMiddleware(): Connect.NextHandleFunction {
     }
     const urlPath = req.url.split("?")[0] || "";
     if (shouldRewriteToReplay(urlPath)) {
-      req.url = `/replay.html${req.url.includes("?") ? req.url.slice(req.url.indexOf("?")) : ""}`;
+      req.url = `/play/index.html${req.url.includes("?") ? req.url.slice(req.url.indexOf("?")) : ""}`;
     }
     next();
   };
@@ -289,9 +290,11 @@ export default defineConfig(({ mode }) => ({
     emptyOutDir: true,
     rollupOptions: {
       input: {
-        // Player SPA. Product homepage is the static public/index.html used for
-        // Google OAuth branding; recording paths rewrite to this entry.
-        replay: path.resolve(__dirname, "replay.html"),
+        // Player SPA under /play/. Product homepage is static public/index.html
+        // (OAuth branding). Recording ID paths rewrite to /play/index.html.
+        // Avoid root-level *.html entries: Cloudflare pretty-URLs 308 them and
+        // fight SPA rewrites (infinite / → /replay loops).
+        play: path.resolve(__dirname, "play/index.html"),
       },
       output: {
         entryFileNames: "assets/[name]-[hash].js",

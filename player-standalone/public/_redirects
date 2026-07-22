@@ -3,6 +3,7 @@
 /privacy/  /privacy/index.html  200
 /terms  /terms/index.html  200
 /terms/  /terms/index.html  200
-# Recording IDs and other non-file paths load the player SPA.
-# Static files (including / and /index.html) take precedence over this rule.
-/*  /replay.html  200
+# Recording IDs load the player. Use /play/index.html (not /play.html) so
+# Cloudflare pretty-URL redirects do not loop with this rewrite.
+# Static assets including /index.html take precedence over /*.
+/*  /play/index.html  200
