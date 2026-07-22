@@ -28,6 +28,7 @@ related:
 
 - Production: `https://tracing.gnas.dev/privacy/`
 - Alternate clean path: `https://tracing.gnas.dev/privacy`
+- OAuth application homepage (branding, not the replay player): `https://tracing.gnas.dev/app/`
 
 The canonical HTML page is deployed with the standalone player on Cloudflare Pages
 (`player-standalone/public/privacy/index.html`). Keep that page aligned with the language below.

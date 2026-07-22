@@ -226,7 +226,7 @@ function createDriveProxyMiddleware(): Connect.NextHandleFunction {
 
 const driveProxyMiddleware = createDriveProxyMiddleware();
 
-function shouldRewriteToReplay(urlPath: string): boolean {
+function shouldRewriteToPlayer(urlPath: string): boolean {
   if (!urlPath || urlPath === "/") return false;
   if (
     urlPath.startsWith("/api/") ||
@@ -236,10 +236,9 @@ function shouldRewriteToReplay(urlPath: string): boolean {
     urlPath.startsWith("/icons/") ||
     urlPath.startsWith("/vendor/") ||
     urlPath.startsWith("/assets/") ||
+    urlPath.startsWith("/app") ||
     urlPath.startsWith("/privacy") ||
     urlPath.startsWith("/terms") ||
-    urlPath === "/play" ||
-    urlPath.startsWith("/play/") ||
     urlPath === "/player.js" ||
     urlPath === "/player.css" ||
     urlPath === "/theme.css" ||
@@ -254,15 +253,15 @@ function shouldRewriteToReplay(urlPath: string): boolean {
   return true;
 }
 
-function replaySpaFallbackMiddleware(): Connect.NextHandleFunction {
+function playerSpaFallbackMiddleware(): Connect.NextHandleFunction {
   return (req, _res, next) => {
     if (!req.url || req.method !== "GET") {
       next();
       return;
     }
     const urlPath = req.url.split("?")[0] || "";
-    if (shouldRewriteToReplay(urlPath)) {
-      req.url = `/play/index.html${req.url.includes("?") ? req.url.slice(req.url.indexOf("?")) : ""}`;
+    if (shouldRewriteToPlayer(urlPath)) {
+      req.url = `/index.html${req.url.includes("?") ? req.url.slice(req.url.indexOf("?")) : ""}`;
     }
     next();
   };
@@ -273,11 +272,11 @@ function driveProxyPlugin() {
     name: "gn-tracing-drive-proxy",
     configureServer(server: { middlewares: Connect.Server }) {
       server.middlewares.use(driveProxyMiddleware);
-      server.middlewares.use(replaySpaFallbackMiddleware());
+      server.middlewares.use(playerSpaFallbackMiddleware());
     },
     configurePreviewServer(server: { middlewares: Connect.Server }) {
       server.middlewares.use(driveProxyMiddleware);
-      server.middlewares.use(replaySpaFallbackMiddleware());
+      server.middlewares.use(playerSpaFallbackMiddleware());
     },
   };
 }
@@ -290,11 +289,8 @@ export default defineConfig(({ mode }) => ({
     emptyOutDir: true,
     rollupOptions: {
       input: {
-        // Player SPA under /play/. Product homepage is static public/index.html
-        // (OAuth branding). Recording ID paths rewrite to /play/index.html.
-        // Avoid root-level *.html entries: Cloudflare pretty-URLs 308 them and
-        // fight SPA rewrites (infinite / → /replay loops).
-        play: path.resolve(__dirname, "play/index.html"),
+        // Hosted player SPA at domain root. OAuth branding page is static /app/.
+        main: path.resolve(__dirname, "index.html"),
       },
       output: {
         entryFileNames: "assets/[name]-[hash].js",

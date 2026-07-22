@@ -24,6 +24,7 @@ related:
 
 - Production: `https://tracing.gnas.dev/terms/`
 - Alternate clean path: `https://tracing.gnas.dev/terms`
+- OAuth application homepage (branding): `https://tracing.gnas.dev/app/`
 
 The canonical HTML page is deployed with the standalone player on Cloudflare Pages
 (`player-standalone/public/terms/index.html`). Update that page when these terms change.

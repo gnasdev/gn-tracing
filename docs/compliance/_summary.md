@@ -36,9 +36,11 @@ related:
 - release/deploy flow: covered through `drive-and-player`, `shared/api-conventions`, `_index.md`, and `README.md`
 - shared message/data contracts documented
 - Chrome Web Store readiness docs cover privacy policy language, permission justifications, data usage disclosures, remote code notes, and reviewer test instructions
-- Public legal pages ship with the standalone player:
+- Public legal / branding pages ship with the standalone player:
+  - OAuth application homepage: `https://tracing.gnas.dev/app/`
   - Privacy Policy: `https://tracing.gnas.dev/privacy/`
   - Terms of Service: `https://tracing.gnas.dev/terms/`
+  - Replay player (not OAuth homepage): `https://tracing.gnas.dev/`
 
 ## Current Gaps
 

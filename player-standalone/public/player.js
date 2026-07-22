@@ -3347,13 +3347,26 @@
       return searchId.trim();
     }
 
+    const reservedPathSegments = new Set([
+      "play",
+      "privacy",
+      "terms",
+      "icons",
+      "assets",
+      "vendor",
+      "api",
+    ]);
     const segments = window.location.pathname
       .split("/")
       .map((segment) => segment.trim())
       .filter(Boolean);
     const lastSegment = segments[segments.length - 1] || "";
 
-    if (!lastSegment || lastSegment.includes(".")) {
+    if (
+      !lastSegment ||
+      lastSegment.includes(".") ||
+      reservedPathSegments.has(lastSegment.toLowerCase())
+    ) {
       return null;
     }
 

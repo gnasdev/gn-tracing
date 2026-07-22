@@ -84,6 +84,7 @@ The extension package does not load remote executable JavaScript. Extension page
 - `dist/manifest.json` uses the Store OAuth client id and extension public key for local/unpacked installs.
 - `gn-tracing-store.zip` is built with `task store:zip` so `manifest.key` is stripped (Chrome Web Store rejects `key`).
 - Manifest permissions match this document.
+- OAuth application homepage (branding) is published at `https://tracing.gnas.dev/app/` (static product page; replay player remains at `https://tracing.gnas.dev/`).
 - Privacy policy is published at `https://tracing.gnas.dev/privacy/` and linked in the Store dashboard and Google OAuth consent screen.
 - Terms of Service is published at `https://tracing.gnas.dev/terms/` for Google OAuth consent screen / Store fields that request it.
 - Store privacy fields match the behavior described in `docs/compliance/privacy-policy.md`.
