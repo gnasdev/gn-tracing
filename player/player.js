@@ -4008,8 +4008,15 @@
   }
 
   // State management
+  function setBrandIdentityVisible(visible) {
+    const brandIdentity = document.getElementById("brand-identity");
+    if (!brandIdentity) return;
+    brandIdentity.classList.toggle("is-concealed", !visible);
+  }
+
   function showLoading() {
     resetLoadingProgress("Loading recording...");
+    setBrandIdentityVisible(false);
     elements.loadingState.classList.remove("hidden");
     elements.passwordState.classList.add("hidden");
     elements.introState.classList.add("hidden");
@@ -4018,6 +4025,7 @@
   }
 
   function showPasswordPrompt() {
+    setBrandIdentityVisible(false);
     elements.loadingState.classList.add("hidden");
     elements.passwordState.classList.remove("hidden");
     elements.introState.classList.add("hidden");
@@ -4028,6 +4036,7 @@
   function showIntro() {
     resetLoadingProgress();
     updatePlayerTitle();
+    setBrandIdentityVisible(true);
     elements.loadingState.classList.add("hidden");
     elements.passwordState.classList.add("hidden");
     elements.introState.classList.remove("hidden");
@@ -4036,6 +4045,7 @@
   }
 
   function showError() {
+    setBrandIdentityVisible(true);
     elements.loadingState.classList.add("hidden");
     elements.passwordState.classList.add("hidden");
     elements.introState.classList.add("hidden");
@@ -4044,6 +4054,7 @@
   }
 
   function showPlayer() {
+    setBrandIdentityVisible(false);
     elements.loadingState.classList.add("hidden");
     elements.passwordState.classList.add("hidden");
     elements.introState.classList.add("hidden");

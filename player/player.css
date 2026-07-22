@@ -245,6 +245,54 @@ body {
   font-size: 12px;
 }
 
+/* Always-visible product identity for OAuth branding crawlers (outside player states). */
+.brand-identity {
+  width: min(1080px, calc(100% - 2rem));
+  margin: 20px auto 0;
+  padding: 16px 20px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 16px;
+  background: var(--bg-card);
+}
+
+.brand-identity-name {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 1.35rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.brand-identity-purpose {
+  margin: 8px 0 0;
+  color: var(--text-secondary);
+  font-size: 0.98rem;
+  line-height: 1.6;
+}
+
+.brand-identity-purpose strong {
+  color: var(--text-primary);
+}
+
+.brand-identity-links {
+  margin: 10px 0 0;
+  color: var(--text-muted);
+  font-size: 0.92rem;
+}
+
+.brand-identity-links a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.brand-identity-links a:hover {
+  text-decoration: underline;
+}
+
+.brand-identity.is-concealed {
+  display: none !important;
+}
+
 #intro-state {
   padding: 24px;
 }
@@ -288,12 +336,14 @@ body {
   flex-shrink: 0;
 }
 
-.intro-card h1 {
+.intro-card h1,
+.intro-brand-title {
   margin: 0;
   font-size: clamp(30px, 4vw, 42px);
   line-height: 1.1;
   color: var(--text-primary);
   letter-spacing: -0.02em;
+  font-weight: 700;
 }
 
 .intro-lead {

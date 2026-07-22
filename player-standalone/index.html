@@ -1,6 +1,12 @@
 <!DOCTYPE html>
 <!-- Hosted standalone replay player shell used outside the browser extension. -->
-<html lang="en">
+<!--
+  data-theme must be present in static HTML. theme.css hides the entire document
+  with `html:not([data-theme]) { visibility: hidden }`. Google branding crawlers
+  often apply CSS without running JS, so a missing attribute made the homepage
+  look empty (failed purpose + app-name checks).
+-->
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -64,6 +70,27 @@
     Default state: product homepage. Player JS switches to loading/player only
     when recording parameters are present in the URL.
   -->
+  <!--
+    Crawler-safe identity block: plain content + absolute privacy URL matching
+    OAuth consent screen. Stays in the document even if app shells toggle.
+  -->
+  <header id="brand-identity" class="brand-identity">
+    <h1 class="brand-identity-name">GN Tracing</h1>
+    <p class="brand-identity-purpose">
+      <strong>GN Tracing</strong> is a browser debugging extension. Its purpose is to record a
+      user-selected browser tab on demand, capture video and debugging artifacts, upload the package
+      to the user’s Google Drive after the user connects Drive, and open a shareable hosted session
+      replay for teammates.
+    </p>
+    <p class="brand-identity-links">
+      <a href="https://tracing.gnas.dev/privacy/">Privacy Policy</a>
+      ·
+      <a href="https://tracing.gnas.dev/terms/">Terms of Service</a>
+      ·
+      <a href="https://github.com/gnasdev/gn-tracing">GitHub</a>
+    </p>
+  </header>
+
   <div id="app">
     <div id="loading-state" class="state-container hidden">
       <div class="spinner"></div>
@@ -105,8 +132,8 @@
         <span class="intro-eyebrow">Browser debugging extension</span>
         <div class="intro-brand">
           <img class="intro-brand-logo" src="/icons/icon.svg" alt="GN Tracing logo" width="48" height="48">
-          <!-- Exact OAuth consent-screen app name -->
-          <h1>GN Tracing</h1>
+          <!-- Same OAuth consent-screen app name as the brand-identity H1 -->
+          <p class="intro-brand-title">GN Tracing</p>
         </div>
         <p class="intro-lead">
           <strong>GN Tracing</strong> is a browser debugging extension and hosted replay product.
@@ -132,8 +159,8 @@
           <a class="intro-link intro-link-primary" href="https://github.com/gnasdev/gn-tracing" target="_blank" rel="noreferrer">
             View GN Tracing on GitHub
           </a>
-          <a class="intro-link" href="/privacy/">Privacy Policy</a>
-          <a class="intro-link" href="/terms/">Terms of Service</a>
+          <a class="intro-link" href="https://tracing.gnas.dev/privacy/">Privacy Policy</a>
+          <a class="intro-link" href="https://tracing.gnas.dev/terms/">Terms of Service</a>
         </div>
         <div class="intro-grid intro-grid-3">
           <section class="intro-panel">
@@ -178,9 +205,9 @@
           Source code, issues, and contributions:
           <a href="https://github.com/gnasdev/gn-tracing" target="_blank" rel="noreferrer">github.com/gnasdev/gn-tracing</a>.
           Legal:
-          <a href="/privacy/">Privacy Policy</a>
+          <a href="https://tracing.gnas.dev/privacy/">Privacy Policy</a>
           ·
-          <a href="/terms/">Terms of Service</a>.
+          <a href="https://tracing.gnas.dev/terms/">Terms of Service</a>.
         </p>
       </div>
     </div>
@@ -195,7 +222,10 @@
           Drive, and opens a shareable hosted session replay.
         </p>
         <p>
-          <a href="/privacy/">Privacy Policy</a> · <a href="/terms/">Terms of Service</a> ·
+          <a href="https://tracing.gnas.dev/privacy/">Privacy Policy</a>
+          ·
+          <a href="https://tracing.gnas.dev/terms/">Terms of Service</a>
+          ·
           <a href="https://github.com/gnasdev/gn-tracing">GitHub</a>
         </p>
       </main>
