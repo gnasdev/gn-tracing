@@ -22,8 +22,9 @@ const FORWARDED_DRIVE_HEADERS = [
   "last-modified",
 ];
 
-// Load base path from env or use default
-const basePath = process.env.VITE_BASE_PATH || "/player/";
+// Hosted player is served at the domain root (https://tracing.gnas.dev/).
+// Override with VITE_BASE_PATH only when deploying under a subpath.
+const basePath = process.env.VITE_BASE_PATH || "/";
 
 function createDriveDownloadUrl(fileId: string): URL {
   const upstreamUrl = new URL(DRIVE_DOWNLOAD_URL);
