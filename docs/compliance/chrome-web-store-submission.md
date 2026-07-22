@@ -46,7 +46,11 @@ GN Tracing records a user-selected browser tab and packages the video, console l
 
 `identity` is required for Google Drive OAuth sign-in and token management.
 
-GN Tracing does not request broad `host_permissions` in the Store manifest. The user-selected active tab, `debugger`, and `tabCapture` permissions provide the access needed for the active recording flow. The manifest includes `https://api.github.com/` only so the popup can compare the installed version with the latest GitHub release when the user clicks Check for update.
+GN Tracing does not request broad `<all_urls>` host access. Recording uses the user-selected active tab plus `debugger` and `tabCapture`. Fixed `host_permissions` are limited to:
+
+- `https://api.github.com/` — popup update checks against GitHub Releases
+- `https://oauth2.googleapis.com/` and `https://www.googleapis.com/` — OAuth token exchange/refresh and Google Drive API
+- the configured OAuth token proxy Worker origin (when `GOOGLE_TOKEN_PROXY_URL` is set) — server-side token exchange for Web application OAuth clients
 
 ## Data Usage Answers
 
@@ -77,7 +81,8 @@ The extension package does not load remote executable JavaScript. Extension page
 - Standalone player typecheck passes.
 - Root and standalone dependency audits pass.
 - Production extension build succeeds.
-- `dist/manifest.json` uses the Store OAuth client id and extension public key.
+- `dist/manifest.json` uses the Store OAuth client id and extension public key for local/unpacked installs.
+- `gn-tracing-store.zip` is built with `task store:zip` so `manifest.key` is stripped (Chrome Web Store rejects `key`).
 - Manifest permissions match this document.
 - Privacy policy is published at a stable public URL and linked in the Store dashboard.
 - Store privacy fields match the behavior described in `docs/compliance/privacy-policy.md`.

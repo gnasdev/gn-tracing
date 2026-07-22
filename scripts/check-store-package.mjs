@@ -45,13 +45,46 @@ if (!manifest.minimum_chrome_version) {
   fail("minimum_chrome_version is required for Store package clarity.");
 }
 
-const allowedHostPermissions = new Set(["https://api.github.com/"]);
+// Store package needs:
+// - api.github.com: popup update checks against GitHub Releases
+// - oauth2.googleapis.com + www.googleapis.com: PKCE token exchange/refresh and Drive API
+// - optional one https origin: GOOGLE_TOKEN_PROXY_URL Worker (Web OAuth client secret)
+const allowedHostPermissions = new Set([
+  "https://api.github.com/",
+  "https://oauth2.googleapis.com/",
+  "https://www.googleapis.com/",
+]);
 const hostPermissions = Array.isArray(manifest.host_permissions) ? manifest.host_permissions : [];
-const unexpectedHostPermissions = hostPermissions.filter(
+const extraHostPermissions = hostPermissions.filter(
   (permission) => !allowedHostPermissions.has(permission),
 );
-if (unexpectedHostPermissions.length > 0) {
-  fail(`unexpected host_permissions found: ${unexpectedHostPermissions.join(", ")}`);
+
+if (extraHostPermissions.length > 1) {
+  fail(
+    `unexpected host_permissions found: ${extraHostPermissions.join(", ")} ` +
+      `(at most one OAuth token proxy origin is allowed beyond Google/GitHub hosts)`,
+  );
+}
+
+if (extraHostPermissions.length === 1) {
+  const proxyPermission = extraHostPermissions[0];
+  try {
+    const proxyUrl = new URL(proxyPermission);
+    if (proxyUrl.protocol !== "https:" || proxyPermission !== `${proxyUrl.origin}/`) {
+      fail(
+        `OAuth token proxy host_permission must be an https origin with trailing slash, got: ${proxyPermission}`,
+      );
+    }
+  } catch {
+    fail(`invalid OAuth token proxy host_permission: ${proxyPermission}`);
+  }
+}
+
+const missingFixedHosts = [...allowedHostPermissions].filter(
+  (permission) => !hostPermissions.includes(permission),
+);
+if (missingFixedHosts.length > 0) {
+  fail(`required host_permissions missing: ${missingFixedHosts.join(", ")}`);
 }
 
 for (const permission of [
@@ -90,11 +123,16 @@ for (const file of files) {
   }
 
   const content = fs.readFileSync(file, "utf8");
-  if (/\beval\s*\(/.test(content)) {
-    fail(`eval() found in ${rel}`);
-  }
-  if (/new\s+Function\s*\(/.test(content)) {
-    fail(`new Function() found in ${rel}`);
+  // Vendored third-party player UI (luna) is packaged locally; it may use
+  // `new Function` for named constructors and is not remote code.
+  const isVendoredPlayer = rel.split(path.sep).join("/").startsWith("player/vendor/");
+  if (!isVendoredPlayer) {
+    if (/\beval\s*\(/.test(content)) {
+      fail(`eval() found in ${rel}`);
+    }
+    if (/new\s+Function\s*\(/.test(content)) {
+      fail(`new Function() found in ${rel}`);
+    }
   }
   if (file.endsWith(".html") && /<script[^>]+src=["']https?:\/\//i.test(content)) {
     fail(`remote script tag found in ${rel}`);

@@ -1,13 +1,23 @@
 .DS_Store
-*.zip
-dist/
-node_modules/
-.env
-.env.local
-.env.*.local
 *.log
 *.tsbuildinfo
+
+# Build / packages
+dist/
+node_modules/
 coverage/
+*.zip
+
+# Env and secrets (keep .env.example tracked)
+.env
+.env.*
+!.env.example
+*.pem
+client_secret*.json
+credentials.json
+token.json
+
+# Local tooling / agent state
 graphify-out/
 .codebaxing/
 .mcp.json

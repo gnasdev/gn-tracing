@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "gn-tracing",
+  "name": "GN Tracing",
   "version": "1.0.12",
   "minimum_chrome_version": "120",
   "description": "Record tab video, console logs, and network requests for debugging",

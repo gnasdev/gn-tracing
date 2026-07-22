@@ -1,20 +1,55 @@
-import fs from "node:fs/promises";
+import fs from "node:fs";
+import fsp from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-const rootDir = path.resolve(new URL("..", import.meta.url).pathname);
+const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const API_ROOT = "https://chromewebstore.googleapis.com";
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
+// OAuth client reuses GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET (same Web client
+// as the token proxy Worker). Store-specific values are the three CHROME_WEBSTORE_* vars.
 const REQUIRED_ENV = [
   "CHROME_WEBSTORE_PUBLISHER_ID",
   "CHROME_WEBSTORE_EXTENSION_ID",
-  "CHROME_WEBSTORE_CLIENT_ID",
-  "CHROME_WEBSTORE_CLIENT_SECRET",
+  "GOOGLE_CLIENT_ID",
+  "GOOGLE_CLIENT_SECRET",
   "CHROME_WEBSTORE_REFRESH_TOKEN",
 ];
+
+loadEnvFile(path.join(rootDir, ".env"));
 
 const args = process.argv.slice(2);
 const command = args[0];
 const options = parseOptions(args.slice(1));
+
+function loadEnvFile(envPath) {
+  if (!fs.existsSync(envPath)) {
+    return;
+  }
+  const text = fs.readFileSync(envPath, "utf8");
+  for (const line of text.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) {
+      continue;
+    }
+    const eq = trimmed.indexOf("=");
+    if (eq <= 0) {
+      continue;
+    }
+    const key = trimmed.slice(0, eq).trim();
+    let value = trimmed.slice(eq + 1).trim();
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    }
+    // Do not override vars already set in the shell/CI.
+    if (process.env[key] === undefined) {
+      process.env[key] = value;
+    }
+  }
+}
 
 function parseOptions(rawArgs) {
   const parsed = { dryRun: false };
@@ -39,19 +74,24 @@ function parseOptions(rawArgs) {
 function usage() {
   console.log(`Usage:
   node scripts/chrome-webstore.mjs status
+  node scripts/chrome-webstore.mjs cancel
   node scripts/chrome-webstore.mjs upload --zip gn-tracing-store.zip
   node scripts/chrome-webstore.mjs publish
   node scripts/chrome-webstore.mjs release --zip gn-tracing-store.zip
 
-Required environment:
-  ${REQUIRED_ENV.join("\n  ")}
+Required environment (loaded from .env when present):
+  CHROME_WEBSTORE_PUBLISHER_ID
+  CHROME_WEBSTORE_EXTENSION_ID
+  CHROME_WEBSTORE_REFRESH_TOKEN
+  GOOGLE_CLIENT_ID
+  GOOGLE_CLIENT_SECRET
 `);
 }
 
 function getEnv(name) {
   const value = process.env[name];
   if (!value) {
-    throw new Error(`${name} is required.`);
+    throw new Error(`${name} is required. Set it in .env or the environment.`);
   }
   return value;
 }
@@ -62,8 +102,8 @@ function getItemName() {
 
 async function getAccessToken() {
   const body = new URLSearchParams({
-    client_id: getEnv("CHROME_WEBSTORE_CLIENT_ID"),
-    client_secret: getEnv("CHROME_WEBSTORE_CLIENT_SECRET"),
+    client_id: getEnv("GOOGLE_CLIENT_ID"),
+    client_secret: getEnv("GOOGLE_CLIENT_SECRET"),
     refresh_token: getEnv("CHROME_WEBSTORE_REFRESH_TOKEN"),
     grant_type: "refresh_token",
   });
@@ -101,7 +141,7 @@ async function authHeaders() {
 
 async function uploadPackage() {
   const zipPath = path.resolve(rootDir, options.zip || "gn-tracing-store.zip");
-  const zip = await fs.readFile(zipPath);
+  const zip = await fsp.readFile(zipPath);
   const name = getItemName();
   const url = `${API_ROOT}/upload/v2/${name}:upload`;
 
@@ -160,6 +200,24 @@ async function fetchStatus() {
   console.log(JSON.stringify(payload, null, 2));
 }
 
+async function cancelSubmission() {
+  const name = getItemName();
+  const url = `${API_ROOT}/v2/${name}:cancelSubmission`;
+
+  if (options.dryRun) {
+    console.log(`[dry-run] Would cancel submission at ${url}`);
+    return;
+  }
+
+  const payload = await requestJson(url, {
+    method: "POST",
+    headers: await authHeaders(),
+  });
+
+  console.log("Cancelled active Chrome Web Store submission.");
+  console.log(JSON.stringify(payload, null, 2));
+}
+
 async function main() {
   if (!command || command === "help" || command === "--help") {
     usage();
@@ -180,6 +238,10 @@ async function main() {
   }
   if (command === "status") {
     await fetchStatus();
+    return;
+  }
+  if (command === "cancel") {
+    await cancelSubmission();
     return;
   }
   if (command === "release") {

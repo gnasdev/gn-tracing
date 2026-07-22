@@ -138,6 +138,8 @@ task store:zip
 
 `task store:check` type-checks the extension and player, runs production build validation, and checks the generated store package.
 
+`task store:zip` writes `gn-tracing-store.zip` with `manifest.key` removed. Chrome Web Store rejects packages that include `key` (that field is only for stable unpacked extension IDs). Local `dist/manifest.json` still keeps `key` after the zip step.
+
 ## Useful Docs
 
 - [Docs overview](./docs/overview.md)

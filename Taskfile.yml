@@ -172,15 +172,20 @@ tasks:
       - node scripts/check-store-package.mjs
 
   store:zip:
-    desc: Build, validate, and zip the Chrome Web Store package.
+    desc: Build, validate, and zip the Chrome Web Store package (manifest.key stripped).
     cmds:
       - task: store:check
-      - sh -c 'rm -f gn-tracing-store.zip && cd dist && zip -r ../gn-tracing-store.zip .'
+      - node scripts/package-store-zip.mjs
 
   store:status:
     desc: Fetch the Chrome Web Store item status through the official API.
     cmds:
       - node scripts/chrome-webstore.mjs status
+
+  store:cancel:
+    desc: Cancel an in-review Chrome Web Store submission.
+    cmds:
+      - node scripts/chrome-webstore.mjs cancel
 
   store:upload:
     desc: Upload the Chrome Web Store zip through the official API.
