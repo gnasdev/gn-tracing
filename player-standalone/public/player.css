@@ -250,7 +250,7 @@ body {
 }
 
 .intro-card {
-  width: min(920px, 100%);
+  width: min(1080px, 100%);
   padding: 32px;
   border: 1px solid var(--border-default);
   border-radius: 20px;
@@ -274,19 +274,67 @@ body {
   text-transform: uppercase;
 }
 
-.intro-card h1 {
+.intro-brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
   margin-top: 16px;
+}
+
+.intro-brand-logo {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  flex-shrink: 0;
+}
+
+.intro-card h1 {
+  margin: 0;
   font-size: clamp(30px, 4vw, 42px);
   line-height: 1.1;
   color: var(--text-primary);
+  letter-spacing: -0.02em;
 }
 
 .intro-lead {
-  max-width: 720px;
+  max-width: 820px;
   margin-top: 14px;
   color: var(--text-secondary);
   font-size: 16px;
   line-height: 1.6;
+}
+
+.intro-lead strong {
+  color: var(--text-primary);
+}
+
+.intro-purpose {
+  margin-top: 20px;
+  padding: 18px 20px;
+  border-radius: 16px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-card);
+}
+
+.intro-purpose h2 {
+  margin: 0 0 10px;
+  color: var(--text-primary);
+  font-size: 17px;
+}
+
+.intro-purpose p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 15px;
+  line-height: 1.65;
+}
+
+.intro-purpose p + p {
+  margin-top: 10px;
+}
+
+.intro-purpose strong {
+  color: var(--text-primary);
 }
 
 .intro-actions {
@@ -338,12 +386,31 @@ body {
   margin-top: 24px;
 }
 
+.intro-grid-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .intro-panel {
   min-width: 0;
   padding: 20px;
   border-radius: 16px;
   border: 1px solid var(--border-subtle);
   background: var(--bg-card);
+}
+
+.intro-panel-wide {
+  width: 100%;
+  margin-top: 16px;
+}
+
+.intro-panel-wide p {
+  margin: 0;
+  color: var(--text-secondary);
+  line-height: 1.65;
+}
+
+.intro-panel-wide strong {
+  color: var(--text-primary);
 }
 
 .intro-panel h2 {
@@ -376,6 +443,15 @@ body {
   color: var(--text-muted);
   font-size: 14px;
   line-height: 1.6;
+}
+
+.intro-footnote a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.intro-footnote a:hover {
+  text-decoration: underline;
 }
 
 .btn-primary {
@@ -411,7 +487,14 @@ body {
     padding: 24px 20px;
   }
 
-  .intro-grid {
+  .intro-grid,
+  .intro-grid-3 {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 960px) {
+  .intro-grid-3 {
     grid-template-columns: 1fr;
   }
 }
