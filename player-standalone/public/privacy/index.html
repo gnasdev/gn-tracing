@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Privacy Policy · GN Tracing</title>
+  <meta name="description" content="Privacy Policy for GN Tracing: capture, Google Drive upload, and hosted replay behavior.">
+  <link rel="canonical" href="https://tracing.gnas.dev/privacy/">
+  <link rel="icon" type="image/svg+xml" href="/icons/icon.svg">
+  <link rel="icon" type="image/png" sizes="32x32" href="/icons/icon32.png">
+  <link rel="stylesheet" href="/theme.css">
+  <link rel="stylesheet" href="/legal.css">
+  <script>
+    (() => {
+      var t;
+      try {
+        t = localStorage.getItem("gn_tracing_theme");
+        if (t === "light" || t === "dark") {
+          document.documentElement.setAttribute("data-theme", t);
+        } else if (window.matchMedia?.("(prefers-color-scheme: light)").matches) {
+          document.documentElement.setAttribute("data-theme", "light");
+        } else {
+          document.documentElement.setAttribute("data-theme", "dark");
+        }
+      } catch {
+        document.documentElement.setAttribute("data-theme", "dark");
+      }
+    })();
+  </script>
+</head>
+<body class="legal-page">
+  <header class="legal-header">
+    <div class="legal-header-inner">
+      <a class="legal-brand" href="/">
+        <img src="/icons/icon.svg" alt="" width="28" height="28">
+        <span>GN Tracing</span>
+      </a>
+      <nav class="legal-nav" aria-label="Legal">
+        <a href="/privacy/" aria-current="page">Privacy Policy</a>
+        <a href="/terms/">Terms of Service</a>
+        <a href="https://github.com/gnasdev/gn-tracing" target="_blank" rel="noreferrer">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="legal-main">
+    <header>
+      <span class="legal-eyebrow">Legal</span>
+      <h1>Privacy Policy</h1>
+      <p class="legal-updated">Last updated: July 22, 2026</p>
+    </header>
+
+    <p>
+      GN Tracing is a browser debugging extension and hosted replay player that records a tab when
+      the user explicitly starts a recording. It helps users create a replayable bug report that
+      includes screen recording and selected debugging artifacts from that tab.
+    </p>
+    <p>
+      This Privacy Policy describes what data GN Tracing may collect, how it is used, how Google
+      Drive is involved, and how users can delete data. The public product home for the hosted
+      player is <a href="https://tracing.gnas.dev/">https://tracing.gnas.dev/</a>.
+    </p>
+
+    <h2>Data GN Tracing Collects</h2>
+    <p>GN Tracing may collect the following data for the tab being recorded:</p>
+    <ul>
+      <li>Tab video and tab audio when available</li>
+      <li>
+        Page URL, page title, recording timestamps, duration, and basic browser/page environment
+        context such as extension version, browser label, viewport, screen size, language, and
+        timezone
+      </li>
+      <li>
+        A redacted interaction timeline with navigation, click, focus, submit, and named keyboard
+        key/shortcut summaries; GN Tracing records keys such as Enter, Escape, and Ctrl/Meta chords
+        for debugging, but does not store raw typed form or password input in this timeline
+      </li>
+      <li>An optional visible-tab screenshot captured when the user stops recording</li>
+      <li>Console logs, runtime errors, stack traces, and source-map-enhanced locations</li>
+      <li>
+        Network request metadata such as URL, method, status, timing, resource type, protocol,
+        remote IP address, and encoded size
+      </li>
+      <li>Request and response headers with sensitive header values redacted by default</li>
+      <li>
+        Request bodies, response bodies, and WebSocket message payloads when those capture options
+        are enabled
+      </li>
+      <li>
+        Redaction summary metadata such as policy version, selected privacy profile, artifact flags,
+        grouped redaction counts, and known limitations; this summary does not include raw secret
+        values
+      </li>
+      <li>
+        Optional DOM selector rules used locally by the extension to visually mask matching page
+        elements during recording
+      </li>
+      <li>Optional zip password settings for protecting new uploads</li>
+      <li>
+        Local upload history such as replay URL, Drive folder ID, page URL, upload time, and
+        duration
+      </li>
+    </ul>
+    <p>
+      GN Tracing does not run continuous background browsing surveillance. It records only after the
+      user starts a recording from the extension popup, and it stops when the user stops recording,
+      removes the recording, or closes the recorded tab.
+    </p>
+
+    <h2>How Data Is Used</h2>
+    <p>
+      GN Tracing uses captured data only to create a replayable debugging package. Report metadata,
+      the redacted interaction timeline, the optional screenshot, and the privacy summary help the
+      player render a clearer bug report summary around the video and debugging logs. The extension
+      applies client-side redaction before upload for supported text/JSON evidence, including
+      sensitive headers, URL query parameters, body fields, console values, WebSocket text payloads,
+      report metadata, and event metadata according to the user's privacy settings.
+    </p>
+    <p>
+      The extension stores captured data temporarily in the extension runtime and browser extension
+      storage so it can show upload progress, retry a pending upload, and generate a replay link.
+    </p>
+    <p>
+      When Google Drive is connected, GN Tracing uploads the recording artifacts to the user's
+      Google Drive. If the user configures a zip password, GN Tracing writes a password-protected ZIP
+      package in the browser before upload and the hosted player at
+      <a href="https://tracing.gnas.dev/">https://tracing.gnas.dev/</a> asks for that password before
+      loading the replay.
+    </p>
+
+    <h2>Google Drive And Sharing</h2>
+    <p>
+      GN Tracing uses the Google Drive <code>drive.file</code> scope to create and access files that
+      GN Tracing creates or opens through the user's interaction. It does not request full access to
+      every file in the user's Google Drive.
+    </p>
+    <p>
+      Uploaded replay artifacts are made readable by link so the replay URL can be opened by
+      teammates or other people the user shares it with. Anyone with an unprotected replay URL may
+      be able to view the recording video, optional screenshot, report metadata, redacted interaction
+      timeline, privacy summary, and included debugging artifacts. Password-protected replay packages
+      still use a link-readable Drive file, but the recording contents require the password in the
+      GN Tracing player or a compatible unzip tool.
+    </p>
+    <p class="legal-note">
+      Users should avoid recording pages that contain confidential information unless they intend to
+      share that information through the generated replay link and, when configured, its password.
+    </p>
+
+    <h2>Data Storage And Deletion</h2>
+    <p>
+      Before upload, recording data is held in the extension runtime and browser extension storage.
+      Optional zip password settings are stored locally by the extension and are not placed in
+      replay URLs, upload history, uploaded package metadata, or the page-injected event collector.
+      After upload, recording artifacts are stored in the user's Google Drive. Upload history is
+      stored locally by the extension and is not synced into Google Drive.
+    </p>
+    <ul>
+      <li>Users can delete local upload history from the extension UI.</li>
+      <li>
+        Users can delete uploaded recordings by deleting the generated GN Tracing zip package from
+        Google Drive.
+      </li>
+    </ul>
+
+    <h2>Data Sharing</h2>
+    <p>
+      GN Tracing does not sell captured data. GN Tracing does not use captured data for advertising,
+      creditworthiness, or unrelated analytics. Captured data is shared only as needed to provide the
+      user-requested replay flow:
+    </p>
+    <ul>
+      <li>Uploaded recording artifacts are stored in the user's Google Drive</li>
+      <li>Replay artifacts are made readable by link so the replay URL works</li>
+      <li>The hosted player fetches those link-readable artifacts to display the replay</li>
+    </ul>
+
+    <h2>Google API Limited Use</h2>
+    <p>
+      GN Tracing's use and transfer of information received from Google APIs adheres to the
+      <a href="https://developers.google.com/terms/api-services-user-data-policy" target="_blank" rel="noreferrer">
+        Google API Services User Data Policy
+      </a>,
+      including the Limited Use requirements. Google Drive data is used only to create, read, share,
+      and manage GN Tracing recording artifacts needed for the replay feature.
+    </p>
+
+    <h2>Third-Party Services</h2>
+    <p>Depending on how you use GN Tracing, the following third parties may process data:</p>
+    <ul>
+      <li>
+        <strong>Google</strong> — OAuth sign-in and Google Drive storage of user-uploaded replay
+        packages under the user's Google account
+      </li>
+      <li>
+        <strong>Cloudflare</strong> — hosting of the public replay player and related static pages
+        at <a href="https://tracing.gnas.dev/">tracing.gnas.dev</a>
+      </li>
+      <li>
+        <strong>GitHub</strong> — optional source hosting and issue tracking if you contact us through
+        the repository
+      </li>
+    </ul>
+
+    <h2>Contact</h2>
+    <p>
+      For questions, support, or deletion help, open an issue at
+      <a href="https://github.com/gnasdev/gn-tracing/issues" target="_blank" rel="noreferrer">
+        https://github.com/gnasdev/gn-tracing/issues
+      </a>
+      or contact the developer at
+      <a href="mailto:ngosangns@gmail.com">ngosangns@gmail.com</a>.
+    </p>
+    <p>
+      Related: <a href="/terms/">Terms of Service</a>.
+    </p>
+  </main>
+
+  <footer class="legal-footer">
+    <div class="legal-footer-inner">
+      <span>© 2026 GN Tracing</span>
+      <span>
+        <a href="/privacy/">Privacy</a>
+        ·
+        <a href="/terms/">Terms</a>
+        ·
+        <a href="/">Player</a>
+      </span>
+    </div>
+  </footer>
+</body>
+</html>

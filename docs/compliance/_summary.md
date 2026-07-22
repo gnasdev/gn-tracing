@@ -12,6 +12,7 @@ related:
   - "../features/extension-surfaces.md"
   - "../shared/data-models.md"
   - "./privacy-policy.md"
+  - "./terms-of-service.md"
   - "./chrome-web-store-submission.md"
 ---
 
@@ -23,7 +24,7 @@ related:
 - Phạm vi: documentation coverage and orphan-risk summary
 - Nguồn code: `src/`, `player/`, `player-standalone/`
 - Tuân thủ: Không áp dụng
-- Links: [Recording Runtime](../modules/recording-runtime.md), [Drive And Player](../modules/drive-and-player.md), [Privacy And Redaction](../modules/privacy-and-redaction.md), [Replay Player](../modules/replay-player.md), [Extension Surfaces](../features/extension-surfaces.md), [Shared Data Models](../shared/data-models.md), [Privacy Policy](./privacy-policy.md), [Chrome Web Store Submission](./chrome-web-store-submission.md)
+- Links: [Recording Runtime](../modules/recording-runtime.md), [Drive And Player](../modules/drive-and-player.md), [Privacy And Redaction](../modules/privacy-and-redaction.md), [Replay Player](../modules/replay-player.md), [Extension Surfaces](../features/extension-surfaces.md), [Shared Data Models](../shared/data-models.md), [Privacy Policy](./privacy-policy.md), [Terms of Service](./terms-of-service.md), [Chrome Web Store Submission](./chrome-web-store-submission.md)
 
 ## Coverage
 
@@ -35,10 +36,13 @@ related:
 - release/deploy flow: covered through `drive-and-player`, `shared/api-conventions`, `_index.md`, and `README.md`
 - shared message/data contracts documented
 - Chrome Web Store readiness docs cover privacy policy language, permission justifications, data usage disclosures, remote code notes, and reviewer test instructions
+- Public legal pages ship with the standalone player:
+  - Privacy Policy: `https://tracing.gnas.dev/privacy/`
+  - Terms of Service: `https://tracing.gnas.dev/terms/`
 
 ## Current Gaps
 
-- privacy policy still needs to be published at a stable public URL before Store submission
+- Google OAuth branding / app verification still depends on Cloud Console review after these public URLs are linked
 
 ## Orphan Risk
 

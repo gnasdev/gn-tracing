@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Terms of Service · GN Tracing</title>
+  <meta name="description" content="Terms of Service for GN Tracing extension, Google Drive uploads, and hosted replay player.">
+  <link rel="canonical" href="https://tracing.gnas.dev/terms/">
+  <link rel="icon" type="image/svg+xml" href="/icons/icon.svg">
+  <link rel="icon" type="image/png" sizes="32x32" href="/icons/icon32.png">
+  <link rel="stylesheet" href="/theme.css">
+  <link rel="stylesheet" href="/legal.css">
+  <script>
+    (() => {
+      var t;
+      try {
+        t = localStorage.getItem("gn_tracing_theme");
+        if (t === "light" || t === "dark") {
+          document.documentElement.setAttribute("data-theme", t);
+        } else if (window.matchMedia?.("(prefers-color-scheme: light)").matches) {
+          document.documentElement.setAttribute("data-theme", "light");
+        } else {
+          document.documentElement.setAttribute("data-theme", "dark");
+        }
+      } catch {
+        document.documentElement.setAttribute("data-theme", "dark");
+      }
+    })();
+  </script>
+</head>
+<body class="legal-page">
+  <header class="legal-header">
+    <div class="legal-header-inner">
+      <a class="legal-brand" href="/">
+        <img src="/icons/icon.svg" alt="" width="28" height="28">
+        <span>GN Tracing</span>
+      </a>
+      <nav class="legal-nav" aria-label="Legal">
+        <a href="/privacy/">Privacy Policy</a>
+        <a href="/terms/" aria-current="page">Terms of Service</a>
+        <a href="https://github.com/gnasdev/gn-tracing" target="_blank" rel="noreferrer">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="legal-main">
+    <header>
+      <span class="legal-eyebrow">Legal</span>
+      <h1>Terms of Service</h1>
+      <p class="legal-updated">Last updated: July 22, 2026</p>
+    </header>
+
+    <p>
+      These Terms of Service (“Terms”) govern your use of GN Tracing, including the browser extension,
+      the hosted replay player at
+      <a href="https://tracing.gnas.dev/">https://tracing.gnas.dev/</a>, and related documentation
+      and services (collectively, the “Service”). By installing, accessing, or using the Service, you
+      agree to these Terms.
+    </p>
+    <p>
+      If you do not agree, do not use the Service.
+    </p>
+
+    <h2>1. The Service</h2>
+    <p>
+      GN Tracing helps users create debugging replays of a browser tab they choose to record. When
+      used as intended, the Service can:
+    </p>
+    <ul>
+      <li>Record tab media and selected debugging artifacts after you start a recording</li>
+      <li>Upload a packaged recording to your Google Drive after you connect your account</li>
+      <li>Generate a shareable replay link that opens in the hosted player</li>
+    </ul>
+    <p>
+      The Service is provided for debugging and collaboration. You are responsible for how you use
+      recordings and who you share replay links with.
+    </p>
+
+    <h2>2. Eligibility And Accounts</h2>
+    <p>
+      You must be able to form a binding agreement and must comply with applicable law. Some features
+      require a Google account and consent to Google OAuth scopes needed for Drive upload. You are
+      responsible for activity under your accounts and for keeping access credentials secure.
+    </p>
+
+    <h2>3. Your Content And Recordings</h2>
+    <p>
+      You retain ownership of content you record or upload through the Service (“Your Content”),
+      including video, logs, network data, and related artifacts.
+    </p>
+    <p>
+      You grant GN Tracing a limited permission to process Your Content solely to operate the
+      Service for you — for example, packaging recordings, uploading them to your Google Drive when
+      requested, and loading link-readable artifacts in the hosted player.
+    </p>
+    <p>
+      You represent that you have the rights and permissions needed to record, upload, and share Your
+      Content, including any third-party material or personal data that may appear in a recording.
+    </p>
+
+    <h2>4. Acceptable Use</h2>
+    <p>You agree not to use the Service to:</p>
+    <ul>
+      <li>Violate law, regulation, or third-party rights (including privacy and intellectual property)</li>
+      <li>Record or share content you are not authorized to capture or disclose</li>
+      <li>Attempt unauthorized access to systems, accounts, or data</li>
+      <li>Abuse Google APIs, Drive quotas, or the hosted player infrastructure</li>
+      <li>Interfere with or disrupt the Service or other users</li>
+      <li>Misrepresent the source or ownership of recordings</li>
+    </ul>
+    <p class="legal-note">
+      Recording pages that contain secrets, credentials, personal data, or confidential business
+      information can expose that information to anyone with the replay link unless you protect and
+      share carefully. Review the <a href="/privacy/">Privacy Policy</a> before sharing.
+    </p>
+
+    <h2>5. Google Drive And Third-Party Services</h2>
+    <p>
+      Drive upload and OAuth sign-in depend on Google services. Hosting for the public player may
+      depend on Cloudflare and other infrastructure providers. Your use of third-party services is
+      also subject to their terms and policies. GN Tracing does not control Google Drive permissions
+      beyond the scopes and behaviors described in the Privacy Policy.
+    </p>
+    <p>
+      Uploaded packages are stored in <strong>your</strong> Google Drive. Link-readable sharing is
+      used so replay URLs work; you are responsible for managing, restricting, or deleting shared
+      files in Drive.
+    </p>
+
+    <h2>6. Open Source Software</h2>
+    <p>
+      Parts of GN Tracing are released under open-source licenses, including GPL-3.0-or-later for the
+      project source as published on GitHub. Open-source license terms apply to the corresponding
+      source code. These Terms do not limit rights you already have under applicable open-source
+      licenses for that code.
+    </p>
+
+    <h2>7. Intellectual Property</h2>
+    <p>
+      Except for Your Content and third-party materials, the Service’s branding, documentation, and
+      non-open-source materials are owned by the GN Tracing authors or their licensors. You may not
+      use GN Tracing branding in a way that implies endorsement without permission.
+    </p>
+
+    <h2>8. Privacy</h2>
+    <p>
+      Our collection and use of information is described in the
+      <a href="/privacy/">Privacy Policy</a>. By using the Service, you acknowledge that policy.
+    </p>
+
+    <h2>9. Disclaimers</h2>
+    <p>
+      THE SERVICE IS PROVIDED “AS IS” AND “AS AVAILABLE.” TO THE MAXIMUM EXTENT PERMITTED BY LAW,
+      WE DISCLAIM ALL WARRANTIES, WHETHER EXPRESS, IMPLIED, OR STATUTORY, INCLUDING MERCHANTABILITY,
+      FITNESS FOR A PARTICULAR PURPOSE, TITLE, AND NON-INFRINGEMENT.
+    </p>
+    <p>
+      We do not warrant that recordings will be complete, accurate, uninterrupted, secure, or free of
+      errors, or that the Service will meet your debugging or compliance requirements.
+    </p>
+
+    <h2>10. Limitation Of Liability</h2>
+    <p>
+      TO THE MAXIMUM EXTENT PERMITTED BY LAW, THE GN TRACING AUTHORS AND CONTRIBUTORS WILL NOT BE
+      LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, EXEMPLARY, OR PUNITIVE DAMAGES, OR
+      ANY LOSS OF DATA, PROFITS, GOODWILL, OR BUSINESS OPPORTUNITY, ARISING OUT OF OR RELATED TO YOUR
+      USE OF THE SERVICE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.
+    </p>
+    <p>
+      TO THE MAXIMUM EXTENT PERMITTED BY LAW, OUR TOTAL LIABILITY FOR ANY CLAIM ARISING OUT OF OR
+      RELATED TO THE SERVICE IS LIMITED TO THE GREATER OF (A) THE AMOUNTS YOU PAID US FOR THE SERVICE
+      IN THE 12 MONTHS BEFORE THE CLAIM OR (B) ZERO IF THE SERVICE IS PROVIDED FREE OF CHARGE.
+    </p>
+
+    <h2>11. Indemnity</h2>
+    <p>
+      You will defend and indemnify the GN Tracing authors and contributors against claims, damages,
+      losses, and expenses (including reasonable legal fees) arising from Your Content, your use of
+      the Service, or your violation of these Terms or applicable law.
+    </p>
+
+    <h2>12. Changes And Termination</h2>
+    <p>
+      We may update these Terms from time to time. The “Last updated” date at the top will change
+      when we do. Continued use after changes become effective constitutes acceptance of the updated
+      Terms.
+    </p>
+    <p>
+      We may suspend or discontinue the Service, or your access to parts of it, at any time. You may
+      stop using the Service at any time by uninstalling the extension and deleting uploaded files
+      from your Google Drive as needed.
+    </p>
+
+    <h2>13. Governing Law</h2>
+    <p>
+      These Terms are governed by the laws applicable in the jurisdiction where the primary
+      maintainer operates, without regard to conflict-of-law rules, unless mandatory consumer
+      protections in your country require otherwise. Courts in that jurisdiction will have exclusive
+      venue for disputes that cannot be resolved informally, subject to mandatory local law.
+    </p>
+
+    <h2>14. Contact</h2>
+    <p>
+      Questions about these Terms:
+      <a href="https://github.com/gnasdev/gn-tracing/issues" target="_blank" rel="noreferrer">
+        https://github.com/gnasdev/gn-tracing/issues
+      </a>
+      or
+      <a href="mailto:ngosangns@gmail.com">ngosangns@gmail.com</a>.
+    </p>
+    <p>
+      Related: <a href="/privacy/">Privacy Policy</a>.
+    </p>
+  </main>
+
+  <footer class="legal-footer">
+    <div class="legal-footer-inner">
+      <span>© 2026 GN Tracing</span>
+      <span>
+        <a href="/privacy/">Privacy</a>
+        ·
+        <a href="/terms/">Terms</a>
+        ·
+        <a href="/">Player</a>
+      </span>
+    </div>
+  </footer>
+</body>
+</html>

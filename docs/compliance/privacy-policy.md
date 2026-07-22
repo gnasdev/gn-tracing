@@ -22,7 +22,15 @@ related:
 - Phạm vi: public privacy policy language for capture, upload, replay, Google Drive access, storage, deletion, and sharing behavior
 - Nguồn code: `src/background/cdp-manager.ts`, `src/background/service-worker.ts`, `src/offscreen/offscreen.ts`, `src/types/recording.ts`
 - Tuân thủ: Google API Limited Use, Chrome Web Store data-use disclosure
-- Links: [Chrome Web Store Submission](./chrome-web-store-submission.md), [Recording Runtime](../modules/recording-runtime.md), [Drive And Player](../modules/drive-and-player.md), [Privacy And Redaction](../modules/privacy-and-redaction.md), [Replay Player](../modules/replay-player.md), [Extension Surfaces](../features/extension-surfaces.md), [Shared Data Models](../shared/data-models.md)
+- Links: [Chrome Web Store Submission](./chrome-web-store-submission.md), [Terms of Service](./terms-of-service.md), [Recording Runtime](../modules/recording-runtime.md), [Drive And Player](../modules/drive-and-player.md), [Privacy And Redaction](../modules/privacy-and-redaction.md), [Replay Player](../modules/replay-player.md), [Extension Surfaces](../features/extension-surfaces.md), [Shared Data Models](../shared/data-models.md)
+
+## Public URL
+
+- Production: `https://tracing.gnas.dev/privacy/`
+- Alternate clean path: `https://tracing.gnas.dev/privacy`
+
+The canonical HTML page is deployed with the standalone player on Cloudflare Pages
+(`player-standalone/public/privacy/index.html`). Keep that page aligned with the language below.
 
 GN Tracing is a browser debugging extension that records a tab when the user explicitly starts a recording. It is designed to help users create a replayable bug report that includes the screen recording and selected debugging artifacts from that tab.
 
@@ -77,4 +85,4 @@ GN Tracing's use and transfer of information received from Google APIs adheres t
 
 ## Contact
 
-For questions, support, or deletion help, open an issue at `https://github.com/gnasdev/gn-tracing/issues`.
+For questions, support, or deletion help, open an issue at `https://github.com/gnasdev/gn-tracing/issues` or contact `ngosangns@gmail.com`.
