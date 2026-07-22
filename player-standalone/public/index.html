@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!--
+    Pure static product homepage for Google OAuth branding verification.
+    No external CSS that can hide content. App name must match consent screen
+    exactly: "GN Tracing".
+  -->
+  <title>GN Tracing</title>
+  <meta name="description" content="GN Tracing is a browser debugging extension that records a user-selected browser tab, captures video and debugging artifacts, uploads the package to the user's Google Drive, and opens a shareable session replay.">
+  <meta name="application-name" content="GN Tracing">
+  <meta name="apple-mobile-web-app-title" content="GN Tracing">
+  <meta name="robots" content="index,follow">
+  <meta property="og:site_name" content="GN Tracing">
+  <meta property="og:title" content="GN Tracing">
+  <meta property="og:description" content="GN Tracing records browser tabs for debugging, uploads packages to Google Drive, and replays sessions with video, console, network, and WebSocket data.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://tracing.gnas.dev/">
+  <link rel="canonical" href="https://tracing.gnas.dev/">
+  <link rel="icon" type="image/svg+xml" href="/icons/icon.svg">
+  <link rel="icon" type="image/png" sizes="32x32" href="/icons/icon32.png">
+  <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "GN Tracing",
+      "applicationCategory": "BrowserApplication",
+      "operatingSystem": "Chrome, Chromium, Edge, Brave",
+      "url": "https://tracing.gnas.dev/",
+      "description": "GN Tracing is a browser debugging extension that records a user-selected browser tab, captures video and debugging artifacts, uploads the package to the user's Google Drive, and opens a shareable session replay.",
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    }
+  </script>
+  <style>
+    /* Inline styles only — never hide content for crawlers */
+    :root {
+      color-scheme: light;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.65;
+      color: #111827;
+      background: #ffffff;
+    }
+    .wrap {
+      width: min(820px, calc(100% - 2rem));
+      margin: 0 auto;
+      padding: 2.5rem 0 4rem;
+    }
+    header {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+      padding-bottom: 1.25rem;
+      border-bottom: 1px solid #e5e7eb;
+    }
+    header img {
+      width: 56px;
+      height: 56px;
+      border-radius: 12px;
+    }
+    h1 {
+      margin: 0;
+      font-size: clamp(2rem, 4vw, 2.75rem);
+      line-height: 1.15;
+      letter-spacing: -0.03em;
+      color: #0f172a;
+    }
+    .subtitle {
+      margin: 0.35rem 0 0;
+      color: #475569;
+      font-size: 1.05rem;
+    }
+    h2 {
+      margin: 1.75rem 0 0.65rem;
+      font-size: 1.25rem;
+      color: #0f172a;
+    }
+    p, li {
+      color: #334155;
+      font-size: 1.02rem;
+    }
+    p { margin: 0 0 0.9rem; }
+    ul, ol {
+      margin: 0 0 1rem;
+      padding-left: 1.25rem;
+    }
+    li + li { margin-top: 0.4rem; }
+    strong { color: #0f172a; }
+    a { color: #1d4ed8; }
+    a:hover { color: #1e40af; }
+    .panel {
+      margin: 1.25rem 0;
+      padding: 1rem 1.1rem;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      background: #f8fafc;
+    }
+    .links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem 1.25rem;
+      margin-top: 1.5rem;
+      padding-top: 1.25rem;
+      border-top: 1px solid #e5e7eb;
+    }
+    .links a {
+      font-weight: 600;
+      text-decoration: none;
+    }
+    .links a:hover { text-decoration: underline; }
+    footer {
+      margin-top: 2rem;
+      color: #64748b;
+      font-size: 0.95rem;
+    }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <header>
+      <img src="/icons/icon.svg" width="56" height="56" alt="GN Tracing logo">
+      <div>
+        <!-- Exact OAuth consent-screen app name -->
+        <h1>GN Tracing</h1>
+        <p class="subtitle">Browser debugging extension and session replay</p>
+      </div>
+    </header>
+
+    <section aria-labelledby="purpose-heading">
+      <h2 id="purpose-heading">Purpose of GN Tracing</h2>
+      <p>
+        The purpose of <strong>GN Tracing</strong> is to help developers and QA create shareable
+        debugging reports from a real browser session.
+      </p>
+      <p>
+        <strong>GN Tracing</strong> records a user-selected browser tab on demand, captures tab
+        video and debugging artifacts (such as console logs, network activity, and related session
+        data), packages that evidence for review, uploads the package to the user’s own Google Drive
+        after the user connects Drive, and opens a shareable hosted replay so teammates can inspect
+        what happened without reproducing the bug locally.
+      </p>
+      <div class="panel">
+        <p style="margin:0">
+          <strong>GN Tracing</strong> does not run continuous background surveillance. Recording
+          starts only when the user clicks record in the extension popup and stops when the user
+          stops recording or closes the recorded tab.
+        </p>
+      </div>
+    </section>
+
+    <section aria-labelledby="what-heading">
+      <h2 id="what-heading">What GN Tracing does</h2>
+      <ul>
+        <li>Records tab video and optional tab audio from a tab the user chooses</li>
+        <li>Captures console logs, network requests, and WebSocket activity for debugging</li>
+        <li>Applies client-side redaction based on the user’s privacy settings</li>
+        <li>Uploads a recording package to the user’s Google Drive</li>
+        <li>Generates a shareable replay link on this website</li>
+      </ul>
+    </section>
+
+    <section aria-labelledby="how-heading">
+      <h2 id="how-heading">How to use GN Tracing</h2>
+      <ol>
+        <li>Install the <strong>GN Tracing</strong> browser extension.</li>
+        <li>Connect Google Drive in the extension popup (limited Drive file access).</li>
+        <li>Start recording the tab you want to debug, then stop when finished.</li>
+        <li>Upload the package to Drive and open the generated replay URL.</li>
+      </ol>
+    </section>
+
+    <section aria-labelledby="drive-heading">
+      <h2 id="drive-heading">How GN Tracing uses Google Drive</h2>
+      <p>
+        <strong>GN Tracing</strong> requests the Google Drive <code>drive.file</code> scope only. It
+        creates and accesses files that <strong>GN Tracing</strong> creates or that the user opens
+        with the app. It does not request full access to every file in the user’s Google Drive.
+      </p>
+      <p>
+        Uploaded replay packages are stored in the user’s Drive and may be made readable by link so
+        shared replay URLs work. Users control deletion of those files in Google Drive.
+      </p>
+    </section>
+
+    <section aria-labelledby="site-heading">
+      <h2 id="site-heading">This website</h2>
+      <p>
+        <strong>https://tracing.gnas.dev/</strong> is the public homepage for the
+        <strong>GN Tracing</strong> application. It also hosts the session replay player used when
+        someone opens a recording link generated by the extension.
+      </p>
+    </section>
+
+    <nav class="links" aria-label="Legal and project links">
+      <a href="https://tracing.gnas.dev/privacy/">Privacy Policy</a>
+      <a href="https://tracing.gnas.dev/terms/">Terms of Service</a>
+      <a href="https://github.com/gnasdev/gn-tracing">GN Tracing on GitHub</a>
+    </nav>
+
+    <footer>
+      <p>
+        Application name: <strong>GN Tracing</strong>.
+        Contact:
+        <a href="https://github.com/gnasdev/gn-tracing/issues">GitHub Issues</a>
+        or
+        <a href="mailto:ngosangns@gmail.com">ngosangns@gmail.com</a>.
+      </p>
+    </footer>
+  </main>
+</body>
+</html>

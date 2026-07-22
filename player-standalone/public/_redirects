@@ -3,4 +3,6 @@
 /privacy/  /privacy/index.html  200
 /terms  /terms/index.html  200
 /terms/  /terms/index.html  200
-/*  /index.html  200
+# Recording IDs and other non-file paths load the player SPA.
+# Static files (including / and /index.html) take precedence over this rule.
+/*  /replay.html  200

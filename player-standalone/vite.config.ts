@@ -226,14 +226,57 @@ function createDriveProxyMiddleware(): Connect.NextHandleFunction {
 
 const driveProxyMiddleware = createDriveProxyMiddleware();
 
+function shouldRewriteToReplay(urlPath: string): boolean {
+  if (!urlPath || urlPath === "/") return false;
+  if (
+    urlPath.startsWith("/api/") ||
+    urlPath.startsWith("/src/") ||
+    urlPath.startsWith("/@") ||
+    urlPath.startsWith("/node_modules/") ||
+    urlPath.startsWith("/icons/") ||
+    urlPath.startsWith("/vendor/") ||
+    urlPath.startsWith("/assets/") ||
+    urlPath.startsWith("/privacy") ||
+    urlPath.startsWith("/terms") ||
+    urlPath === "/replay.html" ||
+    urlPath === "/player.js" ||
+    urlPath === "/player.css" ||
+    urlPath === "/theme.css" ||
+    urlPath === "/theme-init.js" ||
+    urlPath === "/legal.css"
+  ) {
+    return false;
+  }
+  // Paths with a file extension are static assets.
+  const last = urlPath.split("/").pop() || "";
+  if (last.includes(".")) return false;
+  return true;
+}
+
+function replaySpaFallbackMiddleware(): Connect.NextHandleFunction {
+  return (req, _res, next) => {
+    if (!req.url || req.method !== "GET") {
+      next();
+      return;
+    }
+    const urlPath = req.url.split("?")[0] || "";
+    if (shouldRewriteToReplay(urlPath)) {
+      req.url = `/replay.html${req.url.includes("?") ? req.url.slice(req.url.indexOf("?")) : ""}`;
+    }
+    next();
+  };
+}
+
 function driveProxyPlugin() {
   return {
     name: "gn-tracing-drive-proxy",
     configureServer(server: { middlewares: Connect.Server }) {
       server.middlewares.use(driveProxyMiddleware);
+      server.middlewares.use(replaySpaFallbackMiddleware());
     },
     configurePreviewServer(server: { middlewares: Connect.Server }) {
       server.middlewares.use(driveProxyMiddleware);
+      server.middlewares.use(replaySpaFallbackMiddleware());
     },
   };
 }
@@ -246,7 +289,9 @@ export default defineConfig(({ mode }) => ({
     emptyOutDir: true,
     rollupOptions: {
       input: {
-        main: path.resolve(__dirname, "index.html"),
+        // Player SPA. Product homepage is the static public/index.html used for
+        // Google OAuth branding; recording paths rewrite to this entry.
+        replay: path.resolve(__dirname, "replay.html"),
       },
       output: {
         entryFileNames: "assets/[name]-[hash].js",
