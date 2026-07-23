@@ -3,6 +3,7 @@
  */
 
 import { buildExternalPlayerUrl } from "../shared/player-host";
+import { makeWebmSeekable } from "../shared/webm-seek-fix";
 import type { ProgressItemSnapshot, ProgressItemStatus } from "../types/messages";
 
 /**
@@ -911,7 +912,27 @@ async function uploadToGoogleDrive(data: GoogleDriveUploadData): Promise<{
       return result.id;
     };
 
-    const videoParts = splitBlobIntoParts(snapshot.blob, MAX_DRIVE_UPLOAD_BYTES);
+    // MediaRecorder WebM often omits Duration/Cues, so browsers cannot random-seek
+    // until the file has been progressively demuxed. Rebuild seek metadata on the
+    // full blob before byte-splitting so packaged parts reassemble to a seekable file.
+    let packagedVideoBlob = snapshot.blob;
+    try {
+      const seekFix = await makeWebmSeekable(snapshot.blob, {
+        mimeType: snapshot.mimeType,
+      });
+      if (seekFix.ok) {
+        packagedVideoBlob = seekFix.blob;
+        if (seekFix.method === "cues") {
+          console.info("[GN Tracing] Applied WebM cues seek fix for seekable replay");
+        }
+      } else {
+        console.warn("[GN Tracing] WebM seek fix skipped:", seekFix.reason);
+      }
+    } catch (error) {
+      console.warn("[GN Tracing] WebM seek fix failed; uploading original blob:", error);
+    }
+
+    const videoParts = splitBlobIntoParts(packagedVideoBlob, MAX_DRIVE_UPLOAD_BYTES);
     const totalSteps = 3;
     let completedSteps = 0;
     let totalUploadBytes = 0;
@@ -1057,7 +1078,7 @@ async function uploadToGoogleDrive(data: GoogleDriveUploadData): Promise<{
           },
           video: {
             mimeType: snapshot.mimeType,
-            totalBytes: snapshot.blob.size,
+            totalBytes: packagedVideoBlob.size,
             partCount: videoParts.length,
           },
         }),
@@ -1069,7 +1090,7 @@ async function uploadToGoogleDrive(data: GoogleDriveUploadData): Promise<{
       folderId: targetFolderId,
       video: {
         mimeType: snapshot.mimeType,
-        totalBytes: snapshot.blob.size,
+        totalBytes: packagedVideoBlob.size,
         parts: videoDescriptors.map((part) => ({
           name: part.name,
           size: part.size || 0,
@@ -1102,7 +1123,7 @@ async function uploadToGoogleDrive(data: GoogleDriveUploadData): Promise<{
       },
       video: {
         mimeType: snapshot.mimeType,
-        totalBytes: snapshot.blob.size,
+        totalBytes: packagedVideoBlob.size,
         partPaths: videoDescriptors.map((part) => part.name),
       },
     };

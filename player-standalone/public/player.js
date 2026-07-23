@@ -3603,6 +3603,34 @@
     return resolved;
   }
 
+  /**
+   * Make MediaRecorder WebM seekable before playback.
+   * Uses the same contract as src/shared/webm-seek-fix.ts via vendored
+   * window.gnMakeWebmSeekable (cues rewrite only). Fail-open returns the input.
+   * @param {Blob} blob
+   * @param {string} mimeType
+   * @returns {Promise<Blob>}
+   */
+  async function prepareSeekableVideoBlob(blob, mimeType) {
+    const makeSeekable = globalThis.gnMakeWebmSeekable;
+    if (typeof makeSeekable !== "function") {
+      return blob;
+    }
+    try {
+      const result = await makeSeekable(blob, { mimeType });
+      if (result && result.ok && result.blob instanceof Blob) {
+        return result.blob;
+      }
+      if (result && !result.ok) {
+        console.warn("[GN Tracing Player] WebM seek fix skipped:", result.reason);
+      }
+      return blob;
+    } catch (error) {
+      console.warn("[GN Tracing Player] WebM seek fix failed; using original video blob:", error);
+      return blob;
+    }
+  }
+
   async function downloadCombinedBlob(files, mimeType) {
     if (!Array.isArray(files) || files.length === 0) {
       throw new Error("No video parts found");
@@ -3720,10 +3748,13 @@
       await Promise.all([
         // Load video
         recordingFiles.videoParts.length
-          ? downloadCombinedBlob(recordingFiles.videoParts, videoMimeType).then((blob) => {
+          ? downloadCombinedBlob(recordingFiles.videoParts, videoMimeType).then(async (blob) => {
               releaseVideoResources();
-              videoBlob = blob;
-              videoUrl = URL.createObjectURL(blob);
+              // Same cues rewrite as upload packaging (window.gnMakeWebmSeekable).
+              // Fail-open: keep raw blob if vendor missing or fix fails.
+              const playableBlob = await prepareSeekableVideoBlob(blob, videoMimeType);
+              videoBlob = playableBlob;
+              videoUrl = URL.createObjectURL(playableBlob);
               elements.video.src = videoUrl;
             })
           : Promise.resolve(),

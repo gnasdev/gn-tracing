@@ -71,6 +71,8 @@ Wrong or missing passwords stay client-side. The entered password is not placed 
 
 The player downloads the recording package without requiring Drive folder listing for the current URL shape. Video parts are loaded with bounded concurrency and large video blobs skip Cache API storage to avoid first-load memory duplication.
 
+After video parts are combined (and before `URL.createObjectURL`), the player applies the same fail-open WebM seek fix as upload packaging via `window.gnMakeWebmSeekable` (`player/vendor/webm-seek-fix/webm-seek-fix.iife.js`, rebuilt with `npm run vendor:webm-seek`). That API matches `src/shared/webm-seek-fix.ts` and rebuilds SeekHead + Duration + Cues so timeline seeks work without progressive demux.
+
 Extension mode first tries authenticated Drive API media downloads when an OAuth token is available. If auth is unavailable or access failures may still succeed through a link-readable file, the player falls back to the public/proxy download path.
 
 Standalone mode depends on the Cloudflare Pages `/api/drive` function. The function proxies public Drive downloads, preserves range and content headers, resolves Google Drive large-file confirmation pages, rejects unresolved HTML confirmation responses as non-cacheable errors, and advertises one-day cacheability for successful artifact bytes.

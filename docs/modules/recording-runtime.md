@@ -156,6 +156,7 @@ When `captureStorage` is on, `CdpManager` enables `DOMStorage`, snapshots `local
 - captured artifacts are memory-resident only until they are consumed by the current session flow; there is no IndexedDB or file-system persistence in the extension runtime.
 - offscreen audio is looped back to the user through an `AudioContext` so tab audio remains audible during capture.
 - `MediaRecorder` uses VP9+Opus when supported, otherwise VP8+Opus.
+- before packaging, the offscreen upload path runs a fail-open WebM seek fix (`src/shared/webm-seek-fix.ts` via `webm-duration-fix`) on the full recorded blob: a single cues rewrite rebuilds SeekHead + Duration + Cues so Chromium can random-seek. Failure keeps the original blob (`ok: false`) and does not block upload.
 - request/response body capture is configurable, best-effort, and subject to CDP availability plus body size/type settings.
 - sensitive headers are redacted by header-name pattern before network entries are serialized for upload/replay.
 - source previews depend on acquired sourcemaps carrying `sourcesContent`; recordings fall back to generated file/line labels plus frame-level source-map status when a map is missing, CDP cannot load it, the map response is HTML/non-JSON, or no mapping segment matches, and snippet retention follows the configured console source-snippet mode.

@@ -15,7 +15,8 @@
     "check:write": "biome check --write . --files-ignore-unknown=true && npm run docs:check",
     "deadcode": "npx knip --no-progress",
     "docs:check": "node scripts/check-docs.mjs",
-    "store:assets": "node scripts/generate-store-assets.mjs"
+    "store:assets": "node scripts/generate-store-assets.mjs",
+    "vendor:webm-seek": "node scripts/build-webm-seek-vendor.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.15",
@@ -28,5 +29,8 @@
     "sharp": "^0.34.5",
     "typescript": "^5.7.0",
     "vitest": "4.1.9"
+  },
+  "dependencies": {
+    "webm-duration-fix": "^1.0.4"
   }
 }
