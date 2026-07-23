@@ -1,5 +1,11 @@
 version: "3"
 
+# Load root .env for deploy/build tasks so CHROME_EXTENSION_ID, Cloudflare
+# tokens, and GOOGLE_* credentials reach scripts that intentionally do not
+# read the file themselves (worker/deploy.sh, player-standalone/deploy.sh).
+# Missing .env is ignored; CI can still inject process env.
+dotenv: [".env"]
+
 tasks:
   build:
     desc: Build the extension into dist with the development environment.

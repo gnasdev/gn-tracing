@@ -121,6 +121,51 @@ describe("OAuth token proxy - configuration handling", () => {
     expect(body.error).toBe("forbidden_origin");
   });
 
+  // Production pins the Chrome Web Store extension id (public, not a secret).
+  // Regression: a stale allow-list with an old unpacked id must not silently
+  // accept the wrong origin while blocking the store origin.
+  const STORE_EXTENSION_ORIGIN = "chrome-extension://jbhlmonpecgenhinhffclanbbknjlbeh";
+
+  it("accepts the store extension origin when it is on the allow-list", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ error: "invalid_grant", error_description: "Bad Request" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const res = await worker.fetch(
+      makeTokenRequest({ grant_type: "refresh_token", refresh_token: "x" }, STORE_EXTENSION_ORIGIN),
+      makeEnv({ ALLOWED_EXTENSION_ORIGINS: STORE_EXTENSION_ORIGIN }),
+    );
+
+    // Origin allowed → request reaches Google (stubbed); not forbidden_origin.
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).not.toBe("forbidden_origin");
+    expect(body.error).toBe("invalid_grant");
+    expect(fetchSpy).toHaveBeenCalledOnce();
+  });
+
+  it("rejects a non-store extension origin when allow-list is store-only", async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const res = await worker.fetch(
+      makeTokenRequest(
+        { grant_type: "refresh_token", refresh_token: "x" },
+        "chrome-extension://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      ),
+      makeEnv({ ALLOWED_EXTENSION_ORIGINS: STORE_EXTENSION_ORIGIN }),
+    );
+
+    expect(res.status).toBe(403);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("forbidden_origin");
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
   it("rejects an unsupported grant_type with 400", async () => {
     const res = await worker.fetch(makeTokenRequest({ grant_type: "password" }), makeEnv());
 

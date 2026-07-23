@@ -8,10 +8,10 @@
 # Public OAuth client id (same value as root .env GOOGLE_CLIENT_ID).
 GOOGLE_CLIENT_ID=
 
-# Allowed caller origin(s). Use your unpacked extension origin during dev:
-#   chrome-extension://<your-extension-id>
+# Allowed caller origin(s). Prefer the stable store id (matches CHROME_EXTENSION_ID):
+#   chrome-extension://jbhlmonpecgenhinhffclanbbknjlbeh
 # Comma-separated for multiple. Leave empty to allow any chrome-extension://.
-ALLOWED_EXTENSION_ORIGINS=
+ALLOWED_EXTENSION_ORIGINS=chrome-extension://jbhlmonpecgenhinhffclanbbknjlbeh
 
 # OAuth client secret. A dummy value is enough for /health and validation smoke
 # tests; only a real secret completes a real Google token exchange.
