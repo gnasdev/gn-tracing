@@ -24,4 +24,11 @@ graphify-out/
 .claude/
 .codex/
 .agents/
+.serena/
+.cursor/
+.grok/
 AGENTS.md
+
+# Cloudflare Wrangler local state (dev/deploy cache)
+.wrangler/
+**/.wrangler/
