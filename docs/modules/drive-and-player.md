@@ -137,7 +137,7 @@ Replay inspection behavior, package parsing, password prompts, and standalone Dr
 - console and network details render source-map diagnostic messages from frame-level `sourceMapStatus` first, then fall back to `diagnostics.json` when capture attempted to load a map but the stored frame still has only generated coordinates.
 - player source-map messages include HTML/non-JSON source-map responses, missing frame ids, HTTP load failures, missing generated lines, and loaded maps without matching generated columns.
 - HTML preview uses a sandboxed iframe, media preview uses inline data URLs when captured payloads are base64-backed, and request/response JSON preview is shown only after body text validates as JSON.
-- player `document.title` derives a short label from metadata URL plus recording timestamp, while the visible topbar stays as the GN Tracing app logo and title.
+- player `document.title` uses `GN Tracing - <short description>` (report title preferred, else metadata URL plus recording timestamp); the visible topbar stays as the GN Tracing app logo and title.
 - when `report.json` is available, the player prefers the report title and renders report/environment details above the video while preserving the metadata-derived title fallback for older packages.
 - player timeline markers include both log evidence and user-event entries; clicking a report event row seeks the video to that relative timestamp when available.
 - optional report, event, diagnostic, and screenshot artifacts are tolerant loads: missing or corrupt optional artifacts are warned/skipped without breaking video/log replay.

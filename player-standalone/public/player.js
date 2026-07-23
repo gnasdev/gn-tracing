@@ -624,7 +624,8 @@
       elements.playerTitle.title = PLAYER_BRAND_TITLE;
     }
 
-    document.title = label ? `${label} | ${DEFAULT_PLAYER_TITLE}` : DEFAULT_PLAYER_TITLE;
+    // Tab title: brand first, then short description after a dash.
+    document.title = label ? `${DEFAULT_PLAYER_TITLE} - ${label}` : DEFAULT_PLAYER_TITLE;
   }
 
   function getDisplayUrl(url) {
