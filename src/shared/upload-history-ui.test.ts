@@ -61,7 +61,7 @@ describe("renderUploadHistoryList open-remote", () => {
 
 describe("handleUploadHistoryAction open-remote", () => {
   function makeButton(attrs: Record<string, string>): HTMLElement {
-    const all = { "data-action": "open-remote", ...attrs };
+    const all: Record<string, string> = { "data-action": "open-remote", ...attrs };
     const el = {
       getAttribute(name: string) {
         return all[name] ?? null;
