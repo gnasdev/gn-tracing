@@ -1,7 +1,9 @@
 /**
  * Controls the standalone Google Drive auth confirmation page.
  */
+import { attachPageNav } from "../shared/page-nav";
 import { attachThemeToggle } from "../shared/theme";
+import { attachLanguageSwitch, type UiLanguage } from "../shared/ui-language";
 import type { MessageResponse } from "../types/messages";
 
 /**
@@ -23,13 +25,10 @@ const retryBtn = document.getElementById("retry-btn") as HTMLButtonElement;
 const cancelBtn = document.getElementById("cancel-btn") as HTMLButtonElement;
 const successDetail = document.getElementById("success-detail")!;
 const errorDetail = document.getElementById("error-detail")!;
-const langEnBtn = document.getElementById("lang-en-btn") as HTMLButtonElement;
-const langViBtn = document.getElementById("lang-vi-btn") as HTMLButtonElement;
 
 const SERVICE_STATE_KEY = "gn_tracing_state";
-const LANGUAGE_STORAGE_KEY = "gn_tracing_drive_auth_language";
 
-type Language = "en" | "vi";
+type Language = UiLanguage;
 type DetailKind = "connected" | "authFailed" | "unexpectedError" | "authError";
 
 const TEXT: Record<DetailKind, Record<Language, string>> = {
@@ -51,17 +50,8 @@ const TEXT: Record<DetailKind, Record<Language, string>> = {
   },
 };
 
-let currentLanguage: Language = getInitialLanguage();
+let currentLanguage: Language = "en";
 let currentErrorMessage: string | null = null;
-
-function getInitialLanguage(): Language {
-  const savedLanguage = window.localStorage.getItem(LANGUAGE_STORAGE_KEY);
-  if (savedLanguage === "en" || savedLanguage === "vi") {
-    return savedLanguage;
-  }
-
-  return navigator.language.toLowerCase().startsWith("vi") ? "vi" : "en";
-}
 
 function translate(kind: DetailKind): string {
   return TEXT[kind][currentLanguage];
@@ -81,15 +71,6 @@ function applyTranslations(): void {
     currentLanguage === "vi"
       ? "Kết nối Google Drive - GN Tracing"
       : "Connect Google Drive - GN Tracing";
-
-  langEnBtn.classList.toggle("active", currentLanguage === "en");
-  langViBtn.classList.toggle("active", currentLanguage === "vi");
-}
-
-function setLanguage(language: Language): void {
-  currentLanguage = language;
-  window.localStorage.setItem(LANGUAGE_STORAGE_KEY, language);
-  applyTranslations();
 
   if (!successState.classList.contains("hidden")) {
     successDetail.textContent = translate("connected");
@@ -168,8 +149,6 @@ connectBtn.addEventListener("click", startAuth);
 closeBtn.addEventListener("click", closeWindow);
 retryBtn.addEventListener("click", () => showState("initial"));
 cancelBtn.addEventListener("click", closeWindow);
-langEnBtn.addEventListener("click", () => setLanguage("en"));
-langViBtn.addEventListener("click", () => setLanguage("vi"));
 
 // Check if already connected on load
 async function checkStatus() {
@@ -196,7 +175,13 @@ chrome.storage.session.onChanged.addListener((changes) => {
 });
 
 attachThemeToggle("theme-toggle-btn", "theme-toggle-icon");
+attachPageNav({ current: "connect" });
 
-// Check status when page loads
+currentLanguage = attachLanguageSwitch({
+  onChange: (language) => {
+    currentLanguage = language;
+    applyTranslations();
+  },
+});
 applyTranslations();
-checkStatus();
+void checkStatus();

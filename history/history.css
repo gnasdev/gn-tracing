@@ -1,4 +1,7 @@
-/* Styles the full-page upload history surface used by the extension. */
+/* Full-page upload history surface. Shared tokens, shell, page hero,
+   and history-item styles come from shared/theme.css; this file only
+   owns page-specific overrides. */
+
 html.history-root {
   width: auto;
   min-width: 0;
@@ -6,255 +9,88 @@ html.history-root {
 
 body.history-page {
   width: auto;
-  min-height: 100vh;
-  background: var(--gradient-hero);
-}
-
-body.history-page #app.history-app {
-  max-width: 1040px;
-  margin: 0 auto;
-  min-height: 100vh;
-  max-height: none;
-  overflow: visible;
-  padding: 32px 20px 56px;
+  min-height: 100dvh;
+  margin: 0;
   display: flex;
   flex-direction: column;
-  gap: 20px;
-}
-
-.history-hero {
-  display: flex;
-  justify-content: space-between;
-  gap: 24px;
-  align-items: flex-end;
-  padding: 28px 30px;
-  border: 1px solid var(--border-default);
-  border-radius: 16px;
-  background: var(--glass-bg);
-  box-shadow: var(--shadow-lg);
-  backdrop-filter: var(--glass-blur);
-}
-
-.history-hero-copy {
-  max-width: 680px;
-}
-
-.history-hero-actions {
-  display: flex;
-  align-items: flex-end;
-  gap: 12px;
-}
-
-.history-title {
-  margin: 0;
+  background: var(--bg-base);
   color: var(--text-primary);
-  font-size: 32px;
-  line-height: 1.08;
-  letter-spacing: 0;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
 }
 
-.history-lead {
-  margin-top: 10px;
-  color: var(--text-secondary);
-  font-size: 14px;
-  line-height: 1.5;
+/* Layout/max-width owned by .gn-page / .gn-page-inner in theme.css */
+.history-app {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
+/* ---------- Hero stats (right side of shared .gn-page-hero) ---------- */
 .history-hero-stats {
-  min-width: 156px;
-  padding: 16px 18px;
-  border-radius: 12px;
-  border: 1px solid var(--border-subtle);
-  background: var(--bg-card);
+  text-align: right;
+}
+
+#history-count {
+  font-family: var(--font-mono);
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
 }
 
 .history-stat-label {
-  color: var(--text-muted);
   font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-}
-
-.history-stat-value {
-  margin-top: 8px;
-  color: var(--text-primary);
-  font-size: 32px;
-  line-height: 1;
   font-weight: 700;
-  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
 }
 
+/* ---------- Panel ---------- */
 .history-panel {
+  padding: 16px 18px;
   border: 1px solid var(--border-default);
-  border-radius: 16px;
-  padding: 22px;
-  background: var(--glass-bg);
-  box-shadow: var(--shadow-lg);
-  backdrop-filter: var(--glass-blur);
+  border-radius: var(--radius-lg);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-md);
 }
 
 .history-panel-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 16px;
-  margin-bottom: 18px;
+  margin-bottom: 12px;
 }
 
 .history-panel-title {
-  margin: 0 0 6px;
-  color: var(--text-primary);
-  font-size: 16px;
+  margin: 0;
+  font-size: 15px;
   font-weight: 700;
+  color: var(--text-primary);
 }
 
 .history-summary {
-  color: var(--text-muted);
-  font-size: 13px;
-  line-height: 1.5;
-  margin: 0;
-}
-
-.history-feedback {
-  min-height: 40px;
-}
-
-#upload-history-section {
-  border-top: 1px solid var(--border-subtle);
-  padding-top: 18px;
-}
-
-body.history-page .history-list {
-  gap: 10px;
-}
-
-body.history-page .history-item {
-  padding: 16px;
-  gap: 12px;
-  border: 1px solid var(--border-subtle);
-  border-radius: 12px;
-  background: var(--bg-card);
-  transition:
-    transform 150ms ease,
-    border-color 150ms ease,
-    background 150ms ease,
-    box-shadow 150ms ease;
-}
-
-body.history-page .history-item:hover {
-  transform: translateY(-1px);
-  border-color: var(--border-hover);
-  background: var(--bg-card-hover);
-  box-shadow: var(--shadow-sm);
-}
-
-body.history-page .history-item-title {
-  font-size: 14px;
-  line-height: 1.35;
-  color: var(--text-primary);
-}
-
-body.history-page .history-item-meta {
+  margin: 2px 0 0;
   font-size: 12px;
-  color: var(--text-muted);
+  font-weight: 500;
+  color: var(--text-secondary);
 }
 
-body.history-page .history-item-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  justify-content: flex-end;
+/* Wider rows than the popup variant (theme.css default is 10px 12px) */
+body.history-page .history-item {
+  padding: 11px 13px;
+  background: var(--bg-elevated);
 }
 
-body.history-page .history-item-actions button {
-  flex: 0 0 auto;
+/* ---------- Feedback slot (#error-msg itself is styled by id in theme.css) ---------- */
+#error-slot {
+  margin-top: 0;
 }
 
-body.history-page .history-icon-button {
-  width: 34px;
-  height: 34px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--border-input);
-  border-radius: 8px;
-  background: var(--bg-input);
-  color: var(--text-primary);
-  transition:
-    border-color 150ms ease,
-    background 150ms ease,
-    color 150ms ease,
-    transform 80ms ease;
-}
-
-body.history-page .history-icon-button:hover:not(:disabled) {
-  border-color: var(--border-input-hover);
-  background: var(--bg-input-hover);
-}
-
-body.history-page .history-icon-button:active:not(:disabled) {
-  transform: scale(0.95);
-}
-
-body.history-page .history-icon-button:focus-visible {
-  outline: 2px solid var(--accent-muted);
-  outline-offset: 3px;
-}
-
-body.history-page .history-icon-button[data-action="delete-history"] {
-  color: var(--danger-soft);
-}
-
-body.history-page .history-icon-button[data-action="delete-history"]:hover:not(:disabled) {
-  border-color: var(--danger);
-  background: var(--bg-danger-soft);
-}
-
-body.history-page .history-empty {
-  padding: 24px;
-  border: 1px dashed var(--border-default);
-  border-radius: 12px;
-  color: var(--text-muted);
-  background: var(--bg-card);
-  text-align: center;
-}
-
-@media (max-width: 720px) {
-  body.history-page #app.history-app {
-    padding: 20px 14px 32px;
-  }
-
-  .history-hero {
-    padding: 22px 18px;
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .history-hero-actions {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
+@media (max-width: 560px) {
   .history-hero-stats {
-    min-width: 0;
-  }
-
-  .history-panel {
-    padding: 18px;
-    border-radius: 20px;
-  }
-
-  .history-panel-header {
-    margin-bottom: 14px;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.01ms;
-    animation-iteration-count: 1;
-    transition-duration: 0.01ms;
+    text-align: left;
   }
 }

@@ -46,11 +46,9 @@ if (!manifest.minimum_chrome_version) {
 }
 
 // Store package needs:
-// - api.github.com: popup update checks against GitHub Releases
 // - oauth2.googleapis.com + www.googleapis.com: PKCE token exchange/refresh and Drive API
 // - optional one https origin: GOOGLE_TOKEN_PROXY_URL Worker (Web OAuth client secret)
 const allowedHostPermissions = new Set([
-  "https://api.github.com/",
   "https://oauth2.googleapis.com/",
   "https://www.googleapis.com/",
 ]);
@@ -62,7 +60,7 @@ const extraHostPermissions = hostPermissions.filter(
 if (extraHostPermissions.length > 1) {
   fail(
     `unexpected host_permissions found: ${extraHostPermissions.join(", ")} ` +
-      `(at most one OAuth token proxy origin is allowed beyond Google/GitHub hosts)`,
+      `(at most one OAuth token proxy origin is allowed beyond Google hosts)`,
   );
 }
 

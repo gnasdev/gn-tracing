@@ -36,7 +36,6 @@ import type {
 const GITHUB_REPO_URL = "https://github.com/gnasdev/gn-tracing";
 const GITHUB_ISSUES_URL = `${GITHUB_REPO_URL}/issues`;
 const SERVICE_STATE_KEY = "gn_tracing_state";
-const RELOAD_TOAST_KEY = "gn_tracing_reload_toast";
 const MIRRORED_DRIVE_CONNECTED_KEY = "gn_tracing_google_drive_connected";
 
 const recordingActions = document.getElementById("recording-actions")!;
@@ -47,10 +46,7 @@ const drawingSection = document.getElementById("drawing-section")!;
 const drawColorSwatches = document.getElementById("draw-color-swatches")!;
 const drawColorInput = document.getElementById("draw-color-input") as HTMLInputElement;
 const recordingUnavailableMsg = document.getElementById("recording-unavailable-msg")!;
-const reloadBtn = document.getElementById("reload-btn") as HTMLButtonElement;
-const checkUpdateBtn = document.getElementById("check-update-btn") as HTMLButtonElement;
 const settingsPageBtn = document.getElementById("settings-page-btn") as HTMLButtonElement;
-const updateAvailableBadge = document.getElementById("update-available-badge")!;
 const mainGoogleDriveSlot = document.getElementById("main-google-drive-slot")!;
 const connectedGoogleDriveSlot = document.getElementById("connected-google-drive-slot")!;
 const statusBar = document.getElementById("status-bar")!;
@@ -91,7 +87,6 @@ const pendingDeletedHistoryIds = new Set<string>();
 const animatingUploadHistoryIds = new Set<string>();
 const uploadHistoryAnimationTimeouts = new Map<string, ReturnType<typeof setTimeout>>();
 let isUploadHistoryAnimationReady = false;
-let activeUpdateCheckRequestId: string | null = null;
 let latestPopupState: PopupState | null = null;
 let activeTabRecordingError: string | null = "Checking whether this tab can be recorded.";
 let toggleActionInFlight = false;
@@ -269,83 +264,6 @@ function hideToast(): void {
   if (toastTimeout) {
     clearTimeout(toastTimeout);
     toastTimeout = null;
-  }
-}
-
-function setUpdateAvailableBadge(isAvailable: boolean, latestVersion?: string): void {
-  updateAvailableBadge.classList.toggle("hidden", !isAvailable);
-  checkUpdateBtn.classList.toggle("has-update", isAvailable);
-  const label =
-    isAvailable && latestVersion
-      ? `Check for update. Version ${latestVersion} is available.`
-      : "Check for update";
-  checkUpdateBtn.setAttribute("aria-label", label);
-  checkUpdateBtn.setAttribute("title", label);
-}
-
-function setUpdateCheckLoading(isLoading: boolean): void {
-  checkUpdateBtn.classList.toggle("is-loading", isLoading);
-  checkUpdateBtn.disabled = isLoading;
-  checkUpdateBtn.setAttribute("aria-busy", String(isLoading));
-}
-
-function finishManualUpdateCheck(): void {
-  activeUpdateCheckRequestId = null;
-  setUpdateCheckLoading(false);
-}
-
-function checkForUpdate(options: { notifyAlways?: boolean } = {}): void {
-  const requestId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  const notifyAlways = Boolean(options.notifyAlways);
-  if (options.notifyAlways) {
-    activeUpdateCheckRequestId = requestId;
-    setUpdateCheckLoading(true);
-  }
-
-  // Keep update checks on the request/response channel so MV3 does not drop a
-  // fire-and-forget fetch when the service worker becomes idle.
-  void chrome.runtime
-    .sendMessage({
-      action: "CHECK_FOR_UPDATE",
-    })
-    .then((result: MessageResponse) => {
-      handleUpdateCheckResult(result, requestId, notifyAlways);
-    })
-    .catch((error: Error) => {
-      if (activeUpdateCheckRequestId === requestId) {
-        finishManualUpdateCheck();
-      }
-      if (notifyAlways) {
-        showToast(error.message || "Failed to check for updates.", 3600, { variant: "error" });
-      }
-    });
-}
-
-function handleUpdateCheckResult(
-  result: MessageResponse,
-  requestId: string,
-  notifyAlways: boolean,
-): void {
-  if (activeUpdateCheckRequestId === requestId) {
-    finishManualUpdateCheck();
-  }
-
-  if (!result.ok) {
-    if (notifyAlways) {
-      showToast(result.error || "Failed to check for updates.", 3600, { variant: "error" });
-    }
-    return;
-  }
-
-  setUpdateAvailableBadge(Boolean(result.update?.isUpdateAvailable), result.update?.latestVersion);
-
-  if (result.update?.isUpdateAvailable || notifyAlways) {
-    const hasUpdate = Boolean(result.update?.isUpdateAvailable);
-    showToast(result.message || "Update check complete.", hasUpdate ? 6000 : 1800, {
-      variant: hasUpdate ? "info" : "success",
-      linkUrl: hasUpdate ? result.update?.downloadUrl : undefined,
-      linkLabel: "Download",
-    });
   }
 }
 
@@ -702,10 +620,12 @@ function updateGoogleDriveUI(isConnected: boolean): void {
 
   if (isConnected) {
     googleDriveStatus.textContent = "Connected";
+    googleDriveStatus.classList.add("is-connected");
     googleDriveConnectBtn.classList.add("hidden");
     googleDriveDisconnectBtn.classList.remove("hidden");
   } else {
     googleDriveStatus.textContent = "Not connected";
+    googleDriveStatus.classList.remove("is-connected");
     googleDriveConnectBtn.classList.remove("hidden");
     googleDriveDisconnectBtn.classList.add("hidden");
   }
@@ -1143,11 +1063,6 @@ removeRecordingBtn.addEventListener("click", async () => {
   }
 });
 
-reloadBtn.addEventListener("click", () => {
-  window.sessionStorage.setItem(RELOAD_TOAST_KEY, "1");
-  window.location.reload();
-});
-
 toastCloseBtn.addEventListener("click", () => {
   hideToast();
 });
@@ -1159,10 +1074,6 @@ toastLinkEl.addEventListener("click", (event) => {
     openExternalUrl(url);
     hideToast();
   }
-});
-
-checkUpdateBtn.addEventListener("click", () => {
-  checkForUpdate({ notifyAlways: true });
 });
 
 settingsPageBtn.addEventListener("click", openSettingsPage);
@@ -1352,11 +1263,6 @@ chrome.runtime.onMessage.addListener((message: { action?: string; state?: PopupS
 });
 
 async function initPopup(): Promise<void> {
-  if (window.sessionStorage.getItem(RELOAD_TOAST_KEY)) {
-    window.sessionStorage.removeItem(RELOAD_TOAST_KEY);
-    showToast("Popup reloaded.", 1800, { variant: "success" });
-  }
-
   // Paint the auth UI from the local-storage mirror first so the popup does
   // not flash "Not connected" on browser or extension restart, even if the
   // service worker has not finished re-hydrating from `chrome.storage.session`.
@@ -1392,7 +1298,6 @@ async function initPopup(): Promise<void> {
 
   await refreshGoogleDriveStatus();
   await refreshActiveTabRecordingAvailability();
-  checkForUpdate();
 
   const unsubscribe = subscribeToStateChanges((state) => {
     handleStateUpdate(state);

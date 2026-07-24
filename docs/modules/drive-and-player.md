@@ -32,7 +32,7 @@ related:
 - Phạm vi: Google Drive auth, zip package upload, replay URL generation, release packaging, and built-in/standalone player integration
 - Nguồn code: `src/background/google-drive-auth.ts`, `src/drive-auth/drive-auth.ts`, `src/offscreen/offscreen.ts`, `src/shared/player-host.ts`, `player/`, `player-standalone/`
 - Tuân thủ: Không áp dụng
-- Links: [Recording Runtime](./recording-runtime.md), [Privacy And Redaction](./privacy-and-redaction.md), [Replay Player](./replay-player.md), [Extension Surfaces](../features/extension-surfaces.md), [Release And Update Checks](../features/release-and-update-checks.md), [Shared Data Models](../shared/data-models.md), [API Conventions](../shared/api-conventions.md)
+- Links: [Recording Runtime](./recording-runtime.md), [Privacy And Redaction](./privacy-and-redaction.md), [Replay Player](./replay-player.md), [Extension Surfaces](../features/extension-surfaces.md), [Release Packaging](../features/release-and-update-checks.md), [Shared Data Models](../shared/data-models.md), [API Conventions](../shared/api-conventions.md)
 
 ## 1. Overview
 
@@ -96,7 +96,6 @@ Replay inspection behavior, package parsing, password prompts, and standalone Dr
 - player video part downloads use bounded concurrency and skip Cache API storage for large video blobs to avoid first-load memory duplication.
 - extension-hosted player download can use Google Drive API `files.get?alt=media&supportsAllDrives=true` with the in-memory OAuth token returned by `GET_GOOGLE_DRIVE_TOKEN`.
 - standalone player proxies artifact downloads through a same-origin Cloudflare Pages Function at `/api/drive` to avoid browser CORS/CORP failures against public Google Drive download hosts, resolve Drive confirmation pages for large public files when OAuth is unavailable, and prevent unresolved HTML confirmation responses from being cached as replay artifacts.
-- popup update checks use the GitHub Releases API to compare the installed package version with the latest release and discover the versioned extension zip asset.
 
 ## 4. Business Rules
 
@@ -145,7 +144,6 @@ Replay inspection behavior, package parsing, password prompts, and standalone Dr
 - player unlocks password-protected packages by prompting for the recording password, decrypting encrypted ZIP entries in-browser, and then using the same parser path as unprotected packages.
 - opening the player with no query params should render onboarding/help content rather than the invalid-params error; malformed partial query strings still use the error state.
 - popup should provide direct links to the GitHub repository and a contribution surface so users can discover the project and help improve it, while auth status is revalidated on popup open instead of relying only on cached session state.
-- popup should run a lightweight update check on open, provide a manual check action, and only guide the user to a release/download page; it does not self-install extension updates.
 - per-file progress labels should use artifact-level filenames or stable labels so parallel transfers remain debuggable without coupling copy to transient upload ordering.
 - popup should default uploads to `/gn-tracing` and let the user configure a Google Drive parent folder by entering `/folder/path`, pasting a folder id, or pasting a Google Drive folder link; blank or `/` means Drive root.
 - Settings live on a dedicated extension page for Drive folder, zip password, capture profile, and advanced capture controls; the page supports English/Vietnamese labels plus per-field help dialogs for QC/tester users, while the popup keeps quick recording controls and a topbar settings opener.

@@ -43,7 +43,7 @@ A new reader should understand GN Tracing in this order:
 6. Privacy/redaction behavior, capture-depth profiles, and the opt-in `cdp` vs `in-page` capture mode.
 7. Google Drive authentication, folder targeting, package upload, and optional ZIP password semantics.
 8. Replay player modes, package loading, inspection UX, and standalone Drive proxy.
-9. Release packaging, popup update checks, Chrome Web Store disclosure, and privacy compliance.
+9. Release packaging, Chrome Web Store disclosure, and privacy compliance.
 
 ## Runtime Topology
 

@@ -2,8 +2,10 @@
  * Manages the full-page settings surface for Drive, package, and capture controls.
  */
 
+import { attachPageNav } from "../shared/page-nav";
 import { getPrivacyProfileSettings, normalizeMaskDomSelectors } from "../shared/privacy-redaction";
 import { attachThemeToggle } from "../shared/theme";
+import { attachLanguageSwitch, type UiLanguage } from "../shared/ui-language";
 import type {
   CaptureProfile,
   MessageResponse,
@@ -137,15 +139,16 @@ function getCapturePresetSettings(
   };
 }
 
-type SettingsLanguage = "en" | "vi";
-
-const LANGUAGE_STORAGE_KEY = "gn_tracing_settings_language";
+type SettingsLanguage = UiLanguage;
 
 const TRANSLATIONS: Record<SettingsLanguage, Record<string, string>> = {
   en: {
+    "topbar.pageTitle": "Settings",
+    "nav.settings": "Settings",
+    "nav.history": "Upload History",
+    "nav.connect": "Connect",
     "page.title": "Settings",
     "page.lead": "Choose what each recording captures before you start a session.",
-    "language.toggleTo": "Tiếng Việt",
     "actions.save": "Save Settings",
     "sections.captureProfile": "Capture Profile",
     "sections.privacyRedaction": "Privacy & Redaction",
@@ -252,9 +255,12 @@ const TRANSLATIONS: Record<SettingsLanguage, Record<string, string>> = {
     "info.dialogTitleFallback": "Setting help",
   },
   vi: {
+    "topbar.pageTitle": "Cài đặt",
+    "nav.settings": "Cài đặt",
+    "nav.history": "Lịch sử upload",
+    "nav.connect": "Kết nối",
     "page.title": "Cài đặt",
     "page.lead": "Chọn dữ liệu cần capture trước khi bắt đầu phiên ghi.",
-    "language.toggleTo": "English",
     "actions.save": "Lưu cài đặt",
     "sections.captureProfile": "Hồ sơ capture",
     "sections.privacyRedaction": "Privacy & Redaction",
@@ -666,11 +672,13 @@ const FIELD_HELP: Record<string, Record<SettingsLanguage, { title: string; body:
 };
 
 const saveBtn = document.getElementById("save-settings-btn") as HTMLButtonElement;
-const errorMsg = document.getElementById("error-msg")!;
-const languageToggleBtn = document.getElementById("language-toggle-btn") as HTMLButtonElement;
-const infoDialog = document.getElementById("setting-info-dialog") as HTMLDialogElement;
-const infoDialogTitle = document.getElementById("setting-info-title")!;
-const infoDialogBody = document.getElementById("setting-info-body")!;
+const infoPopover = document.getElementById("setting-info-popover") as HTMLElement;
+const infoPopoverTitle = document.getElementById("setting-info-title")!;
+const infoPopoverBody = document.getElementById("setting-info-body")!;
+const toastEl = document.getElementById("toast")!;
+const toastIconEl = document.getElementById("toast-icon")!;
+const toastMessageEl = document.getElementById("toast-message")!;
+const toastCloseBtn = document.getElementById("toast-close-btn") as HTMLButtonElement;
 const folderInput = document.getElementById("folder-input") as HTMLInputElement;
 const folderHint = document.getElementById("folder-hint")!;
 const zipPasswordInput = document.getElementById("zip-password-input") as HTMLInputElement;
@@ -773,17 +781,7 @@ const redactDomTextContentInput = document.getElementById(
 const captureModeInput = document.getElementById("capture-mode-input") as HTMLSelectElement;
 
 let currentSettings: UploadSettings | null = null;
-let currentLanguage: SettingsLanguage = getInitialLanguage();
-let lastProfileSaveRequest: { profile: string; requestedAt: number } | null = null;
-let lastPrivacyProfileSaveRequest: { profile: string; requestedAt: number } | null = null;
-
-function getInitialLanguage(): SettingsLanguage {
-  const saved = localStorage.getItem(LANGUAGE_STORAGE_KEY);
-  if (saved === "en" || saved === "vi") {
-    return saved;
-  }
-  return navigator.language.toLowerCase().startsWith("vi") ? "vi" : "en";
-}
+let currentLanguage: SettingsLanguage = "en";
 
 function t(key: string, replacements: Record<string, string> = {}): string {
   const template = TRANSLATIONS[currentLanguage][key] || TRANSLATIONS.en[key] || key;
@@ -807,7 +805,7 @@ function getLabelForHelpKey(helpKey: string): string {
 
 function applyTranslations(): void {
   document.documentElement.lang = currentLanguage;
-  languageToggleBtn.textContent = t("language.toggleTo");
+  document.title = currentLanguage === "vi" ? "Cài đặt GN Tracing" : "GN Tracing Settings";
 
   document.querySelectorAll<HTMLElement>("[data-i18n]").forEach((element) => {
     element.textContent = t(element.dataset.i18n || "");
@@ -823,6 +821,11 @@ function applyTranslations(): void {
   if (currentSettings) {
     updateFolderHint(currentSettings);
     updateZipPasswordHint(currentSettings);
+  }
+
+  if (activeInfoHelpKey && isPopoverOpen(infoPopover) && activeInfoButton) {
+    fillInfoPopover(activeInfoHelpKey);
+    positionInfoPopover(activeInfoButton);
   }
 }
 
@@ -840,14 +843,28 @@ function addFieldInfoButton(label: HTMLLabelElement, helpKey: string): void {
   if (!hasHelp) {
     return;
   }
+
+  // Keep the label text + info button on one horizontal row. `.setting-field`
+  // is a column flex, so a bare sibling button would wrap onto its own line.
+  let labelRow = labelText.closest(".setting-field-label-row");
+  if (!labelRow) {
+    labelRow = document.createElement("div");
+    labelRow.className = "setting-field-label-row";
+    labelText.insertAdjacentElement("beforebegin", labelRow);
+    labelRow.appendChild(labelText);
+  }
+
   const button = document.createElement("button");
   button.className = "field-info-btn";
   button.type = "button";
   button.dataset.helpKey = helpKey;
   button.textContent = "i";
   button.setAttribute("aria-label", t("info.buttonLabel"));
+  button.setAttribute("aria-haspopup", "dialog");
+  button.setAttribute("aria-expanded", "false");
+  button.setAttribute("aria-controls", "setting-info-popover");
   button.title = t("info.buttonLabel");
-  labelText.insertAdjacentElement("afterend", button);
+  labelRow.appendChild(button);
 }
 
 function setupFieldInfoButtons(): void {
@@ -863,11 +880,116 @@ function setupFieldInfoButtons(): void {
     });
 }
 
-function openInfoDialog(helpKey: string): void {
+type ToastVariant = "success" | "info" | "error";
+
+let toastTimeout: ReturnType<typeof setTimeout> | null = null;
+let activeInfoHelpKey: string | null = null;
+let activeInfoButton: HTMLButtonElement | null = null;
+
+function isPopoverOpen(element: HTMLElement): boolean {
+  return element.matches(":popover-open");
+}
+
+function getToastIcon(variant: ToastVariant): string {
+  switch (variant) {
+    case "info":
+      return "i";
+    case "error":
+      return "!";
+    default:
+      return "✓";
+  }
+}
+
+function showToast(
+  message: string,
+  durationMs = 2200,
+  options: { variant?: ToastVariant } = {},
+): void {
+  const variant = options.variant || "success";
+  toastIconEl.textContent = getToastIcon(variant);
+  toastMessageEl.textContent = message;
+  toastEl.classList.remove("toast-success", "toast-info", "toast-error", "hidden");
+  toastEl.classList.add(`toast-${variant}`);
+  toastEl.setAttribute("role", variant === "error" ? "alert" : "status");
+  toastEl.setAttribute("aria-live", variant === "error" ? "assertive" : "polite");
+
+  if (toastTimeout) {
+    clearTimeout(toastTimeout);
+  }
+  if (durationMs > 0) {
+    toastTimeout = setTimeout(() => {
+      hideToast();
+    }, durationMs);
+  }
+}
+
+function hideToast(): void {
+  toastEl.classList.add("hidden");
+  if (toastTimeout) {
+    clearTimeout(toastTimeout);
+    toastTimeout = null;
+  }
+}
+
+function fillInfoPopover(helpKey: string): void {
   const help = FIELD_HELP[helpKey]?.[currentLanguage] || FIELD_HELP[helpKey]?.en;
-  infoDialogTitle.textContent = help?.title || getLabelForHelpKey(helpKey);
-  infoDialogBody.textContent = help?.body || t("info.dialogTitleFallback");
-  infoDialog.showModal();
+  infoPopoverTitle.textContent = help?.title || getLabelForHelpKey(helpKey);
+  infoPopoverBody.textContent = help?.body || t("info.dialogTitleFallback");
+}
+
+function positionInfoPopover(anchor: HTMLElement): void {
+  const gap = 8;
+  const margin = 12;
+  const rect = anchor.getBoundingClientRect();
+  // Measure after open so size is accurate.
+  const popRect = infoPopover.getBoundingClientRect();
+  let top = rect.bottom + gap;
+  let left = rect.left;
+
+  if (top + popRect.height > window.innerHeight - margin) {
+    top = rect.top - popRect.height - gap;
+  }
+  if (left + popRect.width > window.innerWidth - margin) {
+    left = window.innerWidth - popRect.width - margin;
+  }
+  top = Math.max(margin, top);
+  left = Math.max(margin, left);
+
+  infoPopover.style.top = `${Math.round(top)}px`;
+  infoPopover.style.left = `${Math.round(left)}px`;
+}
+
+function closeInfoPopover(): void {
+  if (isPopoverOpen(infoPopover)) {
+    infoPopover.hidePopover();
+  }
+  if (activeInfoButton) {
+    activeInfoButton.setAttribute("aria-expanded", "false");
+  }
+  activeInfoHelpKey = null;
+  activeInfoButton = null;
+}
+
+function openInfoPopover(helpKey: string, anchor: HTMLButtonElement): void {
+  if (activeInfoHelpKey === helpKey && isPopoverOpen(infoPopover)) {
+    closeInfoPopover();
+    return;
+  }
+
+  if (activeInfoButton && activeInfoButton !== anchor) {
+    activeInfoButton.setAttribute("aria-expanded", "false");
+  }
+
+  fillInfoPopover(helpKey);
+  activeInfoHelpKey = helpKey;
+  activeInfoButton = anchor;
+  anchor.setAttribute("aria-expanded", "true");
+
+  if (!isPopoverOpen(infoPopover)) {
+    infoPopover.showPopover();
+  }
+  positionInfoPopover(anchor);
 }
 
 function withDefaultSettings(settings: Partial<UploadSettings>): UploadSettings {
@@ -932,10 +1054,9 @@ function withDefaultSettings(settings: Partial<UploadSettings>): UploadSettings 
 }
 
 function showMessage(message: string, success = false): void {
-  errorMsg.textContent = message;
-  errorMsg.className = success ? "success-msg" : "";
-  errorMsg.classList.remove("hidden");
-  setTimeout(() => errorMsg.classList.add("hidden"), success ? 2200 : 5000);
+  showToast(message, success ? 2200 : 4200, {
+    variant: success ? "success" : "error",
+  });
 }
 
 function getProfileInput(): HTMLInputElement {
@@ -1162,107 +1283,34 @@ async function saveSettings(): Promise<void> {
   }
 }
 
-async function saveProfile(profile: string): Promise<void> {
+/**
+ * Apply a capture/privacy preset to the form only. Persistence happens when
+ * the user clicks Save Settings — profile card changes never auto-save.
+ */
+function applyCaptureProfileLocal(profile: string): void {
   const captureProfile = profile as CaptureProfile;
-  const previousSettings = currentSettings;
-  saveBtn.disabled = true;
-  if (captureProfile !== "custom") {
-    // Apply the preset locally before the async save so the selected card and advanced fields switch together.
-    renderSettings({
-      ...withDefaultSettings(currentSettings || DEFAULT_SETTINGS),
-      ...getCapturePresetSettings(captureProfile),
-      captureProfile,
-    });
+  if (captureProfile === "custom") {
+    setProfile("custom");
+    return;
   }
-  try {
-    const result = (await chrome.runtime.sendMessage({
-      action: "UPDATE_SETTINGS",
-      data: { captureProfile },
-    })) as MessageResponse & { settings?: UploadSettings };
-    if (!result.ok || !result.settings) {
-      if (previousSettings) {
-        renderSettings(previousSettings);
-      }
-      showMessage(result.error || t("messages.profileFailed"));
-      return;
-    }
-    renderSettings(result.settings);
-    showMessage(t("messages.profileSaved"), true);
-  } catch (error) {
-    if (previousSettings) {
-      renderSettings(previousSettings);
-    }
-    showMessage((error as Error).message);
-  } finally {
-    saveBtn.disabled = false;
-  }
+  renderSettings({
+    ...withDefaultSettings(currentSettings || DEFAULT_SETTINGS),
+    ...getCapturePresetSettings(captureProfile),
+    captureProfile,
+  });
 }
 
-async function savePrivacyProfile(profile: string): Promise<void> {
+function applyPrivacyProfileLocal(profile: string): void {
   const privacyProfile = profile as PrivacyProfile;
-  const previousSettings = currentSettings;
-  saveBtn.disabled = true;
-  if (privacyProfile !== "custom") {
-    renderSettings({
-      ...withDefaultSettings(currentSettings || DEFAULT_SETTINGS),
-      ...getPrivacyProfileSettings(privacyProfile),
-      privacyProfile,
-    });
-  }
-  try {
-    const result = (await chrome.runtime.sendMessage({
-      action: "UPDATE_SETTINGS",
-      data: { privacyProfile },
-    })) as MessageResponse & { settings?: UploadSettings };
-    if (!result.ok || !result.settings) {
-      if (previousSettings) {
-        renderSettings(previousSettings);
-      }
-      showMessage(result.error || t("messages.privacyProfileFailed"));
-      return;
-    }
-    renderSettings(result.settings);
-    showMessage(t("messages.privacyProfileSaved"), true);
-  } catch (error) {
-    if (previousSettings) {
-      renderSettings(previousSettings);
-    }
-    showMessage((error as Error).message);
-  } finally {
-    saveBtn.disabled = false;
-  }
-}
-
-function requestProfileSave(input: HTMLInputElement): void {
-  if (input.value === "custom") {
+  if (privacyProfile === "custom") {
+    setPrivacyProfile("custom");
     return;
   }
-
-  const now = Date.now();
-  if (
-    lastProfileSaveRequest?.profile === input.value &&
-    now - lastProfileSaveRequest.requestedAt < 100
-  ) {
-    return;
-  }
-  lastProfileSaveRequest = { profile: input.value, requestedAt: now };
-  void saveProfile(input.value);
-}
-
-function requestPrivacyProfileSave(input: HTMLInputElement): void {
-  if (input.value === "custom") {
-    return;
-  }
-
-  const now = Date.now();
-  if (
-    lastPrivacyProfileSaveRequest?.profile === input.value &&
-    now - lastPrivacyProfileSaveRequest.requestedAt < 100
-  ) {
-    return;
-  }
-  lastPrivacyProfileSaveRequest = { profile: input.value, requestedAt: now };
-  void savePrivacyProfile(input.value);
+  renderSettings({
+    ...withDefaultSettings(currentSettings || DEFAULT_SETTINGS),
+    ...getPrivacyProfileSettings(privacyProfile),
+    privacyProfile,
+  });
 }
 
 document.querySelectorAll<HTMLLabelElement>(".profile-option").forEach((label) => {
@@ -1274,23 +1322,23 @@ document.querySelectorAll<HTMLLabelElement>(".profile-option").forEach((label) =
         return;
       }
       privacyInput.checked = true;
-      requestPrivacyProfileSave(privacyInput);
+      applyPrivacyProfileLocal(privacyInput.value);
       return;
     }
     input.checked = true;
-    requestProfileSave(input);
+    applyCaptureProfileLocal(input.value);
   });
 });
 
 document.querySelectorAll<HTMLInputElement>('input[name="capture-profile"]').forEach((input) => {
   input.addEventListener("change", () => {
-    requestProfileSave(input);
+    applyCaptureProfileLocal(input.value);
   });
 });
 
 document.querySelectorAll<HTMLInputElement>('input[name="privacy-profile"]').forEach((input) => {
   input.addEventListener("change", () => {
-    requestPrivacyProfileSave(input);
+    applyPrivacyProfileLocal(input.value);
   });
 });
 
@@ -1337,28 +1385,57 @@ saveBtn.addEventListener("click", () => {
   void saveSettings();
 });
 
-languageToggleBtn.addEventListener("click", () => {
-  currentLanguage = currentLanguage === "en" ? "vi" : "en";
-  localStorage.setItem(LANGUAGE_STORAGE_KEY, currentLanguage);
-  applyTranslations();
-});
-
 document.addEventListener("click", (event) => {
   const button = (event.target as HTMLElement).closest<HTMLButtonElement>(".field-info-btn");
   if (!button?.dataset.helpKey) {
     return;
   }
   event.preventDefault();
-  openInfoDialog(button.dataset.helpKey);
+  event.stopPropagation();
+  openInfoPopover(button.dataset.helpKey, button);
 });
 
-infoDialog.addEventListener("click", (event) => {
-  if (event.target === infoDialog) {
-    infoDialog.close();
+infoPopover.addEventListener("toggle", (event) => {
+  const toggleEvent = event as ToggleEvent;
+  if (toggleEvent.newState === "closed" && activeInfoButton) {
+    activeInfoButton.setAttribute("aria-expanded", "false");
+    activeInfoHelpKey = null;
+    activeInfoButton = null;
   }
 });
 
+window.addEventListener(
+  "resize",
+  () => {
+    if (activeInfoButton && isPopoverOpen(infoPopover)) {
+      positionInfoPopover(activeInfoButton);
+    }
+  },
+  { passive: true },
+);
+
+window.addEventListener(
+  "scroll",
+  () => {
+    if (activeInfoButton && isPopoverOpen(infoPopover)) {
+      positionInfoPopover(activeInfoButton);
+    }
+  },
+  { passive: true, capture: true },
+);
+
+toastCloseBtn.addEventListener("click", () => {
+  hideToast();
+});
+
 setupFieldInfoButtons();
+attachPageNav({ current: "settings" });
+currentLanguage = attachLanguageSwitch({
+  onChange: (language) => {
+    currentLanguage = language;
+    applyTranslations();
+  },
+});
 applyTranslations();
 void loadSettings();
 

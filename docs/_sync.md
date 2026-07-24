@@ -20,7 +20,7 @@ tags: ["docs", "sync"]
 
 GN Tracing is documented as a Chrome/Edge Manifest V3 extension that records one user-selected tab, captures synchronized debugging evidence, uploads one Google Drive zip package, and opens a hosted replay at `https://tracing.gnas.dev/<zip-file-id>`.
 
-The docs now give new readers an aspect-based path through the project: product purpose, MV3 runtime topology, shared data contracts, recording lifecycle, evidence artifacts, privacy/redaction, Drive upload/package security, replay player behavior, extension UI surfaces, release/update checks, and compliance notes.
+The docs now give new readers an aspect-based path through the project: product purpose, MV3 runtime topology, shared data contracts, recording lifecycle, evidence artifacts, privacy/redaction, Drive upload/package security, replay player behavior, extension UI surfaces, release packaging, and compliance notes.
 
 Runtime capture is centered on the service worker, `CdpManager`, `StorageManager`, the offscreen media/upload worker, and a recording-scoped content script. Captured evidence remains temporary until upload succeeds or the session is removed. Restart recovery is best-effort because heavy artifacts are memory/offscreen-backed rather than a durable local database.
 

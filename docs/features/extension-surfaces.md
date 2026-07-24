@@ -46,8 +46,8 @@ The popup is the quick recording surface. It:
 - checks Google Drive status on open
 - hides capture controls and the pending capture queue until Drive is connected
 - checks whether the active tab is recordable before enabling start
-- sends start, stop, remove, upload, delete-session, Drive connect/disconnect, update-check, and upload-history delete commands to the service worker
-- renders live recording timer, console/network counts, upload progress, per-artifact progress rows, latest local upload history, GitHub/contribution links, and update availability
+- sends start, stop, remove, upload, delete-session, Drive connect/disconnect, and upload-history delete commands to the service worker
+- renders live recording timer, console/network counts, upload progress, per-artifact progress rows, latest local upload history, and GitHub/contribution links
 
 Stop is presented as "Stop & Upload" because a valid Drive token can auto-start upload after capture finalization.
 

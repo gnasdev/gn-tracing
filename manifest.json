@@ -13,11 +13,7 @@
     "alarms",
     "identity"
   ],
-  "host_permissions": [
-    "https://api.github.com/",
-    "https://oauth2.googleapis.com/",
-    "https://www.googleapis.com/"
-  ],
+  "host_permissions": ["https://oauth2.googleapis.com/", "https://www.googleapis.com/"],
   "oauth2": {
     "client_id": "95916347176-ulk25djm5l4g6ebq7vftjik8iv9a11vf.apps.googleusercontent.com",
     "scopes": ["https://www.googleapis.com/auth/drive.file"]

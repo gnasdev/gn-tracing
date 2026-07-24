@@ -182,7 +182,6 @@ singleton, đăng ký listener), phần thân tách thành module mới trong
 | --- | --- |
 | `settings-store.ts` | normalize/persist upload settings, capture profile, privacy defaults, upload history |
 | `capture-environment.ts` | `parseBrowserFromUserAgent`, normalize environment/user events |
-| `update-checker.ts` | `checkForExtensionUpdate` + GitHub Releases API |
 | `upload-orchestrator.ts` | upload session sang Drive, artifact chunking, progress patch |
 | `message-router.ts` | hai `onMessage` listener + `handleMessage` switch, ủy quyền về các module |
 

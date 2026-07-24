@@ -60,7 +60,7 @@ related:
   shared by: service worker, popup, offscreen uploader, built-in player, standalone player
 - `release-and-update-checks`
   reads: `drive-and-player`, `shared/api-conventions`, `compliance/chrome-web-store-submission`
-  calls: GitHub Releases API through the service worker for version comparison and release download discovery
+  owns: release zip packaging, Store package validation, and contribution links (no runtime update polling)
 - `developer-tooling`
   reads: `DEVELOPER.md`, `Taskfile.yml`, `package.json`, `biome.json`, `knip.json`
   enforces: Biome format/lint/import checks for supported source files, docs hygiene checks for Markdown files, Task aliases, a Husky pre-commit hook over staged files, and `npm run deadcode` for unused export detection
@@ -81,7 +81,7 @@ related:
 ## Runtime Topology
 
 - `popup` -> `service-worker`: start/stop recording, upload, auth status
-- `service-worker` (composition root) -> `settings-store`, `capture-environment`, `update-checker`, `upload-orchestrator`, `message-router`
+- `service-worker` (composition root) -> `settings-store`, `capture-environment`, `upload-orchestrator`, `message-router`
 - `service-worker` -> `cdp-manager`: console/network/WebSocket capture
 - `service-worker` -> `recorder-manager` -> `offscreen`: tab media recording lifecycle
 - `service-worker` -> `google-drive-auth`: Chromium-wide Drive OAuth (Chrome identity + web auth flow with token expiry)
@@ -94,4 +94,3 @@ related:
 - `standalone player` -> same-origin `/api/drive?id=<file-id>` proxy for Drive package fetches when no OAuth token is available; password-protected packages are decrypted in-browser after user unlock
 - `privacy policy` -> service worker, CDP collector, storage manager, and content script: redaction, event sanitization, DOM masking limitations, and `privacy.json` summaries
 - `release workflow` -> root `Taskfile.yml`: extension build, Store package checks, and zip packaging with OAuth/extension identity from repository secrets; standalone player deploy stays manual via `player-standalone/deploy.sh`
-- `popup update check` -> `service-worker` -> GitHub Releases API: compare installed package version against the latest release and expose a manual download path when a newer extension zip is available

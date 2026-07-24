@@ -48,7 +48,6 @@ GN Tracing records a user-selected browser tab and packages the video, console l
 
 GN Tracing does not request broad `<all_urls>` host access. Recording uses the user-selected active tab plus `debugger` and `tabCapture`. Fixed `host_permissions` are limited to:
 
-- `https://api.github.com/` — popup update checks against GitHub Releases
 - `https://oauth2.googleapis.com/` and `https://www.googleapis.com/` — OAuth token exchange/refresh and Google Drive API
 - the configured OAuth token proxy Worker origin (when `GOOGLE_TOKEN_PROXY_URL` is set) — server-side token exchange for Web application OAuth clients
 

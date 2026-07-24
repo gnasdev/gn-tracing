@@ -7,7 +7,6 @@ import type {
   UploadHistoryEntry,
   UploadSettings,
 } from "../types/messages";
-import { checkForExtensionUpdate } from "./update-checker";
 import type { UploadArtifactChunkResponse } from "./upload-orchestrator";
 
 export interface MessageHandlers {
@@ -110,8 +109,6 @@ async function handleMessage(
       return handlers.getPopupSettingsResponse();
     case "UPDATE_SETTINGS":
       return handlers.updateUploadSettingsFromMessage(message.data);
-    case "CHECK_FOR_UPDATE":
-      return checkForExtensionUpdate();
     case "DELETE_UPLOAD_HISTORY_ENTRY":
       return handlers.deleteUploadHistoryEntry(message.data);
     case "DELETE_SESSION":

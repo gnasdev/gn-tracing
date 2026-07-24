@@ -4,7 +4,7 @@ This guide is for contributors working on GN Tracing. The main [README](./README
 
 ## Project Map
 
-- `src/background/`: MV3 service worker composition root, auth (Chromium-wide strategy), settings store, capture environment normalization, update checker, upload orchestrator, message router, CDP capture, recorder, storage
+- `src/background/`: MV3 service worker composition root, auth (Chromium-wide strategy), settings store, capture environment normalization, upload orchestrator, message router, CDP capture, recorder, storage
 - `src/offscreen/`: tab media recording and Google Drive upload work
 - `src/popup/`: extension popup UI and capture controls
 - `src/drive-auth/`: Google Drive auth page opened in a normal tab

@@ -2,7 +2,9 @@
  * Renders and manages the full upload history page.
  */
 
+import { attachPageNav } from "../shared/page-nav";
 import { attachThemeToggle } from "../shared/theme";
+import { attachLanguageSwitch, type UiLanguage } from "../shared/ui-language";
 import {
   handleUploadHistoryAction,
   renderUploadHistoryList,
@@ -22,7 +24,72 @@ const historySummary = document.getElementById("history-summary")!;
 const historyCount = document.getElementById("history-count")!;
 const errorMsg = document.getElementById("error-msg")!;
 
+type HistoryLanguage = UiLanguage;
+
+const TRANSLATIONS: Record<HistoryLanguage, Record<string, string>> = {
+  en: {
+    "topbar.pageTitle": "Upload History",
+    "nav.settings": "Settings",
+    "nav.history": "Upload History",
+    "nav.connect": "Connect",
+    "page.title": "Upload History",
+    "page.lead":
+      "Review previous uploads, jump back into a replay, copy a shareable link, or clean up old items.",
+    "stats.savedUploads": "Saved Uploads",
+    "panel.recentTitle": "Recent Uploads",
+    "summary.empty": "Browse your recent uploads here once recordings are uploaded.",
+    "summary.count": "{count} upload{plural} saved locally.",
+    "messages.loadFailed": "Failed to load upload history",
+    "messages.copySuccess": "Replay link copied.",
+    "messages.copyFailed": "Failed to copy replay link",
+    "messages.deleteFailed": "Failed to delete history item",
+    "document.title": "GN Tracing Upload History",
+  },
+  vi: {
+    "topbar.pageTitle": "Lịch sử upload",
+    "nav.settings": "Cài đặt",
+    "nav.history": "Lịch sử upload",
+    "nav.connect": "Kết nối",
+    "page.title": "Lịch sử upload",
+    "page.lead":
+      "Xem lại các upload trước, mở lại replay, sao chép link chia sẻ, hoặc dọn các mục cũ.",
+    "stats.savedUploads": "Upload đã lưu",
+    "panel.recentTitle": "Upload gần đây",
+    "summary.empty": "Các bản ghi sau khi upload sẽ hiện tại đây.",
+    "summary.count": "{count} upload được lưu cục bộ.",
+    "messages.loadFailed": "Không tải được lịch sử upload",
+    "messages.copySuccess": "Đã sao chép link replay.",
+    "messages.copyFailed": "Không sao chép được link replay",
+    "messages.deleteFailed": "Không xóa được mục lịch sử",
+    "document.title": "Lịch sử upload GN Tracing",
+  },
+};
+
 let currentHistory: UploadHistoryEntry[] = [];
+let currentLanguage: HistoryLanguage = "en";
+
+function t(key: string, replacements: Record<string, string> = {}): string {
+  const template = TRANSLATIONS[currentLanguage][key] || TRANSLATIONS.en[key] || key;
+  return Object.entries(replacements).reduce(
+    (text, [name, value]) => text.replaceAll(`{${name}}`, value),
+    template,
+  );
+}
+
+function applyTranslations(): void {
+  document.documentElement.lang = currentLanguage;
+  document.title = t("document.title");
+
+  document.querySelectorAll<HTMLElement>("[data-i18n]").forEach((element) => {
+    // Dynamic summary is owned by renderHistory(); do not stomp it from static keys.
+    if (element.id === "history-summary") {
+      return;
+    }
+    element.textContent = t(element.dataset.i18n || "");
+  });
+
+  renderHistory(currentHistory);
+}
 
 function showError(message: string): void {
   errorMsg.textContent = message;
@@ -34,7 +101,8 @@ function showError(message: string): void {
 function showSuccess(message: string): void {
   errorMsg.textContent = message;
   errorMsg.className = "success-msg";
-  setTimeout(() => (errorMsg.className = "hidden"), 2000);
+  errorMsg.classList.remove("hidden");
+  setTimeout(() => errorMsg.classList.add("hidden"), 2000);
 }
 
 function openExternalUrl(url: string): void {
@@ -47,11 +115,14 @@ function renderHistory(history: UploadHistoryEntry[]): void {
   historyCount.textContent = String(currentHistory.length);
 
   if (currentHistory.length === 0) {
-    historySummary.textContent = "Browse your recent uploads here once recordings are uploaded.";
+    historySummary.textContent = t("summary.empty");
     return;
   }
 
-  historySummary.textContent = `${currentHistory.length} upload${currentHistory.length === 1 ? "" : "s"} saved locally.`;
+  historySummary.textContent = t("summary.count", {
+    count: String(currentHistory.length),
+    plural: currentHistory.length === 1 ? "" : "s",
+  });
 }
 
 async function refreshHistory(): Promise<void> {
@@ -64,7 +135,7 @@ async function refreshHistory(): Promise<void> {
     };
 
     if (!result.ok) {
-      showError(result.error || "Failed to load upload history");
+      showError(result.error || t("messages.loadFailed"));
       return;
     }
 
@@ -81,9 +152,9 @@ uploadHistoryList.addEventListener("click", async (event) => {
       button.disabled = true;
       try {
         await navigator.clipboard.writeText(url);
-        showSuccess("Replay link copied.");
+        showSuccess(t("messages.copySuccess"));
       } catch (error) {
-        showError((error as Error).message || "Failed to copy replay link");
+        showError((error as Error).message || t("messages.copyFailed"));
       } finally {
         button.disabled = false;
       }
@@ -100,7 +171,7 @@ uploadHistoryList.addEventListener("click", async (event) => {
 
         if (!result.ok) {
           renderHistory(previousHistory);
-          showError(result.error || "Failed to delete history item");
+          showError(result.error || t("messages.deleteFailed"));
           button.disabled = false;
           return;
         }
@@ -125,6 +196,14 @@ uploadHistoryList.addEventListener("click", async (event) => {
   }
 });
 
+attachPageNav({ current: "history" });
+currentLanguage = attachLanguageSwitch({
+  onChange: (language) => {
+    currentLanguage = language;
+    applyTranslations();
+  },
+});
+applyTranslations();
 void refreshHistory();
 
 attachThemeToggle("theme-toggle-btn", "theme-toggle-icon");

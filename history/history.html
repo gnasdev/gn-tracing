@@ -6,50 +6,98 @@
   <title>GN Tracing Upload History</title>
   <link rel="stylesheet" href="../shared/theme.css">
   <script src="../shared/theme-init.js"></script>
-  <link rel="stylesheet" href="../popup/popup.css">
   <link rel="stylesheet" href="./history.css">
 </head>
 <body class="history-page">
-  <div id="app" class="history-app">
-    <header class="history-hero">
-      <div class="history-hero-copy">
-        <h1 class="history-title">Upload History</h1>
-        <p class="history-lead">
-          Review previous uploads, jump back into a replay, copy a shareable link, or clean up old items.
-        </p>
+  <header class="gn-topbar">
+    <div class="gn-topbar-inner">
+      <div class="gn-topbar-brand" aria-label="GN Tracing">
+        <img class="gn-topbar-logo" src="../icons/icon.svg" width="24" height="24" alt="">
+        <span class="gn-topbar-name">GN Tracing</span>
+        <span class="gn-topbar-divider" aria-hidden="true"></span>
+        <span class="gn-topbar-page-title" data-i18n="topbar.pageTitle">Upload History</span>
       </div>
-      <div class="history-hero-actions">
+      <div class="gn-topbar-actions">
+        <button id="lang-toggle-btn" class="icon-btn gn-lang-toggle" type="button" aria-label="Switch language">VI</button>
         <button id="theme-toggle-btn" class="icon-btn" type="button" aria-label="Toggle theme" title="Toggle light/dark mode">
           <svg id="theme-toggle-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
           </svg>
         </button>
-        <div class="history-hero-stats">
-          <div class="history-stat-label">Saved Uploads</div>
-          <div id="history-count" class="history-stat-value">0</div>
+        <div class="gn-nav">
+          <button
+            id="gn-nav-toggle"
+            class="icon-btn"
+            type="button"
+            aria-label="Open menu"
+            title="Menu"
+            aria-haspopup="menu"
+            aria-expanded="false"
+            aria-controls="gn-nav-menu"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+              <path d="M4 7h16M4 12h16M4 17h16"/>
+            </svg>
+          </button>
+          <div id="gn-nav-menu" class="gn-nav-menu" role="menu" hidden>
+            <button type="button" role="menuitem" data-gn-nav="settings" data-i18n="nav.settings">Settings</button>
+            <button type="button" role="menuitem" data-gn-nav="history" data-i18n="nav.history">Upload History</button>
+            <button type="button" role="menuitem" data-gn-nav="connect" data-i18n="nav.connect" class="hidden">Connect</button>
+          </div>
         </div>
       </div>
-    </header>
-
-    <section class="history-panel">
-      <div class="history-panel-header">
-        <div>
-          <h2 class="history-panel-title">Recent Uploads</h2>
-          <p id="history-summary" class="history-summary">
-            Browse your recent uploads here once recordings are uploaded.
-          </p>
-        </div>
-      </div>
-
-      <div id="upload-history-section">
-        <div id="upload-history-list" class="history-list"></div>
-      </div>
-    </section>
-
-    <div id="error-slot" class="history-feedback">
-      <div id="error-msg" class="hidden"></div>
     </div>
-  </div>
+  </header>
+
+  <main class="gn-page">
+    <div class="gn-page-inner">
+      <div id="app" class="history-app">
+        <header class="gn-page-hero history-hero">
+          <div class="gn-page-hero-copy history-hero-copy">
+            <h1 class="gn-page-title history-title" data-i18n="page.title">Upload History</h1>
+            <p class="gn-page-lead history-lead" data-i18n="page.lead">
+              Review previous uploads, jump back into a replay, copy a shareable link, or clean up old items.
+            </p>
+          </div>
+          <div class="gn-page-hero-actions history-hero-actions">
+            <div class="history-hero-stats">
+              <div class="history-stat-label" data-i18n="stats.savedUploads">Saved Uploads</div>
+              <div id="history-count" class="history-stat-value">0</div>
+            </div>
+          </div>
+        </header>
+
+        <section class="history-panel">
+          <div class="history-panel-header">
+            <div>
+              <h2 class="history-panel-title" data-i18n="panel.recentTitle">Recent Uploads</h2>
+              <p id="history-summary" class="history-summary" data-i18n="summary.empty">
+                Browse your recent uploads here once recordings are uploaded.
+              </p>
+            </div>
+          </div>
+
+          <div id="upload-history-section">
+            <div id="upload-history-list" class="history-list"></div>
+          </div>
+        </section>
+
+        <div id="error-slot" class="history-feedback">
+          <div id="error-msg" class="hidden"></div>
+        </div>
+      </div>
+
+      <footer class="gn-footer">
+        <div class="gn-footer-row">
+          <div class="gn-footer-links">
+            <a class="gn-footer-link" href="https://github.com/gnasdev/gn-tracing" target="_blank" rel="noopener noreferrer">GitHub</a>
+            <a class="gn-footer-link" href="https://github.com/gnasdev/gn-tracing/issues" target="_blank" rel="noopener noreferrer">Contribute</a>
+          </div>
+          <span>GN Tracing — dev-tool replay for the web</span>
+        </div>
+      </footer>
+    </div>
+  </main>
   <script src="./history.js"></script>
 </body>
 </html>

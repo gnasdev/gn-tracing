@@ -10,7 +10,6 @@ type MessageAction =
   | "GET_STATUS"
   | "GET_SETTINGS"
   | "UPDATE_SETTINGS"
-  | "CHECK_FOR_UPDATE"
   | "DELETE_UPLOAD_HISTORY_ENTRY"
   | "DELETE_SESSION"
   | "RECORDING_USER_EVENT"
@@ -100,14 +99,6 @@ export interface MessageResponse {
   url?: string;
   recordingUrl?: string;
   token?: string | null;
-  update?: UpdateCheckResult;
-}
-
-export interface UpdateCheckResult {
-  currentVersion: string;
-  latestVersion: string;
-  isUpdateAvailable: boolean;
-  downloadUrl?: string;
 }
 
 export type ProgressItemStatus =

@@ -31,8 +31,7 @@ src/
 │   ├── message-router.ts      UI <-> worker message dispatch
 │   ├── recorder-manager.ts    recorder lifecycle over the offscreen document
 │   ├── upload-orchestrator.ts Drive upload sequencing
-│   ├── sourcemap-resolver.ts  inline + external source-map loading
-│   └── update-checker.ts      GitHub Releases version compare
+│   └── sourcemap-resolver.ts  inline + external source-map loading
 ├── content/                   injected into the recorded tab
 │   ├── recording-events.ts    user-event capture (MAIN / ISOLATED worlds)
 │   ├── in-page-capture.ts     entry: wires in-page-capture-core

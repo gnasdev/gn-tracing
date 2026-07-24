@@ -4,51 +4,36 @@
 <head>
   <meta charset="UTF-8">
   <link rel="stylesheet" href="../shared/theme.css">
-  <link rel="stylesheet" href="popup.css">
   <script src="../shared/theme-init.js"></script>
+  <link rel="stylesheet" href="popup.css">
 </head>
 <body>
   <div id="app">
-    <div id="header">
-      <div class="app-brand" aria-label="GN Tracing">
-        <img class="app-logo" src="../icons/icon.svg" alt="">
-        <span class="app-title">GN Tracing</span>
+    <header id="header" class="gn-topbar">
+      <div class="gn-topbar-brand" aria-label="GN Tracing">
+        <img class="gn-topbar-logo" src="../icons/icon.svg" alt="">
+        <span class="gn-topbar-name">GN Tracing</span>
       </div>
-      <div class="header-actions">
+      <div class="gn-topbar-actions header-actions">
+        <div id="status-bar" class="hidden">
+          <span id="recording-indicator"></span>
+          <span id="timer">00:00</span>
+        </div>
         <button id="theme-toggle-btn" class="icon-btn" type="button" aria-label="Toggle theme" title="Toggle light/dark mode">
           <svg id="theme-toggle-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
           </svg>
         </button>
-        <button id="reload-btn" class="icon-btn" type="button" aria-label="Reload popup" title="Reload popup">
-          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M20 11a8.1 8.1 0 0 0-15.5-2M4 5v4h4"/>
-            <path d="M4 13a8.1 8.1 0 0 0 15.5 2M20 19v-4h-4"/>
-          </svg>
-        </button>
-        <button id="check-update-btn" class="icon-btn" type="button" aria-label="Check for update" title="Check for update">
-          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M12 3v12"/>
-            <path d="m8 11 4 4 4-4"/>
-            <path d="M5 19h14"/>
-            <path d="M18 7a6 6 0 0 0-11.5-1.5"/>
-          </svg>
-          <span id="update-available-badge" class="update-available-badge hidden" aria-hidden="true"></span>
-        </button>
         <button id="settings-page-btn" class="icon-btn" type="button" aria-label="Open settings" title="Open settings">
           <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M12 15.5A3.5 3.5 0 1 0 12 8a3.5 3.5 0 0 0 0 7.5Z"/>
-            <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06A1.7 1.7 0 0 0 15 19.37a1.7 1.7 0 0 0-1 .58V20a2 2 0 1 1-4 0v-.08a1.7 1.7 0 0 0-1-.58a1.7 1.7 0 0 0-1.88.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.63 15a1.7 1.7 0 0 0-.58-1H4a2 2 0 1 1 0-4h.08a1.7 1.7 0 0 0 .58-1a1.7 1.7 0 0 0-.34-1.88l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.63a1.7 1.7 0 0 0 1-.58V4a2 2 0 1 1 4 0v.08a1.7 1.7 0 0 0 1 .58a1.7 1.7 0 0 0 1.88-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.37 9c.16.35.37.68.63 1H20a2 2 0 1 1 0 4h-.08a1.7 1.7 0 0 0-.52 1Z"/>
+            <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06A1.7 1.7 0 0 0 15 19.37a1.7 1.7 0 0 0-1 .58V20a2 2 0 1 1-4 0v-.08a1.7 1.7 0 0 0-1-.58a1.7 1.7 0 0 0-1.88.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.63 15a1.7 1.7 0 0 0-.58-1H4a2 2 0 1 1 0-4h.08a1.7 1.7 0 0 0 .58-1a1.7 1.7 0 0 0-.34-1.88l-.06-.06a2 2 0 1 1 2.83-2.83l.06-.06A1.7 1.7 0 0 0 9 4.63a1.7 1.7 0 0 0 1-.58V4a2 2 0 1 1 4 0v.08a1.7 1.7 0 0 0 1 .58a1.7 1.7 0 0 0 1.88-.34l.06.06a2 2 0 1 1 2.83-2.83l-.06.06A1.7 1.7 0 0 0 19.37 9c.16.35.37.68.63 1H20a2 2 0 1 1 0 4h-.08a1.7 1.7 0 0 0-.52 1Z"/>
           </svg>
         </button>
-        <div id="status-bar" class="hidden">
-          <span id="recording-indicator"></span>
-          <span id="timer">00:00</span>
-        </div>
       </div>
-    </div>
+    </header>
 
-    <div id="recording-actions" class="recording-actions">
+    <div id="recording-actions">
       <button id="toggle-btn" class="btn btn-start" type="button">
         <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="12" r="7"/>
@@ -64,12 +49,23 @@
           <path d="M6 7l1 14h10l1-14"/>
           <path d="M9 7V4h6v3"/>
         </svg>
-        <span>Remove</span>
+        <span>Discard</span>
       </button>
-      <div id="recording-unavailable-msg" class="recording-unavailable hidden" role="status"></div>
+      <div id="recording-unavailable-msg" class="hidden" role="status"></div>
     </div>
 
-    <section id="drawing-section" class="drawing-section hidden" aria-label="Drawing overlay">
+    <div id="stats" class="hidden">
+      <div class="stat-row">
+        <span class="stat-label">Console</span>
+        <span id="console-count" class="stat-value">0</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">Network</span>
+        <span id="network-count" class="stat-value">0</span>
+      </div>
+    </div>
+
+    <section id="drawing-section" class="hidden" aria-label="Drawing overlay">
       <button id="draw-toggle-btn" class="btn btn-secondary" type="button" title="Toggle drawing pen">
         <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M12 19l7-7 3 3-7 7-3-3z"/>
@@ -90,19 +86,20 @@
       <div class="drawing-hint">Toggle with Ctrl/Cmd+Shift+D</div>
     </section>
 
-    <div id="stats" class="hidden">
-      <div class="stat-row">
-        <span class="stat-label">Console</span>
-        <span id="console-count" class="stat-value">0</span>
-      </div>
-      <div class="stat-row">
-        <span class="stat-label">Network</span>
-        <span id="network-count" class="stat-value">0</span>
+    <div id="main-google-drive-slot"></div>
+    <div id="connected-google-drive-slot">
+      <div id="google-drive-section">
+        <div class="setting-row">
+          <label>Google Drive</label>
+          <div id="google-drive-status">Not connected</div>
+          <button type="button" id="google-drive-connect-btn" class="btn btn-start btn-small">Connect</button>
+          <button type="button" id="google-drive-disconnect-btn" class="btn btn-small hidden">Disconnect</button>
+        </div>
       </div>
     </div>
 
-    <div id="session-queue-section">
-      <div class="section-title section-title-with-icon">
+    <section id="session-queue-section">
+      <div class="section-title">
         <svg class="section-title-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M8 6h13"/>
           <path d="M8 12h13"/>
@@ -114,13 +111,11 @@
         <span>Capture Queue</span>
       </div>
       <div id="session-list" class="session-list"></div>
-    </div>
+    </section>
 
-    <div id="main-google-drive-slot"></div>
-
-    <div id="upload-history-section">
+    <section id="upload-history-section">
       <div class="section-title-row">
-        <div class="section-title section-title-with-icon">
+        <div class="section-title">
           <svg class="section-title-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M12 16V4"/>
             <path d="m7 9 5-5 5 5"/>
@@ -145,41 +140,23 @@
         </button>
       </div>
       <div id="popup-upload-history-list" class="history-list"></div>
-    </div>
+    </section>
 
-    <div id="connected-google-drive-slot">
-      <div id="google-drive-section">
-        <div class="setting-row">
-          <label>Google Drive</label>
-          <div id="google-drive-status">Not connected</div>
-          <button type="button" id="google-drive-connect-btn" class="btn btn-small">Connect</button>
-          <button type="button" id="google-drive-disconnect-btn" class="btn btn-small hidden">Disconnect</button>
-        </div>
-      </div>
-    </div>
-
-    <section id="capture-disclosure" class="capture-disclosure">
+    <section id="capture-disclosure">
       <div class="capture-disclosure-copy">
         Records the selected tab and uploads a replay package to your Google Drive. Capture detail and password options live in Settings.
       </div>
-      <div id="community-section">
-        <div class="community-actions">
-          <button id="github-link-btn" class="btn btn-secondary" type="button">
-            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="currentColor">
-              <path d="M12 2a10 10 0 0 0-3.16 19.49c.5.09.68-.22.68-.48v-1.7c-2.78.6-3.37-1.18-3.37-1.18a2.65 2.65 0 0 0-1.1-1.45c-.9-.62.07-.6.07-.6a2.1 2.1 0 0 1 1.53 1.03a2.13 2.13 0 0 0 2.91.83c.05-.52.26-1 .62-1.36c-2.22-.25-4.56-1.11-4.56-4.95a3.87 3.87 0 0 1 1.03-2.69a3.6 3.6 0 0 1 .1-2.65s.84-.27 2.75 1.03a9.46 9.46 0 0 1 5 0c1.91-1.3 2.75-1.03 2.75-1.03c.37.83.4 1.77.1 2.65a3.86 3.86 0 0 1 1.03 2.69c0 3.85-2.34 4.69-4.57 4.94c.36.31.68.92.68 1.86v2.57c0 .27.18.58.69.48A10 10 0 0 0 12 2Z"/>
-            </svg>
-            <span>GitHub</span>
-          </button>
-          <button id="contribute-link-btn" class="btn btn-secondary" type="button">
-            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M12 5v14"/>
-              <path d="M5 12h14"/>
-            </svg>
-            <span>Contribute</span>
-          </button>
-        </div>
-      </div>
     </section>
+
+    <footer class="popup-footer gn-footer">
+      <div class="gn-footer-row">
+        <div class="gn-footer-links">
+          <button type="button" id="github-link-btn" class="gn-footer-link">GitHub</button>
+          <button type="button" id="contribute-link-btn" class="gn-footer-link">Contribute</button>
+        </div>
+        <span class="popup-footer-tagline">GN Tracing - dev-tool replay for the web</span>
+      </div>
+    </footer>
 
     <div id="error-msg" class="hidden"></div>
     <div id="toast" class="toast hidden" role="status" aria-live="polite">

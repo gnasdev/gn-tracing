@@ -48,7 +48,6 @@ Create `manifest.template.json`:
     "identity"
   ],
   "host_permissions": [
-    "https://api.github.com/",
     "https://oauth2.googleapis.com/",
     "https://www.googleapis.com/"
   ],
@@ -89,7 +88,6 @@ Create `manifest.template.json`:
   - `alarms` — used as a service-worker keepalive while recording.
   - `identity` — required for the Chromium-wide Google OAuth flow.
 - `host_permissions`:
-  - `api.github.com/` — version check + download-discovery against public GitHub Releases.
   - `oauth2.googleapis.com/` and `googleapis.com/` — direct-to-Google token exchange and Drive API calls.
   - When chapter `08` adds `GOOGLE_TOKEN_PROXY_URL`, the Worker origin is appended.
 - `oauth2.client_id` — the Web-application OAuth client from chapter `01`. The `drive.file` scope limits the extension to files it creates itself, which is the disclosed behavior in the Store listing.
