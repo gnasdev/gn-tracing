@@ -42,7 +42,7 @@
           <div id="gn-nav-menu" class="gn-nav-menu" role="menu" hidden>
             <button type="button" role="menuitem" data-gn-nav="settings" data-i18n="nav.settings">Settings</button>
             <button type="button" role="menuitem" data-gn-nav="history" data-i18n="nav.history">Upload History</button>
-            <button type="button" role="menuitem" data-gn-nav="connect" data-i18n="nav.connect" class="hidden">Connect</button>
+            <button type="button" role="menuitem" data-gn-nav="connect" data-i18n="nav.connect">Manage clouds</button>
           </div>
         </div>
       </div>
@@ -131,12 +131,22 @@
 
         <section class="settings-panel-full settings-grid">
           <div class="settings-group">
-            <h3 data-i18n="sections.googleDrive">Google Drive</h3>
+            <h3 data-i18n="sections.storage">Cloud storage</h3>
+            <p class="setting-hint" data-i18n="hints.storageProviderConnect">
+              Default upload provider when that cloud is already connected. Open Connect clouds from the popup (or the Connect page) to link Google Drive or Dropbox.
+            </p>
+            <label class="setting-field">
+              <span data-i18n="fields.storageProvider.label">Storage provider</span>
+              <select id="storage-provider-input">
+                <option value="google-drive" data-i18n="options.providerGoogleDrive">Google Drive</option>
+                <option value="dropbox" data-i18n="options.providerDropbox">Dropbox</option>
+              </select>
+            </label>
             <label class="setting-field">
               <span data-i18n="fields.folder.label">Upload folder</span>
-              <input id="folder-input" type="text" value="/gn-tracing" placeholder="/gn-tracing, folder ID, or Drive link">
+              <input id="folder-input" type="text" value="/gn-tracing" placeholder="/gn-tracing" data-i18n-placeholder="placeholders.folder">
             </label>
-            <p id="folder-hint" class="setting-hint" data-i18n="hints.folderDefault">Using Google Drive folder: /gn-tracing.</p>
+            <p id="folder-hint" class="setting-hint" data-i18n="hints.folderDefault">Using upload folder: /gn-tracing.</p>
           </div>
 
           <div class="settings-group">

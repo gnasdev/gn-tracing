@@ -63,6 +63,7 @@ describe("getUploadSettings", () => {
     expect(settings.captureProfile).toBe("full");
     expect(settings.folderInput).toBe("/gn-tracing");
     expect(settings.zipPassword).toBe("");
+    expect(settings.activeStorageProvider).toBe("google-drive");
     // The "full" profile enables request/response body capture by default.
     expect(settings.captureRequestBodies).toBe(true);
     expect(settings.captureResponseBodies).toBe(true);
@@ -158,5 +159,81 @@ describe("loadPersistedPopupState", () => {
 
     const { loadPersistedPopupState } = await importStore();
     expect(await loadPersistedPopupState()).toBeNull();
+  });
+});
+
+describe("normalizeRecordingUrl", () => {
+  it("rewrites chrome-extension player URLs to namespaced external URLs", async () => {
+    const { normalizeRecordingUrl } = await importStore();
+    const rewritten = normalizeRecordingUrl(
+      "chrome-extension://abcdef/player/player.html?id=driveFile99",
+    );
+    expect(rewritten).toContain("/gdrive/driveFile99");
+  });
+
+  it("rewrites localhost player URLs to namespaced external URLs", async () => {
+    const { normalizeRecordingUrl } = await importStore();
+    const rewritten = normalizeRecordingUrl("http://localhost:5176/?id=localFile1");
+    expect(rewritten).toContain("/gdrive/localFile1");
+  });
+
+  it("leaves production bare Drive URLs unchanged (legacy history)", async () => {
+    const { normalizeRecordingUrl } = await importStore();
+    const bare = "https://tracing.gnas.dev/1AbCdEfGhIjKlMnOp";
+    expect(normalizeRecordingUrl(bare)).toBe(bare);
+  });
+
+  it("leaves production namespaced URLs unchanged", async () => {
+    const { normalizeRecordingUrl } = await importStore();
+    const namespaced = "https://tracing.gnas.dev/gdrive/1AbCdEfGhIjKlMnOp";
+    expect(normalizeRecordingUrl(namespaced)).toBe(namespaced);
+  });
+});
+
+describe("activeStorageProvider clamp", () => {
+  it("accepts dropbox on load (P1 registered)", async () => {
+    await mockChrome().storage.local.set({
+      [STORAGE_KEY_SETTINGS]: { activeStorageProvider: "dropbox" },
+    });
+
+    const { getUploadSettings } = await importStore();
+    const settings = await getUploadSettings();
+    expect(settings.activeStorageProvider).toBe("dropbox");
+  });
+
+  it("clamps legacy onedrive to google-drive (removed provider)", async () => {
+    await mockChrome().storage.local.set({
+      [STORAGE_KEY_SETTINGS]: { activeStorageProvider: "onedrive" },
+    });
+
+    const { getUploadSettings } = await importStore();
+    const settings = await getUploadSettings();
+    expect(settings.activeStorageProvider).toBe("google-drive");
+  });
+
+  it("keeps separate folder paths per provider", async () => {
+    await mockChrome().storage.local.set({
+      [STORAGE_KEY_SETTINGS]: {
+        activeStorageProvider: "dropbox",
+        folderByProvider: {
+          "google-drive": {
+            folderInput: "/drive-only",
+            folderId: null,
+            folderPath: ["drive-only"],
+          },
+          dropbox: {
+            folderInput: "/dropbox-only",
+            folderId: null,
+            folderPath: ["dropbox-only"],
+          },
+        },
+      },
+    });
+
+    const { getUploadSettings } = await importStore();
+    const settings = await getUploadSettings();
+    expect(settings.activeStorageProvider).toBe("dropbox");
+    expect(settings.folderInput).toBe("/dropbox-only");
+    expect(settings.folderByProvider["google-drive"]?.folderInput).toBe("/drive-only");
   });
 });

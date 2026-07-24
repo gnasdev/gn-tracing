@@ -3,7 +3,9 @@
  */
 
 import { DEFAULT_DRAW_COLOR, DRAW_COLOR_PRESETS, normalizeDrawColor } from "../shared/drawing";
+import { resolveReplayOpenUrl } from "../shared/player-host";
 import { getRecordingTabTarget } from "../shared/recording-target";
+import { buildCloudRemoteOpenUrl, resolveHistoryProvider } from "../shared/storage-provider";
 import { attachThemeToggle } from "../shared/theme";
 import {
   escapeHtml,
@@ -37,6 +39,8 @@ const GITHUB_REPO_URL = "https://github.com/gnasdev/gn-tracing";
 const GITHUB_ISSUES_URL = `${GITHUB_REPO_URL}/issues`;
 const SERVICE_STATE_KEY = "gn_tracing_state";
 const MIRRORED_DRIVE_CONNECTED_KEY = "gn_tracing_google_drive_connected";
+const MIRRORED_DROPBOX_CONNECTED_KEY = "gn_tracing_dropbox_connected";
+const UPLOAD_SETTINGS_KEY = "gn_tracing_upload_settings";
 
 const recordingActions = document.getElementById("recording-actions")!;
 const toggleBtn = document.getElementById("toggle-btn") as HTMLButtonElement;
@@ -65,12 +69,18 @@ const toastCloseBtn = document.getElementById("toast-close-btn") as HTMLButtonEl
 
 const googleDriveSection = document.getElementById("google-drive-section")!;
 const googleDriveStatus = document.getElementById("google-drive-status")!;
-const googleDriveConnectBtn = document.getElementById(
-  "google-drive-connect-btn",
-) as HTMLButtonElement;
-const googleDriveDisconnectBtn = document.getElementById(
-  "google-drive-disconnect-btn",
-) as HTMLButtonElement;
+const storageProviderLabel = document.getElementById("storage-provider-label");
+const storageProviderSelect = document.getElementById(
+  "storage-provider-select",
+) as HTMLSelectElement | null;
+const manageStorageBtn = document.getElementById("manage-storage-btn") as HTMLButtonElement | null;
+const storageConnectHint = document.getElementById("storage-connect-hint");
+
+/** Connected flags for all providers — popup only lists these in the select. */
+const connectedProviders = new Map<string, boolean>([
+  ["google-drive", false],
+  ["dropbox", false],
+]);
 const popupUploadHistoryList = document.getElementById("popup-upload-history-list")!;
 const uploadHistoryPageBtn = document.getElementById(
   "upload-history-page-btn",
@@ -115,19 +125,42 @@ async function loadStateFromStorage(): Promise<PopupState | null> {
 }
 
 /**
- * Reads the latest Google Drive connection state mirrored into
- * `chrome.storage.local`. This survives browser restarts (unlike
- * `chrome.storage.session`), so the popup can paint the correct auth UI
- * before the service worker finishes its post-restart re-hydration.
+ * Reads the connection mirror for the **active** storage provider from
+ * `chrome.storage.local`. Survives browser restarts (unlike session state) so
+ * the popup can paint the correct auth UI before the service worker re-hydrates.
+ * Each provider uses its own mirror key (Drive / Dropbox).
  */
-async function loadMirroredDriveConnected(): Promise<boolean | null> {
+async function loadMirroredStorageConnected(): Promise<{
+  provider: string;
+  isConnected: boolean | null;
+}> {
   try {
-    const result = await chrome.storage.local.get(MIRRORED_DRIVE_CONNECTED_KEY);
-    const value = result[MIRRORED_DRIVE_CONNECTED_KEY];
-    return typeof value === "boolean" ? value : null;
+    const settingsResult = await chrome.storage.local.get(UPLOAD_SETTINGS_KEY);
+    const stored = settingsResult[UPLOAD_SETTINGS_KEY] as
+      | { activeStorageProvider?: string }
+      | undefined;
+    const provider =
+      stored?.activeStorageProvider === "dropbox" ||
+      stored?.activeStorageProvider === "google-drive"
+        ? stored.activeStorageProvider
+        : "google-drive";
+    const key =
+      provider === "dropbox" ? MIRRORED_DROPBOX_CONNECTED_KEY : MIRRORED_DRIVE_CONNECTED_KEY;
+    const result = await chrome.storage.local.get(key);
+    const value = result[key];
+    return {
+      provider,
+      isConnected: typeof value === "boolean" ? value : null,
+    };
   } catch {
-    return null;
+    return { provider: "google-drive", isConnected: null };
   }
+}
+
+/** @deprecated Prefer loadMirroredStorageConnected */
+async function loadMirroredDriveConnected(): Promise<boolean | null> {
+  const mirrored = await loadMirroredStorageConnected();
+  return mirrored.isConnected;
 }
 
 function subscribeToStateChanges(callback: (state: PopupState) => void): () => void {
@@ -273,13 +306,20 @@ function renderSessionActionButton(params: {
   icon: string;
   attrName: string;
   attrValue: string;
+  extraAttrs?: Record<string, string>;
 }): string {
+  const extras = params.extraAttrs
+    ? Object.entries(params.extraAttrs)
+        .map(([key, value]) => `${key}="${escapeHtml(value)}"`)
+        .join(" ")
+    : "";
   return `
     <button
       type="button"
       class="session-icon-button"
       data-action="${params.action}"
       ${params.attrName}="${escapeHtml(params.attrValue)}"
+      ${extras}
       aria-label="${escapeHtml(params.label)}"
       title="${escapeHtml(params.label)}"
     >
@@ -400,7 +440,15 @@ function renderSessions(sessions: RecordingSessionSummary[] | undefined): void {
         (session.phase === "recorded" || session.phase === "failed") && session.hasLocalSnapshot;
       const canReplay = session.phase === "uploaded" && Boolean(session.recordingUrl);
       const canCopy = session.phase === "uploaded" && Boolean(session.recordingUrl);
-      const canOpenFolder = Boolean(session.recordingFolderId);
+      // Open remote package/folder in Drive or Dropbox when we have a recording URL or folder ref.
+      const canOpenFolder =
+        session.phase === "uploaded" &&
+        Boolean(
+          buildCloudRemoteOpenUrl({
+            recordingUrl: session.recordingUrl,
+            folderRef: session.recordingFolderId,
+          }),
+        );
       const canDelete = session.phase !== "uploading";
       const showProgress = session.phase === "uploading" || session.items.length > 0;
       return `
@@ -462,11 +510,15 @@ function renderSessions(sessions: RecordingSessionSummary[] | undefined): void {
           ${
             canOpenFolder
               ? renderSessionActionButton({
-                  action: "open-folder",
-                  label: "Open folder",
-                  attrName: "data-folder-id",
-                  attrValue: session.recordingFolderId || "",
+                  action: "open-remote",
+                  label: "Open remote",
+                  attrName: "data-recording-url",
+                  attrValue: session.recordingUrl || "",
                   icon: getFolderIcon(),
+                  extraAttrs: {
+                    "data-folder-id": session.recordingFolderId || "",
+                    "data-provider": resolveHistoryProvider(undefined, session.recordingUrl),
+                  },
                 })
               : ""
           }
@@ -510,7 +562,12 @@ function isProgressOnlyStateUpdate(previous: PopupState | null, next: PopupState
   if (!previous) {
     return false;
   }
-  if (previous.googleDrive.isConnected !== next.googleDrive.isConnected) {
+  const prevStorage = getActiveStorageConnection(previous);
+  const nextStorage = getActiveStorageConnection(next);
+  if (
+    prevStorage.isConnected !== nextStorage.isConnected ||
+    prevStorage.provider !== nextStorage.provider
+  ) {
     return false;
   }
   if (JSON.stringify(previous.recording) !== JSON.stringify(next.recording)) {
@@ -612,23 +669,143 @@ function renderPopupUploadHistory(
   }
 }
 
-function updateGoogleDriveUI(isConnected: boolean): void {
-  const targetGoogleDriveSlot = isConnected ? connectedGoogleDriveSlot : mainGoogleDriveSlot;
-  if (googleDriveSection.parentElement !== targetGoogleDriveSlot) {
-    targetGoogleDriveSlot.appendChild(googleDriveSection);
+function storageProviderDisplayName(provider: string | undefined): string {
+  if (provider === "dropbox") return "Dropbox";
+  return "Google Drive";
+}
+
+function normalizePopupStorageProvider(value: string | undefined | null): string {
+  if (value === "dropbox" || value === "google-drive") {
+    return value;
+  }
+  return "google-drive";
+}
+
+/**
+ * Prefer `state.storage` (active provider). Fall back to googleDrive shim for
+ * older persisted snapshots that predate the storage field.
+ */
+function getActiveStorageConnection(state: PopupState | null | undefined): {
+  provider: string;
+  isConnected: boolean;
+} {
+  if (state?.storage && typeof state.storage.isConnected === "boolean") {
+    return {
+      provider: normalizePopupStorageProvider(
+        state.storage.provider || state.settings?.activeStorageProvider,
+      ),
+      isConnected: state.storage.isConnected,
+    };
+  }
+  return {
+    provider: normalizePopupStorageProvider(state?.settings?.activeStorageProvider),
+    isConnected: Boolean(state?.googleDrive?.isConnected),
+  };
+}
+
+function listConnectedProviderIds(): string[] {
+  return ["google-drive", "dropbox"].filter((id) => connectedProviders.get(id));
+}
+
+function rebuildConnectedProviderSelect(preferred?: string): string | null {
+  if (!storageProviderSelect) {
+    return null;
+  }
+  const connected = listConnectedProviderIds();
+  const preferredNorm = preferred ? normalizePopupStorageProvider(preferred) : "";
+  const active =
+    preferredNorm && connected.includes(preferredNorm) ? preferredNorm : connected[0] || null;
+
+  storageProviderSelect.innerHTML = "";
+  if (connected.length === 0) {
+    const opt = document.createElement("option");
+    opt.value = "";
+    opt.textContent = "Connect a cloud first…";
+    storageProviderSelect.append(opt);
+    storageProviderSelect.value = "";
+    storageProviderSelect.disabled = true;
+    return null;
   }
 
-  if (isConnected) {
-    googleDriveStatus.textContent = "Connected";
-    googleDriveStatus.classList.add("is-connected");
-    googleDriveConnectBtn.classList.add("hidden");
-    googleDriveDisconnectBtn.classList.remove("hidden");
-  } else {
-    googleDriveStatus.textContent = "Not connected";
-    googleDriveStatus.classList.remove("is-connected");
-    googleDriveConnectBtn.classList.remove("hidden");
-    googleDriveDisconnectBtn.classList.add("hidden");
+  for (const id of connected) {
+    const opt = document.createElement("option");
+    opt.value = id;
+    opt.textContent = storageProviderDisplayName(id);
+    storageProviderSelect.append(opt);
   }
+  storageProviderSelect.disabled = false;
+  storageProviderSelect.value = active || connected[0];
+  return storageProviderSelect.value || null;
+}
+
+function updateStorageUI(_isConnected: boolean, provider?: string): void {
+  const preferred = normalizePopupStorageProvider(
+    provider ||
+      latestPopupState?.storage?.provider ||
+      latestPopupState?.settings?.activeStorageProvider,
+  );
+  // Prefer preferred only if that cloud is connected; otherwise first connected.
+  const selected = rebuildConnectedProviderSelect(preferred);
+  const anyConnected = listConnectedProviderIds().length > 0;
+  const selectedConnected = Boolean(selected && connectedProviders.get(selected));
+
+  const targetSlot = anyConnected ? connectedGoogleDriveSlot : mainGoogleDriveSlot;
+  if (googleDriveSection.parentElement !== targetSlot) {
+    targetSlot.appendChild(googleDriveSection);
+  }
+
+  if (storageProviderLabel) {
+    storageProviderLabel.textContent = "Upload to";
+  }
+
+  if (selectedConnected && selected) {
+    const name = storageProviderDisplayName(selected);
+    googleDriveStatus.textContent = `${name} ready`;
+    googleDriveStatus.classList.add("is-connected");
+  } else {
+    googleDriveStatus.textContent = "No cloud connected";
+    googleDriveStatus.classList.remove("is-connected");
+  }
+
+  if (manageStorageBtn) {
+    manageStorageBtn.textContent = anyConnected ? "Manage clouds" : "Connect clouds";
+    manageStorageBtn.classList.toggle("btn-start", !anyConnected);
+  }
+  if (storageConnectHint) {
+    storageConnectHint.textContent = anyConnected
+      ? "Only connected clouds appear here. Open Manage clouds to connect or disconnect accounts."
+      : "Connect Google Drive or Dropbox on the cloud page. This popup only switches among already-connected providers.";
+  }
+}
+
+async function setActiveStorageProvider(provider: string): Promise<void> {
+  const normalized = normalizePopupStorageProvider(provider);
+  if (!connectedProviders.get(normalized)) {
+    throw new Error(`${storageProviderDisplayName(normalized)} is not connected.`);
+  }
+  const result = (await chrome.runtime.sendMessage({
+    action: "UPDATE_SETTINGS",
+    data: { activeStorageProvider: normalized },
+  })) as MessageResponse & { settings?: PopupState["settings"] };
+  if (!result.ok) {
+    throw new Error(result.error || "Could not switch storage provider.");
+  }
+  await refreshPopupFromStorage();
+  void refreshAllProviderStatuses();
+}
+
+/** @deprecated Prefer updateStorageUI */
+function updateGoogleDriveUI(isConnected: boolean): void {
+  updateStorageUI(isConnected, latestPopupState?.storage?.provider);
+}
+
+function openStorageAuthPage(provider?: string): void {
+  const url = new URL(chrome.runtime.getURL("storage-auth/storage-auth.html"));
+  if (provider) {
+    url.searchParams.set("provider", normalizePopupStorageProvider(provider));
+  }
+  chrome.tabs.create({ url: url.toString() });
+  window.close();
 }
 
 function setCaptureUiVisibility(isVisible: boolean): void {
@@ -706,8 +883,11 @@ function renderStopAndUploadLoading(recording: RecordingStatus | null): void {
 async function refreshActiveTabRecordingAvailability(): Promise<void> {
   const checkId = ++activeTabRecordingCheckId;
   activeTabRecordingError = "Checking whether this tab can be recorded.";
-  if (latestPopupState?.googleDrive.isConnected && !latestPopupState.recording?.isRecording) {
-    updateRecordingUI(latestPopupState.recording);
+  if (
+    getActiveStorageConnection(latestPopupState).isConnected &&
+    !latestPopupState?.recording?.isRecording
+  ) {
+    updateRecordingUI(latestPopupState?.recording ?? null);
   }
 
   try {
@@ -724,8 +904,8 @@ async function refreshActiveTabRecordingAvailability(): Promise<void> {
       (error as Error).message || "Cannot inspect the active tab for recording.";
   }
 
-  if (latestPopupState?.googleDrive.isConnected) {
-    updateRecordingUI(latestPopupState.recording);
+  if (getActiveStorageConnection(latestPopupState).isConnected) {
+    updateRecordingUI(latestPopupState?.recording ?? null);
   }
 }
 
@@ -797,17 +977,18 @@ function handleStateUpdate(state: PopupState): void {
     return;
   }
 
-  const isGoogleDriveConnected = state.googleDrive.isConnected;
-  updateGoogleDriveUI(isGoogleDriveConnected);
-  setCaptureUiVisibility(isGoogleDriveConnected);
-
-  if (isGoogleDriveConnected) {
-    updateRecordingUI(state.recording);
-    renderSessions(state.sessions);
-    if (!state.recording?.isRecording) {
-      void refreshActiveTabRecordingAvailability();
+  // Refresh multi-provider connection map so the select only lists connected clouds.
+  void refreshAllProviderStatuses().then(() => {
+    const selected = storageProviderSelect?.value || "";
+    const canRecord = Boolean(selected && connectedProviders.get(selected));
+    if (canRecord) {
+      updateRecordingUI(state.recording);
+      renderSessions(state.sessions);
+      if (!state.recording?.isRecording) {
+        void refreshActiveTabRecordingAvailability();
+      }
     }
-  }
+  });
 
   renderPopupUploadHistory(state.uploadHistory, {
     animateLatestSuccess: isUploadHistoryAnimationReady,
@@ -821,21 +1002,62 @@ async function refreshPopupFromStorage(): Promise<void> {
   }
 }
 
-async function refreshGoogleDriveStatus(): Promise<void> {
+async function refreshAllProviderStatuses(): Promise<void> {
+  const providers = ["google-drive", "dropbox"] as const;
   try {
-    const result = (await chrome.runtime.sendMessage({
-      action: "GOOGLE_DRIVE_STATUS",
-    })) as MessageResponse & { isConnected?: boolean };
-    if (result.ok) {
-      updateGoogleDriveUI(Boolean(result.isConnected));
-    }
+    await Promise.all(
+      providers.map(async (provider) => {
+        try {
+          const result = (await chrome.runtime.sendMessage({
+            action: "STORAGE_STATUS",
+            data: { provider },
+          })) as MessageResponse & { isConnected?: boolean };
+          connectedProviders.set(provider, Boolean(result?.ok && result.isConnected));
+        } catch {
+          connectedProviders.set(provider, false);
+        }
+      }),
+    );
   } catch {
     // Ignore warmup failures.
   }
+
+  const preferred =
+    latestPopupState?.storage?.provider ||
+    latestPopupState?.settings?.activeStorageProvider ||
+    "google-drive";
+  const selected = rebuildConnectedProviderSelect(preferred);
+  const anyConnected = listConnectedProviderIds().length > 0;
+
+  // If active settings provider is not connected, switch to first connected.
+  if (selected && selected !== preferred && connectedProviders.get(selected)) {
+    try {
+      await chrome.runtime.sendMessage({
+        action: "UPDATE_SETTINGS",
+        data: { activeStorageProvider: selected },
+      });
+      await refreshPopupFromStorage();
+    } catch {
+      // UI still shows connected list even if settings write fails.
+    }
+  }
+
+  updateStorageUI(anyConnected, selected || preferred);
+  setCaptureUiVisibility(anyConnected && Boolean(selected && connectedProviders.get(selected)));
+}
+
+/** @deprecated Prefer refreshAllProviderStatuses */
+async function refreshStorageStatus(): Promise<void> {
+  await refreshAllProviderStatuses();
 }
 
 function openExternalUrl(url: string): void {
   chrome.tabs.create({ url });
+}
+
+/** Open replay in the external/hosted player. */
+function openReplayUrl(url: string): void {
+  openExternalUrl(resolveReplayOpenUrl(url));
 }
 
 function openSettingsPage(): void {
@@ -852,8 +1074,8 @@ toggleBtn.addEventListener("click", async () => {
 
   try {
     const currentState = await loadStateFromStorage();
-    if (!currentState?.googleDrive.isConnected) {
-      showError("Connect Google Drive before recording.");
+    if (!getActiveStorageConnection(currentState).isConnected) {
+      showError("Connect cloud storage before recording.");
       return;
     }
 
@@ -861,7 +1083,7 @@ toggleBtn.addEventListener("click", async () => {
     toggleActionMode = isRecording ? "stop" : "start";
 
     if (isRecording) {
-      renderStopAndUploadLoading(currentState.recording);
+      renderStopAndUploadLoading(currentState?.recording ?? null);
       const result = (await chrome.runtime.sendMessage({
         action: "STOP_RECORDING",
       })) as MessageResponse;
@@ -873,7 +1095,7 @@ toggleBtn.addEventListener("click", async () => {
       const target = getRecordingTabTarget(tab);
       if (target.error) {
         activeTabRecordingError = target.error;
-        updateRecordingUI(currentState.recording);
+        updateRecordingUI(currentState?.recording ?? null);
         return;
       }
       const result = (await chrome.runtime.sendMessage({
@@ -1078,27 +1300,35 @@ toastLinkEl.addEventListener("click", (event) => {
 
 settingsPageBtn.addEventListener("click", openSettingsPage);
 
-googleDriveConnectBtn.addEventListener("click", () => {
-  chrome.tabs.create({
-    url: chrome.runtime.getURL("drive-auth/drive-auth.html"),
-  });
-  window.close();
-});
-
-googleDriveDisconnectBtn.addEventListener("click", async () => {
-  googleDriveDisconnectBtn.disabled = true;
+storageProviderSelect?.addEventListener("change", async () => {
+  const raw = storageProviderSelect.value;
+  if (!raw) {
+    return;
+  }
+  const provider = normalizePopupStorageProvider(raw);
+  if (!connectedProviders.get(provider)) {
+    showError("Connect that cloud on the cloud page first.");
+    openStorageAuthPage(provider);
+    return;
+  }
+  storageProviderSelect.disabled = true;
+  errorMsg.classList.add("hidden");
   try {
-    const result = (await chrome.runtime.sendMessage({
-      action: "GOOGLE_DRIVE_DISCONNECT",
-    })) as MessageResponse;
-    if (!result.ok) {
-      showError(result.error || "Disconnect failed");
-    }
+    await setActiveStorageProvider(provider);
   } catch (error) {
     showError((error as Error).message);
+    const current = getActiveStorageConnection(latestPopupState);
+    rebuildConnectedProviderSelect(current.provider);
+    updateStorageUI(current.isConnected, current.provider);
   } finally {
-    googleDriveDisconnectBtn.disabled = false;
+    storageProviderSelect.disabled = listConnectedProviderIds().length === 0;
   }
+});
+
+manageStorageBtn?.addEventListener("click", () => {
+  openStorageAuthPage(
+    storageProviderSelect?.value || latestPopupState?.settings?.activeStorageProvider || undefined,
+  );
 });
 
 sessionList.addEventListener("click", async (event) => {
@@ -1111,7 +1341,7 @@ sessionList.addEventListener("click", async (event) => {
   if (action === "open-replay") {
     const url = target.getAttribute("data-url");
     if (url) {
-      openExternalUrl(url);
+      openReplayUrl(url);
     }
     return;
   }
@@ -1133,10 +1363,15 @@ sessionList.addEventListener("click", async (event) => {
     return;
   }
 
-  if (action === "open-folder") {
-    const folderId = target.getAttribute("data-folder-id");
-    if (folderId) {
-      openExternalUrl(`https://drive.google.com/drive/folders/${folderId}`);
+  if (action === "open-remote" || action === "open-folder") {
+    const openUrl = buildCloudRemoteOpenUrl({
+      provider: target.getAttribute("data-provider"),
+      recordingUrl: target.getAttribute("data-recording-url"),
+      folderRef: target.getAttribute("data-folder-id"),
+      fileId: target.getAttribute("data-file-id"),
+    });
+    if (openUrl) {
+      openExternalUrl(openUrl);
     }
     return;
   }
@@ -1263,13 +1498,13 @@ chrome.runtime.onMessage.addListener((message: { action?: string; state?: PopupS
 });
 
 async function initPopup(): Promise<void> {
-  // Paint the auth UI from the local-storage mirror first so the popup does
-  // not flash "Not connected" on browser or extension restart, even if the
-  // service worker has not finished re-hydrating from `chrome.storage.session`.
-  const mirroredConnected = await loadMirroredDriveConnected();
-  if (mirroredConnected !== null) {
-    updateGoogleDriveUI(mirroredConnected);
-    if (mirroredConnected) {
+  // Paint the auth UI from the active-provider local-storage mirror first so the
+  // popup does not flash wrong Connected/Not connected for Dropbox vs Drive
+  // before the service worker re-hydrates session state.
+  const mirrored = await loadMirroredStorageConnected();
+  if (mirrored.isConnected !== null) {
+    updateStorageUI(mirrored.isConnected, mirrored.provider);
+    if (mirrored.isConnected) {
       setCaptureUiVisibility(true);
     }
   }
@@ -1277,7 +1512,7 @@ async function initPopup(): Promise<void> {
   const initialState = await loadStateFromStorage();
   if (initialState) {
     handleStateUpdate(initialState);
-  } else if (mirroredConnected === null) {
+  } else if (mirrored.isConnected === null) {
     renderSessions([]);
     renderPopupUploadHistory([], { animateLatestSuccess: false });
   }
@@ -1296,7 +1531,7 @@ async function initPopup(): Promise<void> {
   }
   isUploadHistoryAnimationReady = true;
 
-  await refreshGoogleDriveStatus();
+  await refreshStorageStatus();
   await refreshActiveTabRecordingAvailability();
 
   const unsubscribe = subscribeToStateChanges((state) => {

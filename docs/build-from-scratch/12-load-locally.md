@@ -46,7 +46,7 @@ Chrome prints the extension ID below the card. Verify it equals the SHA-256-deri
 
 ## 12.3 Smoke Test the Popup
 
-1. Click the toolbar icon. The popup should open and show the **Connect Google Drive** button.
+1. Click the toolbar icon. The popup should open and show **Cloud storage** status with a **Connect** button (active provider is set in Settings).
 2. Click that button. A new tab opens at the standalone `drive-auth` page.
 3. Walk through the Google consent flow. On success the popup should reflect the connected state.
 4. Open any non-recordable page (`chrome://extensions`, `chrome://flags`, `chromewebstore.google.com`).

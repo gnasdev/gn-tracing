@@ -21,17 +21,22 @@ const isProductionBuild = appEnv === "production";
 const packageJson = JSON.parse(fs.readFileSync(path.resolve(__dirname, "package.json"), "utf-8"));
 const packageVersion = typeof packageJson.version === "string" ? packageJson.version : "";
 const googleClientId = getConfigValue("GOOGLE_CLIENT_ID");
-// Dev/watch builds default to the locally running Worker (`task worker:dev`,
-// port 8787) so `task dev` works out of the box without editing .env. Set
-// GOOGLE_TOKEN_PROXY_URL_DEV to override (e.g. a different local port).
-// Production builds always use GOOGLE_TOKEN_PROXY_URL (the deployed Worker),
-// never the dev default, so a stale/unset dev override cannot leak into a
-// release build.
-const DEFAULT_DEV_TOKEN_PROXY_URL = "http://localhost:8787";
+const dropboxClientId = getConfigValue("DROPBOX_CLIENT_ID");
+// Dev/watch builds default to the multi-issuer Worker started by `task worker:dev`
+// / `task dev` on port 8787 so Google and Dropbox hit localhost without editing
+// .env. Override with *_TOKEN_PROXY_URL_DEV if needed.
+// Production builds always use *_TOKEN_PROXY_URL (deployed Worker paths).
+const DEFAULT_DEV_GOOGLE_TOKEN_PROXY_URL = "http://localhost:8787";
+const DEFAULT_DEV_DROPBOX_TOKEN_PROXY_URL = "http://localhost:8787/token/dropbox";
 const googleTokenProxyUrl = normalizeProxyUrl(
   isProductionBuild
     ? getConfigValue("GOOGLE_TOKEN_PROXY_URL")
-    : getConfigValue("GOOGLE_TOKEN_PROXY_URL_DEV", DEFAULT_DEV_TOKEN_PROXY_URL),
+    : getConfigValue("GOOGLE_TOKEN_PROXY_URL_DEV", DEFAULT_DEV_GOOGLE_TOKEN_PROXY_URL),
+);
+const dropboxTokenProxyUrl = normalizeProxyUrl(
+  isProductionBuild
+    ? getConfigValue("DROPBOX_TOKEN_PROXY_URL")
+    : getConfigValue("DROPBOX_TOKEN_PROXY_URL_DEV", DEFAULT_DEV_DROPBOX_TOKEN_PROXY_URL),
 );
 const chromeExtensionPublicKey = getConfigValue("CHROME_EXTENSION_PUBLIC_KEY");
 const chromeExtensionPrivateKey = getConfigValue("CHROME_EXTENSION_PRIVATE_KEY");
@@ -49,6 +54,11 @@ const STATIC_ASSET_ENTRIES = [
   { type: "file", src: "settings/settings.css", dest: "dist/settings/settings.css" },
   { type: "text", src: "offscreen/offscreen.html", dest: "dist/offscreen/offscreen.html" },
   { type: "text", src: "drive-auth/drive-auth.html", dest: "dist/drive-auth/drive-auth.html" },
+  {
+    type: "text",
+    src: "storage-auth/storage-auth.html",
+    dest: "dist/storage-auth/storage-auth.html",
+  },
   { type: "dir", src: "icons", dest: "dist/icons" },
   { type: "file", src: "shared/theme.css", dest: "dist/shared/theme.css" },
   { type: "file", src: "shared/theme-init.js", dest: "dist/shared/theme-init.js" },
@@ -72,6 +82,8 @@ const commonOptions = {
     __APP_ENV__: JSON.stringify(appEnv),
     __GOOGLE_CLIENT_ID__: JSON.stringify(googleClientId),
     __GOOGLE_TOKEN_PROXY_URL__: JSON.stringify(googleTokenProxyUrl),
+    __DROPBOX_CLIENT_ID__: JSON.stringify(dropboxClientId),
+    __DROPBOX_TOKEN_PROXY_URL__: JSON.stringify(dropboxTokenProxyUrl),
     __PLAYER_LOCAL_PORT__: JSON.stringify(playerLocalPort),
   },
 };
@@ -268,22 +280,26 @@ function logTokenProxyStatus() {
 // to call it. Append the Worker origin to host_permissions so the cross-origin
 // POST is not blocked. No-op when the proxy URL is unset (direct-to-Google).
 function addTokenProxyHostPermission(manifest) {
-  if (!googleTokenProxyUrl) {
-    return;
-  }
-
-  let proxyOrigin;
-  try {
-    proxyOrigin = `${new URL(googleTokenProxyUrl).origin}/`;
-  } catch {
-    throw new Error(`GOOGLE_TOKEN_PROXY_URL is not a valid URL: ${googleTokenProxyUrl}`);
-  }
-
   if (!Array.isArray(manifest.host_permissions)) {
     manifest.host_permissions = [];
   }
-  if (!manifest.host_permissions.includes(proxyOrigin)) {
-    manifest.host_permissions.push(proxyOrigin);
+
+  for (const [label, proxyUrl] of [
+    ["GOOGLE_TOKEN_PROXY_URL", googleTokenProxyUrl],
+    ["DROPBOX_TOKEN_PROXY_URL", dropboxTokenProxyUrl],
+  ]) {
+    if (!proxyUrl) {
+      continue;
+    }
+    let proxyOrigin;
+    try {
+      proxyOrigin = `${new URL(proxyUrl).origin}/`;
+    } catch {
+      throw new Error(`${label} is not a valid URL: ${proxyUrl}`);
+    }
+    if (!manifest.host_permissions.includes(proxyOrigin)) {
+      manifest.host_permissions.push(proxyOrigin);
+    }
   }
 }
 
@@ -309,6 +325,7 @@ async function build() {
       { in: "src/settings/settings.ts", out: "settings/settings" },
       { in: "src/offscreen/offscreen.ts", out: "offscreen/offscreen" },
       { in: "src/drive-auth/drive-auth.ts", out: "drive-auth/drive-auth" },
+      { in: "src/storage-auth/storage-auth.ts", out: "storage-auth/storage-auth" },
     ],
     outdir: "dist",
     format: "iife",

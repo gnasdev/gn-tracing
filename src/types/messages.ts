@@ -1,6 +1,7 @@
 /**
  * Message contracts shared between extension UIs, service worker, and offscreen runtime.
  */
+import type { StorageProviderId } from "../shared/storage-provider";
 import type { ConsoleEntry, NetworkEntry, StorageSnapshot, WebSocketEntry } from "./recording";
 
 type MessageAction =
@@ -19,6 +20,12 @@ type MessageAction =
   | "GET_DRAWING_OVERLAY_STATE"
   | "SET_DRAWING_COLOR"
   | "RECORDING_INPAGE_ENTRY"
+  // Generic multi-cloud storage messages (preferred).
+  | "STORAGE_CONNECT"
+  | "STORAGE_DISCONNECT"
+  | "STORAGE_STATUS"
+  | "GET_STORAGE_TOKEN"
+  // Legacy Google Drive aliases — map to google-drive in the message router.
   | "GOOGLE_DRIVE_CONNECT"
   | "GOOGLE_DRIVE_DISCONNECT"
   | "GOOGLE_DRIVE_STATUS"
@@ -99,6 +106,8 @@ export interface MessageResponse {
   url?: string;
   recordingUrl?: string;
   token?: string | null;
+  /** Present on STORAGE_STATUS / GOOGLE_DRIVE_STATUS responses. */
+  isConnected?: boolean;
 }
 
 export type ProgressItemStatus =
@@ -155,6 +164,8 @@ export interface RecordingSessionSummary {
 }
 
 export interface UploadSettings {
+  /** Active cloud storage provider for connect/upload (default google-drive). */
+  activeStorageProvider: StorageProviderId;
   folderInput: string;
   folderId: string | null;
   zipPasswordConfigured: boolean;
@@ -228,11 +239,23 @@ export interface UploadHistoryEntry {
   recordingFolderId: string | null;
   targetFolderId: string | null;
   durationMs: number;
+  /** Provider used for this upload; omitted on legacy history entries. */
+  provider?: StorageProviderId;
 }
 
 export interface PopupState {
   recording: RecordingStatus | null;
   sessions: RecordingSessionSummary[];
+  /**
+   * Generic storage connection snapshot for the active provider.
+   * Prefer this over `googleDrive` for new UI; `googleDrive` remains as a
+   * one-release shim mirroring Google Drive connection state.
+   */
+  storage: {
+    provider: StorageProviderId;
+    isConnected: boolean;
+  };
+  /** @deprecated Prefer `storage`; kept for existing popup/drive-auth UI. */
   googleDrive: {
     isConnected: boolean;
   };

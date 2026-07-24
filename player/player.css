@@ -710,11 +710,38 @@ body {
   padding: 12px;
   color: var(--text-secondary);
   background: var(--bg-base);
+  /* Content sizes naturally; the parent .report-viewer scrolls. */
+  min-height: min-content;
 }
 
-.report-viewer {
-  overflow: auto;
+/*
+ * Report tab must scroll vertically inside the logs panel.
+ * .viewer-container sets overflow:hidden later in this file — override it here
+ * with higher specificity so long report/timeline content is not clipped.
+ */
+.viewer-container.report-viewer {
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   background: var(--bg-base);
+  -webkit-overflow-scrolling: touch;
+}
+
+.viewer-container.report-viewer::-webkit-scrollbar {
+  width: 6px;
+}
+
+.viewer-container.report-viewer::-webkit-scrollbar-track {
+  background: var(--bg-base);
+}
+
+.viewer-container.report-viewer::-webkit-scrollbar-thumb {
+  background: var(--border-input);
+  border-radius: 3px;
+}
+
+.viewer-container.report-viewer::-webkit-scrollbar-thumb:hover {
+  background: var(--text-dim);
 }
 
 .report-main {

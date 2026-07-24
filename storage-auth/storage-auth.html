@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<!-- Multi-cloud connect page (Google Drive / Dropbox) outside the popup. -->
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Connect cloud storage - GN Tracing</title>
+  <link rel="stylesheet" href="../shared/theme.css">
+  <script src="../shared/theme-init.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      min-height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      background: var(--bg-base);
+      color: var(--text-primary);
+      font-family: var(--font-ui);
+      font-size: 13px;
+      line-height: 1.45;
+      -webkit-font-smoothing: antialiased;
+    }
+    .gn-page-inner--center {
+      display: flex;
+      flex: 1;
+      flex-direction: column;
+      width: 100%;
+      min-height: 0;
+    }
+    .gn-page-inner--center > .container {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      justify-content: center;
+      width: min(640px, 100%);
+      margin: 0 auto;
+      padding: 24px 16px 32px;
+      gap: 16px;
+    }
+    .hero {
+      text-align: center;
+    }
+    .hero .logo {
+      width: 48px;
+      height: 48px;
+      margin-bottom: 10px;
+    }
+    .hero h1 {
+      font-size: 1.35rem;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+    .hero .subtitle {
+      color: var(--text-secondary);
+      max-width: 36em;
+      margin: 0 auto;
+    }
+    .provider-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .provider-card {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 14px 16px;
+      border: 1px solid var(--border-default);
+      border-radius: var(--radius-md);
+      background: var(--bg-card);
+      box-shadow: var(--shadow-sm);
+    }
+    .provider-card.is-highlight {
+      border-color: color-mix(in srgb, var(--accent) 45%, var(--border-default));
+      box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 25%, transparent);
+    }
+    .provider-card .meta {
+      flex: 1;
+      min-width: 0;
+      text-align: left;
+    }
+    .provider-card .name {
+      font-weight: 700;
+      font-size: 14px;
+    }
+    .provider-card .status {
+      margin-top: 2px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-secondary);
+    }
+    .provider-card .status.is-connected {
+      color: var(--success);
+    }
+    .provider-card .status.is-busy {
+      color: var(--text-secondary);
+    }
+    .provider-card .status.is-error {
+      color: var(--danger, #e35);
+    }
+    .provider-card .actions {
+      display: flex;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+    .footer-note {
+      text-align: center;
+      color: var(--text-secondary);
+      font-size: 12px;
+    }
+    .footer-actions {
+      display: flex;
+      justify-content: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+  </style>
+</head>
+<body>
+  <header class="gn-topbar">
+    <div class="gn-topbar-inner">
+      <div class="gn-topbar-brand">
+        <img class="gn-brand-mark" src="../icons/icon.svg" width="22" height="22" alt="">
+        <span class="gn-brand-name">GN Tracing</span>
+      </div>
+      <div class="gn-topbar-actions">
+        <button type="button" id="theme-toggle-btn" class="icon-btn" aria-label="Toggle theme">
+          <span id="theme-toggle-icon" aria-hidden="true">◐</span>
+        </button>
+        <div class="gn-nav">
+          <button
+            type="button"
+            id="gn-nav-toggle"
+            class="icon-btn"
+            aria-label="Menu"
+            aria-expanded="false"
+            aria-controls="gn-nav-menu"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+              <path d="M4 7h16M4 12h16M4 17h16"/>
+            </svg>
+          </button>
+          <div id="gn-nav-menu" class="gn-nav-menu" role="menu" hidden>
+            <button type="button" role="menuitem" data-gn-nav="settings" data-en="Settings" data-vi="Cài đặt">Settings</button>
+            <button type="button" role="menuitem" data-gn-nav="history" data-en="Upload History" data-vi="Lịch sử upload">Upload History</button>
+            <button type="button" role="menuitem" data-gn-nav="connect" data-en="Manage clouds" data-vi="Quản lý cloud" class="is-current">Manage clouds</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="gn-page">
+    <div class="gn-page-inner gn-page-inner--center">
+      <div class="container">
+        <div class="hero">
+          <img class="logo" src="../icons/icon.svg" width="48" height="48" alt="GN Tracing">
+          <h1 data-en="Connect cloud storage" data-vi="Kết nối lưu trữ đám mây">Connect cloud storage</h1>
+          <p class="subtitle" data-en="Connect Google Drive or Dropbox here. The extension popup only lets you pick an already-connected provider for upload." data-vi="Kết nối Google Drive hoặc Dropbox tại đây. Popup extension chỉ cho chọn provider đã connect để upload.">
+            Connect Google Drive or Dropbox here. The extension popup only lets you pick an already-connected provider for upload.
+          </p>
+        </div>
+
+        <div class="provider-list" id="provider-list" aria-live="polite">
+          <!-- Filled by storage-auth.ts -->
+        </div>
+
+        <p class="footer-note" data-en="Uploads create a shareable replay package on the cloud you connect. Tokens stay in this browser; secrets never ship in the extension." data-vi="Upload tạo package replay có thể chia sẻ trên cloud bạn kết nối. Token chỉ lưu trên trình duyệt này; secret không nằm trong extension.">
+          Uploads create a shareable replay package on the cloud you connect. Tokens stay in this browser; secrets never ship in the extension.
+        </p>
+        <div class="footer-actions">
+          <button type="button" id="close-btn" class="btn btn-secondary">
+            <span data-en="Close" data-vi="Đóng">Close</span>
+          </button>
+          <button type="button" id="refresh-btn" class="btn btn-small">
+            <span data-en="Refresh status" data-vi="Làm mới trạng thái">Refresh status</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script src="storage-auth.js"></script>
+</body>
+</html>

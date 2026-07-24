@@ -9,7 +9,7 @@ It captures:
 - network requests and responses
 - WebSocket activity
 - optional storage snapshots (localStorage, sessionStorage, cookies) and static DOM snapshots
-- an optional Google Drive upload with a replay link
+- an optional upload to your cloud storage (Google Drive or Dropbox) with a replay link
 
 ## Screenshots
 
@@ -17,9 +17,9 @@ It captures:
 
 ![GN Tracing popup recording controls](./store-assets/screenshots/01-popup-recording-controls.png)
 
-### Privacy and Drive settings
+### Privacy and cloud storage settings
 
-![GN Tracing privacy and Drive settings](./store-assets/screenshots/02-popup-privacy-and-drive-settings.png)
+![GN Tracing privacy and cloud storage settings](./store-assets/screenshots/02-popup-privacy-and-drive-settings.png)
 
 ### Replay player
 
@@ -50,7 +50,7 @@ Good fits:
 6. Click `Stop Recording`.
 7. Open or share the replay link after upload.
 
-If Google Drive is connected, GN Tracing uploads automatically after recording stops.
+If cloud storage is connected, GN Tracing uploads automatically after recording stops.
 
 ## Install
 
@@ -101,7 +101,7 @@ The replay player renders objects and JSON with vendored, prebuilt [luna](https:
 - Cannot record browser system pages, extension pages, Chrome Web Store pages, DevTools/internal URLs, or tabs without a normal `http:`, `https:`, or `file:` URL.
 - Keeps unfinished recording data in extension memory until upload.
 - A browser or extension restart can interrupt an unfinished local recording.
-- On non-Chrome Chromium browsers, Google Drive tokens expire after approximately one hour and require reconnection. Brave Shields may block the OAuth popup; disable Shields for the extension page if Drive connect fails.
+- On non-Chrome Chromium browsers, some OAuth access tokens expire after approximately one hour and may require silent refresh or reconnection depending on the provider. Brave Shields may block the OAuth popup; disable Shields for the extension page if cloud storage connect fails.
 
 ## Developers
 

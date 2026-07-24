@@ -16,6 +16,7 @@ import type {
 } from "../types/messages";
 
 const DEFAULT_SETTINGS: UploadSettings = {
+  activeStorageProvider: "google-drive",
   folderInput: "/gn-tracing",
   folderId: null,
   zipPasswordConfigured: false,
@@ -50,6 +51,7 @@ const DEFAULT_SETTINGS: UploadSettings = {
 
 type CapturePresetSettings = Omit<
   UploadSettings,
+  | "activeStorageProvider"
   | "folderInput"
   | "folderId"
   | "zipPasswordConfigured"
@@ -146,7 +148,7 @@ const TRANSLATIONS: Record<SettingsLanguage, Record<string, string>> = {
     "topbar.pageTitle": "Settings",
     "nav.settings": "Settings",
     "nav.history": "Upload History",
-    "nav.connect": "Connect",
+    "nav.connect": "Manage clouds",
     "page.title": "Settings",
     "page.lead": "Choose what each recording captures before you start a session.",
     "actions.save": "Save Settings",
@@ -154,7 +156,16 @@ const TRANSLATIONS: Record<SettingsLanguage, Record<string, string>> = {
     "sections.privacyRedaction": "Privacy & Redaction",
     "sections.privacyData": "Data redaction",
     "sections.visualMasking": "Visual masking",
-    "sections.googleDrive": "Google Drive",
+    "sections.googleDrive": "Cloud storage",
+    "sections.storage": "Cloud storage",
+    "fields.storageProvider.label": "Storage provider",
+    "hints.storageProviderConnect":
+      "Default upload provider when that cloud is already connected. Open Connect clouds from the popup (or the Connect page) to link Google Drive or Dropbox.",
+    "options.providerGoogleDrive": "Google Drive",
+    "options.providerDropbox": "Dropbox",
+    "placeholders.folder": "/gn-tracing",
+    "placeholders.folderDrive": "/gn-tracing, folder ID, or Drive link",
+    "placeholders.folderDropbox": "/gn-tracing or blank for root",
     "sections.packageSecurity": "Package Security",
     "sections.console": "Console",
     "sections.network": "Network",
@@ -232,10 +243,12 @@ const TRANSLATIONS: Record<SettingsLanguage, Record<string, string>> = {
     "options.fullStack": "Full stack",
     "placeholders.noLimit": "No limit",
     "placeholders.maskDomSelectors": "[data-private]\n.customer-email",
-    "hints.folderDefault": "Using Google Drive folder: /gn-tracing.",
-    "hints.folderRoot": "Using your Google Drive root folder.",
-    "hints.folderPath": "Using Google Drive folder: {value}.",
+    "hints.folderDefault": "Using upload folder: /gn-tracing.",
+    "hints.folderRoot": "Using cloud root folder.",
+    "hints.folderPath": "Using folder: {value}.",
     "hints.folderId": "Resolved folder ID: {value}",
+    "hints.folderDropbox": "Dropbox path (e.g. /gn-tracing). Created on upload if missing.",
+    "hints.folderDrive": "Google Drive: /folder/path, folder ID, or Drive folder link.",
     "hints.zipPasswordConfigured": "A zip password is configured for new uploads.",
     "hints.zipPasswordNone": "New uploads will not require a zip password.",
     "hints.visualMasking":
@@ -258,7 +271,7 @@ const TRANSLATIONS: Record<SettingsLanguage, Record<string, string>> = {
     "topbar.pageTitle": "Cài đặt",
     "nav.settings": "Cài đặt",
     "nav.history": "Lịch sử upload",
-    "nav.connect": "Kết nối",
+    "nav.connect": "Quản lý cloud",
     "page.title": "Cài đặt",
     "page.lead": "Chọn dữ liệu cần capture trước khi bắt đầu phiên ghi.",
     "actions.save": "Lưu cài đặt",
@@ -266,7 +279,16 @@ const TRANSLATIONS: Record<SettingsLanguage, Record<string, string>> = {
     "sections.privacyRedaction": "Privacy & Redaction",
     "sections.privacyData": "Che dữ liệu",
     "sections.visualMasking": "Che giao diện",
-    "sections.googleDrive": "Google Drive",
+    "sections.googleDrive": "Lưu trữ đám mây",
+    "sections.storage": "Lưu trữ đám mây",
+    "fields.storageProvider.label": "Nhà cung cấp lưu trữ",
+    "hints.storageProviderConnect":
+      "Provider upload mặc định khi cloud đó đã connect. Mở Connect clouds từ popup (hoặc trang Connect) để liên kết Google Drive hoặc Dropbox.",
+    "options.providerGoogleDrive": "Google Drive",
+    "options.providerDropbox": "Dropbox",
+    "placeholders.folder": "/gn-tracing",
+    "placeholders.folderDrive": "/gn-tracing, folder ID, hoặc link Drive",
+    "placeholders.folderDropbox": "/gn-tracing hoặc để trống cho root",
     "sections.packageSecurity": "Bảo mật gói",
     "sections.console": "Console",
     "sections.network": "Network",
@@ -344,10 +366,12 @@ const TRANSLATIONS: Record<SettingsLanguage, Record<string, string>> = {
     "options.fullStack": "Stack đầy đủ",
     "placeholders.noLimit": "Không giới hạn",
     "placeholders.maskDomSelectors": "[data-private]\n.customer-email",
-    "hints.folderDefault": "Đang dùng thư mục Google Drive: /gn-tracing.",
-    "hints.folderRoot": "Đang dùng thư mục gốc Google Drive.",
-    "hints.folderPath": "Đang dùng thư mục Google Drive: {value}.",
+    "hints.folderDefault": "Đang dùng thư mục upload: /gn-tracing.",
+    "hints.folderRoot": "Đang dùng thư mục gốc trên cloud.",
+    "hints.folderPath": "Đang dùng thư mục: {value}.",
     "hints.folderId": "Folder ID đã resolve: {value}",
+    "hints.folderDropbox": "Đường dẫn Dropbox (vd. /gn-tracing). Tạo khi upload nếu chưa có.",
+    "hints.folderDrive": "Google Drive: /folder/path, folder ID, hoặc link thư mục Drive.",
     "hints.zipPasswordConfigured": "Đã cấu hình mật khẩu zip cho các upload mới.",
     "hints.zipPasswordNone": "Các upload mới sẽ không yêu cầu mật khẩu zip.",
     "hints.visualMasking":
@@ -412,11 +436,11 @@ const FIELD_HELP: Record<string, Record<SettingsLanguage, { title: string; body:
   "folder-input": {
     en: {
       title: "Upload folder",
-      body: "Controls where recording packages are uploaded in Google Drive. QC can use a shared folder path, folder ID, or Drive folder link so reports are grouped by project or test run.",
+      body: "Controls where recording packages are uploaded for the active storage provider. Google Drive accepts a path, folder ID, or Drive folder link. Dropbox accepts a path (or blank for root). Use a shared project path so QC reports stay grouped.",
     },
     vi: {
       title: "Thư mục upload",
-      body: "Quyết định nơi upload recording package trong Google Drive. QC có thể dùng đường dẫn thư mục chung, folder ID hoặc link Drive để gom report theo dự án hoặc test run.",
+      body: "Quyết định nơi upload recording package theo nhà cung cấp lưu trữ đang chọn. Google Drive chấp nhận đường dẫn, folder ID hoặc link Drive. Dropbox chấp nhận đường dẫn (hoặc để trống cho root). Dùng path dự án chung để gom report QC.",
     },
   },
   "zip-password-input": {
@@ -679,6 +703,9 @@ const toastEl = document.getElementById("toast")!;
 const toastIconEl = document.getElementById("toast-icon")!;
 const toastMessageEl = document.getElementById("toast-message")!;
 const toastCloseBtn = document.getElementById("toast-close-btn") as HTMLButtonElement;
+const storageProviderInput = document.getElementById(
+  "storage-provider-input",
+) as HTMLSelectElement | null;
 const folderInput = document.getElementById("folder-input") as HTMLInputElement;
 const folderHint = document.getElementById("folder-hint")!;
 const zipPasswordInput = document.getElementById("zip-password-input") as HTMLInputElement;
@@ -1094,6 +1121,14 @@ function getOptionalNumber(input: HTMLInputElement): number | null {
 }
 
 function updateFolderHint(settings: UploadSettings): void {
+  const provider = settings.activeStorageProvider || "google-drive";
+  if (provider === "dropbox") {
+    folderHint.textContent =
+      settings.folderInput && settings.folderInput !== "/"
+        ? t("hints.folderPath", { value: settings.folderInput })
+        : t("hints.folderDropbox");
+    return;
+  }
   if (settings.folderId) {
     folderHint.textContent = t("hints.folderId", { value: settings.folderId });
     return;
@@ -1102,6 +1137,14 @@ function updateFolderHint(settings: UploadSettings): void {
     settings.folderInput && settings.folderInput !== "/"
       ? t("hints.folderPath", { value: settings.folderInput })
       : t("hints.folderRoot");
+}
+
+function syncFolderPlaceholder(provider: string): void {
+  if (provider === "dropbox") {
+    folderInput.placeholder = t("placeholders.folderDropbox");
+  } else {
+    folderInput.placeholder = t("placeholders.folderDrive");
+  }
 }
 
 function updateZipPasswordHint(settings: UploadSettings): void {
@@ -1115,6 +1158,12 @@ function renderSettings(settings: UploadSettings): void {
   currentSettings = normalizedSettings;
   setProfile(normalizedSettings.captureProfile);
   setPrivacyProfile(normalizedSettings.privacyProfile);
+  if (storageProviderInput) {
+    const provider = normalizedSettings.activeStorageProvider || "google-drive";
+    storageProviderInput.value =
+      provider === "dropbox" || provider === "google-drive" ? provider : "google-drive";
+    syncFolderPlaceholder(storageProviderInput.value);
+  }
   folderInput.value = normalizedSettings.folderInput || "/";
   updateFolderHint(normalizedSettings);
   zipPasswordInput.value = "";
@@ -1189,6 +1238,7 @@ function getSettingsPayload(): Record<string, unknown> {
   const captureProfile = getProfileInput()?.value || "custom";
   const privacyProfile = getPrivacyProfileInput()?.value || "custom";
   const payload: Record<string, unknown> = {
+    activeStorageProvider: storageProviderInput?.value || "google-drive",
     folderInput: folderInput.value.trim() === "/" ? "" : folderInput.value.trim(),
     ...(zipPassword ? { zipPassword } : {}),
     clearZipPassword: clearZipPasswordInput.checked,
@@ -1358,6 +1408,38 @@ document.querySelectorAll("input, select, textarea").forEach((input) => {
       inputId === "redact-storage-values-input" ||
       inputId === "capture-dom-snapshots-input" ||
       inputId === "redact-dom-text-content-input";
+    // Storage provider / folder are not capture profile fields.
+    const isStorageSetting =
+      inputId === "storage-provider-input" ||
+      inputId === "folder-input" ||
+      inputId === "zip-password-input" ||
+      inputId === "clear-zip-password-input";
+    if (inputId === "storage-provider-input" && storageProviderInput) {
+      syncFolderPlaceholder(storageProviderInput.value);
+      updateFolderHint({
+        ...withDefaultSettings(currentSettings || DEFAULT_SETTINGS),
+        activeStorageProvider:
+          storageProviderInput.value as UploadSettings["activeStorageProvider"],
+        folderInput: folderInput.value.trim() === "/" ? "" : folderInput.value.trim(),
+      });
+      // Persist provider immediately so the popup Connect targets the same cloud
+      // even if the user has not clicked Save yet.
+      void chrome.runtime
+        .sendMessage({
+          action: "UPDATE_SETTINGS",
+          data: {
+            activeStorageProvider: storageProviderInput.value,
+          },
+        })
+        .then((result: MessageResponse & { settings?: UploadSettings }) => {
+          if (result?.ok && result.settings) {
+            currentSettings = withDefaultSettings(result.settings);
+          }
+        })
+        .catch(() => {
+          // Ignore; full Save still works.
+        });
+    }
     if (
       profile &&
       profile.value !== "custom" &&
@@ -1365,7 +1447,8 @@ document.querySelectorAll("input, select, textarea").forEach((input) => {
       inputName !== "privacy-profile" &&
       !inputId.startsWith("redact-") &&
       inputId !== "mask-dom-selectors-input" &&
-      !isInspectorToggle
+      !isInspectorToggle &&
+      !isStorageSetting
     ) {
       setProfile("custom");
     }

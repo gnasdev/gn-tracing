@@ -9,13 +9,13 @@
     exactly: "GN Tracing".
   -->
   <title>GN Tracing</title>
-  <meta name="description" content="GN Tracing is a browser debugging extension that records a user-selected browser tab, captures video and debugging artifacts, uploads the package to the user's Google Drive, and opens a shareable session replay.">
+  <meta name="description" content="GN Tracing is a browser debugging extension that records a user-selected browser tab, captures video and debugging artifacts, uploads the package to the user's cloud storage (Google Drive or Dropbox), and opens a shareable session replay.">
   <meta name="application-name" content="GN Tracing">
   <meta name="apple-mobile-web-app-title" content="GN Tracing">
   <meta name="robots" content="index,follow">
   <meta property="og:site_name" content="GN Tracing">
   <meta property="og:title" content="GN Tracing">
-  <meta property="og:description" content="GN Tracing records browser tabs for debugging, uploads packages to Google Drive, and replays sessions with video, console, network, and WebSocket data.">
+  <meta property="og:description" content="GN Tracing records browser tabs for debugging, uploads packages to user-owned cloud storage, and replays sessions with video, console, network, and WebSocket data.">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://tracing.gnas.dev/app/">
   <link rel="canonical" href="https://tracing.gnas.dev/app/">
@@ -29,7 +29,7 @@
       "applicationCategory": "BrowserApplication",
       "operatingSystem": "Chrome, Chromium, Edge, Brave",
       "url": "https://tracing.gnas.dev/app/",
-      "description": "GN Tracing is a browser debugging extension that records a user-selected browser tab, captures video and debugging artifacts, uploads the package to the user's Google Drive, and opens a shareable session replay.",
+      "description": "GN Tracing is a browser debugging extension that records a user-selected browser tab, captures video and debugging artifacts, uploads the package to the user's cloud storage (Google Drive or Dropbox), and opens a shareable session replay.",
       "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
     }
   </script>
@@ -141,9 +141,10 @@
       <p>
         <strong>GN Tracing</strong> records a user-selected browser tab on demand, captures tab
         video and debugging artifacts (such as console logs, network activity, and related session
-        data), packages that evidence for review, uploads the package to the user’s own Google Drive
-        after the user connects Drive, and opens a shareable hosted replay so teammates can inspect
-        what happened without reproducing the bug locally.
+        data), packages that evidence for review, uploads the package to the user’s own cloud storage
+        (Google Drive or Dropbox) after the user connects a provider, and opens a
+        shareable hosted replay so teammates can inspect what happened without reproducing the bug
+        locally.
       </p>
       <div class="panel">
         <p style="margin:0">
@@ -160,7 +161,7 @@
         <li>Records tab video and optional tab audio from a tab the user chooses</li>
         <li>Captures console logs, network requests, and WebSocket activity for debugging</li>
         <li>Applies client-side redaction based on the user’s privacy settings</li>
-        <li>Uploads a recording package to the user’s Google Drive</li>
+        <li>Uploads a recording package to the user’s chosen cloud storage</li>
         <li>Generates a shareable replay link on this website</li>
       </ul>
     </section>
@@ -169,22 +170,40 @@
       <h2 id="how-heading">How to use GN Tracing</h2>
       <ol>
         <li>Install the <strong>GN Tracing</strong> browser extension.</li>
-        <li>Connect Google Drive in the extension popup (limited Drive file access).</li>
+        <li>Choose a storage provider in Settings and connect it in the popup (OAuth with limited file access).</li>
         <li>Start recording the tab you want to debug, then stop when finished.</li>
-        <li>Upload the package to Drive and open the generated replay URL.</li>
+        <li>Upload the package to your cloud and open the generated replay URL.</li>
       </ol>
     </section>
 
-    <section aria-labelledby="drive-heading">
-      <h2 id="drive-heading">How GN Tracing uses Google Drive</h2>
+    <section aria-labelledby="storage-heading">
+      <h2 id="storage-heading">How GN Tracing uses cloud storage</h2>
       <p>
-        <strong>GN Tracing</strong> requests the Google Drive <code>drive.file</code> scope only. It
-        creates and accesses files that <strong>GN Tracing</strong> creates or that the user opens
-        with the app. It does not request full access to every file in the user’s Google Drive.
+        Packages are stored in <strong>your</strong> Google Drive or Dropbox
+        account—not on a GN Tracing file server. OAuth scopes are limited to what is needed to
+        create packages, create link-readable shares, and download for replay.
       </p>
+      <ul>
+        <li>
+          <strong>Google Drive:</strong> requests the Google Drive
+          <code>drive.file</code> scope only (files GN Tracing creates or that the user opens with
+          the app). It does not request full access to every file in the user’s Drive.
+        </li>
+        <li>
+          <strong>Dropbox:</strong> scoped access including
+          <code>files.content.write</code>, <code>files.content.read</code>,
+          <code>sharing.write</code>, <code>sharing.read</code>, and
+          <code>account_info.read</code>.
+        </li>
+        <li>
+          <code>Files.ReadWrite</code>, <code>offline_access</code>, and
+          <strong>SharePoint and site drives are not supported</strong>.
+        </li>
+      </ul>
       <p>
-        Uploaded replay packages are stored in the user’s Drive and may be made readable by link so
-        shared replay URLs work. Users control deletion of those files in Google Drive.
+        Uploaded replay packages may be made readable by link so shared replay URLs work. Users
+        control deletion of those files in their cloud account. Optional zip passwords protect
+        package contents inside a still link-readable file.
       </p>
     </section>
 

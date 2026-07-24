@@ -2,13 +2,15 @@
  * Shared renderer and click handling helpers for upload-history lists.
  */
 import type { UploadHistoryEntry } from "../types/messages";
+import { resolveReplayOpenUrl } from "./player-host";
+import { buildCloudRemoteOpenUrl, resolveHistoryProvider } from "./storage-provider";
 
 /**
  * Shared upload-history rendering and action routing.
  *
  * Popup and history page use the same markup/action attributes so replay links,
- * folder links, copy actions, and delete controls behave consistently across
- * both extension surfaces.
+ * remote cloud opens, copy actions, and delete controls behave consistently
+ * across both extension surfaces.
  */
 const POPUP_UPLOAD_HISTORY_LIMIT = 1;
 export const HISTORY_PAGE_PATH = "history/history.html";
@@ -61,17 +63,7 @@ export function renderUploadHistoryList(items: UploadHistoryEntry[] | undefined)
           attrValue: item.recordingUrl,
           icon: getCopyIcon(),
         })}
-        ${
-          item.recordingFolderId
-            ? renderHistoryActionButton({
-                action: "open-folder",
-                label: "Open folder",
-                attrName: "data-folder-id",
-                attrValue: item.recordingFolderId,
-                icon: getFolderIcon(),
-              })
-            : ""
-        }
+        ${renderOpenRemoteButton(item)}
         ${renderHistoryActionButton({
           action: "delete-history",
           label: "Delete",
@@ -107,7 +99,7 @@ export async function handleUploadHistoryAction(
   if (action === "open-replay") {
     const url = actionTarget.getAttribute("data-url");
     if (url) {
-      options.openExternalUrl(url);
+      options.openExternalUrl(resolveReplayOpenUrl(url));
     }
     return true;
   }
@@ -120,10 +112,16 @@ export async function handleUploadHistoryAction(
     return true;
   }
 
-  if (action === "open-folder") {
-    const folderId = actionTarget.getAttribute("data-folder-id");
-    if (folderId) {
-      options.openExternalUrl(`https://drive.google.com/drive/folders/${folderId}`);
+  // "open-folder" kept as alias for older markup / session actions.
+  if (action === "open-remote" || action === "open-folder") {
+    const openUrl = buildCloudRemoteOpenUrl({
+      provider: actionTarget.getAttribute("data-provider"),
+      recordingUrl: actionTarget.getAttribute("data-recording-url"),
+      folderRef: actionTarget.getAttribute("data-folder-id"),
+      fileId: actionTarget.getAttribute("data-file-id"),
+    });
+    if (openUrl) {
+      options.openExternalUrl(openUrl);
     }
     return true;
   }
@@ -140,19 +138,50 @@ export async function handleUploadHistoryAction(
   return false;
 }
 
+function renderOpenRemoteButton(item: UploadHistoryEntry): string {
+  const folderRef = item.recordingFolderId || item.targetFolderId;
+  const provider = resolveHistoryProvider(item.provider, item.recordingUrl);
+  const openUrl = buildCloudRemoteOpenUrl({
+    provider,
+    recordingUrl: item.recordingUrl,
+    folderRef,
+  });
+  if (!openUrl) {
+    return "";
+  }
+  return renderHistoryActionButton({
+    action: "open-remote",
+    label: "Open remote",
+    attrName: "data-recording-url",
+    attrValue: item.recordingUrl || "",
+    icon: getFolderIcon(),
+    extraAttrs: {
+      "data-provider": provider,
+      "data-folder-id": folderRef || "",
+    },
+  });
+}
+
 function renderHistoryActionButton(params: {
   action: string;
   label: string;
   attrName: string;
   attrValue: string;
   icon: string;
+  extraAttrs?: Record<string, string>;
 }): string {
+  const extras = params.extraAttrs
+    ? Object.entries(params.extraAttrs)
+        .map(([key, value]) => `${key}="${escapeHtml(value)}"`)
+        .join(" ")
+    : "";
   return `
     <button
       type="button"
       class="history-icon-button"
       data-action="${params.action}"
       ${params.attrName}="${escapeHtml(params.attrValue)}"
+      ${extras}
       aria-label="${escapeHtml(params.label)}"
       title="${escapeHtml(params.label)}"
     >

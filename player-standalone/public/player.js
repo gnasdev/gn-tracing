@@ -1,6 +1,7 @@
 /**
  * GN Tracing Player
- * Loads recording data from Google Drive and displays video synchronized with logs.
+ * Loads recording packages from cloud storage (Google Drive, Dropbox)
+ * and displays video synchronized with logs.
  *
  * This file is shared by the extension player and the hosted standalone player.
  * Keep environment-specific behavior behind adapter/config checks so both
@@ -76,6 +77,8 @@
   let startTime = 0;
   let currentTimeMs = 0;
   let duration = 0;
+  /** Active storage provider for the current replay URL (google-drive | dropbox | …). */
+  let activeReplayProvider = "google-drive";
 
   const activeConsoleFilters = new Set();
   const activeNetworkFilters = new Set();
@@ -2758,7 +2761,16 @@
     return url.toString();
   }
 
-  function getDownloadUrl(fileId) {
+  function getDownloadUrl(fileId, provider) {
+    const storageProvider = provider || "google-drive";
+    if (storageProvider === "dropbox") {
+      if (IS_STANDALONE && DRIVE_ADAPTER) {
+        return `/api/dropbox?id=${encodeURIComponent(fileId)}`;
+      }
+      // Extension public fallback: direct shared-link download (dl=1).
+      return buildDropboxPublicDownloadUrl(fileId);
+    }
+
     if (IS_STANDALONE && DRIVE_ADAPTER) {
       return `/api/drive?id=${encodeURIComponent(fileId)}`;
     }
@@ -2766,7 +2778,51 @@
     return `https://drive.usercontent.google.com/download?id=${fileId}&export=download`;
   }
 
-  async function getExtensionDriveToken() {
+  /**
+   * Rebuilds a public Dropbox download URL from the canonical replay id
+   * (shared-link path + rlkey). Behavioral source of truth:
+   * `src/shared/dropbox-api.ts` + `player-standalone/shared/dropbox-public-url.js`.
+   * Rejects absolute URLs and non-shared-link paths (SSRF / open-proxy safety).
+   */
+  function buildDropboxPublicDownloadUrl(replayId) {
+    const id = String(replayId || "").trim();
+    if (!id) {
+      throw new Error("Missing Dropbox replay id");
+    }
+    if (/^https?:\/\//i.test(id) || id.includes("://") || id.startsWith("//")) {
+      throw new Error("Dropbox replay id must be a relative shared-link path, not an absolute URL");
+    }
+    const qIndex = id.indexOf("?");
+    const pathPart = (qIndex >= 0 ? id.slice(0, qIndex) : id).replace(/^\/+/, "");
+    const queryPart = qIndex >= 0 ? id.slice(qIndex + 1) : "";
+    const lower = pathPart.toLowerCase();
+    const allowed = ["s/", "scl/", "sh/", "sm/"].some((prefix) => lower.startsWith(prefix));
+    if (!pathPart || pathPart.includes("..") || !allowed) {
+      throw new Error(
+        "Dropbox replay id path must start with a shared-link prefix (s/, scl/, sh/, or sm/)",
+      );
+    }
+    const url = new URL(`https://www.dropbox.com/${pathPart}`);
+    if (queryPart) {
+      const params = new URLSearchParams(queryPart);
+      for (const [key, value] of params) {
+        if (key === "rlkey" || key === "st" || key === "dl") {
+          url.searchParams.set(key, value);
+        }
+      }
+    }
+    url.searchParams.set("dl", "1");
+    return url.toString();
+  }
+
+  function buildDropboxSharedLinkUrl(replayId) {
+    const downloadUrl = buildDropboxPublicDownloadUrl(replayId);
+    const url = new URL(downloadUrl);
+    url.searchParams.set("dl", "0");
+    return url.toString();
+  }
+
+  async function getExtensionStorageToken(provider) {
     if (
       !IS_EXTENSION ||
       typeof chrome === "undefined" ||
@@ -2776,15 +2832,52 @@
       return null;
     }
 
+    const requestedProvider = provider || "google-drive";
+    const message = {
+      action: "GET_STORAGE_TOKEN",
+      data: { provider: requestedProvider },
+    };
+
+    function tryLegacyGoogleDriveToken(resolve) {
+      chrome.runtime.sendMessage({ action: "GET_GOOGLE_DRIVE_TOKEN" }, (legacyResponse) => {
+        if (
+          chrome.runtime.lastError ||
+          !legacyResponse?.ok ||
+          typeof legacyResponse.token !== "string" ||
+          !legacyResponse.token
+        ) {
+          resolve(null);
+          return;
+        }
+        resolve(legacyResponse.token);
+      });
+    }
+
+    function shouldFallbackToLegacyGoogleToken(response) {
+      if (requestedProvider !== "google-drive") {
+        return false;
+      }
+      // Transport failure or no response from an older SW.
+      if (chrome.runtime.lastError || response == null) {
+        return true;
+      }
+      // Router returns { ok: false, error: "Unknown action" } for unknown actions —
+      // response is non-null and lastError is unset, so handle that explicitly.
+      if (!response.ok) {
+        const errorText = typeof response.error === "string" ? response.error.toLowerCase() : "";
+        return !errorText || errorText.includes("unknown action");
+      }
+      return false;
+    }
+
     return new Promise((resolve) => {
       try {
-        chrome.runtime.sendMessage({ action: "GET_GOOGLE_DRIVE_TOKEN" }, (response) => {
-          if (
-            chrome.runtime.lastError ||
-            !response?.ok ||
-            typeof response.token !== "string" ||
-            !response.token
-          ) {
+        chrome.runtime.sendMessage(message, (response) => {
+          if (shouldFallbackToLegacyGoogleToken(response)) {
+            tryLegacyGoogleDriveToken(resolve);
+            return;
+          }
+          if (!response?.ok || typeof response.token !== "string" || !response.token) {
             resolve(null);
             return;
           }
@@ -2794,6 +2887,10 @@
         resolve(null);
       }
     });
+  }
+
+  async function getExtensionDriveToken() {
+    return getExtensionStorageToken("google-drive");
   }
 
   async function fetchDriveFileWithOAuth(fileId) {
@@ -2828,6 +2925,35 @@
     );
   }
 
+  async function fetchDropboxFileWithOAuth(replayId) {
+    const token = await getExtensionStorageToken("dropbox");
+    if (!token) {
+      return null;
+    }
+
+    let response;
+    try {
+      // content.dropboxapi.com/2/sharing/get_shared_link_file
+      response = await fetch("https://content.dropboxapi.com/2/sharing/get_shared_link_file", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Dropbox-API-Arg": JSON.stringify({ url: buildDropboxSharedLinkUrl(replayId) }),
+        },
+      });
+    } catch {
+      return null;
+    }
+
+    if (response.ok) {
+      return response;
+    }
+    if (response.status === 401 || response.status === 403 || response.status === 409) {
+      return null;
+    }
+    throw new Error(`Failed to download Dropbox file via API: HTTP ${response.status}`);
+  }
+
   async function mapWithConcurrency(items, concurrency, worker) {
     if (!Array.isArray(items) || items.length === 0) {
       return [];
@@ -2850,13 +2976,22 @@
     return results;
   }
 
-  async function fetchDriveFileWithCache(fileId, options = {}) {
-    const oauthResponse = await fetchDriveFileWithOAuth(fileId);
-    if (oauthResponse) {
-      return oauthResponse;
+  async function fetchStorageFileWithCache(fileId, options = {}) {
+    const provider = options.provider || "google-drive";
+
+    if (provider === "dropbox") {
+      const oauthResponse = await fetchDropboxFileWithOAuth(fileId);
+      if (oauthResponse) {
+        return oauthResponse;
+      }
+    } else if (provider === "google-drive") {
+      const oauthResponse = await fetchDriveFileWithOAuth(fileId);
+      if (oauthResponse) {
+        return oauthResponse;
+      }
     }
 
-    const url = getDownloadUrl(fileId);
+    const url = getDownloadUrl(fileId, provider);
     if (options.cache === false || typeof caches === "undefined") {
       return fetch(url);
     }
@@ -2910,9 +3045,11 @@
   }
 
   async function downloadFile(fileId, options = {}) {
-    const response = await fetchDriveFileWithCache(fileId, {
+    const provider = options.provider || activeReplayProvider || "google-drive";
+    const response = await fetchStorageFileWithCache(fileId, {
       cache: options.cache,
       maxCacheBytes: options.maxCacheBytes,
+      provider,
     });
 
     if (!response.ok) {
@@ -3342,12 +3479,23 @@
     return resolved;
   }
 
-  function resolveReplayRecordingId() {
-    const searchId = new URLSearchParams(window.location.search).get("id");
-    if (searchId) {
-      return searchId.trim();
-    }
-
+  /**
+   * Parses provider + file id from the current player URL.
+   *
+   * Namespaced paths: /gdrive/<id>, /dropbox/<id>
+   * Legacy bare path or ?id= → google-drive (backward compatible).
+   * Optional ?provider= overrides the default when using ?id=.
+   * Legacy /onedrive/… paths fail closed (OneDrive support removed).
+   *
+   * Keep rules in sync with `parseStorageRecordingRef` in
+   * `src/shared/storage-provider.ts` (extension TS cannot import into this
+   * raw player bundle without a build step).
+   */
+  function resolveReplayRecordingRef() {
+    const PATH_TO_PROVIDER = {
+      gdrive: "google-drive",
+      dropbox: "dropbox",
+    };
     const reservedPathSegments = new Set([
       "app",
       "privacy",
@@ -3357,25 +3505,66 @@
       "vendor",
       "api",
     ]);
+
+    const searchParams = new URLSearchParams(window.location.search);
+    const searchId = searchParams.get("id");
+    if (searchId && searchId.trim()) {
+      const providerParam = (searchParams.get("provider") || "").trim().toLowerCase();
+      if (providerParam === "onedrive") {
+        return null;
+      }
+      const provider =
+        providerParam === "dropbox" || providerParam === "google-drive"
+          ? providerParam
+          : "google-drive";
+      return { provider, fileId: searchId.trim() };
+    }
+
     const segments = window.location.pathname
       .split("/")
       .map((segment) => segment.trim())
       .filter(Boolean);
-    const lastSegment = segments[segments.length - 1] || "";
 
-    if (
-      !lastSegment ||
-      lastSegment.includes(".") ||
-      reservedPathSegments.has(lastSegment.toLowerCase())
-    ) {
+    if (segments.length === 0) {
+      return null;
+    }
+
+    const first = segments[0].toLowerCase();
+    if (first === "onedrive") {
+      return null;
+    }
+    const namespacedProvider = PATH_TO_PROVIDER[first];
+    if (namespacedProvider) {
+      if (segments.length < 2) {
+        return null;
+      }
+      try {
+        return {
+          provider: namespacedProvider,
+          fileId: decodeURIComponent(segments.slice(1).join("/")),
+        };
+      } catch {
+        return {
+          provider: namespacedProvider,
+          fileId: segments.slice(1).join("/"),
+        };
+      }
+    }
+
+    // Legacy bare Drive file id (first non-reserved path segment).
+    if (reservedPathSegments.has(first) || first.endsWith(".html") || first.includes(".")) {
       return null;
     }
 
     try {
-      return decodeURIComponent(lastSegment);
+      return { provider: "google-drive", fileId: decodeURIComponent(segments[0]) };
     } catch {
-      return lastSegment;
+      return { provider: "google-drive", fileId: segments[0] };
     }
+  }
+
+  function resolveReplayRecordingId() {
+    return resolveReplayRecordingRef()?.fileId || null;
   }
 
   function isEncryptedPackageIndex(indexJson) {
@@ -3554,6 +3743,12 @@
     }
 
     if (await isLikelyHtmlBlob(packageBlob)) {
+      const provider = activeReplayProvider || "google-drive";
+      if (provider === "dropbox") {
+        throw new Error(
+          "Dropbox returned an HTML page instead of a recording package. The shared link may require sign-in or the proxy rejected the response.",
+        );
+      }
       throw new Error(
         "Drive returned an HTML download page instead of a recording package. Please retry after the player proxy refreshes the Drive download confirmation.",
       );
@@ -5989,11 +6184,20 @@
     const urlParams = new URLSearchParams(window.location.search);
     const videos = urlParams.get("videos");
     const metadataFileId = urlParams.get("metadata");
-    const replayRecordingId = resolveReplayRecordingId();
+    const replayRef = resolveReplayRecordingRef();
+    const replayRecordingId = replayRef?.fileId || null;
     const hasParams = Array.from(urlParams.keys()).length > 0;
 
     if (replayRecordingId) {
+      // Google Drive + Dropbox only.
+      if (replayRef.provider !== "google-drive" && replayRef.provider !== "dropbox") {
+        elements.errorMessage.textContent = `Storage provider "${replayRef.provider}" is not supported in this player build yet.`;
+        showError();
+        return;
+      }
+      activeReplayProvider = replayRef.provider;
       resetLoadingProgress("Loading recording package...");
+      // Google: /api/drive. Dropbox: /api/dropbox.
       recordingFiles = await loadRecordingFilesFromIndex(replayRecordingId);
       await loadRecordingFromFiles();
     } else if (videos && metadataFileId) {

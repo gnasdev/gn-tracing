@@ -1,42 +1,95 @@
 /**
- * GN Tracing OAuth token-exchange proxy (Cloudflare Worker).
+ * GN Tracing multi-issuer OAuth token-exchange proxy (Cloudflare Worker).
  *
- * Google rejects PKCE-only token requests when the OAuth client is registered
- * as a "Web application" (it requires a `client_secret`). The extension is a
- * public client and must not ship a secret, so this Worker holds the
- * `client_secret` and performs the token exchange server-side.
+ * The extension is a public client and must not ship OAuth client secrets.
+ * This Worker holds secrets server-side and relays authorization_code /
+ * refresh_token grants to each provider's token endpoint.
  *
- * The extension keeps PKCE end-to-end: it still generates the `code_verifier`
- * and forwards it here. This Worker only appends `client_secret` (and pins
- * `client_id`) before relaying the request to Google's token endpoint. It never
- * stores tokens and never returns the secret.
+ * Routes:
+ *   POST /  | /token | /token/google   → Google
+ *   POST /token/dropbox | /dropbox     → Dropbox
+ *   GET  /health                       → readiness (no secret required)
  *
- * Supported grants (POST, application/x-www-form-urlencoded or JSON):
- *   - grant_type=authorization_code  (code, code_verifier, redirect_uri)
- *   - grant_type=refresh_token       (refresh_token)
+ * The extension keeps PKCE end-to-end (code_verifier). This Worker only pins
+ * client_id + client_secret and never stores tokens or returns secrets.
  *
- * Access is restricted to the configured extension origin(s) via Origin checks
- * so the endpoint cannot be used as an open token-minting proxy.
+ * Access is restricted to configured chrome-extension:// origins.
  */
 
-const GOOGLE_TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
 const ALLOWED_GRANT_TYPES = new Set(["authorization_code", "refresh_token"]);
-// Fields the extension is allowed to forward. `client_id`/`client_secret` are
-// injected by the Worker and intentionally excluded from this allow-list.
-const FORWARDED_FIELDS = ["grant_type", "code", "code_verifier", "redirect_uri", "refresh_token"];
+// Fields the extension may forward. client_id / client_secret are injected.
+const FORWARDED_FIELDS = [
+  "grant_type",
+  "code",
+  "code_verifier",
+  "redirect_uri",
+  "refresh_token",
+  "scope",
+] as const;
+
+export type OAuthProviderId = "google" | "dropbox";
 
 export interface Env {
-  /** Google OAuth client secret. Set via `wrangler secret put GOOGLE_CLIENT_SECRET`. */
-  GOOGLE_CLIENT_SECRET: string;
-  /** Google OAuth client id (the "Web application" client). Public value. */
-  GOOGLE_CLIENT_ID: string;
+  GOOGLE_CLIENT_SECRET?: string;
+  GOOGLE_CLIENT_ID?: string;
+  DROPBOX_CLIENT_SECRET?: string;
+  DROPBOX_CLIENT_ID?: string;
   /**
-   * Comma-separated list of allowed extension origins, e.g.
+   * Comma-separated allowed extension origins, e.g.
    * `chrome-extension://abc...,chrome-extension://def...`.
-   * If empty, all `chrome-extension://` origins are allowed (not recommended
-   * for production, but lets local unpacked builds work during development).
+   * Empty → any `chrome-extension://` origin (dev fallback only).
    */
   ALLOWED_EXTENSION_ORIGINS?: string;
+}
+
+interface ProviderConfig {
+  id: OAuthProviderId;
+  tokenEndpoint: string;
+  clientId: string | undefined;
+  clientSecret: string | undefined;
+  /** When true, missing clientSecret is a server misconfiguration. */
+  requiresSecret: boolean;
+  label: string;
+}
+
+function providerConfig(id: OAuthProviderId, env: Env): ProviderConfig {
+  switch (id) {
+    case "google":
+      return {
+        id,
+        tokenEndpoint: "https://oauth2.googleapis.com/token",
+        clientId: env.GOOGLE_CLIENT_ID,
+        clientSecret: env.GOOGLE_CLIENT_SECRET,
+        requiresSecret: true,
+        label: "Google",
+      };
+    case "dropbox":
+      return {
+        id,
+        tokenEndpoint: "https://api.dropboxapi.com/oauth2/token",
+        clientId: env.DROPBOX_CLIENT_ID,
+        clientSecret: env.DROPBOX_CLIENT_SECRET,
+        requiresSecret: true,
+        label: "Dropbox",
+      };
+  }
+}
+
+/** Map request path to provider. Empty / legacy paths default to Google. */
+export function resolveProviderFromPath(pathname: string): OAuthProviderId | null {
+  const path = pathname.replace(/\/+$/, "") || "/";
+  switch (path) {
+    case "/":
+    case "/token":
+    case "/token/google":
+    case "/google":
+      return "google";
+    case "/token/dropbox":
+    case "/dropbox":
+      return "dropbox";
+    default:
+      return null;
+  }
 }
 
 function parseAllowedOrigins(env: Env): string[] {
@@ -48,8 +101,6 @@ function parseAllowedOrigins(env: Env): string[] {
 
 function isOriginAllowed(origin: string | null, env: Env): boolean {
   if (!origin) {
-    // Non-browser callers (no Origin header) are rejected; the extension's
-    // service worker always sends an Origin for cross-origin fetches.
     return false;
   }
 
@@ -58,8 +109,6 @@ function isOriginAllowed(origin: string | null, env: Env): boolean {
     return allowList.includes(origin);
   }
 
-  // Permissive fallback: any extension origin. Lock this down in production by
-  // setting ALLOWED_EXTENSION_ORIGINS.
   return origin.startsWith("chrome-extension://");
 }
 
@@ -106,12 +155,25 @@ async function handleTokenExchange(
   request: Request,
   env: Env,
   origin: string | null,
+  providerId: OAuthProviderId,
 ): Promise<Response> {
-  if (!env.GOOGLE_CLIENT_SECRET || !env.GOOGLE_CLIENT_ID) {
+  const provider = providerConfig(providerId, env);
+  if (!provider.clientId) {
     return jsonResponse(
       {
         error: "server_misconfigured",
-        error_description: "Worker is missing GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET.",
+        error_description: `Worker is missing ${provider.label} client id for provider "${providerId}".`,
+      },
+      500,
+      origin,
+      env,
+    );
+  }
+  if (provider.requiresSecret && !provider.clientSecret) {
+    return jsonResponse(
+      {
+        error: "server_misconfigured",
+        error_description: `Worker is missing ${provider.label} client secret for confidential provider "${providerId}".`,
       },
       500,
       origin,
@@ -144,7 +206,6 @@ async function handleTokenExchange(
     );
   }
 
-  // Build the upstream request from an allow-list, then inject credentials.
   const upstream = new URLSearchParams();
   for (const field of FORWARDED_FIELDS) {
     const value = incoming.get(field);
@@ -152,12 +213,17 @@ async function handleTokenExchange(
       upstream.set(field, value);
     }
   }
-  upstream.set("client_id", env.GOOGLE_CLIENT_ID);
-  upstream.set("client_secret", env.GOOGLE_CLIENT_SECRET);
+  // Pin client_id from the Worker (ignore any client-supplied values).
+  // Only attach client_secret when the provider requires a confidential client.
+  // Microsoft public clients reject secrets with AADSTS90023.
+  upstream.set("client_id", provider.clientId);
+  if (provider.clientSecret) {
+    upstream.set("client_secret", provider.clientSecret);
+  }
 
-  let googleResponse: Response;
+  let upstreamResponse: Response;
   try {
-    googleResponse = await fetch(GOOGLE_TOKEN_ENDPOINT, {
+    upstreamResponse = await fetch(provider.tokenEndpoint, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: upstream,
@@ -172,16 +238,25 @@ async function handleTokenExchange(
     );
   }
 
-  // Relay Google's response verbatim (status + JSON) so the extension's
-  // existing error handling keeps working unchanged.
-  const payloadText = await googleResponse.text();
+  const payloadText = await upstreamResponse.text();
   return new Response(payloadText, {
-    status: googleResponse.status,
+    status: upstreamResponse.status,
     headers: {
-      "Content-Type": googleResponse.headers.get("Content-Type") ?? "application/json",
+      "Content-Type": upstreamResponse.headers.get("Content-Type") ?? "application/json",
       ...corsHeaders(origin, env),
     },
   });
+}
+
+function healthBody(env: Env): Record<string, unknown> {
+  return {
+    ok: true,
+    service: "gn-tracing-oauth-proxy",
+    providers: {
+      google: Boolean(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET),
+      dropbox: Boolean(env.DROPBOX_CLIENT_ID && env.DROPBOX_CLIENT_SECRET),
+    },
+  };
 }
 
 export default {
@@ -189,9 +264,8 @@ export default {
     const url = new URL(request.url);
     const origin = request.headers.get("Origin");
 
-    // Unauthenticated health check for deploy verification.
     if (request.method === "GET" && url.pathname === "/health") {
-      return jsonResponse({ ok: true, service: "gn-tracing-oauth-proxy" }, 200, origin, env);
+      return jsonResponse(healthBody(env), 200, origin, env);
     }
 
     if (request.method === "OPTIONS") {
@@ -219,15 +293,19 @@ export default {
       );
     }
 
-    if (url.pathname === "/" || url.pathname === "/token") {
-      return handleTokenExchange(request, env, origin);
+    const providerId = resolveProviderFromPath(url.pathname);
+    if (!providerId) {
+      return jsonResponse(
+        {
+          error: "not_found",
+          error_description: "Unknown endpoint. Use /token (Google) or /token/dropbox.",
+        },
+        404,
+        origin,
+        env,
+      );
     }
 
-    return jsonResponse(
-      { error: "not_found", error_description: "Unknown endpoint." },
-      404,
-      origin,
-      env,
-    );
+    return handleTokenExchange(request, env, origin, providerId);
   },
 };

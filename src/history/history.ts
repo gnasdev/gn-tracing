@@ -31,7 +31,7 @@ const TRANSLATIONS: Record<HistoryLanguage, Record<string, string>> = {
     "topbar.pageTitle": "Upload History",
     "nav.settings": "Settings",
     "nav.history": "Upload History",
-    "nav.connect": "Connect",
+    "nav.connect": "Manage clouds",
     "page.title": "Upload History",
     "page.lead":
       "Review previous uploads, jump back into a replay, copy a shareable link, or clean up old items.",
@@ -49,7 +49,7 @@ const TRANSLATIONS: Record<HistoryLanguage, Record<string, string>> = {
     "topbar.pageTitle": "Lịch sử upload",
     "nav.settings": "Cài đặt",
     "nav.history": "Lịch sử upload",
-    "nav.connect": "Kết nối",
+    "nav.connect": "Quản lý cloud",
     "page.title": "Lịch sử upload",
     "page.lead":
       "Xem lại các upload trước, mở lại replay, sao chép link chia sẻ, hoặc dọn các mục cũ.",

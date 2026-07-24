@@ -317,13 +317,14 @@ body {
   color: var(--text-dim);
 }
 
-/* ---------- Google Drive (moved between the two slots by JS) ---------- */
+/* ---------- Cloud storage connect (moved between the two slots by JS) ---------- */
 #main-google-drive-slot:empty,
 #connected-google-drive-slot:empty {
   display: none;
 }
 
-.setting-row {
+.setting-row,
+.storage-connect-card {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -334,14 +335,85 @@ body {
   box-shadow: var(--shadow-sm);
 }
 
-.setting-row label {
+.storage-connect-card {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.storage-connect-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.setting-row label,
+.storage-connect-header label {
   font-size: var(--fs-base);
   font-weight: 700;
   color: var(--text-primary);
 }
 
-#google-drive-status {
+.storage-connect-controls {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+
+/* Keep select + Manage clouds button the same height. */
+.storage-connect-controls #storage-provider-select,
+.storage-connect-controls #manage-storage-btn {
+  box-sizing: border-box;
+  height: 32px;
+  min-height: 32px;
+  max-height: 32px;
+  margin: 0;
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+#storage-provider-select {
   flex: 1;
+  min-width: 0;
+  padding: 0 8px;
+  border: 1px solid var(--border-default);
+  background: var(--bg-base);
+  color: var(--text-primary);
+  /* Avoid native select extra height on macOS */
+  appearance: none;
+  -webkit-appearance: none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--text-muted) 50%),
+    linear-gradient(135deg, var(--text-muted) 50%, transparent 50%);
+  background-position:
+    calc(100% - 14px) calc(50% - 2px),
+    calc(100% - 10px) calc(50% - 2px);
+  background-size:
+    4px 4px,
+    4px 4px;
+  background-repeat: no-repeat;
+  padding-right: 24px;
+}
+
+.storage-connect-controls #manage-storage-btn {
+  flex: 0 0 auto;
+  padding: 0 12px;
+  /* Override .btn-small min-height: 28px so it matches the select. */
+  min-height: 32px;
+}
+
+.storage-connect-hint {
+  margin: 0;
+  font-size: var(--fs-xs, 11px);
+  line-height: 1.35;
+  color: var(--text-secondary);
+}
+
+#google-drive-status {
+  flex: 0 0 auto;
   min-width: 0;
   font-size: var(--fs-sm);
   font-weight: 600;

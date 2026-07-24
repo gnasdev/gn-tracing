@@ -1,34 +1,21 @@
 #:schema node_modules/wrangler/config-schema.json
 #
-# Cloudflare Worker that proxies the Google OAuth token exchange for the
-# GN Tracing extension. It holds GOOGLE_CLIENT_SECRET (set as an encrypted
-# secret, never committed) and relays authorization_code / refresh_token
-# grants to https://oauth2.googleapis.com/token.
-#
-# Deploy with: task worker:deploy  (or `npm run deploy` inside worker/)
+# Multi-issuer OAuth token proxy for GN Tracing (Google / Dropbox).
+# Secrets: wrangler secret put GOOGLE_CLIENT_SECRET | DROPBOX_CLIENT_SECRET
+# Deploy: task worker:deploy  (or ./deploy.sh)
 
 name = "gn-tracing-oauth-proxy"
 main = "src/index.ts"
 compatibility_date = "2024-11-01"
 workers_dev = true
 
-# Stable local dev server address so the extension's GOOGLE_TOKEN_PROXY_URL can
-# point at http://localhost:8787 during development. `wrangler dev` hot-reloads
-# the Worker on source changes automatically.
 [dev]
 ip = "localhost"
 port = 8787
 local_protocol = "http"
 
-# Non-secret vars. GOOGLE_CLIENT_ID is public; the secret is set separately via
-# `wrangler secret put GOOGLE_CLIENT_SECRET`. ALLOWED_EXTENSION_ORIGINS pins the
-# allowed caller(s) — set it to your published extension origin in production.
-# For local dev, values in .dev.vars override these empty defaults.
+# Public vars. Secrets are set via `wrangler secret put` (or .dev.vars locally).
 [vars]
 GOOGLE_CLIENT_ID = ""
+DROPBOX_CLIENT_ID = ""
 ALLOWED_EXTENSION_ORIGINS = ""
-
-# Example: route the Worker on a custom domain instead of *.workers.dev.
-# [[routes]]
-# pattern = "auth.tracing.gnas.dev"
-# custom_domain = true

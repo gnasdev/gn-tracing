@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- Extension popup UI for recording controls, Drive status, and history. -->
+<!-- Extension popup UI for recording controls, cloud storage status, and history. -->
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -88,13 +88,22 @@
 
     <div id="main-google-drive-slot"></div>
     <div id="connected-google-drive-slot">
-      <div id="google-drive-section">
-        <div class="setting-row">
-          <label>Google Drive</label>
-          <div id="google-drive-status">Not connected</div>
-          <button type="button" id="google-drive-connect-btn" class="btn btn-start btn-small">Connect</button>
-          <button type="button" id="google-drive-disconnect-btn" class="btn btn-small hidden">Disconnect</button>
+      <div id="google-drive-section" class="storage-connect-card">
+        <div class="storage-connect-header">
+          <label for="storage-provider-select" id="storage-provider-label">Upload to</label>
+          <div id="google-drive-status">No cloud connected</div>
         </div>
+        <div class="storage-connect-controls">
+          <select id="storage-provider-select" aria-label="Connected storage provider" disabled>
+            <option value="">Connect a cloud first…</option>
+          </select>
+          <button type="button" id="manage-storage-btn" class="btn btn-start btn-small">
+            Connect clouds
+          </button>
+        </div>
+        <p class="storage-connect-hint" id="storage-connect-hint">
+          Connect Google Drive or Dropbox on the cloud page. This popup only switches among already-connected providers.
+        </p>
       </div>
     </div>
 
@@ -144,7 +153,7 @@
 
     <section id="capture-disclosure">
       <div class="capture-disclosure-copy">
-        Records the selected tab and uploads a replay package to your Google Drive. Capture detail and password options live in Settings.
+        Records the selected tab and uploads a replay package to your connected cloud storage (Google Drive or Dropbox). Capture detail and password options live in Settings.
       </div>
     </section>
 

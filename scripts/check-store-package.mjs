@@ -45,27 +45,33 @@ if (!manifest.minimum_chrome_version) {
   fail("minimum_chrome_version is required for Store package clarity.");
 }
 
-// Store package needs:
-// - oauth2.googleapis.com + www.googleapis.com: PKCE token exchange/refresh and Drive API
-// - optional one https origin: GOOGLE_TOKEN_PROXY_URL Worker (Web OAuth client secret)
-const allowedHostPermissions = new Set([
+// Fixed multi-cloud hosts (must match manifest.template.json host_permissions
+// minus optional token-proxy origins injected at build time).
+// Google Drive + Dropbox fixed host permissions.
+const fixedHostPermissions = new Set([
   "https://oauth2.googleapis.com/",
   "https://www.googleapis.com/",
+  "https://api.dropboxapi.com/",
+  "https://content.dropboxapi.com/",
+  "https://www.dropbox.com/",
+  "https://dl.dropboxusercontent.com/",
 ]);
+// Optional token-proxy Worker origins (Google / Dropbox), max 2.
+const MAX_TOKEN_PROXY_ORIGINS = 2;
+
 const hostPermissions = Array.isArray(manifest.host_permissions) ? manifest.host_permissions : [];
 const extraHostPermissions = hostPermissions.filter(
-  (permission) => !allowedHostPermissions.has(permission),
+  (permission) => !fixedHostPermissions.has(permission),
 );
 
-if (extraHostPermissions.length > 1) {
+if (extraHostPermissions.length > MAX_TOKEN_PROXY_ORIGINS) {
   fail(
     `unexpected host_permissions found: ${extraHostPermissions.join(", ")} ` +
-      `(at most one OAuth token proxy origin is allowed beyond Google hosts)`,
+      `(at most ${MAX_TOKEN_PROXY_ORIGINS} OAuth token proxy origins beyond fixed multi-cloud hosts)`,
   );
 }
 
-if (extraHostPermissions.length === 1) {
-  const proxyPermission = extraHostPermissions[0];
+for (const proxyPermission of extraHostPermissions) {
   try {
     const proxyUrl = new URL(proxyPermission);
     if (proxyUrl.protocol !== "https:" || proxyPermission !== `${proxyUrl.origin}/`) {
@@ -78,7 +84,7 @@ if (extraHostPermissions.length === 1) {
   }
 }
 
-const missingFixedHosts = [...allowedHostPermissions].filter(
+const missingFixedHosts = [...fixedHostPermissions].filter(
   (permission) => !hostPermissions.includes(permission),
 );
 if (missingFixedHosts.length > 0) {

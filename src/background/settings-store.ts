@@ -1,6 +1,12 @@
+import { parseDropboxFolderInput } from "../shared/dropbox-folder";
 import { parseGoogleDriveFolderInput } from "../shared/google-drive-folder";
 import { buildExternalPlayerUrl } from "../shared/player-host";
 import { getPrivacyProfileSettings, normalizeMaskDomSelectors } from "../shared/privacy-redaction";
+import {
+  normalizeStorageProviderId,
+  parseStorageRecordingRef,
+  type StorageProviderId,
+} from "../shared/storage-provider";
 import type {
   CaptureMode,
   CaptureProfile,
@@ -18,10 +24,24 @@ import type {
   UploadSettings,
 } from "../types/messages";
 
-export interface UploadSettingsStore extends PrivacyRedactionSettings {
+/** Per-provider upload folder so switching providers does not overwrite paths. */
+export interface ProviderFolderSettings {
   folderInput: string;
   folderId: string | null;
   folderPath: string[];
+}
+
+export interface UploadSettingsStore extends PrivacyRedactionSettings {
+  activeStorageProvider: StorageProviderId;
+  /** Active provider's folder (mirrors folderByProvider[active]). */
+  folderInput: string;
+  folderId: string | null;
+  folderPath: string[];
+  /**
+   * Folder settings keyed by provider. When the user switches active provider,
+   * the previous folder is kept here and the new provider's folder is restored.
+   */
+  folderByProvider: Partial<Record<StorageProviderId, ProviderFolderSettings>>;
   zipPassword: string;
   captureProfile: CaptureProfile;
   captureConsole: boolean;
@@ -56,9 +76,11 @@ export interface UploadSettingsStore extends PrivacyRedactionSettings {
 
 type CaptureSettingsStore = Omit<
   UploadSettingsStore,
+  | "activeStorageProvider"
   | "folderInput"
   | "folderId"
   | "folderPath"
+  | "folderByProvider"
   | "zipPassword"
   | "captureProfile"
   | "captureStorage"
@@ -112,10 +134,26 @@ export const DEFAULT_CAPTURE_PRIVACY_SETTINGS = {
   captureMode: "in-page" as CaptureMode,
 };
 
-let cachedUploadSettings: UploadSettingsStore = {
+const DEFAULT_GOOGLE_FOLDER: ProviderFolderSettings = {
   folderInput: DEFAULT_UPLOAD_FOLDER.normalizedInput,
   folderId: DEFAULT_UPLOAD_FOLDER.folderId,
   folderPath: [...DEFAULT_UPLOAD_FOLDER.folderPath],
+};
+const DEFAULT_DROPBOX_FOLDER: ProviderFolderSettings = {
+  folderInput: parseDropboxFolderInput(DEFAULT_UPLOAD_FOLDER_INPUT).normalizedInput,
+  folderId: null,
+  folderPath: [...parseDropboxFolderInput(DEFAULT_UPLOAD_FOLDER_INPUT).folderPath],
+};
+
+let cachedUploadSettings: UploadSettingsStore = {
+  activeStorageProvider: "google-drive",
+  folderInput: DEFAULT_GOOGLE_FOLDER.folderInput,
+  folderId: DEFAULT_GOOGLE_FOLDER.folderId,
+  folderPath: [...DEFAULT_GOOGLE_FOLDER.folderPath],
+  folderByProvider: {
+    "google-drive": { ...DEFAULT_GOOGLE_FOLDER, folderPath: [...DEFAULT_GOOGLE_FOLDER.folderPath] },
+    dropbox: { ...DEFAULT_DROPBOX_FOLDER, folderPath: [...DEFAULT_DROPBOX_FOLDER.folderPath] },
+  },
   zipPassword: "",
   ...DEFAULT_CAPTURE_PRIVACY_SETTINGS,
 };
@@ -154,6 +192,78 @@ export function normalizeEnum<T extends string>(
   return typeof value === "string" && (allowed as readonly string[]).includes(value)
     ? (value as T)
     : fallback;
+}
+
+/**
+ * Providers registered for connect/upload in this build (Drive + Dropbox).
+ */
+const ACTIVE_STORAGE_PROVIDERS = [
+  "google-drive",
+  "dropbox",
+] as const satisfies readonly StorageProviderId[];
+
+/** @deprecated Prefer clampActiveStorageProvider — kept as alias for older imports/tests. */
+export function clampActiveStorageProviderP0(value: unknown): StorageProviderId {
+  return clampActiveStorageProvider(value);
+}
+
+export function clampActiveStorageProvider(value: unknown): StorageProviderId {
+  const normalized = normalizeStorageProviderId(value, "google-drive");
+  return (ACTIVE_STORAGE_PROVIDERS as readonly string[]).includes(normalized)
+    ? normalized
+    : "google-drive";
+}
+
+/** Parse folder input for the given provider (Drive ids/links vs path-based clouds). */
+export function parseFolderInputForProvider(
+  provider: StorageProviderId,
+  input: string | null | undefined,
+): ProviderFolderSettings {
+  if (provider === "dropbox") {
+    const parsed = parseDropboxFolderInput(input);
+    return {
+      folderInput: parsed.normalizedInput,
+      folderId: parsed.folderId,
+      folderPath: [...parsed.folderPath],
+    };
+  }
+  const parsed = parseGoogleDriveFolderInput(input);
+  return {
+    folderInput: parsed.normalizedInput,
+    folderId: parsed.folderId,
+    folderPath: [...parsed.folderPath],
+  };
+}
+
+function normalizeProviderFolderSettings(
+  provider: StorageProviderId,
+  stored: Partial<ProviderFolderSettings> | undefined,
+  fallback: ProviderFolderSettings,
+): ProviderFolderSettings {
+  if (!stored || typeof stored !== "object") {
+    return {
+      folderInput: fallback.folderInput,
+      folderId: fallback.folderId,
+      folderPath: [...fallback.folderPath],
+    };
+  }
+  if (typeof stored.folderInput === "string") {
+    const parsed = parseFolderInputForProvider(provider, stored.folderInput);
+    return {
+      folderInput: parsed.folderInput,
+      folderId: typeof stored.folderId === "string" ? stored.folderId : parsed.folderId,
+      folderPath: Array.isArray(stored.folderPath)
+        ? stored.folderPath.filter((segment) => typeof segment === "string")
+        : parsed.folderPath,
+    };
+  }
+  return {
+    folderInput: fallback.folderInput,
+    folderId: typeof stored.folderId === "string" ? stored.folderId : fallback.folderId,
+    folderPath: Array.isArray(stored.folderPath)
+      ? stored.folderPath.filter((segment) => typeof segment === "string")
+      : [...fallback.folderPath],
+  };
 }
 
 export function getCaptureProfileSettings(profile: CaptureProfile): CaptureSettingsStore {
@@ -235,11 +345,52 @@ function normalizeUploadSettingsStore(
   stored: Partial<UploadSettingsStore> | Partial<UploadSettings> | undefined,
 ): UploadSettingsStore {
   const storedUploadSettings = stored as Partial<UploadSettingsStore> | undefined;
-  const storedHasFolderInput = typeof stored?.folderInput === "string";
-  // Only missing folder settings use the default; saved blank values still mean Drive root.
-  const parsedFolder = storedHasFolderInput
-    ? parseGoogleDriveFolderInput(stored.folderInput)
-    : DEFAULT_UPLOAD_FOLDER;
+  // Active providers: google-drive + dropbox. Unknown (incl. legacy onedrive) clamp to Drive.
+  const activeStorageProvider = clampActiveStorageProvider(
+    storedUploadSettings?.activeStorageProvider,
+  );
+
+  const storedByProvider =
+    storedUploadSettings?.folderByProvider &&
+    typeof storedUploadSettings.folderByProvider === "object"
+      ? storedUploadSettings.folderByProvider
+      : {};
+
+  const googleFolder = normalizeProviderFolderSettings(
+    "google-drive",
+    storedByProvider["google-drive"] ??
+      (activeStorageProvider === "google-drive" || !storedByProvider.dropbox
+        ? {
+            folderInput: typeof stored?.folderInput === "string" ? stored.folderInput : undefined,
+            folderId: typeof stored?.folderId === "string" ? stored.folderId : undefined,
+            folderPath: Array.isArray(storedUploadSettings?.folderPath)
+              ? storedUploadSettings.folderPath
+              : undefined,
+          }
+        : undefined),
+    DEFAULT_GOOGLE_FOLDER,
+  );
+  const dropboxFolder = normalizeProviderFolderSettings(
+    "dropbox",
+    storedByProvider.dropbox ??
+      (activeStorageProvider === "dropbox"
+        ? {
+            folderInput: typeof stored?.folderInput === "string" ? stored.folderInput : undefined,
+            folderId: typeof stored?.folderId === "string" ? stored.folderId : undefined,
+            folderPath: Array.isArray(storedUploadSettings?.folderPath)
+              ? storedUploadSettings.folderPath
+              : undefined,
+          }
+        : undefined),
+    DEFAULT_DROPBOX_FOLDER,
+  );
+
+  const folderByProvider: Partial<Record<StorageProviderId, ProviderFolderSettings>> = {
+    "google-drive": googleFolder,
+    dropbox: dropboxFolder,
+  };
+  const activeFolder = activeStorageProvider === "dropbox" ? dropboxFolder : googleFolder;
+
   const captureProfile = normalizeEnum<CaptureProfile>(
     storedUploadSettings?.captureProfile,
     ["lean", "balanced", "full", "custom"],
@@ -268,11 +419,11 @@ function normalizeUploadSettingsStore(
   );
 
   return {
-    folderInput: parsedFolder.normalizedInput,
-    folderId: typeof stored?.folderId === "string" ? stored.folderId : parsedFolder.folderId,
-    folderPath: Array.isArray(storedUploadSettings?.folderPath)
-      ? storedUploadSettings.folderPath.filter((segment) => typeof segment === "string")
-      : [...parsedFolder.folderPath],
+    activeStorageProvider,
+    folderInput: activeFolder.folderInput,
+    folderId: activeFolder.folderId,
+    folderPath: [...activeFolder.folderPath],
+    folderByProvider,
     zipPassword:
       typeof storedUploadSettings?.zipPassword === "string" ? storedUploadSettings.zipPassword : "",
     captureProfile,
@@ -493,6 +644,7 @@ export async function saveUploadHistory(history: UploadHistoryEntry[]): Promise<
 
 export function getSettingsSnapshot(settings: UploadSettingsStore): UploadSettings {
   return {
+    activeStorageProvider: settings.activeStorageProvider,
     folderInput: settings.folderInput,
     folderId: settings.folderId,
     zipPasswordConfigured: settings.zipPassword.length > 0,
@@ -554,41 +706,23 @@ export function normalizeRecordingUrl(recordingUrl: string | null | undefined): 
 
   try {
     const parsed = new URL(recordingUrl);
-    const legacyRecordingId = getLegacyRecordingIdFromUrl(parsed);
+    const ref = parseStorageRecordingRef(parsed);
     if (
       parsed.protocol === "chrome-extension:" ||
       parsed.pathname.endsWith("/player/player.html")
     ) {
-      if (legacyRecordingId) {
-        return buildExternalPlayerUrl(legacyRecordingId);
+      if (ref) {
+        return buildExternalPlayerUrl(ref.fileId, ref.provider);
       }
     }
     if (parsed.protocol === "http:" && ["localhost", "127.0.0.1"].includes(parsed.hostname)) {
-      if (legacyRecordingId) {
-        return buildExternalPlayerUrl(legacyRecordingId);
+      if (ref) {
+        return buildExternalPlayerUrl(ref.fileId, ref.provider);
       }
     }
     return recordingUrl;
   } catch {
     return recordingUrl;
-  }
-}
-
-function getLegacyRecordingIdFromUrl(parsed: URL): string | null {
-  const queryId = parsed.searchParams.get("id");
-  if (queryId) {
-    return queryId;
-  }
-
-  const firstPathSegment = parsed.pathname.split("/").filter(Boolean)[0];
-  if (!firstPathSegment || firstPathSegment.endsWith(".html")) {
-    return null;
-  }
-
-  try {
-    return decodeURIComponent(firstPathSegment);
-  } catch {
-    return firstPathSegment;
   }
 }
 

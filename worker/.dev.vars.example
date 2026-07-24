@@ -2,17 +2,16 @@
 #   cp .dev.vars.example .dev.vars
 #
 # `wrangler dev` reads both plain vars and secrets from `.dev.vars` in local
-# mode, overriding the empty [vars] in wrangler.toml. `.dev.vars` is git-ignored
-# so secrets never get committed. This file is the committed reference.
+# mode, overriding the empty [vars] in wrangler.toml. `.dev.vars` is git-ignored.
 
-# Public OAuth client id (same value as root .env GOOGLE_CLIENT_ID).
+# Public client ids (same as root .env).
 GOOGLE_CLIENT_ID=
+DROPBOX_CLIENT_ID=
 
-# Allowed caller origin(s). Prefer the stable store id (matches CHROME_EXTENSION_ID):
+# Allowed caller origin(s). Prefer the store extension id:
 #   chrome-extension://jbhlmonpecgenhinhffclanbbknjlbeh
-# Comma-separated for multiple. Leave empty to allow any chrome-extension://.
 ALLOWED_EXTENSION_ORIGINS=chrome-extension://jbhlmonpecgenhinhffclanbbknjlbeh
 
-# OAuth client secret. A dummy value is enough for /health and validation smoke
-# tests; only a real secret completes a real Google token exchange.
+# OAuth client secrets (local only; never commit).
 GOOGLE_CLIENT_SECRET=
+DROPBOX_CLIENT_SECRET=

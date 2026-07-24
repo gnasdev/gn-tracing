@@ -86,7 +86,7 @@ The privacy artifact is optional for replay compatibility. Packages without it s
 - ZIP passwords are not part of the redaction policy. Passwords protect recording package entry payloads and are kept out of replay URLs, upload history, package metadata, popup snapshots, and page-injected scripts.
 - Redaction does not inspect binary/base64 response bodies or binary WebSocket payloads.
 - Source-map enrichment happens before replay. The player renders enriched frames, snippets, and diagnostics from artifacts; it does not fetch original source maps or application source files during replay.
-- Google Drive link sharing is not access-controlled by redaction. Unprotected replay package contents are readable to anyone with the replay URL.
+- Cloud link sharing is not access-controlled by redaction. Unprotected replay package contents are readable to anyone with the replay URL regardless of whether the package is stored on Google Drive or Dropbox.
 
 ## Relationships
 

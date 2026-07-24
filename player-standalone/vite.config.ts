@@ -9,6 +9,8 @@ import path from "path";
 import { fileURLToPath } from "url";
 import type { Connect } from "vite";
 import { defineConfig } from "vite";
+// Shared with Cloudflare Pages functions — single source for proxy URL allowlists.
+import { buildDropboxPublicDownloadUrl } from "./shared/dropbox-public-url.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DRIVE_DOWNLOAD_URL = "https://drive.usercontent.google.com/download";
@@ -226,6 +228,92 @@ function createDriveProxyMiddleware(): Connect.NextHandleFunction {
 
 const driveProxyMiddleware = createDriveProxyMiddleware();
 
+function createDropboxProxyMiddleware(): Connect.NextHandleFunction {
+  return async (req, res, next) => {
+    if (!req.url || !req.url.startsWith("/api/dropbox")) {
+      next();
+      return;
+    }
+
+    try {
+      const requestUrl = new URL(req.url, "http://localhost");
+      const fileId = requestUrl.searchParams.get("id");
+
+      if (!fileId) {
+        res.statusCode = 400;
+        res.end("Missing id query parameter");
+        return;
+      }
+
+      let upstreamUrl: string;
+      try {
+        upstreamUrl = buildDropboxPublicDownloadUrl(fileId);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Invalid Dropbox id";
+        res.statusCode = 400;
+        res.end(`Dropbox proxy error: ${message}`);
+        return;
+      }
+
+      const range = req.headers.range;
+      const upstreamHeaders = new Headers();
+      if (typeof range === "string" && range) {
+        upstreamHeaders.set("range", range);
+      }
+
+      const upstreamResponse = await fetch(upstreamUrl, {
+        method: req.method || "GET",
+        headers: upstreamHeaders,
+        redirect: "follow",
+      });
+
+      res.statusCode = upstreamResponse.status;
+      res.statusMessage = upstreamResponse.statusText;
+
+      for (const headerName of FORWARDED_DRIVE_HEADERS) {
+        const headerValue = upstreamResponse.headers.get(headerName);
+        if (headerValue) {
+          res.setHeader(headerName, headerValue);
+        }
+      }
+
+      res.setHeader("access-control-allow-origin", "*");
+      res.setHeader("x-content-type-options", "nosniff");
+
+      const contentType = upstreamResponse.headers.get("content-type") || "";
+      if (contentType.toLowerCase().includes("text/html")) {
+        res.statusCode = 502;
+        res.setHeader("cache-control", "no-store");
+        res.end("Dropbox returned an HTML page instead of file bytes.");
+        return;
+      }
+
+      res.setHeader("cache-control", "public, max-age=86400");
+
+      if (!upstreamResponse.body) {
+        res.end();
+        return;
+      }
+
+      const reader = upstreamResponse.body.getReader();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value) {
+          res.write(Buffer.from(value));
+        }
+      }
+      res.end();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown proxy error";
+      res.statusCode = 502;
+      res.end(`Dropbox proxy error: ${message}`);
+    }
+  };
+}
+
+const dropboxProxyMiddleware = createDropboxProxyMiddleware();
+
 function shouldRewriteToPlayer(urlPath: string): boolean {
   if (!urlPath || urlPath === "/") return false;
   if (
@@ -269,13 +357,15 @@ function playerSpaFallbackMiddleware(): Connect.NextHandleFunction {
 
 function driveProxyPlugin() {
   return {
-    name: "gn-tracing-drive-proxy",
+    name: "gn-tracing-storage-proxy",
     configureServer(server: { middlewares: Connect.Server }) {
       server.middlewares.use(driveProxyMiddleware);
+      server.middlewares.use(dropboxProxyMiddleware);
       server.middlewares.use(playerSpaFallbackMiddleware());
     },
     configurePreviewServer(server: { middlewares: Connect.Server }) {
       server.middlewares.use(driveProxyMiddleware);
+      server.middlewares.use(dropboxProxyMiddleware);
       server.middlewares.use(playerSpaFallbackMiddleware());
     },
   };

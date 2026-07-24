@@ -1,19 +1,28 @@
 #!/usr/bin/env bash
 #
-# Deploys the GN Tracing OAuth token-exchange Worker to Cloudflare.
+# Deploys the GN Tracing multi-issuer OAuth token-exchange Worker to Cloudflare.
 #
-# The Worker holds GOOGLE_CLIENT_SECRET and proxies the Google OAuth token
-# exchange so the extension (a public client) never ships the secret.
+# Holds client secrets for Google and Dropbox and proxies token exchange so the
+# extension never ships secrets.
 #
-# Reads configuration from the process environment (export vars in the shell
-# or CI). Does not load a repository .env file.
+# Reads configuration from the process environment. Optionally sources the repo
+# root `.env` when present (git-ignored).
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-if ! command -v wrangler >/dev/null 2>&1; then
-  echo "wrangler CLI not found. Install it with: npm i -g wrangler"
+if [ -f "$ROOT_DIR/.env" ]; then
+  echo "Loading env from $ROOT_DIR/.env"
+  set -a
+  # shellcheck disable=SC1091
+  source "$ROOT_DIR/.env"
+  set +a
+fi
+
+if ! command -v wrangler >/dev/null 2>&1 && [ ! -x "$SCRIPT_DIR/node_modules/.bin/wrangler" ]; then
+  echo "wrangler CLI not found. Install deps with: cd worker && npm install"
   exit 1
 fi
 
@@ -22,19 +31,19 @@ if [ -z "${CLOUDFLARE_API_TOKEN:-}" ] || [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]; th
   exit 1
 fi
 
-if [ -z "${GOOGLE_CLIENT_ID:-}" ]; then
-  echo "GOOGLE_CLIENT_ID must be set in the environment."
+# At least one provider must be fully configured (id + secret).
+HAS_GOOGLE=0
+HAS_DROPBOX=0
+[ -n "${GOOGLE_CLIENT_ID:-}" ] && [ -n "${GOOGLE_CLIENT_SECRET:-}" ] && HAS_GOOGLE=1
+[ -n "${DROPBOX_CLIENT_ID:-}" ] && [ -n "${DROPBOX_CLIENT_SECRET:-}" ] && HAS_DROPBOX=1
+
+if [ "$HAS_GOOGLE" -eq 0 ] && [ "$HAS_DROPBOX" -eq 0 ]; then
+  echo "No provider fully configured. Set at least one pair of CLIENT_ID + CLIENT_SECRET:"
+  echo "  Google:   GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET"
+  echo "  Dropbox:  DROPBOX_CLIENT_ID + DROPBOX_CLIENT_SECRET"
   exit 1
 fi
 
-if [ -z "${GOOGLE_CLIENT_SECRET:-}" ]; then
-  echo "GOOGLE_CLIENT_SECRET must be set in the environment (the OAuth client secret)."
-  echo "Find it in Google Cloud Console > APIs & Services > Credentials > your OAuth 2.0 Client."
-  exit 1
-fi
-
-# Derive the allowed extension origin from CHROME_EXTENSION_ID when an explicit
-# list is not provided. This pins the Worker to your extension only.
 ALLOWED_ORIGINS="${WORKER_ALLOWED_EXTENSION_ORIGINS:-}"
 if [ -z "$ALLOWED_ORIGINS" ] && [ -n "${CHROME_EXTENSION_ID:-}" ]; then
   ALLOWED_ORIGINS="chrome-extension://${CHROME_EXTENSION_ID}"
@@ -47,13 +56,39 @@ fi
 
 cd "$SCRIPT_DIR"
 
-echo "Setting GOOGLE_CLIENT_SECRET on the Worker..."
-printf '%s' "$GOOGLE_CLIENT_SECRET" | npx wrangler secret put GOOGLE_CLIENT_SECRET
+put_secret() {
+  local name="$1"
+  local value="$2"
+  if [ -z "$value" ]; then
+    return 0
+  fi
+  echo "Setting secret $name on the Worker..."
+  printf '%s' "$value" | npx wrangler secret put "$name"
+}
 
-echo "Deploying gn-tracing-oauth-proxy Worker..."
-npx wrangler deploy \
-  --var "GOOGLE_CLIENT_ID:${GOOGLE_CLIENT_ID}" \
+put_secret "GOOGLE_CLIENT_SECRET" "${GOOGLE_CLIENT_SECRET:-}"
+put_secret "DROPBOX_CLIENT_SECRET" "${DROPBOX_CLIENT_SECRET:-}"
+
+VAR_FLAGS=(
+  --var "GOOGLE_CLIENT_ID:${GOOGLE_CLIENT_ID:-}"
+  --var "DROPBOX_CLIENT_ID:${DROPBOX_CLIENT_ID:-}"
   --var "ALLOWED_EXTENSION_ORIGINS:${ALLOWED_ORIGINS}"
+)
 
+echo "Deploying gn-tracing-oauth-proxy Worker (google=$HAS_GOOGLE dropbox=$HAS_DROPBOX)..."
+DEPLOY_OUT="$(npx wrangler deploy "${VAR_FLAGS[@]}" 2>&1)"
+echo "$DEPLOY_OUT"
+
+# Best-effort extract workers.dev URL from deploy output.
+WORKER_URL="$(printf '%s\n' "$DEPLOY_OUT" | grep -Eo 'https://[a-zA-Z0-9._-]+\.workers\.dev' | head -1 || true)"
+if [ -z "$WORKER_URL" ]; then
+  WORKER_URL="https://gn-tracing-oauth-proxy.<your-subdomain>.workers.dev"
+fi
+
+echo ""
 echo "Deploy complete."
-echo "Verify with: curl https://<your-worker-subdomain>.workers.dev/health"
+echo "Health:  curl ${WORKER_URL}/health"
+echo ""
+echo "Point extension env (then rebuild):"
+echo "  GOOGLE_TOKEN_PROXY_URL=${WORKER_URL}"
+echo "  DROPBOX_TOKEN_PROXY_URL=${WORKER_URL}/token/dropbox"

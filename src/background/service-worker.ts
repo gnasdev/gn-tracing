@@ -3,7 +3,6 @@
  */
 
 import { DEFAULT_DRAW_COLOR, normalizeDrawColor } from "../shared/drawing";
-import { parseGoogleDriveFolderInput } from "../shared/google-drive-folder";
 import {
   buildRecordingPrivacySummary,
   getPrivacyProfileSettings,
@@ -17,6 +16,7 @@ import {
   redactUserEvent,
 } from "../shared/privacy-redaction";
 import { getRecordingTabTarget } from "../shared/recording-target";
+import { normalizeStorageProviderId, type StorageProviderId } from "../shared/storage-provider";
 import type {
   CaptureMode,
   CaptureProfile,
@@ -62,10 +62,9 @@ import {
   truncateEventString,
 } from "./capture-environment";
 import { CdpManager } from "./cdp-manager";
-import { GoogleDriveAuth } from "./google-drive-auth";
 import { registerMessageListeners } from "./message-router";
 import { RecorderManager } from "./recorder-manager";
-import type { UploadSettingsStore } from "./settings-store";
+import type { ProviderFolderSettings, UploadSettingsStore } from "./settings-store";
 import {
   DEFAULT_PRIVACY_REDACTION_SETTINGS,
   getCaptureProfileSettings,
@@ -78,11 +77,19 @@ import {
   normalizeEnum,
   normalizeOptionalNumber,
   normalizeRecordingUrl,
+  parseFolderInputForProvider,
   pickPrivacyRedactionSettings,
   STORAGE_KEY_STATE,
   saveUploadHistory,
   saveUploadSettings,
 } from "./settings-store";
+import {
+  getDropboxProvider,
+  getGoogleDriveProvider,
+  requireRegisteredStorageProvider,
+  resolveRegisteredUploadProviderId,
+  type StorageProvider,
+} from "./storage";
 import { StorageManager } from "./storage-manager";
 import type { UploadSuccessResult } from "./upload-orchestrator";
 import { getUploadArtifactChunk } from "./upload-orchestrator";
@@ -91,15 +98,19 @@ import { getUploadArtifactChunk } from "./upload-orchestrator";
  * Service-worker coordinator for the MV3 extension.
  *
  * This file is the durable control plane for recording sessions: it owns popup
- * state persistence, CDP collection, offscreen capture commands, Google Drive
- * auth checks, upload history, and the message contracts that connect those
- * browser surfaces. Keep comments here focused on lifecycle boundaries because
- * MV3 service workers can restart between user actions.
+ * state persistence, CDP collection, offscreen capture commands, storage
+ * provider auth checks, upload history, and the message contracts that connect
+ * those browser surfaces. Keep comments here focused on lifecycle boundaries
+ * because MV3 service workers can restart between user actions.
  */
 const storage = new StorageManager();
 const recorder = new RecorderManager();
 const cdp = new CdpManager(storage);
-const googleAuth = new GoogleDriveAuth();
+/** Multi-cloud storage providers from the registry (Drive + Dropbox). */
+const googleDriveProvider = getGoogleDriveProvider();
+const googleAuth = googleDriveProvider.getAuth();
+const dropboxProvider = getDropboxProvider();
+const dropboxAuth = dropboxProvider.getAuth();
 
 void googleAuth.initialize();
 
@@ -193,9 +204,13 @@ let sessions: RecordingSessionSummary[] = [];
 let sessionArtifacts: Record<string, SessionArtifacts> = {};
 const activeUploadTasks = new Map<string, Promise<void>>();
 
-// Google Drive connectivity is cached separately from popup state so UI reloads
+// Provider connectivity is cached separately from popup state so UI reloads
 // can show a stable snapshot while a background verification refreshes it.
 const googleDriveState = {
+  isConnected: false,
+  checkedAt: 0,
+};
+const dropboxState = {
   isConnected: false,
   checkedAt: 0,
 };
@@ -345,11 +360,64 @@ async function refreshGoogleDriveState(): Promise<void> {
   googleDriveState.checkedAt = Date.now();
 }
 
+async function refreshDropboxState(): Promise<void> {
+  const status = await dropboxAuth.getStatus();
+  dropboxState.isConnected = status.isConnected;
+  dropboxState.checkedAt = Date.now();
+}
+
+async function refreshStorageProviderState(providerId: StorageProviderId): Promise<boolean> {
+  if (providerId === "google-drive") {
+    await refreshGoogleDriveState();
+    return googleDriveState.isConnected;
+  }
+  if (providerId === "dropbox") {
+    await refreshDropboxState();
+    return dropboxState.isConnected;
+  }
+  return false;
+}
+
+function getCachedStorageConnected(providerId: StorageProviderId): boolean {
+  if (providerId === "google-drive") {
+    return googleDriveState.isConnected;
+  }
+  if (providerId === "dropbox") {
+    return dropboxState.isConnected;
+  }
+  return false;
+}
+
+function mirroredConnectedKeyForProvider(provider: StorageProviderId): string {
+  if (provider === "dropbox") return "gn_tracing_dropbox_connected";
+  return "gn_tracing_google_drive_connected";
+}
+
 /**
- * Reads the persisted Google Drive connection mirror from `chrome.storage.local`
- * so popup surfaces can paint the correct auth UI before the service worker
- * finishes re-hydrating after a browser or extension restart.
+ * Reads the persisted connection mirror for the active storage provider from
+ * `chrome.storage.local` so popup surfaces can paint the correct auth UI before
+ * the service worker finishes re-hydrating after a browser or extension restart.
  */
+async function loadMirroredStorageConnectionState(): Promise<{
+  provider: StorageProviderId;
+  isConnected: boolean | null;
+}> {
+  try {
+    const settings = await getUploadSettings();
+    const provider = settings.activeStorageProvider;
+    const key = mirroredConnectedKeyForProvider(provider);
+    const result = await chrome.storage.local.get(key);
+    const value = result[key];
+    return {
+      provider,
+      isConnected: typeof value === "boolean" ? value : null,
+    };
+  } catch {
+    return { provider: "google-drive", isConnected: null };
+  }
+}
+
+/** @deprecated Prefer loadMirroredStorageConnectionState */
 async function loadMirroredGoogleDriveState(): Promise<boolean | null> {
   try {
     const result = await chrome.storage.local.get("gn_tracing_google_drive_connected");
@@ -362,9 +430,17 @@ async function loadMirroredGoogleDriveState(): Promise<boolean | null> {
 
 async function buildPopupState(): Promise<PopupState> {
   const [settings, uploadHistory] = await Promise.all([getUploadSettings(), getUploadHistory()]);
+  const activeProvider = settings.activeStorageProvider;
+  const storageConnected = getCachedStorageConnected(activeProvider);
   return {
     recording: getRecordingStatus(),
     sessions: sortSessions(sessions),
+    storage: {
+      provider: activeProvider,
+      isConnected: storageConnected,
+    },
+    // Shim: existing popup/drive-auth UI still reads googleDrive.isConnected.
+    // Prefer `storage` for the active provider; googleDrive always mirrors Drive.
     googleDrive: {
       isConnected: googleDriveState.isConnected,
     },
@@ -504,11 +580,33 @@ async function syncRuntimeState(): Promise<void> {
     }),
   );
 
-  const mirroredConnected = await loadMirroredGoogleDriveState();
-  if (mirroredConnected !== null) {
-    googleDriveState.isConnected = mirroredConnected;
+  // Seed connection caches from local mirrors before network refresh so popup
+  // first-paint for the active provider is correct for Drive and Dropbox.
+  try {
+    const driveMirror = await chrome.storage.local.get("gn_tracing_google_drive_connected");
+    if (typeof driveMirror.gn_tracing_google_drive_connected === "boolean") {
+      googleDriveState.isConnected = driveMirror.gn_tracing_google_drive_connected;
+    }
+    const dropboxMirror = await chrome.storage.local.get("gn_tracing_dropbox_connected");
+    if (typeof dropboxMirror.gn_tracing_dropbox_connected === "boolean") {
+      dropboxState.isConnected = dropboxMirror.gn_tracing_dropbox_connected;
+    }
+  } catch {
+    // ignore mirror read failures
+  }
+  // Prefer active-provider mirror when available.
+  const activeMirror = await loadMirroredStorageConnectionState();
+  if (activeMirror.isConnected !== null) {
+    if (activeMirror.provider === "dropbox") {
+      dropboxState.isConnected = activeMirror.isConnected;
+    } else if (activeMirror.provider === "google-drive") {
+      googleDriveState.isConnected = activeMirror.isConnected;
+    }
   }
   await refreshGoogleDriveState();
+  await refreshDropboxState().catch(() => {
+    // Dropbox optional when client id unset; ignore refresh failures.
+  });
   await saveArtifactsToStorage();
   await saveStateToStorage();
 }
@@ -560,34 +658,84 @@ registerMessageListeners({
   handleRecordingInPageEntry,
   uploadSessionToGoogleDrive,
   getUploadState: () => sortSessions(sessions),
-  googleDriveConnect: async () => {
-    const result = await googleAuth.launchOAuthFlow();
+  storageConnect: async (data) => {
+    const resolved = await resolveStorageProviderFromMessage(data);
+    if (!resolved.ok) {
+      return resolved;
+    }
+    const { provider } = resolved;
+    const result = await provider.connect();
     if (result.ok) {
-      await refreshGoogleDriveState();
+      await refreshStorageProviderState(provider.id);
       await saveStateToStorage();
     }
     return result;
   },
-  googleDriveDisconnect: async () => {
-    const result = await googleAuth.disconnect();
-    await refreshGoogleDriveState();
+  storageDisconnect: async (data) => {
+    const resolved = await resolveStorageProviderFromMessage(data);
+    if (!resolved.ok) {
+      return resolved;
+    }
+    const { provider } = resolved;
+    // Always return the provider disconnect result (do not discard it).
+    const result = await provider.disconnect();
+    await refreshStorageProviderState(provider.id);
     await saveStateToStorage();
     return result;
   },
-  googleDriveStatus: async () => {
-    const status = await googleAuth.getStatus();
-    googleDriveState.isConnected = status.isConnected;
-    googleDriveState.checkedAt = Date.now();
+  storageStatus: async (data) => {
+    const resolved = await resolveStorageProviderFromMessage(data);
+    if (!resolved.ok) {
+      return resolved;
+    }
+    const { provider } = resolved;
+    const isConnected = await provider.isConnected();
+    if (provider.id === "google-drive") {
+      googleDriveState.isConnected = isConnected;
+      googleDriveState.checkedAt = Date.now();
+    } else if (provider.id === "dropbox") {
+      dropboxState.isConnected = isConnected;
+      dropboxState.checkedAt = Date.now();
+    }
     await saveStateToStorage();
-    return { ok: true, ...status };
+    return { ok: true, isConnected };
   },
-  getGoogleDriveToken: async () => ({ ok: true, token: await googleAuth.getAuthToken() }),
+  getStorageToken: async (data) => {
+    const resolved = await resolveStorageProviderFromMessage(data);
+    if (!resolved.ok) {
+      return { ok: false, token: null, error: resolved.error };
+    }
+    return { ok: true, token: await resolved.provider.getAuthToken() };
+  },
   onRecordingComplete: (sessionId) => {
     recorder.onRecordingComplete(sessionId);
   },
   getUploadArtifactChunk: (data) => getUploadArtifactChunk(sessionArtifacts, data),
   patchUploadProgress,
 });
+
+/**
+ * Resolves which StorageProvider handles a message. Explicit `data.provider`
+ * wins; otherwise the active setting. Unregistered providers fail closed via
+ * requireRegisteredStorageProvider.
+ */
+async function resolveStorageProviderFromMessage(
+  data?: Record<string, unknown>,
+): Promise<{ ok: true; provider: StorageProvider } | { ok: false; error: string }> {
+  let requested: unknown;
+  if (data && "provider" in data) {
+    requested = data.provider;
+  } else {
+    const settings = await getUploadSettings();
+    requested = settings.activeStorageProvider;
+  }
+  return requireRegisteredStorageProvider(requested);
+}
+
+function providerDisplayName(providerId: StorageProviderId): string {
+  if (providerId === "dropbox") return "Dropbox";
+  return "Google Drive";
+}
 
 chrome.tabs.onRemoved.addListener(async (tabId) => {
   if (!activeRecording.isRecording || tabId !== activeRecording.tabId) {
@@ -1620,9 +1768,13 @@ async function stopRecording(): Promise<MessageResponse> {
     await saveArtifactsToStorage();
     await saveStateToStorage();
 
-    const authToken = await googleAuth.getAuthToken();
-    if (authToken) {
-      void startSessionUploadTask(sessionId, authToken);
+    const settings = await getUploadSettings();
+    const resolved = requireRegisteredStorageProvider(settings.activeStorageProvider);
+    if (resolved.ok) {
+      const authToken = await resolved.provider.getAuthToken();
+      if (authToken) {
+        void startSessionUploadTask(sessionId, authToken);
+      }
     }
 
     return { ok: true };
@@ -1700,6 +1852,7 @@ async function getPopupSettingsResponse(): Promise<
 async function persistUploadHistory(
   session: RecordingSessionSummary,
   targetFolderId: string | null,
+  provider: StorageProviderId = "google-drive",
 ): Promise<void> {
   if (!session.recordingUrl) {
     return;
@@ -1713,6 +1866,7 @@ async function persistUploadHistory(
     recordingFolderId: session.recordingFolderId,
     targetFolderId,
     durationMs: session.elapsedMs,
+    provider,
   };
 
   const history = [entry, ...(await getUploadHistory())].slice(0, MAX_UPLOAD_HISTORY_ITEMS);
@@ -1780,21 +1934,80 @@ async function updateUploadSettingsFromMessage(
   const hasFolderInput = typeof data?.folderInput === "string";
   const hasZipPassword = typeof data?.zipPassword === "string";
   const shouldClearZipPassword = data?.clearZipPassword === true;
-  const parsed = hasFolderInput
-    ? parseGoogleDriveFolderInput(data.folderInput as string)
-    : {
-        normalizedInput: existingSettings.folderInput,
-        folderId: existingSettings.folderId,
-        folderPath: existingSettings.folderPath,
-      };
 
-  if (parsed.normalizedInput && !parsed.folderId && parsed.folderPath.length === 0) {
-    return {
-      ok: false,
-      error:
-        "Invalid Google Drive folder input. Use /folder/path, a folder ID, or a Google Drive folder link.",
+  // Resolve next active provider first so folder parsing uses the right rules.
+  let nextActiveStorageProvider = existingSettings.activeStorageProvider;
+  if (data && "activeStorageProvider" in data) {
+    const requestedProvider = normalizeStorageProviderId(
+      data.activeStorageProvider,
+      existingSettings.activeStorageProvider,
+    );
+    const registered = requireRegisteredStorageProvider(requestedProvider);
+    if (!registered.ok) {
+      return {
+        ok: false,
+        error: registered.error,
+      };
+    }
+    nextActiveStorageProvider = registered.provider.id;
+  }
+
+  let nextFolder: ProviderFolderSettings;
+  if (hasFolderInput) {
+    nextFolder = parseFolderInputForProvider(
+      nextActiveStorageProvider,
+      data?.folderInput as string,
+    );
+    // Reject unparseable non-empty input (Drive: not path/id/link; path clouds: not a clean path).
+    if (nextFolder.folderInput && !nextFolder.folderId && nextFolder.folderPath.length === 0) {
+      if (nextActiveStorageProvider === "dropbox") {
+        return {
+          ok: false,
+          error:
+            "Invalid Dropbox folder input. Use a slash path like /gn-tracing (no . or .. segments), or leave blank for root.",
+        };
+      }
+      return {
+        ok: false,
+        error:
+          "Invalid Google Drive folder input. Use /folder/path, a folder ID, or a Google Drive folder link.",
+      };
+    }
+  } else if (nextActiveStorageProvider !== existingSettings.activeStorageProvider) {
+    // Provider switch without new folder: restore that provider's saved folder.
+    const saved = existingSettings.folderByProvider[nextActiveStorageProvider];
+    nextFolder = saved
+      ? {
+          folderInput: saved.folderInput,
+          folderId: saved.folderId,
+          folderPath: [...saved.folderPath],
+        }
+      : parseFolderInputForProvider(nextActiveStorageProvider, "/gn-tracing");
+  } else {
+    nextFolder = {
+      folderInput: existingSettings.folderInput,
+      folderId: existingSettings.folderId,
+      folderPath: [...existingSettings.folderPath],
     };
   }
+
+  const nextFolderByProvider: Partial<Record<StorageProviderId, ProviderFolderSettings>> = {
+    ...existingSettings.folderByProvider,
+    [nextActiveStorageProvider]: {
+      folderInput: nextFolder.folderInput,
+      folderId: nextFolder.folderId,
+      folderPath: [...nextFolder.folderPath],
+    },
+  };
+  // When switching provider, also persist the previous provider's current folder.
+  if (nextActiveStorageProvider !== existingSettings.activeStorageProvider) {
+    nextFolderByProvider[existingSettings.activeStorageProvider] = {
+      folderInput: existingSettings.folderInput,
+      folderId: existingSettings.folderId,
+      folderPath: [...existingSettings.folderPath],
+    };
+  }
+
   const requestedProfile = normalizeEnum<CaptureProfile>(
     data?.captureProfile,
     ["lean", "balanced", "full", "custom"],
@@ -1829,9 +2042,11 @@ async function updateUploadSettingsFromMessage(
     requestedPrivacyProfile !== "custom" ? privacyProfileSettings : existingSettings;
 
   const settings: UploadSettingsStore = {
-    folderInput: parsed.normalizedInput,
-    folderId: parsed.folderId,
-    folderPath: parsed.folderPath,
+    activeStorageProvider: nextActiveStorageProvider,
+    folderInput: nextFolder.folderInput,
+    folderId: nextFolder.folderId,
+    folderPath: nextFolder.folderPath,
+    folderByProvider: nextFolderByProvider,
     // Keep plaintext password out of popup snapshots; it is only read here for uploads.
     zipPassword: shouldClearZipPassword
       ? ""
@@ -1994,6 +2209,7 @@ async function updateUploadSettingsFromMessage(
 async function uploadSessionToGoogleDrive(
   data: Record<string, unknown> | undefined,
 ): Promise<MessageResponse> {
+  // Message name is historical; upload uses the active registered storage provider.
   const requestedSessionId =
     typeof data?.sessionId === "string"
       ? data.sessionId
@@ -2007,9 +2223,17 @@ async function uploadSessionToGoogleDrive(
     return { ok: false, error: "No recorded session is available for upload." };
   }
 
-  const authToken = await googleAuth.getAuthToken();
+  const settings = await getUploadSettings();
+  const resolved = requireRegisteredStorageProvider(settings.activeStorageProvider);
+  if (!resolved.ok) {
+    return { ok: false, error: resolved.error };
+  }
+  const authToken = await resolved.provider.getAuthToken();
   if (!authToken) {
-    return { ok: false, error: "Not connected to Google Drive. Please connect first." };
+    return {
+      ok: false,
+      error: `Not connected to ${providerDisplayName(resolved.provider.id)}. Please connect first.`,
+    };
   }
 
   if (activeUploadTasks.has(requestedSessionId)) {
@@ -2061,9 +2285,21 @@ async function runSessionUpload(sessionId: string, authToken: string): Promise<v
   await saveStateToStorage();
 
   try {
+    // Label metadata/replay with the registered provider that actually uploads.
+    // Never claim Dropbox when only Drive is used (or vice versa).
+    const storageProviderId: StorageProviderId = resolveRegisteredUploadProviderId(
+      settings.activeStorageProvider,
+    );
+    // Dropbox folder resolve uses path segments; pass path as targetFolderId.
+    const targetFolderId =
+      storageProviderId === "dropbox"
+        ? settings.folderPath.length > 0
+          ? `/${settings.folderPath.join("/")}`
+          : null
+        : settings.folderId;
     const result = (await chrome.runtime.sendMessage({
       target: "offscreen",
-      type: "UPLOAD_TO_GOOGLE_DRIVE",
+      type: "UPLOAD_TO_STORAGE",
       data: {
         sessionId,
         artifactKeys: {
@@ -2084,9 +2320,10 @@ async function runSessionUpload(sessionId: string, authToken: string): Promise<v
         startTime: artifacts.startTime,
         screenshotDataUrl: artifacts.screenshotDataUrl || null,
         authToken,
-        targetFolderId: settings.folderId,
+        targetFolderId,
         targetFolderPath: settings.folderPath,
         zipPassword: settings.zipPassword || null,
+        storageProvider: storageProviderId,
       },
     })) as MessageResponse & Partial<UploadSuccessResult>;
 
@@ -2123,6 +2360,7 @@ async function runSessionUpload(sessionId: string, authToken: string): Promise<v
       await persistUploadHistory(
         updatedSession,
         typeof result.targetFolderId === "string" ? result.targetFolderId : settings.folderId,
+        storageProviderId,
       );
     }
   } catch (error) {

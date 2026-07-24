@@ -1,18 +1,34 @@
 /**
- * Runs tab media capture and Google Drive upload work in an offscreen document.
+ * Runs tab media capture and cloud storage upload work in an offscreen document.
  */
 
+import {
+  DROPBOX_UPLOAD_SESSION_THRESHOLD_BYTES,
+  makeDropboxPublicReadable,
+  resolveDropboxFolderPath,
+  uploadDropboxFile,
+} from "../shared/dropbox-api";
+import {
+  GOOGLE_DRIVE_RESUMABLE_THRESHOLD_BYTES,
+  makeGoogleDrivePublicReadable,
+  resolveGoogleDriveFolderPath,
+  uploadGoogleDriveFile,
+} from "../shared/google-drive-api";
 import { buildExternalPlayerUrl } from "../shared/player-host";
+import type { StorageProviderId } from "../shared/storage-provider";
 import { makeWebmSeekable } from "../shared/webm-seek-fix";
 import type { ProgressItemSnapshot, ProgressItemStatus } from "../types/messages";
 
 /**
- * Offscreen document runtime for media capture and Google Drive uploads.
+ * Offscreen document runtime for media capture and multi-cloud package uploads.
  *
  * MV3 service workers cannot own a MediaRecorder or long-lived MediaStream, so
  * this document holds the active tab stream, final recording snapshots, and the
  * upload pipeline. The service worker communicates with it through runtime
  * messages and treats this file as the media/upload worker.
+ *
+ * Provider-specific I/O uses shared modules (`google-drive-api`, `dropbox-api`)
+ * so adapters and this path cannot diverge on share/upload rules.
  */
 let recorder: MediaRecorder | null = null;
 let activeChunks: Blob[] = [];
@@ -54,11 +70,16 @@ interface ZipData {
   sessionId: string;
 }
 
-interface GoogleDriveUploadData extends ZipData {
+interface StorageUploadData extends ZipData {
   authToken: string;
   targetFolderId?: string | null;
   targetFolderPath?: string[];
   zipPassword?: string | null;
+  /**
+   * Registered storage provider that performs I/O. Must match the token and
+   * metadata.storage.provider (service worker clamps via resolveRegisteredUploadProviderId).
+   */
+  storageProvider?: StorageProviderId;
   artifactKeys?: {
     consoleLogs?: boolean;
     networkRequests?: boolean;
@@ -139,7 +160,12 @@ interface UploadProgressSnapshot {
   items: ProgressItemSnapshot[];
 }
 
-const MAX_DRIVE_UPLOAD_BYTES = 32 * 1024 * 1024;
+/** Shared with GoogleDriveProvider via google-drive-api (single source of truth). */
+const MAX_DRIVE_UPLOAD_BYTES = GOOGLE_DRIVE_RESUMABLE_THRESHOLD_BYTES;
+/** Shared with DropboxProvider via dropbox-api. */
+const MAX_DROPBOX_SIMPLE_UPLOAD_BYTES = DROPBOX_UPLOAD_SESSION_THRESHOLD_BYTES;
+/** Zip video part size — keep under provider simple-upload thresholds where practical. */
+const MAX_PACKAGE_PART_BYTES = Math.min(MAX_DRIVE_UPLOAD_BYTES, MAX_DROPBOX_SIMPLE_UPLOAD_BYTES);
 const UPLOAD_PROGRESS_THROTTLE_MS = 250;
 const UPLOAD_PROGRESS_MIN_DELTA = 0.5;
 const ZIP_LOCAL_FILE_HEADER_SIGNATURE = 0x04034b50;
@@ -192,8 +218,10 @@ chrome.runtime.onMessage.addListener((message: OffscreenIncomingMessage, _sender
       });
       return false;
 
+    case "UPLOAD_TO_STORAGE":
     case "UPLOAD_TO_GOOGLE_DRIVE":
-      uploadToGoogleDrive(message.data as unknown as GoogleDriveUploadData)
+      // UPLOAD_TO_GOOGLE_DRIVE is a legacy alias; storageProvider in data selects backend.
+      uploadRecordingPackage(message.data as unknown as StorageUploadData)
         .then((result) => sendResponse(result))
         .catch((error: Error) => sendResponse({ ok: false, error: error.message }));
       return true;
@@ -646,7 +674,7 @@ async function createZipBlob(
   return new Blob([...chunks, ...centralDirectory, endRecord], { type: "application/zip" });
 }
 
-async function uploadToGoogleDrive(data: GoogleDriveUploadData): Promise<{
+async function uploadRecordingPackage(data: StorageUploadData): Promise<{
   ok: boolean;
   recordingUrl?: string;
   folderId?: string;
@@ -667,250 +695,64 @@ async function uploadToGoogleDrive(data: GoogleDriveUploadData): Promise<{
   const now = new Date();
   const dateStr = now.toISOString().replace(/[:.]/g, "-").slice(0, 19);
   const baseName = `gn-tracing-${dateStr}`;
+  // Only providers with I/O implemented here may label metadata/URLs.
+  const requestedProvider = data.storageProvider;
+  const storageProvider: StorageProviderId =
+    requestedProvider === "dropbox" ? "dropbox" : "google-drive";
 
   try {
-    const makeShareable = async (fileId: string): Promise<void> => {
-      const response = await fetch(
-        `https://www.googleapis.com/drive/v3/files/${fileId}/permissions`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${data.authToken}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            type: "anyone",
-            role: "reader",
-          }),
-        },
-      );
-
-      if (!response.ok) {
-        const error = await response.json().catch(() => ({}));
-        throw new Error(
-          error.error?.message || `Share permission failed with status ${response.status}`,
-        );
-      }
-    };
-
-    const createFolder = async (
-      folderName: string,
-      parentFolderId?: string | null,
-    ): Promise<string> => {
-      const response = await fetch(
-        "https://www.googleapis.com/drive/v3/files?fields=id&supportsAllDrives=true",
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${data.authToken}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            name: folderName,
-            mimeType: "application/vnd.google-apps.folder",
-            ...(parentFolderId ? { parents: [parentFolderId] } : {}),
-          }),
-        },
-      );
-
-      if (!response.ok) {
-        const error = await response.json().catch(() => ({}));
-        throw new Error(
-          error.error?.message || `Create folder failed with status ${response.status}`,
-        );
-      }
-
-      const result = await response.json();
-      await makeShareable(result.id);
-      return result.id;
-    };
-
-    const findFolder = async (
-      folderName: string,
-      parentFolderId?: string | null,
-    ): Promise<string | null> => {
-      const escapedName = folderName.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
-      const parentQuery = parentFolderId ? `'${parentFolderId}' in parents` : "'root' in parents";
-      const query = [
-        "mimeType = 'application/vnd.google-apps.folder'",
-        "trashed = false",
-        `name = '${escapedName}'`,
-        parentQuery,
-      ].join(" and ");
-      const url = new URL("https://www.googleapis.com/drive/v3/files");
-      url.searchParams.set("fields", "files(id,name)");
-      url.searchParams.set("pageSize", "1");
-      url.searchParams.set("q", query);
-      url.searchParams.set("supportsAllDrives", "true");
-      url.searchParams.set("includeItemsFromAllDrives", "true");
-
-      const response = await fetch(url.toString(), {
-        headers: {
-          Authorization: `Bearer ${data.authToken}`,
-        },
-      });
-
-      if (!response.ok) {
-        const error = await response.json().catch(() => ({}));
-        throw new Error(
-          error.error?.message || `Find folder failed with status ${response.status}`,
-        );
-      }
-
-      const result = await response.json().catch(() => ({}));
-      const folder = Array.isArray(result.files) ? result.files[0] : null;
-      return typeof folder?.id === "string" ? folder.id : null;
-    };
-
-    const resolveFolderPath = async (
+    type ShareResult = { replayId: string };
+    let makeShareable: (fileId: string) => Promise<ShareResult>;
+    let resolveFolderPath: (
       folderPath: string[] | undefined,
       parentFolderId?: string | null,
-    ): Promise<string | null> => {
-      let currentParentId = parentFolderId || null;
-      const safePath = Array.isArray(folderPath)
-        ? folderPath.filter((segment) => typeof segment === "string" && segment.trim())
-        : [];
-
-      for (const rawSegment of safePath) {
-        const segment = rawSegment.trim();
-        const existingFolderId = await findFolder(segment, currentParentId);
-        currentParentId = existingFolderId || (await createFolder(segment, currentParentId));
-      }
-
-      return currentParentId;
-    };
-
-    const uploadFile = async (
+    ) => Promise<string | null>;
+    let uploadFile: (
       filename: string,
       blob: Blob,
       parentId: string | null,
       onProgress?: (loaded: number, total: number) => void,
-    ): Promise<string> => {
-      // A single recording package can be much larger than the old split parts,
-      // so large zips use Drive's resumable media upload path.
-      if (blob.size > MAX_DRIVE_UPLOAD_BYTES) {
-        const sessionResponse = await fetch(
-          "https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id&supportsAllDrives=true",
-          {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${data.authToken}`,
-              "Content-Type": "application/json",
-              "X-Upload-Content-Type": blob.type || "application/octet-stream",
-              "X-Upload-Content-Length": String(blob.size),
-            },
-            body: JSON.stringify({
-              name: filename,
-              ...(parentId ? { parents: [parentId] } : {}),
-            }),
-          },
-        );
+    ) => Promise<string>;
 
-        if (!sessionResponse.ok) {
-          const error = await sessionResponse.json().catch(() => ({}));
-          throw new Error(
-            error.error?.message ||
-              `Start resumable upload failed with status ${sessionResponse.status}`,
-          );
-        }
-
-        const uploadUrl = sessionResponse.headers.get("Location");
-        if (!uploadUrl) {
-          throw new Error("Drive did not return a resumable upload URL");
-        }
-
-        const result = await new Promise<{ id: string }>((resolve, reject) => {
-          const xhr = new XMLHttpRequest();
-          xhr.open("PUT", uploadUrl);
-          xhr.setRequestHeader("Content-Type", blob.type || "application/octet-stream");
-          xhr.upload.addEventListener("progress", (event) => {
-            const loaded =
-              event.lengthComputable && event.total > 0
-                ? Math.min(blob.size, Math.round((event.loaded / event.total) * blob.size))
-                : Math.min(event.loaded, blob.size);
-            onProgress?.(loaded, blob.size);
-          });
-
-          xhr.onerror = () => reject(new Error("Upload failed due to a network error"));
-          xhr.onload = () => {
-            let payload: { id?: string; error?: { message?: string } } = {};
-            try {
-              payload = xhr.responseText ? JSON.parse(xhr.responseText) : {};
-            } catch {
-              payload = {};
-            }
-
-            if (xhr.status < 200 || xhr.status >= 300 || !payload.id) {
-              reject(
-                new Error(payload.error?.message || `Upload failed with status ${xhr.status}`),
-              );
-              return;
-            }
-
-            resolve({ id: payload.id });
-          };
-
-          xhr.send(blob);
+    if (storageProvider === "dropbox") {
+      makeShareable = async (path: string) => {
+        // Canonical Dropbox replay id = shared-link path+rlkey (not file id).
+        const shared = await makeDropboxPublicReadable(data.authToken, path);
+        return { replayId: shared.replayId };
+      };
+      resolveFolderPath = async (folderPath) =>
+        resolveDropboxFolderPath(data.authToken, folderPath);
+      uploadFile = async (filename, blob, parentId, onProgress) => {
+        const folderPath =
+          typeof parentId === "string" && parentId ? parentId.replace(/\/+$/, "") : "";
+        const absolutePath = `${folderPath}/${filename}`.replace(/\/+/g, "/");
+        const path = absolutePath.startsWith("/") ? absolutePath : `/${absolutePath}`;
+        const uploaded = await uploadDropboxFile({
+          authToken: data.authToken,
+          path,
+          blob,
+          sessionThresholdBytes: MAX_DROPBOX_SIMPLE_UPLOAD_BYTES,
+          onProgress: (p) => onProgress?.(p.loadedBytes, p.totalBytes),
         });
-
-        onProgress?.(blob.size, blob.size);
-        return result.id;
-      }
-
-      const formData = new FormData();
-      formData.append(
-        "metadata",
-        new Blob(
-          [
-            JSON.stringify({
-              name: filename,
-              ...(parentId ? { parents: [parentId] } : {}),
-            }),
-          ],
-          { type: "application/json" },
-        ),
-      );
-      formData.append("file", blob, filename);
-
-      const result = await new Promise<{ id: string }>((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        xhr.open(
-          "POST",
-          "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id&supportsAllDrives=true",
-        );
-        xhr.setRequestHeader("Authorization", `Bearer ${data.authToken}`);
-
-        xhr.upload.addEventListener("progress", (event) => {
-          const loaded =
-            event.lengthComputable && event.total > 0
-              ? Math.min(blob.size, Math.round((event.loaded / event.total) * blob.size))
-              : Math.min(event.loaded, blob.size);
-          onProgress?.(loaded, blob.size);
+        return uploaded.path;
+      };
+    } else {
+      makeShareable = async (fileId: string) => {
+        await makeGoogleDrivePublicReadable(data.authToken, fileId);
+        return { replayId: fileId };
+      };
+      resolveFolderPath = (folderPath, parentFolderId) =>
+        resolveGoogleDriveFolderPath(data.authToken, folderPath, parentFolderId);
+      uploadFile = async (filename, blob, parentId, onProgress) =>
+        uploadGoogleDriveFile({
+          authToken: data.authToken,
+          filename,
+          blob,
+          parentId,
+          resumableThresholdBytes: MAX_DRIVE_UPLOAD_BYTES,
+          onProgress: (p) => onProgress?.(p.loadedBytes, p.totalBytes),
         });
-
-        xhr.onerror = () => reject(new Error("Upload failed due to a network error"));
-        xhr.onload = () => {
-          let payload: { id?: string; error?: { message?: string } } = {};
-          try {
-            payload = xhr.responseText ? JSON.parse(xhr.responseText) : {};
-          } catch {
-            payload = {};
-          }
-
-          if (xhr.status < 200 || xhr.status >= 300 || !payload.id) {
-            reject(new Error(payload.error?.message || `Upload failed with status ${xhr.status}`));
-            return;
-          }
-
-          resolve({ id: payload.id });
-        };
-
-        xhr.send(formData);
-      });
-
-      onProgress?.(blob.size, blob.size);
-      return result.id;
-    };
+    }
 
     // MediaRecorder WebM often omits Duration/Cues, so browsers cannot random-seek
     // until the file has been progressively demuxed. Rebuild seek metadata on the
@@ -932,7 +774,7 @@ async function uploadToGoogleDrive(data: GoogleDriveUploadData): Promise<{
       console.warn("[GN Tracing] WebM seek fix failed; uploading original blob:", error);
     }
 
-    const videoParts = splitBlobIntoParts(packagedVideoBlob, MAX_DRIVE_UPLOAD_BYTES);
+    const videoParts = splitBlobIntoParts(packagedVideoBlob, MAX_PACKAGE_PART_BYTES);
     const totalSteps = 3;
     let completedSteps = 0;
     let totalUploadBytes = 0;
@@ -1072,7 +914,7 @@ async function uploadToGoogleDrive(data: GoogleDriveUploadData): Promise<{
           extension: "gn-tracing",
           version: "1.0.0",
           storage: {
-            provider: "google-drive",
+            provider: storageProvider,
             folderId: targetFolderId,
             package: zipFilename,
           },
@@ -1183,12 +1025,15 @@ async function uploadToGoogleDrive(data: GoogleDriveUploadData): Promise<{
     emitProgress("Uploading recording package...", true);
 
     let zipFileId: string | null = null;
+    let replayId: string | null = null;
     try {
       zipFileId = await uploadFile(zipFilename, zipBlob, targetFolderId, (loaded, total) => {
         uploadedBytes = Math.min(loaded, total || zipBlob.size);
         emitProgress("Uploading recording package...");
       });
-      await makeShareable(zipFileId);
+      // Hard-fail if public share cannot be created (standalone needs anonymous download).
+      const shared = await makeShareable(zipFileId);
+      replayId = shared.replayId;
     } catch (error) {
       packageStatus = "failed";
       emitProgress("Uploading recording package...", true);
@@ -1200,16 +1045,17 @@ async function uploadToGoogleDrive(data: GoogleDriveUploadData): Promise<{
     completedSteps += 1;
     emitProgress("Upload complete!", true);
 
-    const recordingUrl = buildExternalPlayerUrl(zipFileId || "");
+    // Google: /gdrive/<fileId>; Dropbox: /dropbox/<shared-link-id>.
+    const recordingUrl = buildExternalPlayerUrl(replayId || zipFileId || "", storageProvider);
     return {
       ok: true,
       recordingUrl,
       folderId: targetFolderId || undefined,
-      indexFileId: zipFileId || undefined,
+      indexFileId: replayId || zipFileId || undefined,
       targetFolderId,
     };
   } catch (error) {
-    console.error("[Google Drive Upload] Error:", error);
+    console.error(`[${storageProvider} Upload] Error:`, error);
     return { ok: false, error: (error as Error).message };
   }
 }

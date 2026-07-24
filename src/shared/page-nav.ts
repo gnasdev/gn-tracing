@@ -7,19 +7,17 @@
  *     <div id="gn-nav-menu" class="gn-nav-menu" role="menu" hidden>
  *       <button type="button" role="menuitem" data-gn-nav="settings">...</button>
  *       <button type="button" role="menuitem" data-gn-nav="history">...</button>
- *       <button type="button" role="menuitem" data-gn-nav="connect">...</button>
+ *       <button type="button" role="menuitem" data-gn-nav="connect">Manage clouds</button>
  *     </div>
  *   </div>
  */
-
-import type { MessageResponse } from "../types/messages";
 
 export type PageNavId = "settings" | "history" | "connect";
 
 const PAGE_PATHS: Record<PageNavId, string> = {
   settings: "settings/settings.html",
   history: "history/history.html",
-  connect: "drive-auth/drive-auth.html",
+  connect: "storage-auth/storage-auth.html",
 };
 
 function pageUrl(id: PageNavId): string {
@@ -38,20 +36,10 @@ function openPage(id: PageNavId): void {
   location.assign(pageUrl(id));
 }
 
-async function isDriveConnected(): Promise<boolean> {
-  try {
-    const result = (await chrome.runtime.sendMessage({
-      action: "GOOGLE_DRIVE_STATUS",
-    })) as MessageResponse & { isConnected?: boolean };
-    return Boolean(result?.ok && result.isConnected);
-  } catch {
-    return false;
-  }
-}
-
 /**
- * Wire the shared topbar nav menu. Marks the current page item and shows
- * Connect only when Google Drive is not connected.
+ * Wire the shared topbar nav menu. Marks the current page item.
+ * "Manage clouds" (data-gn-nav="connect") is always visible and opens the
+ * multi-cloud storage-auth page.
  */
 export function attachPageNav(options: { current: PageNavId }): void {
   const toggle = document.getElementById("gn-nav-toggle") as HTMLButtonElement | null;
@@ -70,7 +58,7 @@ export function attachPageNav(options: { current: PageNavId }): void {
 
   const close = (): void => setOpen(false);
 
-  // Mark current page item.
+  // Mark current page item; always show Manage clouds (connect) entry.
   for (const item of items) {
     const id = item.dataset.gnNav as PageNavId | undefined;
     if (!id || !PAGE_PATHS[id]) {
@@ -79,20 +67,11 @@ export function attachPageNav(options: { current: PageNavId }): void {
     const current = id === options.current || isCurrentPage(id);
     item.classList.toggle("is-current", current);
     item.setAttribute("aria-current", current ? "page" : "false");
+    item.classList.remove("hidden");
     if (current) {
       item.disabled = true;
     }
   }
-
-  void isDriveConnected().then((connected) => {
-    const connectItem = items.find((item) => item.dataset.gnNav === "connect");
-    if (!connectItem) {
-      return;
-    }
-    // Always show Connect on the connect page itself; otherwise only when disconnected.
-    const showConnect = options.current === "connect" || !connected;
-    connectItem.classList.toggle("hidden", !showConnect);
-  });
 
   toggle.addEventListener("click", (event) => {
     event.stopPropagation();

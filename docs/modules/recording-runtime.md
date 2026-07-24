@@ -30,7 +30,7 @@ related:
 - Phạm vi: recording lifecycle, CDP capture, offscreen media capture, service-worker state, popup state rendering, and capture settings
 - Nguồn code: `src/background/service-worker.ts`, `src/background/recorder-manager.ts`, `src/background/cdp-manager.ts`, `src/background/storage-manager.ts`, `src/offscreen/offscreen.ts`, `src/popup/popup.ts`, `src/settings/settings.ts`, `src/shared/recording-target.ts`
 - Tuân thủ: Không áp dụng
-- Links: [Drive And Player](./drive-and-player.md), [Privacy And Redaction](./privacy-and-redaction.md), [Replay Player](./replay-player.md), [Extension Surfaces](../features/extension-surfaces.md), [Shared Data Models](../shared/data-models.md), [API Conventions](../shared/api-conventions.md)
+- Links: [Cloud Storage And Player](./drive-and-player.md), [Privacy And Redaction](./privacy-and-redaction.md), [Replay Player](./replay-player.md), [Extension Surfaces](../features/extension-surfaces.md), [Shared Data Models](../shared/data-models.md), [API Conventions](../shared/api-conventions.md)
 
 ## 1. Overview
 
@@ -46,19 +46,19 @@ This module covers the runtime capture path implemented by:
 
 The service worker is the orchestration boundary. It owns session state, starts/stops capture, keeps the worker alive during recording, and exposes synchronized status to UI surfaces through `chrome.storage.session`.
 
-For a new reader, this module is the capture side of the product. It explains how a user-selected tab becomes temporary evidence artifacts. Drive upload, replay package viewing, privacy policy details, and UI-surface ownership are documented separately in [Drive And Player](./drive-and-player.md), [Replay Player](./replay-player.md), [Privacy And Redaction](./privacy-and-redaction.md), and [Extension Surfaces](../features/extension-surfaces.md).
+For a new reader, this module is the capture side of the product. It explains how a user-selected tab becomes temporary evidence artifacts. Multi-cloud upload, replay package viewing, privacy policy details, and UI-surface ownership are documented separately in [Cloud Storage And Player](./drive-and-player.md), [Replay Player](./replay-player.md), [Privacy And Redaction](./privacy-and-redaction.md), and [Extension Surfaces](../features/extension-surfaces.md).
 
 ## 1.1 Runtime Lifecycle
 
 The primary lifecycle is:
 
-1. Popup validates that Google Drive is connected and the active tab is recordable.
+1. Popup validates that the active cloud storage provider is connected and the active tab is recordable.
 2. Service worker validates the target tab again before mutating recording state.
 3. Service worker creates a session id, loads upload/capture/privacy settings, clears old in-memory capture data, configures `StorageManager` and `CdpManager`, attaches CDP, and asks `RecorderManager` to start offscreen media capture.
 4. Service worker injects the recording-scoped event collector and visual masking settings into the page.
 5. During recording, CDP events are stored in memory, popup state is mirrored into `chrome.storage.session`, and `chrome.alarms` keeps the MV3 worker warm.
 6. Stop first tears down page-event capture and media recording, then flushes source maps while CDP is still attached, captures a best-effort visible-tab screenshot, resolves source maps into stored console/network data, and finalizes artifacts.
-7. If a valid Drive token is available, upload starts automatically; otherwise the completed local session stays pending while its temporary snapshot remains available.
+7. If a valid token for the active storage provider is available, upload starts automatically; otherwise the completed local session stays pending while its temporary snapshot remains available.
 
 ## 2. Functional & Non-Functional Requirements
 
@@ -72,7 +72,7 @@ The primary lifecycle is:
 - Allow a separate privacy profile so users can capture detailed evidence while still applying standard, strict, or custom redaction rules.
 - Compute recording duration as elapsed wall-clock time between start and stop.
 - Preserve popup UX even when the popup closes by mirroring state into session storage.
-- Hide capture controls and the capture queue from the popup until Google Drive is connected.
+- Hide capture controls and the capture queue from the popup until the active cloud storage provider is connected.
 - Tolerate partial teardown failures by settling recorder/CDP shutdown independently.
 
 ## 3. Data Models & APIs
@@ -122,7 +122,7 @@ When `captureStorage` is on, `CdpManager` enables `DOMStorage`, snapshots `local
 - `START_RECORDING` validates the target tab before changing recording state or attaching capture APIs, so unsupported tabs fail with a clear popup error instead of leaving a partial session behind.
 - popup and service worker share the same target-tab validation helper so proactive button disabling and final runtime validation stay aligned.
 - the user-event collector is injected only after recording starts, is re-injected after top-level navigation completes, and is asked to stop when the recording stops or is removed.
-- only safe privacy settings are sent to the injected collector; plaintext zip passwords and Drive credentials never cross into the page context.
+- only safe privacy settings are sent to the injected collector; plaintext zip passwords and cloud storage credentials never cross into the page context.
 - user-event capture stores redacted selectors, short labels, roles, event types, timing, and coordinates when available; it does not store raw typed input, and form/sensitive targets are deliberately label-limited.
 - right-click (`contextmenu`) events capture the same safe metadata shape as left clicks. Continuous wheel input is coalesced client-side into one `scroll` event per burst (flushed after ~400ms of inactivity or on direction reversal) to bound event volume before the shared `MAX_RECORDED_USER_EVENTS` cap applies.
 - keyboard capture listens for `keydown` in the capture phase and records only privacy-safe `key` events: navigation/editing keys (`Enter`, `Esc`, `Tab`, arrows, …), function keys, Space outside form controls, and chords with Ctrl/Meta/Alt. Auto-repeat, solo modifiers, password/sensitive targets, and printable single keys typed into form controls are skipped so the timeline never stores raw typed form input.
@@ -142,10 +142,10 @@ When `captureStorage` is on, `CdpManager` enables `DOMStorage`, snapshots `local
 - if the recorded tab closes, the service worker attempts an automatic stop and falls back to a forced state reset on error.
 - offscreen stop waits on a recording-complete signal with a 3 second safety timeout.
 - large console payloads are compacted and truncated according to the configured max console entry size before storage.
-- successful Google Drive upload is treated as the end of the in-memory artifact lifecycle: service worker capture buffers are cleared and the offscreen recorded video blob is released, while upload result state remains available for popup UX.
-- stopping a finished capture can auto-start upload when Google Drive is already connected, while the completed session remains removable from popup/history state.
-- popup capture controls are gated by the cached Google Drive auth state; service worker upload commands still validate a live Drive token before uploading.
-- popup keeps quick recording controls and opens a dedicated Settings page for Drive, package security, capture profiles, and advanced console/network/WebSocket controls.
+- successful cloud upload is treated as the end of the in-memory artifact lifecycle: service worker capture buffers are cleared and the offscreen recorded video blob is released, while upload result state remains available for popup UX.
+- stopping a finished capture can auto-start upload when the active storage provider is already connected, while the completed session remains removable from popup/history state.
+- popup capture controls are gated by the cached active-provider auth state; service worker upload commands still validate a live token for that provider before uploading.
+- popup keeps quick recording controls and opens a dedicated Settings page for storage provider/folder, package security, capture profiles, and advanced console/network/WebSocket controls.
 - Settings UI text can switch between English and Vietnamese, and each capture field exposes a tester-oriented help dialog explaining when QC should enable, disable, or limit that evidence.
 - capture profiles include lean, balanced, full debug, and custom; full debug is the default, and profile selection expands into concrete settings so the runtime does not infer behavior from UI labels.
 - CDP collection applies capture settings before storing artifacts: disabled console/network/WebSocket groups are skipped, disabled bodies are not fetched, WebSocket payloads can be redacted or size-limited, blank byte-limit fields mean no limit, and network headers/initiators can be reduced.
@@ -171,7 +171,7 @@ When `captureStorage` is on, `CdpManager` enables `DOMStorage`, snapshots `local
 - consumes `privacy-and-redaction` for privacy profile defaults, redaction, event sanitization, DOM masking selectors, and privacy summary construction
 - receives commands and renders state through `extension-surfaces`
 - consumes shared message/data models from `shared/data-models`
-- depends on Chrome extension platform APIs and Google-auth-aware upload orchestration from the Drive module
+- depends on Chrome extension platform APIs and multi-cloud storage-provider upload orchestration from the cloud storage module
 - emits state changes to popup, settings, and auth pages through `chrome.storage.session`
 
 ## 7. Related Decisions

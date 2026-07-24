@@ -3,7 +3,7 @@ title: "Extension Surfaces"
 description: "Current popup, settings, auth, and upload-history page behavior for GN Tracing."
 type: feature
 status: implemented
-tags: ["popup", "settings", "history", "auth"]
+tags: ["popup", "settings", "history", "auth", "cloud-storage"]
 source_paths:
   - "src/popup/popup.ts"
   - "popup/popup.html"
@@ -30,8 +30,8 @@ related:
 - Trạng thái: implemented
 - Phạm vi: popup controls, Settings page, Google Drive auth page, full upload-history page, local history actions, and UI ownership boundaries
 - Nguồn code: `src/popup/popup.ts`, `popup/`, `src/settings/settings.ts`, `settings/`, `src/drive-auth/drive-auth.ts`, `drive-auth/`, `src/history/history.ts`, `history/`, `src/shared/upload-history-ui.ts`
-- Tuân thủ: Chrome Web Store submission disclosure for recording controls and Google Drive connection
-- Links: [Recording Runtime](../modules/recording-runtime.md), [Drive And Player](../modules/drive-and-player.md), [Privacy And Redaction](../modules/privacy-and-redaction.md), [Shared Data Models](../shared/data-models.md)
+- Tuân thủ: Chrome Web Store submission disclosure for recording controls and cloud storage connection
+- Links: [Recording Runtime](../modules/recording-runtime.md), [Cloud Storage And Player](../modules/drive-and-player.md), [Privacy And Redaction](../modules/privacy-and-redaction.md), [Shared Data Models](../shared/data-models.md)
 
 ## Overview
 
@@ -43,19 +43,26 @@ Durable recording truth stays in the service worker because popup windows can cl
 
 The popup is the quick recording surface. It:
 
-- checks Google Drive status on open
-- hides capture controls and the pending capture queue until Drive is connected
+- shows **Cloud storage** status for the active provider (Google Drive or Dropbox)
+- revalidates connection state on open using per-provider mirrored connection keys when available
+- hides capture controls and the pending capture queue until the active storage provider is connected
 - checks whether the active tab is recordable before enabling start
-- sends start, stop, remove, upload, delete-session, Drive connect/disconnect, and upload-history delete commands to the service worker
+- sends start, stop, remove, upload, delete-session, storage connect/disconnect, and upload-history delete commands to the service worker
+- uses generic `STORAGE_CONNECT` / disconnect paths (Dropbox uses `launchWebAuthFlow`; Google may open the Drive auth page)
 - renders live recording timer, console/network counts, upload progress, per-artifact progress rows, latest local upload history, and GitHub/contribution links
 
-Stop is presented as "Stop & Upload" because a valid Drive token can auto-start upload after capture finalization.
+Stop is presented as "Stop & Upload" because a valid token for the active provider can auto-start upload after capture finalization.
+
+Capture disclosure copy refers to cloud storage generically (Google Drive or Dropbox). Capture detail and password options live in Settings.
 
 ## Settings Page
 
 The Settings page owns configuration that should not crowd the popup:
 
-- Drive target folder input, accepting root, `/folder/path`, raw Drive folder id, Drive folder URL, or query-string id
+- **Storage provider** select: Google Drive, Dropbox
+- Upload folder input for the active provider:
+  - Google Drive: root, `/folder/path`, raw folder id, Drive folder URL, or query-string id
+  - Dropbox: path (e.g. `/gn-tracing`) or blank for root
 - optional ZIP password configuration and clear-password flow
 - capture profiles: `lean`, `balanced`, `full`, and `custom`
 - privacy profiles: `standard`, `strict`, and `custom`
@@ -63,30 +70,20 @@ The Settings page owns configuration that should not crowd the popup:
 - DOM masking selectors
 - English/Vietnamese labels and tester-oriented help dialogs for capture fields
 
-Capture profile and privacy profile are separate. Preset capture profiles update evidence depth, while privacy profiles update redaction behavior.
+Capture profile and privacy profile are separate. Preset capture profiles update evidence depth, while privacy profiles update redaction behavior. Folder hints and placeholders update when the storage provider changes.
 
 ## Google Drive Auth Page
 
-The Drive auth page is a normal extension tab so OAuth is not interrupted by popup teardown. It shows initial, loading, success, and error states, can switch English/Vietnamese text, and reacts to service-worker session-state changes.
+The Drive auth page is a normal extension tab so **Google** OAuth is not interrupted by popup teardown. It shows initial, loading, success, and error states, can switch English/Vietnamese text, and reacts to service-worker session-state changes. Wording on this page remains Google Drive-specific because the surface is Drive-only.
 
-Chrome uses `chrome.identity.getAuthToken()`. Edge uses `launchWebAuthFlow` and a locally stored verified access token behind the same service-worker-facing API.
+Chrome uses `chrome.identity.getAuthToken()`. Other Chromium browsers use `launchWebAuthFlow` and a locally stored token cache (with refresh when available) behind the same service-worker-facing API. Dropbox connect flows are initiated from the popup / connect page without this HTML page.
 
 ## Upload History Page
 
-Upload history is local-only extension data. It is not written to Google Drive and is not embedded in replay packages.
+Upload history is local-only extension data. It is not written to cloud storage and is not embedded in replay packages. Entries may record which provider produced the replay link.
 
 The popup shows only the latest visible upload, while the full History page renders the complete locally stored list. Both surfaces share `src/shared/upload-history-ui.ts` so replay, copy-link, open-folder, and delete-history actions use the same markup and action routing.
 
 ## State Ownership
 
-- `chrome.storage.session` mirrors `PopupState` for popup/auth/history warm starts and service-worker restart recovery.
-- `chrome.storage.local` stores upload settings, Edge token fallback, and local upload history.
-- The plaintext ZIP password stays in local extension settings and is never exposed through popup state snapshots, upload history, replay URLs, package metadata, or page-injected scripts.
-- Pending session artifacts are temporary and are cleared after successful upload or explicit removal.
-
-## Constraints
-
-- UI surfaces must not assume that a service worker is continuously alive.
-- Capture controls must remain gated by both Google Drive connection and active-tab recordability.
-- Auth status shown in the popup is cached for responsiveness but refreshed through service-worker commands.
-- Upload progress UI must handle high-frequency progress updates without re-rendering unrelated popup state unnecessarily.
+Popup and Settings never own durable recording truth. The service worker owns session phase, upload progress, and auth caches. Surfaces read snapshots from `chrome.storage.session` / settings store commands and re-sync on open.

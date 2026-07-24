@@ -1,4 +1,5 @@
 /api/drive  /api/drive  200
+/api/dropbox  /api/dropbox  200
 /app  /app/index.html  200
 /app/  /app/index.html  200
 /privacy  /privacy/index.html  200

@@ -121,8 +121,15 @@ tasks:
     cmds:
       - ./deploy.sh
 
+  worker:sync-dev-vars:
+    desc: Sync worker/.dev.vars from root .env (Google/Dropbox secrets for local wrangler).
+    cmds:
+      - node scripts/sync-worker-dev-vars.mjs
+
   worker:dev:
-    desc: Run the OAuth token-exchange Worker locally with wrangler (hot reload, port 8787).
+    desc: Run the multi-issuer OAuth Worker locally (Google/Dropbox, hot reload, port 8787).
+    deps:
+      - worker:sync-dev-vars
     dir: worker
     cmds:
       - npm exec -- wrangler dev
@@ -134,7 +141,7 @@ tasks:
       - npm exec -- tsc --noEmit
 
   worker:deploy:
-    desc: Deploy the OAuth token-exchange Worker to Cloudflare.
+    desc: Deploy the multi-issuer OAuth Worker to Cloudflare (Google/Dropbox).
     dir: worker
     cmds:
       - ./deploy.sh
@@ -211,6 +218,11 @@ tasks:
       - task: store:publish
 
   dev:
-    desc: Watch extension + standalone player + OAuth Worker together (hot reload).
+    desc: >-
+      Local full stack — extension watch (esbuild → localhost Worker proxies),
+      standalone player (Vite + /api/drive|dropbox), multi-issuer OAuth
+      Worker (wrangler :8787 Google/Dropbox).
     cmds:
-      - npx concurrently -n ext,player,worker 'task watch' 'task player:dev' 'task worker:dev'
+      # Sync worker secrets before concurrent start so wrangler sees Dropbox.
+      - task: worker:sync-dev-vars
+      - npx concurrently -n ext,player,worker -c blue,green,magenta 'task watch' 'task player:dev' 'task worker:dev'

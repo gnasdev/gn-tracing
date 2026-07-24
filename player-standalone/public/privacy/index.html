@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Privacy Policy · GN Tracing</title>
-  <meta name="description" content="Privacy Policy for GN Tracing: capture, Google Drive upload, and hosted replay behavior.">
+  <meta name="description" content="Privacy Policy for GN Tracing: capture, multi-cloud upload (Google Drive, Dropbox), and hosted replay behavior.">
   <link rel="canonical" href="https://tracing.gnas.dev/privacy/">
   <link rel="icon" type="image/svg+xml" href="/icons/icon.svg">
   <link rel="icon" type="image/png" sizes="32x32" href="/icons/icon32.png">
@@ -47,7 +47,7 @@
     <header>
       <span class="legal-eyebrow">Legal</span>
       <h1>Privacy Policy</h1>
-      <p class="legal-updated">Last updated: July 22, 2026</p>
+      <p class="legal-updated">Last updated: July 24, 2026</p>
     </header>
 
     <p>
@@ -56,9 +56,10 @@
       includes screen recording and selected debugging artifacts from that tab.
     </p>
     <p>
-      This Privacy Policy describes what data GN Tracing may collect, how it is used, how Google
-      Drive is involved, and how users can delete data. The public product home for the hosted
-      player is <a href="https://tracing.gnas.dev/">https://tracing.gnas.dev/</a>.
+      This Privacy Policy describes what data GN Tracing may collect, how it is used, how user-owned
+      cloud storage (Google Drive and Dropbox) is involved, and how users can
+      delete data. The public product home for the hosted player is
+      <a href="https://tracing.gnas.dev/">https://tracing.gnas.dev/</a>.
     </p>
 
     <h2>Data GN Tracing Collects</h2>
@@ -97,8 +98,8 @@
       </li>
       <li>Optional zip password settings for protecting new uploads</li>
       <li>
-        Local upload history such as replay URL, Drive folder ID, page URL, upload time, and
-        duration
+        Local upload history such as replay URL, storage provider, cloud folder identifier when
+        known, page URL, upload time, and duration
       </li>
     </ul>
     <p>
@@ -121,26 +122,64 @@
       storage so it can show upload progress, retry a pending upload, and generate a replay link.
     </p>
     <p>
-      When Google Drive is connected, GN Tracing uploads the recording artifacts to the user's
-      Google Drive. If the user configures a zip password, GN Tracing writes a password-protected ZIP
-      package in the browser before upload and the hosted player at
+      When a cloud storage provider is connected, GN Tracing uploads the recording package to
+      <strong>the user's own cloud account</strong> for the provider the user selected (Google Drive,
+      Dropbox). If the user configures a zip password, GN Tracing writes a
+      password-protected ZIP package in the browser before upload and the hosted player at
       <a href="https://tracing.gnas.dev/">https://tracing.gnas.dev/</a> asks for that password before
       loading the replay.
     </p>
 
-    <h2>Google Drive And Sharing</h2>
+    <h2>Cloud Storage, OAuth, And Sharing</h2>
     <p>
-      GN Tracing uses the Google Drive <code>drive.file</code> scope to create and access files that
-      GN Tracing creates or opens through the user's interaction. It does not request full access to
-      every file in the user's Google Drive.
+      GN Tracing does not operate a first-party file storage backend for recordings. Packages are
+      stored in the cloud account the user connects.
     </p>
+
+    <h3>Google Drive</h3>
+    <p>
+      When Google Drive is the active provider, GN Tracing uses the Google Drive
+      <code>drive.file</code> scope to create and access files that GN Tracing creates or opens
+      through the user's interaction. It does not request full access to every file in the user's
+      Google Drive.
+    </p>
+
+    <h3>Dropbox</h3>
+    <p>
+      When Dropbox is the active provider, GN Tracing uses Dropbox OAuth with scoped access needed to
+      upload recording packages, read package content for replay downloads when authenticated, and
+      create shared links. Requested scopes (scoped Dropbox apps) include
+      <code>files.content.write</code>, <code>files.content.read</code>,
+      <code>sharing.write</code>, <code>sharing.read</code>, and
+      <code>account_info.read</code>.
+    </p>
+
+    <h3>Optional token-exchange proxies</h3>
+    <p>
+      By default, OAuth uses public-client PKCE and exchanges tokens directly with the cloud provider
+      from the extension. When a deployment configures an optional token-exchange proxy URL
+      (<code>GOOGLE_TOKEN_PROXY_URL</code> or <code>DROPBOX_TOKEN_PROXY_URL</code>), the extension
+      POSTs OAuth grant or refresh requests (authorization code, PKCE code verifier, or refresh token
+      as required by the grant) to that maintainer-operated endpoint so a server-side client secret
+      can be injected before the request reaches Google or Dropbox. Proxies are intended only to
+      complete the provider token exchange; they must not persist codes, verifiers, or tokens, and
+      they are not used for product analytics. When those proxy URLs are unset, OAuth grant material
+      is not sent to a GN Tracing-operated Worker.
+    </p>
+
+    <h3>Public link-readable model</h3>
     <p>
       Uploaded replay artifacts are made readable by link so the replay URL can be opened by
       teammates or other people the user shares it with. Anyone with an unprotected replay URL may
       be able to view the recording video, optional screenshot, report metadata, redacted interaction
       timeline, privacy summary, and included debugging artifacts. Password-protected replay packages
-      still use a link-readable Drive file, but the recording contents require the password in the
+      still use a link-readable cloud file, but the recording contents require the password in the
       GN Tracing player or a compatible unzip tool.
+    </p>
+    <p>
+      Replay URLs are namespaced by provider, for example
+      <code>/gdrive/&lt;id&gt;</code> or <code>/dropbox/&lt;id&gt;</code>.
+      Legacy Google Drive bare-id links may still open older uploads.
     </p>
     <p class="legal-note">
       Users should avoid recording pages that contain confidential information unless they intend to
@@ -152,14 +191,27 @@
       Before upload, recording data is held in the extension runtime and browser extension storage.
       Optional zip password settings are stored locally by the extension and are not placed in
       replay URLs, upload history, uploaded package metadata, or the page-injected event collector.
-      After upload, recording artifacts are stored in the user's Google Drive. Upload history is
-      stored locally by the extension and is not synced into Google Drive.
+      After upload, recording artifacts are stored in the user's selected cloud (Google Drive,
+      Dropbox). Upload history is stored locally by the extension and is not
+      synced into the cloud storage account.
+    </p>
+    <p>
+      OAuth access and refresh tokens are stored locally in the browser extension storage for the
+      provider that was connected. Tokens are used only to authenticate to that provider's APIs for
+      upload, share, disconnect/revoke, and authenticated extension-player download. Tokens are not
+      embedded in replay URLs or package metadata. Except for the optional token-exchange proxy path
+      described above (when configured), access and refresh tokens are not uploaded to GN Tracing
+      infrastructure, and proxies must not keep them after exchange.
     </p>
     <ul>
       <li>Users can delete local upload history from the extension UI.</li>
       <li>
         Users can delete uploaded recordings by deleting the generated GN Tracing zip package from
-        Google Drive.
+        their cloud storage account.
+      </li>
+      <li>
+        Users can disconnect a provider in the extension to clear local tokens for that provider
+        (cloud files are not deleted automatically).
       </li>
     </ul>
 
@@ -170,14 +222,27 @@
       user-requested replay flow:
     </p>
     <ul>
-      <li>Uploaded recording artifacts are stored in the user's Google Drive</li>
+      <li>Uploaded recording artifacts are stored in the user's selected cloud storage account</li>
       <li>Replay artifacts are made readable by link so the replay URL works</li>
-      <li>The hosted player fetches those link-readable artifacts to display the replay</li>
+      <li>
+        The hosted player fetches those link-readable artifacts (via same-origin download proxies
+        when needed) to display the replay
+      </li>
     </ul>
+
+    <h2>No Product Telemetry</h2>
+    <p>
+      GN Tracing does not include third-party product analytics or advertising SDKs that report
+      browsing activity. Developer-facing console warnings may log high-level auth or upload failure
+      messages for debugging in the browser console; they must not log OAuth token values, refresh
+      tokens, or raw recording package contents. There is no remote telemetry pipeline that exports
+      tokens or file bodies.
+    </p>
 
     <h2>Google API Limited Use</h2>
     <p>
-      GN Tracing's use and transfer of information received from Google APIs adheres to the
+      When Google Drive is used, GN Tracing's use and transfer of information received from Google
+      APIs adheres to the
       <a href="https://developers.google.com/terms/api-services-user-data-policy" target="_blank" rel="noreferrer">
         Google API Services User Data Policy
       </a>,
@@ -190,8 +255,13 @@
     <ul>
       <li>
         <strong>Google</strong> — OAuth sign-in and Google Drive storage of user-uploaded replay
-        packages under the user's Google account
+        packages under the user's Google account (when Drive is selected)
       </li>
+      <li>
+        <strong>Dropbox</strong> — OAuth sign-in and Dropbox storage of user-uploaded packages (when
+        Dropbox is selected)
+      </li>
+      <li></li>
       <li>
         <strong>Cloudflare</strong> — hosting of the public replay player and related static pages
         at <a href="https://tracing.gnas.dev/">tracing.gnas.dev</a>

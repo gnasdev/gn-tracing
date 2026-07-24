@@ -50,10 +50,13 @@ export interface MessageHandlers {
     data: Record<string, unknown> | undefined,
   ) => Promise<MessageResponse>;
   getUploadState: () => RecordingSessionSummary[];
-  googleDriveConnect: () => Promise<MessageResponse>;
-  googleDriveDisconnect: () => Promise<MessageResponse>;
-  googleDriveStatus: () => Promise<MessageResponse>;
-  getGoogleDriveToken: () => Promise<{ ok: boolean; token: string | null }>;
+  /** Generic storage connect (optional provider in data; defaults to active/google-drive). */
+  storageConnect: (data?: Record<string, unknown>) => Promise<MessageResponse>;
+  storageDisconnect: (data?: Record<string, unknown>) => Promise<MessageResponse>;
+  storageStatus: (data?: Record<string, unknown>) => Promise<MessageResponse>;
+  getStorageToken: (
+    data?: Record<string, unknown>,
+  ) => Promise<{ ok: boolean; token: string | null }>;
   onRecordingComplete: (sessionId: string | undefined) => void;
   getUploadArtifactChunk: (
     data: Record<string, unknown> | undefined,
@@ -131,14 +134,35 @@ async function handleMessage(
       return handlers.uploadSessionToGoogleDrive(message.data);
     case "GET_UPLOAD_STATE":
       return handlers.getUploadState();
+    case "STORAGE_CONNECT":
     case "GOOGLE_DRIVE_CONNECT":
-      return handlers.googleDriveConnect();
+      // GOOGLE_DRIVE_* aliases map to google-drive (or explicit provider in data).
+      return handlers.storageConnect(
+        message.action === "GOOGLE_DRIVE_CONNECT"
+          ? { ...message.data, provider: "google-drive" }
+          : message.data,
+      );
+    case "STORAGE_DISCONNECT":
     case "GOOGLE_DRIVE_DISCONNECT":
-      return handlers.googleDriveDisconnect();
+      return handlers.storageDisconnect(
+        message.action === "GOOGLE_DRIVE_DISCONNECT"
+          ? { ...message.data, provider: "google-drive" }
+          : message.data,
+      );
+    case "STORAGE_STATUS":
     case "GOOGLE_DRIVE_STATUS":
-      return handlers.googleDriveStatus();
+      return handlers.storageStatus(
+        message.action === "GOOGLE_DRIVE_STATUS"
+          ? { ...message.data, provider: "google-drive" }
+          : message.data,
+      );
+    case "GET_STORAGE_TOKEN":
     case "GET_GOOGLE_DRIVE_TOKEN":
-      return handlers.getGoogleDriveToken();
+      return handlers.getStorageToken(
+        message.action === "GET_GOOGLE_DRIVE_TOKEN"
+          ? { ...message.data, provider: "google-drive" }
+          : message.data,
+      );
     case "RECORDING_COMPLETE":
       handlers.onRecordingComplete(
         typeof message.data?.sessionId === "string" ? message.data.sessionId : undefined,

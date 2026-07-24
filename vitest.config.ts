@@ -32,6 +32,9 @@ export default defineConfig({
     __APP_ENV__: JSON.stringify("test"),
     __GOOGLE_CLIENT_ID__: JSON.stringify(""),
     __GOOGLE_TOKEN_PROXY_URL__: JSON.stringify(""),
+    __DROPBOX_CLIENT_ID__: JSON.stringify(""),
+    __DROPBOX_TOKEN_PROXY_URL__: JSON.stringify(""),
+
     __PLAYER_LOCAL_PORT__: JSON.stringify("5176"),
   },
   test: {

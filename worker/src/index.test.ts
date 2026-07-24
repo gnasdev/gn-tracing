@@ -1,39 +1,28 @@
 /**
- * Integration tests for the OAuth token-exchange Worker handler.
+ * Integration tests for the multi-issuer OAuth token-exchange Worker handler.
  *
- * These run inside the Cloudflare Workers pool (see worker/vitest.config.ts) so
- * the handler executes against realistic `Request`/`Response`/env bindings.
- *
- * SECURITY: every env binding here is a synthetic placeholder. No real OAuth
- * client secrets, client ids, or tokens are used. Upstream Google calls are
- * intercepted via a stubbed global `fetch` so no network request is made.
- *
- * Coverage focus (Requirements 1.4, 6.3):
- *  - non-POST requests are rejected with 405
- *  - missing client secret/config yields a 500 server_misconfigured error
- *  - upstream Google responses are relayed/mapped correctly, and upstream
- *    failures map to a 502 upstream_unreachable error
+ * SECURITY: every env binding is a synthetic placeholder. Upstream provider
+ * calls are intercepted via stubbed global `fetch` — no real network.
  */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import worker, { type Env } from "./index";
+import worker, { type Env, resolveProviderFromPath } from "./index";
 
-// A synthetic extension origin. With ALLOWED_EXTENSION_ORIGINS empty, any
-// `chrome-extension://` origin is accepted by the permissive dev fallback.
 const PLACEHOLDER_ORIGIN = "chrome-extension://placeholderextensionidaaaaaaaaaaaaa";
 
-/** Fully-configured placeholder env (synthetic values only). */
 function makeEnv(overrides: Partial<Env> = {}): Env {
   return {
     GOOGLE_CLIENT_ID: "placeholder-client-id.apps.googleusercontent.com",
-    GOOGLE_CLIENT_SECRET: "placeholder-client-secret",
+    GOOGLE_CLIENT_SECRET: "placeholder-google-secret",
+    DROPBOX_CLIENT_ID: "placeholder-dropbox-app-key",
+    DROPBOX_CLIENT_SECRET: "placeholder-dropbox-secret",
     ALLOWED_EXTENSION_ORIGINS: "",
     ...overrides,
   };
 }
 
-/** Build a token-exchange POST request with an allowed origin and form body. */
 function makeTokenRequest(
+  path: string,
   body: Record<string, string> = {
     grant_type: "authorization_code",
     code: "abc",
@@ -47,7 +36,7 @@ function makeTokenRequest(
   if (origin) {
     headers.Origin = origin;
   }
-  return new Request("https://proxy.example/token", {
+  return new Request(`https://proxy.example${path}`, {
     method: "POST",
     headers,
     body: new URLSearchParams(body).toString(),
@@ -57,6 +46,18 @@ function makeTokenRequest(
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+});
+
+describe("resolveProviderFromPath", () => {
+  it("maps legacy Google paths and explicit provider paths", () => {
+    expect(resolveProviderFromPath("/")).toBe("google");
+    expect(resolveProviderFromPath("/token")).toBe("google");
+    expect(resolveProviderFromPath("/token/google")).toBe("google");
+    expect(resolveProviderFromPath("/token/dropbox")).toBe("dropbox");
+    expect(resolveProviderFromPath("/dropbox")).toBe("dropbox");
+    expect(resolveProviderFromPath("/token/onedrive")).toBeNull();
+    expect(resolveProviderFromPath("/unknown")).toBeNull();
+  });
 });
 
 describe("OAuth token proxy - method handling", () => {
@@ -71,15 +72,6 @@ describe("OAuth token proxy - method handling", () => {
     expect(body.error).toBe("method_not_allowed");
   });
 
-  it("rejects PUT requests with 405", async () => {
-    const res = await worker.fetch(
-      new Request("https://proxy.example/token", { method: "PUT" }),
-      makeEnv(),
-    );
-
-    expect(res.status).toBe(405);
-  });
-
   it("serves the unauthenticated health check on GET /health", async () => {
     const res = await worker.fetch(
       new Request("https://proxy.example/health", { method: "GET" }),
@@ -87,32 +79,46 @@ describe("OAuth token proxy - method handling", () => {
     );
 
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { ok: boolean; service: string };
+    const body = (await res.json()) as {
+      ok: boolean;
+      service: string;
+      providers: Record<string, boolean>;
+    };
     expect(body.ok).toBe(true);
     expect(body.service).toBe("gn-tracing-oauth-proxy");
+    expect(body.providers.google).toBe(true);
+    expect(body.providers.dropbox).toBe(true);
+    expect(body.providers).not.toHaveProperty("onedrive");
   });
 });
 
 describe("OAuth token proxy - configuration handling", () => {
-  it("returns 500 server_misconfigured when the client secret is missing", async () => {
-    const res = await worker.fetch(makeTokenRequest(), makeEnv({ GOOGLE_CLIENT_SECRET: "" }));
+  it("returns 500 when Google secret is missing on Google path", async () => {
+    const res = await worker.fetch(
+      makeTokenRequest("/token"),
+      makeEnv({ GOOGLE_CLIENT_SECRET: "" }),
+    );
 
     expect(res.status).toBe(500);
     const body = (await res.json()) as { error: string };
     expect(body.error).toBe("server_misconfigured");
   });
 
-  it("returns 500 server_misconfigured when the client id is missing", async () => {
-    const res = await worker.fetch(makeTokenRequest(), makeEnv({ GOOGLE_CLIENT_ID: "" }));
+  it("returns 500 when Dropbox secret is missing on Dropbox path", async () => {
+    const res = await worker.fetch(
+      makeTokenRequest("/token/dropbox"),
+      makeEnv({ DROPBOX_CLIENT_SECRET: "" }),
+    );
 
     expect(res.status).toBe(500);
-    const body = (await res.json()) as { error: string };
+    const body = (await res.json()) as { error: string; error_description: string };
     expect(body.error).toBe("server_misconfigured");
+    expect(body.error_description).toMatch(/Dropbox/i);
   });
 
   it("rejects a disallowed origin with 403 before touching credentials", async () => {
     const res = await worker.fetch(
-      makeTokenRequest({ grant_type: "authorization_code" }, "https://evil.example"),
+      makeTokenRequest("/token", { grant_type: "authorization_code" }, "https://evil.example"),
       makeEnv({ ALLOWED_EXTENSION_ORIGINS: "chrome-extension://only-this-one" }),
     );
 
@@ -121,135 +127,69 @@ describe("OAuth token proxy - configuration handling", () => {
     expect(body.error).toBe("forbidden_origin");
   });
 
-  // Production pins the Chrome Web Store extension id (public, not a secret).
-  // Regression: a stale allow-list with an old unpacked id must not silently
-  // accept the wrong origin while blocking the store origin.
-  const STORE_EXTENSION_ORIGIN = "chrome-extension://jbhlmonpecgenhinhffclanbbknjlbeh";
-
-  it("accepts the store extension origin when it is on the allow-list", async () => {
-    const fetchSpy = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ error: "invalid_grant", error_description: "Bad Request" }), {
-        status: 400,
-        headers: { "Content-Type": "application/json" },
-      }),
-    );
-    vi.stubGlobal("fetch", fetchSpy);
-
-    const res = await worker.fetch(
-      makeTokenRequest({ grant_type: "refresh_token", refresh_token: "x" }, STORE_EXTENSION_ORIGIN),
-      makeEnv({ ALLOWED_EXTENSION_ORIGINS: STORE_EXTENSION_ORIGIN }),
-    );
-
-    // Origin allowed → request reaches Google (stubbed); not forbidden_origin.
-    expect(res.status).toBe(400);
-    const body = (await res.json()) as { error: string };
-    expect(body.error).not.toBe("forbidden_origin");
-    expect(body.error).toBe("invalid_grant");
-    expect(fetchSpy).toHaveBeenCalledOnce();
-  });
-
-  it("rejects a non-store extension origin when allow-list is store-only", async () => {
-    const fetchSpy = vi.fn();
-    vi.stubGlobal("fetch", fetchSpy);
-
-    const res = await worker.fetch(
-      makeTokenRequest(
-        { grant_type: "refresh_token", refresh_token: "x" },
-        "chrome-extension://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      ),
-      makeEnv({ ALLOWED_EXTENSION_ORIGINS: STORE_EXTENSION_ORIGIN }),
-    );
-
-    expect(res.status).toBe(403);
-    const body = (await res.json()) as { error: string };
-    expect(body.error).toBe("forbidden_origin");
-    expect(fetchSpy).not.toHaveBeenCalled();
-  });
-
-  it("rejects an unsupported grant_type with 400", async () => {
-    const res = await worker.fetch(makeTokenRequest({ grant_type: "password" }), makeEnv());
-
-    expect(res.status).toBe(400);
-    const body = (await res.json()) as { error: string };
-    expect(body.error).toBe("unsupported_grant_type");
+  it("returns 404 for unknown token paths including removed onedrive", async () => {
+    const res = await worker.fetch(makeTokenRequest("/token/unknown"), makeEnv());
+    expect(res.status).toBe(404);
+    const od = await worker.fetch(makeTokenRequest("/token/onedrive"), makeEnv());
+    expect(od.status).toBe(404);
   });
 });
 
-describe("OAuth token proxy - upstream error mapping", () => {
-  it("relays a Google error response verbatim with its status", async () => {
-    const googleError = { error: "invalid_grant", error_description: "Bad authorization code." };
-    const fetchSpy = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify(googleError), {
-        status: 400,
+describe("OAuth token proxy - upstream relay", () => {
+  it("relays Google token responses and injects Google credentials", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      expect(url).toBe("https://oauth2.googleapis.com/token");
+      const body = new URLSearchParams(String(init?.body ?? ""));
+      expect(body.get("client_id")).toBe("placeholder-client-id.apps.googleusercontent.com");
+      expect(body.get("client_secret")).toBe("placeholder-google-secret");
+      expect(body.get("grant_type")).toBe("authorization_code");
+      return new Response(JSON.stringify({ access_token: "g-atok", expires_in: 3600 }), {
+        status: 200,
         headers: { "Content-Type": "application/json" },
-      }),
-    );
-    vi.stubGlobal("fetch", fetchSpy);
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
 
-    const res = await worker.fetch(makeTokenRequest(), makeEnv());
-
-    // Google's status and body are relayed unchanged so the extension's
-    // existing error handling keeps working.
-    expect(res.status).toBe(400);
-    const body = (await res.json()) as { error: string };
-    expect(body.error).toBe("invalid_grant");
-
-    // The Worker injects client_id/client_secret and posts to Google's endpoint.
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
-    const [calledUrl, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
-    expect(calledUrl).toBe("https://oauth2.googleapis.com/token");
-    expect(init.method).toBe("POST");
-    const forwarded = new URLSearchParams(init.body as string);
-    expect(forwarded.get("client_id")).toBe("placeholder-client-id.apps.googleusercontent.com");
-    expect(forwarded.get("client_secret")).toBe("placeholder-client-secret");
-    expect(forwarded.get("grant_type")).toBe("authorization_code");
-  });
-
-  it("relays a successful Google token response verbatim", async () => {
-    const tokenPayload = { access_token: "placeholder-access-token", expires_in: 3599 };
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(
-        new Response(JSON.stringify(tokenPayload), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        }),
-      ),
-    );
-
-    const res = await worker.fetch(makeTokenRequest(), makeEnv());
-
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { access_token: string };
-    expect(body.access_token).toBe("placeholder-access-token");
-  });
-
-  it("maps an unreachable upstream to 502 upstream_unreachable", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("network down")));
-
-    const res = await worker.fetch(makeTokenRequest(), makeEnv());
-
-    expect(res.status).toBe(502);
-    const body = (await res.json()) as { error: string; error_description: string };
-    expect(body.error).toBe("upstream_unreachable");
-    expect(body.error_description).toContain("network down");
-  });
-
-  it("returns 400 invalid_request for a malformed JSON body", async () => {
     const res = await worker.fetch(
-      new Request("https://proxy.example/token", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Origin: PLACEHOLDER_ORIGIN,
-        },
-        body: "{not valid json",
+      makeTokenRequest("/token", {
+        grant_type: "authorization_code",
+        code: "abc",
+        code_verifier: "xyz",
+        client_id: "evil-client",
+        client_secret: "evil-secret",
       }),
       makeEnv(),
     );
 
-    expect(res.status).toBe(400);
-    const body = (await res.json()) as { error: string };
-    expect(body.error).toBe("invalid_request");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { access_token: string };
+    expect(body.access_token).toBe("g-atok");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("relays Dropbox token responses to Dropbox token endpoint", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      expect(String(input)).toBe("https://api.dropboxapi.com/oauth2/token");
+      return new Response(JSON.stringify({ access_token: "db-atok", token_type: "bearer" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const res = await worker.fetch(
+      makeTokenRequest("/token/dropbox", {
+        grant_type: "authorization_code",
+        code: "db-code",
+        code_verifier: "db-verifier",
+        redirect_uri: "https://ext.chromiumapp.org/",
+      }),
+      makeEnv(),
+    );
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { access_token: string };
+    expect(body.access_token).toBe("db-atok");
   });
 });

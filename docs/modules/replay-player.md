@@ -1,9 +1,9 @@
 ---
 title: "Replay Player"
-description: "Current replay player modes, package loading, password unlock, Drive downloads, and inspection UX."
+description: "Current replay player modes, package loading, password unlock, multi-cloud downloads, and inspection UX."
 type: module
 status: active
-tags: ["player", "replay", "google-drive"]
+tags: ["player", "replay", "google-drive", "dropbox"]
 source_paths:
   - "player/player.js"
   - "player/player.css"
@@ -12,6 +12,7 @@ source_paths:
   - "player-standalone/src/drive-adapter.ts"
   - "player-standalone/src/extension-detector.ts"
   - "player-standalone/functions/api/drive.js"
+  - "player-standalone/functions/api/dropbox.js"
   - "player-standalone/scripts/sync-player.js"
 related:
   - "./drive-and-player.md"
@@ -26,23 +27,26 @@ related:
 ## Meta
 
 - Trạng thái: active
-- Phạm vi: extension/standalone replay player, Drive artifact download, zip package parsing, password unlock, loading progress, and inspection UI
-- Nguồn code: `player/player.js`, `player/player.css`, `player/player.html`, `player-standalone/src/`, `player-standalone/functions/api/drive.js`, `player-standalone/scripts/sync-player.js`
+- Phạm vi: extension/standalone replay player, multi-cloud artifact download, zip package parsing, password unlock, loading progress, and inspection UI
+- Nguồn code: `player/player.js`, `player/player.css`, `player/player.html`, `player-standalone/src/`, `player-standalone/functions/api/{drive,dropbox}.js`, `player-standalone/scripts/sync-player.js`
 - Tuân thủ: Không áp dụng
-- Links: [Drive And Player](./drive-and-player.md), [Recording Runtime](./recording-runtime.md), [Privacy And Redaction](./privacy-and-redaction.md), [Shared Data Models](../shared/data-models.md), [API Conventions](../shared/api-conventions.md)
+- Links: [Cloud Storage And Player](./drive-and-player.md), [Recording Runtime](./recording-runtime.md), [Privacy And Redaction](./privacy-and-redaction.md), [Shared Data Models](../shared/data-models.md), [API Conventions](../shared/api-conventions.md)
 
 ## Overview
 
-The replay player is the viewer for uploaded GN Tracing recording packages. It loads a recording zip or legacy recording index from Google Drive, combines video parts locally, renders optional report artifacts, and synchronizes the video timeline with console, network, WebSocket, and user-event evidence.
+The replay player is the viewer for uploaded GN Tracing recording packages. It loads a recording zip (or legacy recording index) from the user's cloud storage via authenticated APIs or same-origin proxies, combines video parts locally, renders optional report artifacts, and synchronizes the video timeline with console, network, WebSocket, and user-event evidence.
 
-The same `player/player.js` and `player/player.css` runtime is used by the packaged extension player and the hosted standalone player. Environment-specific behavior is kept behind browser globals, a standalone Drive adapter, and Cloudflare Pages routing.
+The same `player/player.js` and `player/player.css` runtime is used by the packaged extension player and the hosted standalone player. Environment-specific behavior is kept behind browser globals, standalone adapters, and Cloudflare Pages routing.
 
 ## Modes And Entrypoints
 
-- Extension mode can ask the service worker for a current Google Drive OAuth token and download packages through `files.get?alt=media`.
-- Standalone mode uses the hosted URL at `https://tracing.gnas.dev/` and same-origin `/api/drive?id=<file-id>` downloads.
-- The current replay URL shape is `https://tracing.gnas.dev/<zip-file-id>`.
-- A legacy `?id=<file-id>` parser and direct-file query parser for `videos`, `metadata`, `console`, `network`, and `websocket` remain available for older/debug links.
+- Extension mode can ask the service worker for a storage OAuth token (`GET_STORAGE_TOKEN`, legacy `GET_GOOGLE_DRIVE_TOKEN`) and download packages through the provider's authenticated media endpoint when available.
+- Standalone mode uses the hosted URL at `https://tracing.gnas.dev/` and same-origin provider proxies:
+  - Google Drive: `/api/drive?id=<file-id>`
+  - Dropbox: `/api/dropbox?id=<shared-link-id>`
+- Namespaced replay URLs: `/gdrive/<id>`, `/dropbox/<id>.
+- Legacy Google bare-id paths (`/<file-id>`) and `?id=<file-id>` (optional `?provider=`) remain parseable.
+- A direct-file query parser for `videos`, `metadata`, `console`, `network`, and `websocket` remains available for older/debug links.
 - Opening the player without replay parameters shows an intro state instead of an invalid-params error.
 
 ## Package Loading
@@ -67,15 +71,22 @@ The player also retains support for legacy encrypted-payload package indexes tha
 
 Wrong or missing passwords stay client-side. The entered password is not placed in URLs, cache keys, uploaded metadata, or service-worker state.
 
-## Drive Downloads And Proxy
+## Cloud Downloads And Proxies
 
-The player downloads the recording package without requiring Drive folder listing for the current URL shape. Video parts are loaded with bounded concurrency and large video blobs skip Cache API storage to avoid first-load memory duplication.
+The player downloads the recording package without requiring cloud folder listing for the current URL shape. Video parts are loaded with bounded concurrency and large video blobs skip Cache API storage to avoid first-load memory duplication.
 
 After video parts are combined (and before `URL.createObjectURL`), the player applies the same fail-open WebM seek fix as upload packaging via `window.gnMakeWebmSeekable` (`player/vendor/webm-seek-fix/webm-seek-fix.iife.js`, rebuilt with `npm run vendor:webm-seek`). That API matches `src/shared/webm-seek-fix.ts` and rebuilds SeekHead + Duration + Cues so timeline seeks work without progressive demux.
 
-Extension mode first tries authenticated Drive API media downloads when an OAuth token is available. If auth is unavailable or access failures may still succeed through a link-readable file, the player falls back to the public/proxy download path.
+Extension mode first tries authenticated provider downloads when an OAuth token is available. Tokens are never placed in URLs, Cache API keys, or proxy query strings. If auth is unavailable or access failures may still succeed through a link-readable file, the player falls back to the public/proxy download path for that provider.
 
-Standalone mode depends on the Cloudflare Pages `/api/drive` function. The function proxies public Drive downloads, preserves range and content headers, resolves Google Drive large-file confirmation pages, rejects unresolved HTML confirmation responses as non-cacheable errors, and advertises one-day cacheability for successful artifact bytes.
+Standalone mode depends on Cloudflare Pages functions:
+
+| Provider | Proxy | Notes |
+|----------|-------|--------|
+| Google Drive | `/api/drive` | Public Drive download, large-file confirmation handling, range/content headers, one-day cache on success |
+| Dropbox | `/api/dropbox` | Relative shared-link ids only; absolute URLs rejected (SSRF prevention) |
+
+Proxies return non-cacheable errors for non-binary/HTML interstitial responses that would corrupt the zip cache.
 
 ## Inspection UX
 
@@ -110,7 +121,7 @@ The components are MIT-licensed; the upstream license text is kept at `player/ve
 
 ## Relationships
 
-- `drive-and-player` owns auth, upload, replay URL generation, package sharing, and standalone deployment boundaries.
+- `drive-and-player` (Cloud Storage And Player) owns multi-cloud auth, upload, namespaced replay URL generation, package sharing, and standalone deployment boundaries.
 - `recording-runtime` produces the artifacts that this player consumes.
 - `privacy-and-redaction` defines the redacted values, privacy summaries, and source-snippet constraints that replay renders.
 - `shared/data-models` defines the serialized artifact schemas used by both capture and replay.
