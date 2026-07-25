@@ -6,6 +6,8 @@ status: implemented
 tags: ["popup", "settings", "history", "auth", "cloud-storage"]
 source_paths:
   - "src/popup/popup.ts"
+  - "src/shared/feedback.ts"
+  - "src/background/feedback-submit.ts"
   - "popup/popup.html"
   - "popup/popup.css"
   - "src/settings/settings.ts"
@@ -49,7 +51,8 @@ The popup is the quick recording surface. It:
 - checks whether the active tab is recordable before enabling start
 - sends start, stop, remove, upload, delete-session, storage connect/disconnect, and upload-history delete commands to the service worker
 - uses generic `STORAGE_CONNECT` / disconnect paths (Dropbox uses `launchWebAuthFlow`; Google may open the Drive auth page)
-- renders live recording timer, console/network counts, upload progress, per-artifact progress rows, latest local upload history, and GitHub/contribution links
+- renders live recording timer, console/network counts, upload progress, per-artifact progress rows, latest local upload history, and an opt-in **Feedback** button in the topbar
+- Feedback opens a popover form (not a footer panel): the user submits a message and the service worker POSTs to the Worker `/feedback` route to create a public GitHub issue (light diagnostics only: extension version, browser, OS, locale). Settings, History, Manage clouds, and the extension player expose the same topbar Feedback control. GitHub repo/Contribute deep-links are not shown on extension UI surfaces
 
 Stop is presented as "Stop & Upload" because a valid token for the active provider can auto-start upload after capture finalization.
 

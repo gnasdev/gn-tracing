@@ -15,7 +15,11 @@ port = 8787
 local_protocol = "http"
 
 # Public vars. Secrets are set via `wrangler secret put` (or .dev.vars locally).
+# Secrets: GOOGLE_CLIENT_SECRET, DROPBOX_CLIENT_SECRET, GITHUB_FEEDBACK_TOKEN
 [vars]
 GOOGLE_CLIENT_ID = ""
 DROPBOX_CLIENT_ID = ""
 ALLOWED_EXTENSION_ORIGINS = ""
+GITHUB_REPO_OWNER = "gnasdev"
+GITHUB_REPO_NAME = "gn-tracing"
+GITHUB_FEEDBACK_LABELS = "feedback"

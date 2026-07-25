@@ -108,6 +108,10 @@ GN Tracing does not sell captured data. GN Tracing does not use captured data fo
 
 GN Tracing does not include third-party product analytics or advertising SDKs that report browsing activity. Developer-facing console warnings may log high-level auth or upload failure messages for debugging in the browser console; they must not log OAuth token values, refresh tokens, or raw recording package contents. There is no remote telemetry pipeline that exports tokens or file bodies.
 
+## Optional Product Feedback
+
+When you use the in-extension **Feedback** control and press Submit, GN Tracing sends only the text you typed plus light environment diagnostics (extension version, browser name/version, operating system label, and locale) to a maintainer-operated Cloudflare Worker. That Worker creates a **public** GitHub issue on the GN Tracing repository so the maintainer can review the report. Feedback is opt-in and never submitted automatically. Do not include passwords, OAuth tokens, or confidential recording contents in feedback text. Feedback is not part of the recording/upload pipeline and is separate from cloud storage packages.
+
 ## Google API Limited Use
 
 When Google Drive is used, GN Tracing's use and transfer of information received from Google APIs adheres to the Google API Services User Data Policy, including the Limited Use requirements. Google Drive data is used only to create, read, share, and manage GN Tracing recording artifacts needed for the replay feature.

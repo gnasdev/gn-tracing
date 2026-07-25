@@ -122,12 +122,16 @@ tasks:
       - ./deploy.sh
 
   worker:sync-dev-vars:
-    desc: Sync worker/.dev.vars from root .env (Google/Dropbox secrets for local wrangler).
+    desc: >-
+      Sync worker/.dev.vars from root .env (OAuth secrets + optional
+      GITHUB_FEEDBACK_TOKEN for local wrangler).
     cmds:
       - node scripts/sync-worker-dev-vars.mjs
 
   worker:dev:
-    desc: Run the multi-issuer OAuth Worker locally (Google/Dropbox, hot reload, port 8787).
+    desc: >-
+      Run the multi-issuer Worker locally (OAuth Google/Dropbox + POST /feedback,
+      hot reload, port 8787). Also started by `task dev`.
     deps:
       - worker:sync-dev-vars
     dir: worker
@@ -220,9 +224,10 @@ tasks:
   dev:
     desc: >-
       Local full stack — extension watch (esbuild → localhost Worker proxies),
-      standalone player (Vite + /api/drive|dropbox), multi-issuer OAuth
-      Worker (wrangler :8787 Google/Dropbox).
+      standalone player (Vite + /api/drive|dropbox), multi-issuer Worker
+      (wrangler :8787 OAuth Google/Dropbox + POST /feedback).
     cmds:
-      # Sync worker secrets before concurrent start so wrangler sees Dropbox.
+      # Sync worker secrets before concurrent start so wrangler sees OAuth + feedback vars.
       - task: worker:sync-dev-vars
+      # Three long-running processes: extension rebuild, player, local Worker on :8787.
       - npx concurrently -n ext,player,worker -c blue,green,magenta 'task watch' 'task player:dev' 'task worker:dev'

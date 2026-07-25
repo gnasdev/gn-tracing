@@ -92,7 +92,8 @@ Proxies return non-cacheable errors for non-binary/HTML interstitial responses t
 
 The player renders:
 
-- report metadata, environment chips, privacy summary, optional screenshot, and redacted event timeline rows
+- a `Report` tab with report metadata, environment chips, privacy summary, and optional screenshot (hidden when those artifacts are absent)
+- a separate `Activity` tab with the full redacted user-event timeline (click/contextmenu/scroll/key/navigation/focus/submit); hidden when `events.json` is empty/missing; rows seek the video on click; the latest event at or before `video.currentTime` is highlighted and future rows are dimmed as playback advances
 - timeline markers from log evidence and user events
 - searchable/filterable console, network, and WebSocket lists
 - source-mapped console locations, parsed Error argument stacks, bounded source snippets, and source-map diagnostic messages

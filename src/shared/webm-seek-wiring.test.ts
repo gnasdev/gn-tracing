@@ -21,8 +21,9 @@ function existsRepo(...parts: string[]): boolean {
 describe("webm seek single-path wiring", () => {
   it("shared module is a thin cues wrapper only", () => {
     const source = readRepo("src/shared/webm-seek-fix.ts");
-    expect(source).toContain('import fixWebmDurationWithCues from "webm-duration-fix"');
+    expect(source).toContain('import fixWebmDurationWithCuesImport from "webm-duration-fix"');
     expect(source).toContain("export async function makeWebmSeekable");
+    expect(source).toContain("resolveFixWebmDurationWithCues");
     // Phase-1 duration mini-parser must stay deleted.
     expect(source).not.toMatch(/class WebmFile|fixDuration\(|tryDurationOnlyFallback/);
     expect(source).not.toMatch(/hasSeekMetadataMarkers|0x4489/);
@@ -46,6 +47,22 @@ describe("webm seek single-path wiring", () => {
     const source = readRepo("player/player.js");
     expect(source).toContain("gnMakeWebmSeekable");
     expect(source).toContain("async function prepareSeekableVideoBlob");
+    expect(source).toContain("ensurePlayableVideoBlobType");
+    expect(source).toContain("function seekVideoToMs");
+    expect(source).toContain("pendingSeekTimeMs");
+    expect(source).toContain("function reconcileSeekClock");
+    expect(source).toContain("SEEK_COMMIT_TOLERANCE_MS");
+    expect(source).toContain("timelineDurationLocked");
+    expect(source).toContain("waitForVideoMetadata");
+    expect(source).toContain("lockTimelineDurationFromMedia");
+    // Must not blindly commit video.currentTime on every seeked (snap-back).
+    expect(source).not.toMatch(
+      /addEventListener\(\s*["']seeked["'][\s\S]{0,200}currentTimeMs\s*=\s*elements\.video\.currentTime/,
+    );
+    // Shared pure contract lives next to packaging seek-fix.
+    const pure = readRepo("src/shared/player-timeline-seek.ts");
+    expect(pure).toContain("export function reconcileSeekClock");
+    expect(pure).toContain("export function resolveTimelineDurationMs");
     // Old dual stack must be gone.
     expect(source).not.toContain("ysFixWebmDuration");
     expect(source).not.toContain("GnWebmDurationFix");

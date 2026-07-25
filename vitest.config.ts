@@ -34,6 +34,7 @@ export default defineConfig({
     __GOOGLE_TOKEN_PROXY_URL__: JSON.stringify(""),
     __DROPBOX_CLIENT_ID__: JSON.stringify(""),
     __DROPBOX_TOKEN_PROXY_URL__: JSON.stringify(""),
+    __FEEDBACK_PROXY_URL__: JSON.stringify("http://localhost:8787/feedback"),
 
     __PLAYER_LOCAL_PORT__: JSON.stringify("5176"),
   },

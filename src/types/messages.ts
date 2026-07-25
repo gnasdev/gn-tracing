@@ -33,7 +33,8 @@ type MessageAction =
   | "UPLOAD_TO_GOOGLE_DRIVE"
   | "RECORDING_COMPLETE"
   | "GET_UPLOAD_ARTIFACT_CHUNK"
-  | "GET_UPLOAD_STATE";
+  | "GET_UPLOAD_STATE"
+  | "SUBMIT_FEEDBACK";
 
 /**
  * In-page (MAIN world) capture protocol.
@@ -108,6 +109,9 @@ export interface MessageResponse {
   token?: string | null;
   /** Present on STORAGE_STATUS / GOOGLE_DRIVE_STATUS responses. */
   isConnected?: boolean;
+  /** Present on SUBMIT_FEEDBACK success when the Worker created a GitHub issue. */
+  issueUrl?: string;
+  issueNumber?: number;
 }
 
 export type ProgressItemStatus =

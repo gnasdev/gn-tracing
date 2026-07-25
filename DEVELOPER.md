@@ -71,7 +71,8 @@ task format         # Format Biome-supported repository sources
 task check          # Run Biome checks plus docs hygiene validation
 task build:all      # Build extension and standalone player
 task dist:all       # Production build for extension and player
-task dev            # Full local stack: extension watch + player (Vite proxies) + multi-issuer OAuth Worker (:8787)
+task dev            # Full local stack: extension watch + player (Vite proxies) + multi-issuer Worker (:8787 OAuth + /feedback)
+task worker:dev     # Local Worker only (also included in `task dev`)
 task worker:sync-dev-vars  # Sync worker/.dev.vars from root .env (run automatically by task dev / worker:dev)
 ```
 
@@ -161,15 +162,17 @@ The Dropbox proxy only accepts relative shared-link ids (`s/`, `scl/`, `sh/`, `s
 
 ### Local full stack (`task dev`)
 
-`task dev` runs three processes together:
+`task dev` runs **three** processes together (extension + player + **local Worker**):
 
 | Process | Port / path | Role |
 |---------|-------------|------|
-| Extension watch | esbuild → `dist/` | Injects **local** token proxies (not production Worker URLs) |
+| Extension watch | esbuild → `dist/` | Injects **local** Worker proxies (not production Worker URLs) |
 | Standalone player | Vite `:5176` | Replay UI + `/api/drive`, `/api/dropbox` download proxies |
-| OAuth Worker | wrangler `:8787` | Multi-issuer token exchange (Google `/`, Dropbox `/token/dropbox`) |
+| Multi-issuer Worker | wrangler `:8787` | OAuth token exchange (Google `/`, Dropbox `/token/dropbox`) + optional `POST /feedback` |
 
-Before wrangler starts, `task worker:sync-dev-vars` copies client ids/secrets from root `.env` into `worker/.dev.vars` (git-ignored). Keep `*_TOKEN_PROXY_URL_DEV` empty to use the localhost defaults above; set them only to override.
+Before wrangler starts, `task worker:sync-dev-vars` copies client ids/secrets and optional `GITHUB_FEEDBACK_TOKEN` from root `.env` into `worker/.dev.vars` (git-ignored). Keep `*_TOKEN_PROXY_URL_DEV` / `FEEDBACK_PROXY_URL_DEV` empty to use the localhost defaults (`http://localhost:8787`, `/token/dropbox`, `/feedback`); set them only to override.
+
+The Worker is **required** for local confidential OAuth clients and for in-extension Feedback submit. Run `task worker:dev` alone if you only need the Worker.
 
 ### Env var summary
 

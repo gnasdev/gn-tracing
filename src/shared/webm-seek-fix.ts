@@ -10,7 +10,7 @@
  * leaving files unseekable when Duration already existed without Cues.
  */
 
-import fixWebmDurationWithCues from "webm-duration-fix";
+import fixWebmDurationWithCuesImport from "webm-duration-fix";
 
 export type WebmSeekFixMethod = "cues" | "noop";
 
@@ -22,15 +22,55 @@ export type MakeWebmSeekableOptions = {
   mimeType?: string;
 };
 
+/**
+ * Resolve the callable from `webm-duration-fix` across CJS/ESM interop shapes.
+ * Native ESM can surface `{ default: fn }` instead of `fn` when the package only
+ * sets `exports.default`; calling that object throws and fail-opens to unseekable
+ * MediaRecorder WebM (timeline click appears stuck until progressive demux).
+ */
+function resolveFixWebmDurationWithCues(mod: unknown): ((blob: Blob) => Promise<Blob>) | null {
+  let current: unknown = mod;
+  // Unwrap a shallow default chain (CJS ↔ ESM interop can nest once).
+  for (let depth = 0; depth < 2; depth += 1) {
+    if (typeof current === "function") {
+      return current as (blob: Blob) => Promise<Blob>;
+    }
+    if (current && typeof current === "object" && "default" in current) {
+      current = (current as { default: unknown }).default;
+      continue;
+    }
+    break;
+  }
+  return null;
+}
+
+const fixWebmDurationWithCues = resolveFixWebmDurationWithCues(fixWebmDurationWithCuesImport);
+
 function isWebmMime(mimeType: string | undefined): boolean {
   if (!mimeType) return true;
   const normalized = mimeType.toLowerCase();
   return normalized.includes("webm") || normalized.includes("matroska");
 }
 
+/**
+ * Force a playable WebM mime on the blob. Keep existing type only when it is
+ * already WebM/Matroska — never leave `application/octet-stream` (common from
+ * cloud download Content-Type) on the blob URL, which can block random seeks.
+ */
 function withMimeType(blob: Blob, mimeType: string): Blob {
-  if (blob.type || !mimeType) {
+  if (!mimeType) {
     return blob;
+  }
+  const current = String(blob.type || "").toLowerCase();
+  if (current && isWebmMime(current) && current === mimeType.toLowerCase()) {
+    return blob;
+  }
+  if (current && isWebmMime(current) && isWebmMime(mimeType)) {
+    // Already a webm family type; only replace when caller provides a more
+    // specific codec string (or keep as-is when types match above).
+    if (current.includes("codecs") || !mimeType.toLowerCase().includes("codecs")) {
+      return blob;
+    }
   }
   return new Blob([blob], { type: mimeType });
 }
@@ -59,14 +99,18 @@ export async function makeWebmSeekable(
     return { ok: true, blob: input, method: "noop" };
   }
 
+  if (typeof fixWebmDurationWithCues !== "function") {
+    return { ok: false, blob: withMimeType(input, mimeType), reason: "webm-cues-fix-unavailable" };
+  }
+
   try {
     const fixed = await fixWebmDurationWithCues(input);
     if (!(fixed instanceof Blob) || fixed.size === 0) {
-      return { ok: false, blob: input, reason: "cues-rewrite-empty" };
+      return { ok: false, blob: withMimeType(input, mimeType), reason: "cues-rewrite-empty" };
     }
     return { ok: true, blob: withMimeType(fixed, mimeType), method: "cues" };
   } catch (error) {
     const reason = error instanceof Error ? error.message : "webm-cues-fix-failed";
-    return { ok: false, blob: input, reason };
+    return { ok: false, blob: withMimeType(input, mimeType), reason };
   }
 }

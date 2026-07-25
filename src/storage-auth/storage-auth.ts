@@ -2,8 +2,9 @@
  * Multi-cloud connect page (Google Drive / Dropbox).
  * Opened in a normal tab so OAuth popups are not killed when the extension popup closes.
  */
+import { attachFeedbackPopover, type FeedbackUiController } from "../shared/feedback-ui";
 import { attachPageNav } from "../shared/page-nav";
-import { attachThemeToggle } from "../shared/theme";
+import { attachThemeToggle, type ThemeToggleController } from "../shared/theme";
 import { attachLanguageSwitch, type UiLanguage } from "../shared/ui-language";
 import type { MessageResponse } from "../types/messages";
 
@@ -19,15 +20,12 @@ const PROVIDERS: Array<{
 ];
 
 const providerList = document.getElementById("provider-list")!;
-const closeBtn = document.getElementById("close-btn") as HTMLButtonElement;
-const refreshBtn = document.getElementById("refresh-btn") as HTMLButtonElement;
 
 const statusByProvider = new Map<StorageProviderId, boolean>();
 const busyProviders = new Set<StorageProviderId>();
 const errorByProvider = new Map<StorageProviderId, string>();
 
 let currentLanguage: UiLanguage = "en";
-let highlightProvider: StorageProviderId | null = null;
 
 function providerName(id: StorageProviderId): string {
   const meta = PROVIDERS.find((p) => p.id === id)!;
@@ -46,18 +44,6 @@ function applyStaticTranslations(): void {
       : "Connect cloud storage - GN Tracing";
 }
 
-function parseHighlightFromQuery(): StorageProviderId | null {
-  try {
-    const raw = new URLSearchParams(location.search).get("provider");
-    if (raw === "google-drive" || raw === "dropbox") {
-      return raw;
-    }
-  } catch {
-    // ignore
-  }
-  return null;
-}
-
 async function fetchStatus(provider: StorageProviderId): Promise<boolean> {
   const result = (await chrome.runtime.sendMessage({
     action: "STORAGE_STATUS",
@@ -70,24 +56,19 @@ async function fetchStatus(provider: StorageProviderId): Promise<boolean> {
 }
 
 async function refreshAllStatuses(): Promise<void> {
-  refreshBtn.disabled = true;
-  try {
-    await Promise.all(
-      PROVIDERS.map(async ({ id }) => {
-        try {
-          const connected = await fetchStatus(id);
-          statusByProvider.set(id, connected);
-          errorByProvider.delete(id);
-        } catch (error) {
-          statusByProvider.set(id, false);
-          errorByProvider.set(id, (error as Error).message);
-        }
-      }),
-    );
-  } finally {
-    refreshBtn.disabled = false;
-    render();
-  }
+  await Promise.all(
+    PROVIDERS.map(async ({ id }) => {
+      try {
+        const connected = await fetchStatus(id);
+        statusByProvider.set(id, connected);
+        errorByProvider.delete(id);
+      } catch (error) {
+        statusByProvider.set(id, false);
+        errorByProvider.set(id, (error as Error).message);
+      }
+    }),
+  );
+  render();
 }
 
 async function connectProvider(provider: StorageProviderId): Promise<void> {
@@ -146,9 +127,6 @@ function render(): void {
 
     const card = document.createElement("div");
     card.className = "provider-card";
-    if (highlightProvider === id) {
-      card.classList.add("is-highlight");
-    }
     card.dataset.provider = id;
 
     const meta = document.createElement("div");
@@ -206,30 +184,89 @@ function render(): void {
   }
 }
 
-closeBtn.addEventListener("click", () => {
-  window.close();
-});
-
-refreshBtn.addEventListener("click", () => {
-  void refreshAllStatuses();
-});
-
 chrome.storage.session.onChanged.addListener(() => {
   // Best-effort refresh when popup/service worker updates session state.
   void refreshAllStatuses();
 });
 
-attachThemeToggle("theme-toggle-btn", "theme-toggle-icon");
 attachPageNav({ current: "connect" });
+
+const THEME_LABELS = {
+  en: {
+    system: "System",
+    light: "Light",
+    dark: "Dark",
+    aria: "Theme: {label}",
+    titleSystem: "Theme: {label} (follows OS). Click to cycle System → Light → Dark.",
+    titleFixed: "Theme: {label}. Click to cycle System → Light → Dark.",
+  },
+  vi: {
+    system: "Hệ thống",
+    light: "Sáng",
+    dark: "Tối",
+    aria: "Giao diện: {label}",
+    titleSystem: "Giao diện: {label} (theo OS). Bấm để chuyển Hệ thống → Sáng → Tối.",
+    titleFixed: "Giao diện: {label}. Bấm để chuyển Hệ thống → Sáng → Tối.",
+  },
+} as const;
+
+const themeToggleUi: ThemeToggleController | null = attachThemeToggle(
+  "theme-toggle-btn",
+  "theme-toggle-icon",
+  {
+    getLabels: () => THEME_LABELS[currentLanguage] || THEME_LABELS.en,
+  },
+);
+
+const FEEDBACK_LABELS = {
+  en: {
+    button: "Feedback",
+    sectionAria: "Send feedback",
+    label: "Feedback",
+    placeholder: "Describe a bug, idea, or question…",
+    hint: "Creates a public GitHub issue. Includes extension version, browser, OS, and locale only. Do not include secrets or passwords.",
+    submit: "Submit",
+    cancel: "Cancel",
+    sending: "Sending…",
+    success: "Feedback submitted.",
+    failed: "Could not submit feedback.",
+    viewIssue: "View issue",
+  },
+  vi: {
+    button: "Góp ý",
+    sectionAria: "Gửi góp ý",
+    label: "Góp ý",
+    placeholder: "Mô tả lỗi, ý tưởng hoặc câu hỏi…",
+    hint: "Tạo issue GitHub công khai. Chỉ kèm version extension, browser, OS và locale. Không gửi mật khẩu hay secret.",
+    submit: "Gửi",
+    cancel: "Hủy",
+    sending: "Đang gửi…",
+    success: "Đã gửi góp ý.",
+    failed: "Không gửi được góp ý.",
+    viewIssue: "Xem issue",
+  },
+} as const;
+
+const feedbackMount = document.getElementById("feedback-mount");
+let feedbackUi: FeedbackUiController | null = null;
+if (feedbackMount) {
+  feedbackUi = attachFeedbackPopover({
+    mount: feedbackMount,
+    getLabels: () => FEEDBACK_LABELS[currentLanguage] || FEEDBACK_LABELS.en,
+  });
+}
 
 currentLanguage = attachLanguageSwitch({
   onChange: (language) => {
     currentLanguage = language;
     applyStaticTranslations();
+    feedbackUi?.refreshLabels();
+    themeToggleUi?.refreshLabels();
     render();
   },
 });
 applyStaticTranslations();
-highlightProvider = parseHighlightFromQuery();
+feedbackUi?.refreshLabels();
+themeToggleUi?.refreshLabels();
 render();
 void refreshAllStatuses();

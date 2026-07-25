@@ -2,12 +2,14 @@
  * Renders and manages the full upload history page.
  */
 
+import { attachFeedbackPopover, type FeedbackUiController } from "../shared/feedback-ui";
 import { attachPageNav } from "../shared/page-nav";
-import { attachThemeToggle } from "../shared/theme";
+import { attachThemeToggle, type ThemeToggleController } from "../shared/theme";
 import { attachLanguageSwitch, type UiLanguage } from "../shared/ui-language";
 import {
   handleUploadHistoryAction,
   renderUploadHistoryList,
+  setUploadHistoryUiLabels,
   sortUploadHistoryNewestFirst,
 } from "../shared/upload-history-ui";
 import type { MessageResponse, UploadHistoryEntry, UploadSettings } from "../types/messages";
@@ -21,7 +23,6 @@ import type { MessageResponse, UploadHistoryEntry, UploadSettings } from "../typ
  */
 const uploadHistoryList = document.getElementById("upload-history-list")!;
 const historySummary = document.getElementById("history-summary")!;
-const historyCount = document.getElementById("history-count")!;
 const errorMsg = document.getElementById("error-msg")!;
 
 type HistoryLanguage = UiLanguage;
@@ -32,10 +33,27 @@ const TRANSLATIONS: Record<HistoryLanguage, Record<string, string>> = {
     "nav.settings": "Settings",
     "nav.history": "Upload History",
     "nav.connect": "Manage clouds",
+    "theme.system": "System",
+    "theme.light": "Light",
+    "theme.dark": "Dark",
+    "theme.aria": "Theme: {label}",
+    "theme.titleSystem": "Theme: {label} (follows OS). Click to cycle System → Light → Dark.",
+    "theme.titleFixed": "Theme: {label}. Click to cycle System → Light → Dark.",
+    "feedback.button": "Feedback",
+    "feedback.sectionAria": "Send feedback",
+    "feedback.label": "Feedback",
+    "feedback.placeholder": "Describe a bug, idea, or question…",
+    "feedback.hint":
+      "Creates a public GitHub issue. Includes extension version, browser, OS, and locale only. Do not include secrets or passwords.",
+    "feedback.submit": "Submit",
+    "feedback.cancel": "Cancel",
+    "feedback.sending": "Sending…",
+    "feedback.success": "Feedback submitted.",
+    "feedback.failed": "Could not submit feedback.",
+    "feedback.viewIssue": "View issue",
     "page.title": "Upload History",
     "page.lead":
       "Review previous uploads, jump back into a replay, copy a shareable link, or clean up old items.",
-    "stats.savedUploads": "Saved Uploads",
     "panel.recentTitle": "Recent Uploads",
     "summary.empty": "Browse your recent uploads here once recordings are uploaded.",
     "summary.count": "{count} upload{plural} saved locally.",
@@ -44,16 +62,41 @@ const TRANSLATIONS: Record<HistoryLanguage, Record<string, string>> = {
     "messages.copyFailed": "Failed to copy replay link",
     "messages.deleteFailed": "Failed to delete history item",
     "document.title": "GN Tracing Upload History",
+    "history.empty": "No uploads yet.",
+    "history.duration": "Duration: {time}",
+    "history.replay": "Replay",
+    "history.copyLink": "Copy link",
+    "history.openRemote": "Open remote",
+    "history.delete": "Delete",
+    "history.unknownTime": "Unknown time",
+    "history.unknownPage": "Unknown page",
   },
   vi: {
     "topbar.pageTitle": "Lịch sử upload",
     "nav.settings": "Cài đặt",
     "nav.history": "Lịch sử upload",
     "nav.connect": "Quản lý cloud",
+    "theme.system": "Hệ thống",
+    "theme.light": "Sáng",
+    "theme.dark": "Tối",
+    "theme.aria": "Giao diện: {label}",
+    "theme.titleSystem": "Giao diện: {label} (theo OS). Bấm để chuyển Hệ thống → Sáng → Tối.",
+    "theme.titleFixed": "Giao diện: {label}. Bấm để chuyển Hệ thống → Sáng → Tối.",
+    "feedback.button": "Góp ý",
+    "feedback.sectionAria": "Gửi góp ý",
+    "feedback.label": "Góp ý",
+    "feedback.placeholder": "Mô tả lỗi, ý tưởng hoặc câu hỏi…",
+    "feedback.hint":
+      "Tạo issue GitHub công khai. Chỉ kèm version extension, browser, OS và locale. Không gửi mật khẩu hay secret.",
+    "feedback.submit": "Gửi",
+    "feedback.cancel": "Hủy",
+    "feedback.sending": "Đang gửi…",
+    "feedback.success": "Đã gửi góp ý.",
+    "feedback.failed": "Không gửi được góp ý.",
+    "feedback.viewIssue": "Xem issue",
     "page.title": "Lịch sử upload",
     "page.lead":
       "Xem lại các upload trước, mở lại replay, sao chép link chia sẻ, hoặc dọn các mục cũ.",
-    "stats.savedUploads": "Upload đã lưu",
     "panel.recentTitle": "Upload gần đây",
     "summary.empty": "Các bản ghi sau khi upload sẽ hiện tại đây.",
     "summary.count": "{count} upload được lưu cục bộ.",
@@ -62,6 +105,14 @@ const TRANSLATIONS: Record<HistoryLanguage, Record<string, string>> = {
     "messages.copyFailed": "Không sao chép được link replay",
     "messages.deleteFailed": "Không xóa được mục lịch sử",
     "document.title": "Lịch sử upload GN Tracing",
+    "history.empty": "Chưa có upload nào.",
+    "history.duration": "Thời lượng: {time}",
+    "history.replay": "Replay",
+    "history.copyLink": "Sao chép link",
+    "history.openRemote": "Mở remote",
+    "history.delete": "Xóa",
+    "history.unknownTime": "Thời gian không rõ",
+    "history.unknownPage": "Trang không rõ",
   },
 };
 
@@ -79,6 +130,17 @@ function t(key: string, replacements: Record<string, string> = {}): string {
 function applyTranslations(): void {
   document.documentElement.lang = currentLanguage;
   document.title = t("document.title");
+
+  setUploadHistoryUiLabels({
+    empty: t("history.empty"),
+    duration: t("history.duration"),
+    replay: t("history.replay"),
+    copyLink: t("history.copyLink"),
+    openRemote: t("history.openRemote"),
+    delete: t("history.delete"),
+    unknownTime: t("history.unknownTime"),
+    unknownPage: t("history.unknownPage"),
+  });
 
   document.querySelectorAll<HTMLElement>("[data-i18n]").forEach((element) => {
     // Dynamic summary is owned by renderHistory(); do not stomp it from static keys.
@@ -112,7 +174,6 @@ function openExternalUrl(url: string): void {
 function renderHistory(history: UploadHistoryEntry[]): void {
   currentHistory = sortUploadHistoryNewestFirst(history);
   uploadHistoryList.innerHTML = renderUploadHistoryList(currentHistory);
-  historyCount.textContent = String(currentHistory.length);
 
   if (currentHistory.length === 0) {
     historySummary.textContent = t("summary.empty");
@@ -197,13 +258,52 @@ uploadHistoryList.addEventListener("click", async (event) => {
 });
 
 attachPageNav({ current: "history" });
+
+const feedbackMount = document.getElementById("feedback-mount");
+let feedbackUi: FeedbackUiController | null = null;
+if (feedbackMount) {
+  feedbackUi = attachFeedbackPopover({
+    mount: feedbackMount,
+    getLabels: () => ({
+      button: t("feedback.button"),
+      sectionAria: t("feedback.sectionAria"),
+      label: t("feedback.label"),
+      placeholder: t("feedback.placeholder"),
+      hint: t("feedback.hint"),
+      submit: t("feedback.submit"),
+      cancel: t("feedback.cancel"),
+      sending: t("feedback.sending"),
+      success: t("feedback.success"),
+      failed: t("feedback.failed"),
+      viewIssue: t("feedback.viewIssue"),
+    }),
+  });
+}
+
+const themeToggleUi: ThemeToggleController | null = attachThemeToggle(
+  "theme-toggle-btn",
+  "theme-toggle-icon",
+  {
+    getLabels: () => ({
+      system: t("theme.system"),
+      light: t("theme.light"),
+      dark: t("theme.dark"),
+      aria: t("theme.aria"),
+      titleSystem: t("theme.titleSystem"),
+      titleFixed: t("theme.titleFixed"),
+    }),
+  },
+);
+
 currentLanguage = attachLanguageSwitch({
   onChange: (language) => {
     currentLanguage = language;
     applyTranslations();
+    feedbackUi?.refreshLabels();
+    themeToggleUi?.refreshLabels();
   },
 });
 applyTranslations();
+feedbackUi?.refreshLabels();
+themeToggleUi?.refreshLabels();
 void refreshHistory();
-
-attachThemeToggle("theme-toggle-btn", "theme-toggle-icon");

@@ -2,9 +2,10 @@
  * Manages the full-page settings surface for Drive, package, and capture controls.
  */
 
+import { attachFeedbackPopover, type FeedbackUiController } from "../shared/feedback-ui";
 import { attachPageNav } from "../shared/page-nav";
 import { getPrivacyProfileSettings, normalizeMaskDomSelectors } from "../shared/privacy-redaction";
-import { attachThemeToggle } from "../shared/theme";
+import { attachThemeToggle, type ThemeToggleController } from "../shared/theme";
 import { attachLanguageSwitch, type UiLanguage } from "../shared/ui-language";
 import type {
   CaptureProfile,
@@ -149,6 +150,24 @@ const TRANSLATIONS: Record<SettingsLanguage, Record<string, string>> = {
     "nav.settings": "Settings",
     "nav.history": "Upload History",
     "nav.connect": "Manage clouds",
+    "theme.system": "System",
+    "theme.light": "Light",
+    "theme.dark": "Dark",
+    "theme.aria": "Theme: {label}",
+    "theme.titleSystem": "Theme: {label} (follows OS). Click to cycle System → Light → Dark.",
+    "theme.titleFixed": "Theme: {label}. Click to cycle System → Light → Dark.",
+    "feedback.button": "Feedback",
+    "feedback.sectionAria": "Send feedback",
+    "feedback.label": "Feedback",
+    "feedback.placeholder": "Describe a bug, idea, or question…",
+    "feedback.hint":
+      "Creates a public GitHub issue. Includes extension version, browser, OS, and locale only. Do not include secrets or passwords.",
+    "feedback.submit": "Submit",
+    "feedback.cancel": "Cancel",
+    "feedback.sending": "Sending…",
+    "feedback.success": "Feedback submitted.",
+    "feedback.failed": "Could not submit feedback.",
+    "feedback.viewIssue": "View issue",
     "page.title": "Settings",
     "page.lead": "Choose what each recording captures before you start a session.",
     "actions.save": "Save Settings",
@@ -166,7 +185,6 @@ const TRANSLATIONS: Record<SettingsLanguage, Record<string, string>> = {
     "placeholders.folder": "/gn-tracing",
     "placeholders.folderDrive": "/gn-tracing, folder ID, or Drive link",
     "placeholders.folderDropbox": "/gn-tracing or blank for root",
-    "sections.packageSecurity": "Package Security",
     "sections.console": "Console",
     "sections.network": "Network",
     "sections.websocket": "WebSocket",
@@ -186,8 +204,6 @@ const TRANSLATIONS: Record<SettingsLanguage, Record<string, string>> = {
     "privacy.custom.label": "Custom",
     "privacy.custom.help": "Use the privacy choices below.",
     "fields.folder.label": "Upload folder",
-    "fields.zipPassword.label": "Zip password",
-    "fields.clearZipPassword.label": "Clear configured zip password",
     "fields.redactSensitiveHeaders.label": "Redact sensitive headers",
     "fields.redactSensitiveQueryParams.label": "Redact sensitive query params",
     "fields.redactRequestBodyFields.label": "Redact request body fields",
@@ -249,8 +265,7 @@ const TRANSLATIONS: Record<SettingsLanguage, Record<string, string>> = {
     "hints.folderId": "Resolved folder ID: {value}",
     "hints.folderDropbox": "Dropbox path (e.g. /gn-tracing). Created on upload if missing.",
     "hints.folderDrive": "Google Drive: /folder/path, folder ID, or Drive folder link.",
-    "hints.zipPasswordConfigured": "A zip password is configured for new uploads.",
-    "hints.zipPasswordNone": "New uploads will not require a zip password.",
+
     "hints.visualMasking":
       "Selectors are applied before capture when possible. They do not cover canvas, video, or closed shadow DOM.",
     "hints.inspectorCapture":
@@ -272,6 +287,24 @@ const TRANSLATIONS: Record<SettingsLanguage, Record<string, string>> = {
     "nav.settings": "Cài đặt",
     "nav.history": "Lịch sử upload",
     "nav.connect": "Quản lý cloud",
+    "theme.system": "Hệ thống",
+    "theme.light": "Sáng",
+    "theme.dark": "Tối",
+    "theme.aria": "Giao diện: {label}",
+    "theme.titleSystem": "Giao diện: {label} (theo OS). Bấm để chuyển Hệ thống → Sáng → Tối.",
+    "theme.titleFixed": "Giao diện: {label}. Bấm để chuyển Hệ thống → Sáng → Tối.",
+    "feedback.button": "Góp ý",
+    "feedback.sectionAria": "Gửi góp ý",
+    "feedback.label": "Góp ý",
+    "feedback.placeholder": "Mô tả lỗi, ý tưởng hoặc câu hỏi…",
+    "feedback.hint":
+      "Tạo issue GitHub công khai. Chỉ kèm version extension, browser, OS và locale. Không gửi mật khẩu hay secret.",
+    "feedback.submit": "Gửi",
+    "feedback.cancel": "Hủy",
+    "feedback.sending": "Đang gửi…",
+    "feedback.success": "Đã gửi góp ý.",
+    "feedback.failed": "Không gửi được góp ý.",
+    "feedback.viewIssue": "Xem issue",
     "page.title": "Cài đặt",
     "page.lead": "Chọn dữ liệu cần capture trước khi bắt đầu phiên ghi.",
     "actions.save": "Lưu cài đặt",
@@ -289,7 +322,6 @@ const TRANSLATIONS: Record<SettingsLanguage, Record<string, string>> = {
     "placeholders.folder": "/gn-tracing",
     "placeholders.folderDrive": "/gn-tracing, folder ID, hoặc link Drive",
     "placeholders.folderDropbox": "/gn-tracing hoặc để trống cho root",
-    "sections.packageSecurity": "Bảo mật gói",
     "sections.console": "Console",
     "sections.network": "Network",
     "sections.websocket": "WebSocket",
@@ -309,8 +341,6 @@ const TRANSLATIONS: Record<SettingsLanguage, Record<string, string>> = {
     "privacy.custom.label": "Tùy chỉnh",
     "privacy.custom.help": "Dùng các lựa chọn privacy bên dưới.",
     "fields.folder.label": "Thư mục upload",
-    "fields.zipPassword.label": "Mật khẩu zip",
-    "fields.clearZipPassword.label": "Xóa mật khẩu zip đã cấu hình",
     "fields.redactSensitiveHeaders.label": "Che header nhạy cảm",
     "fields.redactSensitiveQueryParams.label": "Che query param nhạy cảm",
     "fields.redactRequestBodyFields.label": "Che field request body",
@@ -372,8 +402,7 @@ const TRANSLATIONS: Record<SettingsLanguage, Record<string, string>> = {
     "hints.folderId": "Folder ID đã resolve: {value}",
     "hints.folderDropbox": "Đường dẫn Dropbox (vd. /gn-tracing). Tạo khi upload nếu chưa có.",
     "hints.folderDrive": "Google Drive: /folder/path, folder ID, hoặc link thư mục Drive.",
-    "hints.zipPasswordConfigured": "Đã cấu hình mật khẩu zip cho các upload mới.",
-    "hints.zipPasswordNone": "Các upload mới sẽ không yêu cầu mật khẩu zip.",
+
     "hints.visualMasking":
       "Selector được áp dụng trước khi capture nếu có thể. Không che canvas, video hoặc closed shadow DOM.",
     "hints.inspectorCapture":
@@ -441,26 +470,6 @@ const FIELD_HELP: Record<string, Record<SettingsLanguage, { title: string; body:
     vi: {
       title: "Thư mục upload",
       body: "Quyết định nơi upload recording package theo nhà cung cấp lưu trữ đang chọn. Google Drive chấp nhận đường dẫn, folder ID hoặc link Drive. Dropbox chấp nhận đường dẫn (hoặc để trống cho root). Dùng path dự án chung để gom report QC.",
-    },
-  },
-  "zip-password-input": {
-    en: {
-      title: "Zip password",
-      body: "Adds a password to new recording zips. Use it when recordings may contain customer data, tokens, request bodies, or other sensitive test evidence.",
-    },
-    vi: {
-      title: "Mật khẩu zip",
-      body: "Thêm mật khẩu cho các file zip recording mới. Dùng khi recording có thể chứa dữ liệu khách hàng, token, request body hoặc bằng chứng test nhạy cảm.",
-    },
-  },
-  "clear-zip-password-input": {
-    en: {
-      title: "Clear zip password",
-      body: "Removes the saved password for future uploads. Existing password-protected recordings keep their original password.",
-    },
-    vi: {
-      title: "Xóa mật khẩu zip",
-      body: "Xóa mật khẩu đã lưu cho các upload sau này. Những recording đã được bảo vệ bằng mật khẩu trước đó vẫn giữ mật khẩu cũ.",
     },
   },
   "capture-console-input": {
@@ -708,11 +717,6 @@ const storageProviderInput = document.getElementById(
 ) as HTMLSelectElement | null;
 const folderInput = document.getElementById("folder-input") as HTMLInputElement;
 const folderHint = document.getElementById("folder-hint")!;
-const zipPasswordInput = document.getElementById("zip-password-input") as HTMLInputElement;
-const clearZipPasswordInput = document.getElementById(
-  "clear-zip-password-input",
-) as HTMLInputElement;
-const zipPasswordHint = document.getElementById("zip-password-hint")!;
 
 const redactSensitiveHeadersInput = document.getElementById(
   "redact-sensitive-headers-input",
@@ -847,7 +851,6 @@ function applyTranslations(): void {
 
   if (currentSettings) {
     updateFolderHint(currentSettings);
-    updateZipPasswordHint(currentSettings);
   }
 
   if (activeInfoHelpKey && isPopoverOpen(infoPopover) && activeInfoButton) {
@@ -1147,12 +1150,6 @@ function syncFolderPlaceholder(provider: string): void {
   }
 }
 
-function updateZipPasswordHint(settings: UploadSettings): void {
-  zipPasswordHint.textContent = settings.zipPasswordConfigured
-    ? t("hints.zipPasswordConfigured")
-    : t("hints.zipPasswordNone");
-}
-
 function renderSettings(settings: UploadSettings): void {
   const normalizedSettings = withDefaultSettings(settings);
   currentSettings = normalizedSettings;
@@ -1166,9 +1163,6 @@ function renderSettings(settings: UploadSettings): void {
   }
   folderInput.value = normalizedSettings.folderInput || "/";
   updateFolderHint(normalizedSettings);
-  zipPasswordInput.value = "";
-  clearZipPasswordInput.checked = false;
-  updateZipPasswordHint(normalizedSettings);
 
   redactSensitiveHeadersInput.checked = normalizedSettings.redactSensitiveHeaders;
   redactSensitiveQueryParamsInput.checked = normalizedSettings.redactSensitiveQueryParams;
@@ -1234,14 +1228,11 @@ function syncInspectorCaptureCoupling(): void {
 }
 
 function getSettingsPayload(): Record<string, unknown> {
-  const zipPassword = zipPasswordInput.value;
   const captureProfile = getProfileInput()?.value || "custom";
   const privacyProfile = getPrivacyProfileInput()?.value || "custom";
   const payload: Record<string, unknown> = {
     activeStorageProvider: storageProviderInput?.value || "google-drive",
     folderInput: folderInput.value.trim() === "/" ? "" : folderInput.value.trim(),
-    ...(zipPassword ? { zipPassword } : {}),
-    clearZipPassword: clearZipPasswordInput.checked,
     captureProfile,
     privacyProfile,
     // Inspector toggles are profile-independent, so always persist their current state.
@@ -1409,11 +1400,7 @@ document.querySelectorAll("input, select, textarea").forEach((input) => {
       inputId === "capture-dom-snapshots-input" ||
       inputId === "redact-dom-text-content-input";
     // Storage provider / folder are not capture profile fields.
-    const isStorageSetting =
-      inputId === "storage-provider-input" ||
-      inputId === "folder-input" ||
-      inputId === "zip-password-input" ||
-      inputId === "clear-zip-password-input";
+    const isStorageSetting = inputId === "storage-provider-input" || inputId === "folder-input";
     if (inputId === "storage-provider-input" && storageProviderInput) {
       syncFolderPlaceholder(storageProviderInput.value);
       updateFolderHint({
@@ -1513,13 +1500,55 @@ toastCloseBtn.addEventListener("click", () => {
 
 setupFieldInfoButtons();
 attachPageNav({ current: "settings" });
+
+const feedbackMount = document.getElementById("feedback-mount");
+let feedbackUi: FeedbackUiController | null = null;
+if (feedbackMount) {
+  feedbackUi = attachFeedbackPopover({
+    mount: feedbackMount,
+    getLabels: () => ({
+      button: t("feedback.button"),
+      sectionAria: t("feedback.sectionAria"),
+      label: t("feedback.label"),
+      placeholder: t("feedback.placeholder"),
+      hint: t("feedback.hint"),
+      submit: t("feedback.submit"),
+      cancel: t("feedback.cancel"),
+      sending: t("feedback.sending"),
+      success: t("feedback.success"),
+      failed: t("feedback.failed"),
+      viewIssue: t("feedback.viewIssue"),
+    }),
+    onResult: (result) => {
+      showToast(result.message, 4200, { variant: result.ok ? "success" : "error" });
+    },
+  });
+}
+
+const themeToggleUi: ThemeToggleController | null = attachThemeToggle(
+  "theme-toggle-btn",
+  "theme-toggle-icon",
+  {
+    getLabels: () => ({
+      system: t("theme.system"),
+      light: t("theme.light"),
+      dark: t("theme.dark"),
+      aria: t("theme.aria"),
+      titleSystem: t("theme.titleSystem"),
+      titleFixed: t("theme.titleFixed"),
+    }),
+  },
+);
+
 currentLanguage = attachLanguageSwitch({
   onChange: (language) => {
     currentLanguage = language;
     applyTranslations();
+    feedbackUi?.refreshLabels();
+    themeToggleUi?.refreshLabels();
   },
 });
 applyTranslations();
+feedbackUi?.refreshLabels();
+themeToggleUi?.refreshLabels();
 void loadSettings();
-
-attachThemeToggle("theme-toggle-btn", "theme-toggle-icon");

@@ -29,28 +29,6 @@ body.history-page {
   gap: 16px;
 }
 
-/* ---------- Hero stats (right side of shared .gn-page-hero) ---------- */
-.history-hero-stats {
-  text-align: right;
-}
-
-#history-count {
-  font-family: var(--font-mono);
-  font-size: 26px;
-  font-weight: 700;
-  line-height: 1.1;
-  font-variant-numeric: tabular-nums;
-  color: var(--text-primary);
-}
-
-.history-stat-label {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--text-secondary);
-}
-
 /* ---------- Panel ---------- */
 .history-panel {
   padding: 16px 18px;
@@ -87,10 +65,4 @@ body.history-page .history-item {
 /* ---------- Feedback slot (#error-msg itself is styled by id in theme.css) ---------- */
 #error-slot {
   margin-top: 0;
-}
-
-@media (max-width: 560px) {
-  .history-hero-stats {
-    text-align: left;
-  }
 }

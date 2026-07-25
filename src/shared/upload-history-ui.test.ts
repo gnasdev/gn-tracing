@@ -19,6 +19,31 @@ function makeEntry(overrides: Partial<UploadHistoryEntry>): UploadHistoryEntry {
 }
 
 describe("renderUploadHistoryList open-remote", () => {
+  it("uses localized labels when setUploadHistoryUiLabels is applied", async () => {
+    const { setUploadHistoryUiLabels, DEFAULT_UPLOAD_HISTORY_UI_LABELS } = await import(
+      "./upload-history-ui"
+    );
+    setUploadHistoryUiLabels({
+      empty: "Chưa có upload nào.",
+      duration: "Thời lượng: {time}",
+      replay: "Replay",
+      copyLink: "Sao chép link",
+      openRemote: "Mở remote",
+      delete: "Xóa",
+    });
+    try {
+      const emptyHtml = renderUploadHistoryList([]);
+      expect(emptyHtml).toContain("Chưa có upload nào.");
+      const html = renderUploadHistoryList([makeEntry({})]);
+      expect(html).toContain("Thời lượng:");
+      expect(html).toContain('aria-label="Sao chép link"');
+      expect(html).toContain('aria-label="Mở remote"');
+      expect(html).toContain('aria-label="Xóa"');
+    } finally {
+      setUploadHistoryUiLabels(DEFAULT_UPLOAD_HISTORY_UI_LABELS);
+    }
+  });
+
   it("emits open-remote for Drive with recording URL", () => {
     const html = renderUploadHistoryList([
       makeEntry({

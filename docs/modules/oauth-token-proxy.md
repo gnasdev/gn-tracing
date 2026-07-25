@@ -38,7 +38,8 @@ The extension is a public client and must never bundle OAuth `client_secret` val
 |--------|------|----------|
 | POST | `/`, `/token`, `/token/google` | Google |
 | POST | `/token/dropbox`, `/dropbox` | Dropbox |
-| GET | `/health` | Readiness (no secret required) |
+| POST | `/feedback` | Create public GitHub issue (opt-in product feedback) |
+| GET | `/health` | Readiness (no secret required); includes `feedback: boolean` |
 
 ### Extension env
 
@@ -46,10 +47,11 @@ The extension is a public client and must never bundle OAuth `client_secret` val
 |----------|-----------------|---------------------------|
 | Google Drive | `GOOGLE_TOKEN_PROXY_URL` | `https://…workers.dev` (legacy base path) |
 | Dropbox | `DROPBOX_TOKEN_PROXY_URL` | `https://…workers.dev/token/dropbox` |
+| Feedback | `FEEDBACK_PROXY_URL` (optional) | `https://…workers.dev/feedback` (derived from OAuth proxy origin when unset) |
 
 Public PKCE clients can leave a proxy URL empty and call the provider token endpoint directly. See [DEVELOPER.md](../../DEVELOPER.md).
 
-For local development, `task worker:dev` runs `wrangler dev` on `http://localhost:8787`. Local vars/secrets come from `worker/.dev.vars` (git-ignored; copy from `worker/.dev.vars.example`). Example: `DROPBOX_TOKEN_PROXY_URL=http://localhost:8787/token/dropbox`.
+For local development, `task dev` starts the Worker together with extension watch and the standalone player. `task worker:dev` runs the Worker alone. Both use `wrangler dev` on `http://localhost:8787` after `task worker:sync-dev-vars` writes `worker/.dev.vars` from root `.env` (OAuth secrets + optional `GITHUB_FEEDBACK_TOKEN`). Manual template: `worker/.dev.vars.example`. Dev defaults: Google `http://localhost:8787`, Dropbox `http://localhost:8787/token/dropbox`, feedback `http://localhost:8787/feedback`.
 
 ## 2. Functional & Non-Functional Requirements
 
@@ -66,10 +68,11 @@ For local development, `task worker:dev` runs `wrangler dev` on `http://localhos
 - `POST /token/google` (and legacy `/` | `/token`) — Google token exchange.
 - `POST /token/dropbox` — Dropbox token exchange → `https://api.dropboxapi.com/oauth2/token`.
 - Accepts `application/x-www-form-urlencoded` or JSON with allow-listed fields: `grant_type`, `code`, `code_verifier`, `redirect_uri`, `refresh_token`, `scope`.
-- `GET /health` — `{ ok, service, providers: { google, dropbox } }` (booleans = id+secret configured).
-- Secrets: `GOOGLE_CLIENT_SECRET`, `DROPBOX_CLIENT_SECRET`.
-- Public vars: `GOOGLE_CLIENT_ID`, `DROPBOX_CLIENT_ID`, `ALLOWED_EXTENSION_ORIGINS`.
-- Extension build injects each `*_TOKEN_PROXY_URL` into defines and appends proxy origins to `host_permissions`.
+- `GET /health` — `{ ok, service, providers: { google, dropbox }, feedback }` (provider booleans = id+secret configured; `feedback` = `GITHUB_FEEDBACK_TOKEN` set).
+- `POST /feedback` — JSON `{ message, diagnostics? }` from allowed extension origins; rate-limited (5/IP/hour); creates a GitHub issue via `GITHUB_FEEDBACK_TOKEN`. Response `{ ok, issueUrl, issueNumber }` on success.
+- Secrets: `GOOGLE_CLIENT_SECRET`, `DROPBOX_CLIENT_SECRET`, `GITHUB_FEEDBACK_TOKEN`.
+- Public vars: `GOOGLE_CLIENT_ID`, `DROPBOX_CLIENT_ID`, `ALLOWED_EXTENSION_ORIGINS`, `GITHUB_REPO_OWNER`, `GITHUB_REPO_NAME`, `GITHUB_FEEDBACK_LABELS`.
+- Extension build injects each `*_TOKEN_PROXY_URL` and `__FEEDBACK_PROXY_URL__` into defines and appends proxy origins to `host_permissions`.
 
 ## 4. Business Rules
 

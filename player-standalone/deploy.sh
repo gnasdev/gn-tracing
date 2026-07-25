@@ -11,7 +11,13 @@ set -euo pipefail
 PROJECT_NAME="${CLOUDFLARE_PAGES_PROJECT:-gn-tracing-player}"
 PLAYER_HOST_URL="${PLAYER_HOST_URL:-https://tracing.gnas.dev/}"
 VITE_BASE_PATH="${VITE_BASE_PATH:-/}"
+# Hosted player feedback posts to the multi-issuer Worker /feedback route.
+# Prefer VITE_FEEDBACK_PROXY_URL; fall back to FEEDBACK_PROXY_URL from root env.
+if [ -z "${VITE_FEEDBACK_PROXY_URL:-}" ] && [ -n "${FEEDBACK_PROXY_URL:-}" ]; then
+  VITE_FEEDBACK_PROXY_URL="${FEEDBACK_PROXY_URL}"
+fi
 export VITE_BASE_PATH
+export VITE_FEEDBACK_PROXY_URL="${VITE_FEEDBACK_PROXY_URL:-}"
 
 echo "Deploying GN Tracing Player to Cloudflare Pages..."
 

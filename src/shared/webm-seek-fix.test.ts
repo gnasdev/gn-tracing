@@ -51,6 +51,23 @@ describe("makeWebmSeekable", () => {
     }
   });
 
+  it("overrides application/octet-stream so the playable blob is video/webm", async () => {
+    // Cloud downloads (esp. Dropbox content API) often set Content-Type:
+    // application/octet-stream. Leaving that on the Blob URL makes Chromium
+    // progressive-demux seeks feel stuck on timeline click.
+    const input = new Blob([new Uint8Array([0xaa])], { type: "application/octet-stream" });
+    const refined = new Blob([new Uint8Array([0xbb])], { type: "application/octet-stream" });
+    mockedFix.mockResolvedValueOnce(refined);
+
+    const result = await makeWebmSeekable(input, {
+      mimeType: "video/webm;codecs=vp9,opus",
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.blob.type).toBe("video/webm;codecs=vp9,opus");
+    }
+  });
+
   it("fails open with original blob when the library throws (not silent success)", async () => {
     const input = new Blob([new Uint8Array([0x1a, 0x45])], { type: "video/webm" });
     mockedFix.mockRejectedValueOnce(new Error("parse failed"));

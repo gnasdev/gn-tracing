@@ -15,6 +15,51 @@ import { buildCloudRemoteOpenUrl, resolveHistoryProvider } from "./storage-provi
 const POPUP_UPLOAD_HISTORY_LIMIT = 1;
 export const HISTORY_PAGE_PATH = "history/history.html";
 
+/** User-visible strings for the shared history list (EN defaults; surfaces override via setUploadHistoryUiLabels). */
+export type UploadHistoryUiLabels = {
+  empty: string;
+  /** Template with `{time}` placeholder. */
+  duration: string;
+  replay: string;
+  copyLink: string;
+  openRemote: string;
+  delete: string;
+  unknownTime: string;
+  unknownPage: string;
+};
+
+export const DEFAULT_UPLOAD_HISTORY_UI_LABELS: UploadHistoryUiLabels = {
+  empty: "No uploads yet.",
+  duration: "Duration: {time}",
+  replay: "Replay",
+  copyLink: "Copy link",
+  openRemote: "Open remote",
+  delete: "Delete",
+  unknownTime: "Unknown time",
+  unknownPage: "Unknown page",
+};
+
+let activeLabels: UploadHistoryUiLabels = { ...DEFAULT_UPLOAD_HISTORY_UI_LABELS };
+
+/**
+ * Apply localized labels used by `renderUploadHistoryList`, `formatDateTime`,
+ * and `formatPageLabel`. Call from each surface when the UI language changes.
+ */
+export function setUploadHistoryUiLabels(labels: Partial<UploadHistoryUiLabels>): void {
+  activeLabels = { ...DEFAULT_UPLOAD_HISTORY_UI_LABELS, ...labels };
+}
+
+export function getUploadHistoryUiLabels(): UploadHistoryUiLabels {
+  return activeLabels;
+}
+
+function applyLabelTemplate(template: string, replacements: Record<string, string>): string {
+  return Object.entries(replacements).reduce(
+    (text, [name, value]) => text.replaceAll(`{${name}}`, value),
+    template,
+  );
+}
+
 export function sortUploadHistoryNewestFirst(
   history: UploadHistoryEntry[] | undefined,
 ): UploadHistoryEntry[] {
@@ -36,7 +81,7 @@ export function getVisibleUploadHistory(
 export function renderUploadHistoryList(items: UploadHistoryEntry[] | undefined): string {
   const safeItems = sortUploadHistoryNewestFirst(items);
   if (safeItems.length === 0) {
-    return `<div class="history-empty">No uploads yet.</div>`;
+    return `<div class="history-empty">${escapeHtml(activeLabels.empty)}</div>`;
   }
 
   return safeItems
@@ -46,19 +91,21 @@ export function renderUploadHistoryList(items: UploadHistoryEntry[] | undefined)
       <div class="history-item-title">${escapeHtml(formatPageLabel(item.pageUrl))}</div>
       <div class="history-item-meta">
         ${escapeHtml(formatDateTime(item.uploadedAt))}<br>
-        Duration: ${escapeHtml(formatTime(item.durationMs))}
+        ${escapeHtml(
+          applyLabelTemplate(activeLabels.duration, { time: formatTime(item.durationMs) }),
+        )}
       </div>
       <div class="history-item-actions">
         ${renderHistoryActionButton({
           action: "open-replay",
-          label: "Replay",
+          label: activeLabels.replay,
           attrName: "data-url",
           attrValue: item.recordingUrl,
           icon: getReplayIcon(),
         })}
         ${renderHistoryActionButton({
           action: "copy-link",
-          label: "Copy link",
+          label: activeLabels.copyLink,
           attrName: "data-url",
           attrValue: item.recordingUrl,
           icon: getCopyIcon(),
@@ -66,7 +113,7 @@ export function renderUploadHistoryList(items: UploadHistoryEntry[] | undefined)
         ${renderOpenRemoteButton(item)}
         ${renderHistoryActionButton({
           action: "delete-history",
-          label: "Delete",
+          label: activeLabels.delete,
           attrName: "data-history-entry-id",
           attrValue: item.id,
           icon: getDeleteIcon(),
@@ -151,7 +198,7 @@ function renderOpenRemoteButton(item: UploadHistoryEntry): string {
   }
   return renderHistoryActionButton({
     action: "open-remote",
-    label: "Open remote",
+    label: activeLabels.openRemote,
     attrName: "data-recording-url",
     attrValue: item.recordingUrl || "",
     icon: getFolderIcon(),
@@ -231,7 +278,7 @@ function getDeleteIcon(): string {
 
 export function formatDateTime(timestamp: number | null): string {
   if (!timestamp) {
-    return "Unknown time";
+    return activeLabels.unknownTime;
   }
   try {
     return new Intl.DateTimeFormat(undefined, {
@@ -245,7 +292,7 @@ export function formatDateTime(timestamp: number | null): string {
 
 export function formatPageLabel(url: string | null | undefined): string {
   if (!url) {
-    return "Unknown page";
+    return activeLabels.unknownPage;
   }
   try {
     const parsed = new URL(url);

@@ -13,16 +13,55 @@
       <div class="gn-topbar-brand" aria-label="GN Tracing">
         <img class="gn-topbar-logo" src="../icons/icon.svg" alt="">
         <span class="gn-topbar-name">GN Tracing</span>
-      </div>
-      <div class="gn-topbar-actions header-actions">
         <div id="status-bar" class="hidden">
           <span id="recording-indicator"></span>
           <span id="timer">00:00</span>
         </div>
-        <button id="theme-toggle-btn" class="icon-btn" type="button" aria-label="Toggle theme" title="Toggle light/dark mode">
-          <svg id="theme-toggle-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
-          </svg>
+      </div>
+      <div class="gn-topbar-actions header-actions">
+        <div class="gn-feedback" id="feedback-wrap">
+          <button
+            type="button"
+            id="feedback-toggle-btn"
+            class="icon-btn gn-feedback-btn"
+            aria-expanded="false"
+            aria-haspopup="dialog"
+            aria-controls="feedback-panel"
+            aria-label="Feedback"
+            title="Feedback"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+            </svg>
+          </button>
+          <div
+            id="feedback-panel"
+            class="gn-feedback-popover feedback-panel hidden"
+            role="dialog"
+            aria-label="Send feedback"
+            data-i18n-aria="feedback.sectionAria"
+          >
+            <label class="gn-feedback-label feedback-label" for="feedback-message" data-i18n="feedback.label">Feedback</label>
+            <textarea
+              id="feedback-message"
+              class="gn-feedback-message feedback-message"
+              rows="4"
+              maxlength="4000"
+              data-i18n-placeholder="feedback.placeholder"
+              placeholder="Describe a bug, idea, or question…"
+            ></textarea>
+            <p class="gn-feedback-hint feedback-hint" data-i18n="feedback.hint">
+              Creates a public GitHub issue. Includes extension version, browser, OS, and locale only. Do not include secrets or passwords.
+            </p>
+            <div class="gn-feedback-actions feedback-actions">
+              <button type="button" id="feedback-submit-btn" class="btn btn-start btn-small" data-i18n="feedback.submit">Submit</button>
+              <button type="button" id="feedback-cancel-btn" class="btn btn-secondary btn-small" data-i18n="feedback.cancel">Cancel</button>
+            </div>
+          </div>
+        </div>
+        <button id="lang-toggle-btn" class="icon-btn gn-lang-toggle" type="button" aria-label="Switch language">VI</button>
+        <button id="theme-toggle-btn" class="icon-btn" type="button" aria-label="Theme: System" title="Theme: System (follows OS). Click to cycle System → Light → Dark.">
+          <span id="theme-toggle-icon" class="theme-toggle-icon" aria-hidden="true"></span>
         </button>
         <button id="settings-page-btn" class="icon-btn" type="button" aria-label="Open settings" title="Open settings">
           <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -33,68 +72,72 @@
       </div>
     </header>
 
-    <div id="recording-actions">
-      <button id="toggle-btn" class="btn btn-start" type="button">
-        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="12" cy="12" r="7"/>
-          <circle cx="12" cy="12" r="3" fill="currentColor" stroke="none"/>
-        </svg>
-        <span>Start Recording</span>
-      </button>
-      <button id="remove-recording-btn" class="btn btn-danger hidden" type="button">
-        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M4 7h16"/>
-          <path d="M10 11v6"/>
-          <path d="M14 11v6"/>
-          <path d="M6 7l1 14h10l1-14"/>
-          <path d="M9 7V4h6v3"/>
-        </svg>
-        <span>Discard</span>
-      </button>
-      <div id="recording-unavailable-msg" class="hidden" role="status"></div>
-    </div>
+    <div id="recording-live" class="recording-live">
+      <div id="recording-actions">
+        <button id="toggle-btn" class="btn btn-start" type="button">
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="7"/>
+            <circle cx="12" cy="12" r="3" fill="currentColor" stroke="none"/>
+          </svg>
+          <span data-i18n="actions.startRecording">Start Recording</span>
+        </button>
+        <button id="remove-recording-btn" class="btn btn-danger hidden" type="button">
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 7h16"/>
+            <path d="M10 11v6"/>
+            <path d="M14 11v6"/>
+            <path d="M6 7l1 14h10l1-14"/>
+            <path d="M9 7V4h6v3"/>
+          </svg>
+          <span data-i18n="actions.discard">Discard</span>
+        </button>
+        <div id="recording-unavailable-msg" class="hidden" role="status"></div>
+      </div>
 
-    <div id="stats" class="hidden">
-      <div class="stat-row">
-        <span class="stat-label">Console</span>
-        <span id="console-count" class="stat-value">0</span>
+      <div id="stats" class="hidden">
+        <div class="stat-row">
+          <span class="stat-label" data-i18n="stats.console">Console</span>
+          <span id="console-count" class="stat-value">0</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label" data-i18n="stats.network">Network</span>
+          <span id="network-count" class="stat-value">0</span>
+        </div>
       </div>
-      <div class="stat-row">
-        <span class="stat-label">Network</span>
-        <span id="network-count" class="stat-value">0</span>
-      </div>
-    </div>
 
-    <section id="drawing-section" class="hidden" aria-label="Drawing overlay">
-      <button id="draw-toggle-btn" class="btn btn-secondary" type="button" title="Toggle drawing pen">
-        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M12 19l7-7 3 3-7 7-3-3z"/>
-          <path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/>
-          <path d="M2 2l7.586 7.586"/>
-          <circle cx="11" cy="11" r="2"/>
-        </svg>
-        <span>Draw</span>
-      </button>
-      <div class="drawing-color-row" role="group" aria-label="Drawing pen color">
-        <span class="drawing-color-label">Color</span>
-        <div id="draw-color-swatches" class="drawing-color-swatches"></div>
-        <label class="drawing-color-custom" title="Custom color">
-          <span class="sr-only">Custom pen color</span>
-          <input id="draw-color-input" type="color" value="#ff6b6b" aria-label="Custom pen color">
-        </label>
-      </div>
-      <div class="drawing-hint">Toggle with Ctrl/Cmd+Shift+D</div>
-    </section>
+      <section id="drawing-section" class="hidden" aria-label="Drawing overlay" data-i18n-aria="drawing.sectionAria">
+        <div class="drawing-toolbar">
+          <button id="draw-toggle-btn" class="btn btn-secondary" type="button" title="Toggle drawing pen" data-i18n-title="drawing.toggleTitle">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 19l7-7 3 3-7 7-3-3z"/>
+              <path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/>
+              <path d="M2 2l7.586 7.586"/>
+              <circle cx="11" cy="11" r="2"/>
+            </svg>
+            <span data-i18n="drawing.draw">Draw</span>
+          </button>
+          <div class="drawing-color-row" role="group" aria-label="Drawing pen color" data-i18n-aria="drawing.colorGroupAria">
+            <span class="drawing-color-label" data-i18n="drawing.color">Color</span>
+            <div id="draw-color-swatches" class="drawing-color-swatches"></div>
+            <label class="drawing-color-custom" title="Custom color" data-i18n-title="drawing.customColorTitle">
+              <span class="sr-only" data-i18n="drawing.customColor">Custom pen color</span>
+              <input id="draw-color-input" type="color" value="#ff6b6b" aria-label="Custom pen color" data-i18n-aria="drawing.customColor">
+            </label>
+          </div>
+        </div>
+        <div class="drawing-hint" data-i18n="drawing.hint">Toggle with Ctrl/Cmd+Shift+D</div>
+      </section>
+    </div>
 
     <div id="main-google-drive-slot"></div>
     <div id="connected-google-drive-slot">
       <div id="google-drive-section" class="storage-connect-card">
         <div class="storage-connect-header">
-          <label for="storage-provider-select" id="storage-provider-label">Upload to</label>
+          <label for="storage-provider-select" id="storage-provider-label" data-i18n="storage.uploadTo">Upload to</label>
           <div id="google-drive-status">No cloud connected</div>
         </div>
         <div class="storage-connect-controls">
-          <select id="storage-provider-select" aria-label="Connected storage provider" disabled>
+          <select id="storage-provider-select" aria-label="Connected storage provider" data-i18n-aria="storage.selectAria" disabled>
             <option value="">Connect a cloud first…</option>
           </select>
           <button type="button" id="manage-storage-btn" class="btn btn-start btn-small">
@@ -107,7 +150,7 @@
       </div>
     </div>
 
-    <section id="session-queue-section">
+    <section id="session-queue-section" class="hidden">
       <div class="section-title">
         <svg class="section-title-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M8 6h13"/>
@@ -117,7 +160,7 @@
           <path d="M3 12h.01"/>
           <path d="M3 18h.01"/>
         </svg>
-        <span>Capture Queue</span>
+        <span data-i18n="sections.captureQueue">Capture Queue</span>
       </div>
       <div id="session-list" class="session-list"></div>
     </section>
@@ -130,42 +173,73 @@
             <path d="m7 9 5-5 5 5"/>
             <path d="M20 16.5A3.5 3.5 0 0 1 16.5 20h-9A3.5 3.5 0 0 1 4 16.5"/>
           </svg>
-          <span>Latest Upload</span>
+          <span data-i18n="sections.latestUpload">Latest Upload</span>
         </div>
         <button
           id="upload-history-page-btn"
-          class="icon-btn history-page-btn"
+          class="btn btn-secondary btn-small history-page-btn"
           type="button"
-          aria-label="Open history page"
-          title="Open history page"
+          aria-label="History"
+          title="History"
+          data-i18n-aria="actions.openHistory"
+          data-i18n-title="actions.openHistory"
+          data-i18n="actions.openHistory"
         >
-          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M5 6h14"/>
-            <path d="M5 11h14"/>
-            <path d="M5 16h8"/>
-            <path d="M15 19l4-4"/>
-            <path d="M16 15h3v3"/>
-          </svg>
+          History
         </button>
       </div>
       <div id="popup-upload-history-list" class="history-list"></div>
     </section>
 
-    <section id="capture-disclosure">
-      <div class="capture-disclosure-copy">
-        Records the selected tab and uploads a replay package to your connected cloud storage (Google Drive or Dropbox). Capture detail and password options live in Settings.
+    <section id="package-security-section" class="package-security-card">
+      <div class="section-title">
+        <svg class="section-title-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="5" y="11" width="14" height="10" rx="2"/>
+          <path d="M8 11V8a4 4 0 0 1 8 0v3"/>
+        </svg>
+        <span data-i18n="password.sectionTitle">Package password</span>
+      </div>
+
+      <div id="zip-password-summary" class="package-security-summary">
+        <div class="package-security-status-row">
+          <span id="zip-password-status" class="package-security-status is-off" data-i18n="password.statusOff">
+            Not set
+          </span>
+          <p id="zip-password-hint" class="package-security-hint" data-i18n="password.hintNone">
+            New uploads will not require a zip password.
+          </p>
+        </div>
+        <div class="package-security-summary-actions">
+          <button type="button" id="zip-password-set-btn" class="btn btn-secondary btn-small" data-i18n="password.set">
+            Set password
+          </button>
+          <button type="button" id="zip-password-clear-btn" class="btn btn-secondary btn-small hidden" data-i18n="password.clear">
+            Remove password
+          </button>
+        </div>
+      </div>
+
+      <div id="zip-password-form" class="package-security-form hidden">
+        <label class="package-security-field" for="zip-password-input">
+          <span class="sr-only" data-i18n="password.label">Zip password</span>
+          <input
+            id="zip-password-input"
+            type="password"
+            autocomplete="new-password"
+            data-i18n-placeholder="password.placeholder"
+            placeholder="Set password for new uploads"
+          >
+        </label>
+        <div class="package-security-actions">
+          <button type="button" id="zip-password-save-btn" class="btn btn-start btn-small" data-i18n="password.save">
+            Save password
+          </button>
+          <button type="button" id="zip-password-cancel-btn" class="btn btn-secondary btn-small" data-i18n="password.cancel">
+            Cancel
+          </button>
+        </div>
       </div>
     </section>
-
-    <footer class="popup-footer gn-footer">
-      <div class="gn-footer-row">
-        <div class="gn-footer-links">
-          <button type="button" id="github-link-btn" class="gn-footer-link">GitHub</button>
-          <button type="button" id="contribute-link-btn" class="gn-footer-link">Contribute</button>
-        </div>
-        <span class="popup-footer-tagline">GN Tracing - dev-tool replay for the web</span>
-      </div>
-    </footer>
 
     <div id="error-msg" class="hidden"></div>
     <div id="toast" class="toast hidden" role="status" aria-live="polite">

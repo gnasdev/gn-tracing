@@ -62,6 +62,7 @@ import {
   truncateEventString,
 } from "./capture-environment";
 import { CdpManager } from "./cdp-manager";
+import { submitFeedback } from "./feedback-submit";
 import { registerMessageListeners } from "./message-router";
 import { RecorderManager } from "./recorder-manager";
 import type { ProviderFolderSettings, UploadSettingsStore } from "./settings-store";
@@ -712,6 +713,7 @@ registerMessageListeners({
   },
   getUploadArtifactChunk: (data) => getUploadArtifactChunk(sessionArtifacts, data),
   patchUploadProgress,
+  submitFeedback,
 });
 
 /**

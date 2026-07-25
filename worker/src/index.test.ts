@@ -6,7 +6,14 @@
  */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import worker, { type Env, resolveProviderFromPath } from "./index";
+import worker, {
+  buildFeedbackIssueTitle,
+  type Env,
+  formatFeedbackIssueBody,
+  isFeedbackOriginAllowed,
+  isFeedbackPath,
+  resolveProviderFromPath,
+} from "./index";
 
 const PLACEHOLDER_ORIGIN = "chrome-extension://placeholderextensionidaaaaaaaaaaaaa";
 
@@ -19,6 +26,23 @@ function makeEnv(overrides: Partial<Env> = {}): Env {
     ALLOWED_EXTENSION_ORIGINS: "",
     ...overrides,
   };
+}
+
+function makeFeedbackRequest(
+  body: Record<string, unknown>,
+  origin: string | null = PLACEHOLDER_ORIGIN,
+): Request {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  if (origin) {
+    headers.Origin = origin;
+  }
+  return new Request("https://proxy.example/feedback", {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body),
+  });
 }
 
 function makeTokenRequest(
@@ -57,6 +81,46 @@ describe("resolveProviderFromPath", () => {
     expect(resolveProviderFromPath("/dropbox")).toBe("dropbox");
     expect(resolveProviderFromPath("/token/onedrive")).toBeNull();
     expect(resolveProviderFromPath("/unknown")).toBeNull();
+    expect(resolveProviderFromPath("/feedback")).toBeNull();
+  });
+});
+
+describe("isFeedbackPath", () => {
+  it("matches /feedback only", () => {
+    expect(isFeedbackPath("/feedback")).toBe(true);
+    expect(isFeedbackPath("/feedback/")).toBe(true);
+    expect(isFeedbackPath("/token")).toBe(false);
+  });
+});
+
+describe("isFeedbackOriginAllowed", () => {
+  it("allows chrome-extension origins and default player web origins", () => {
+    const env = makeEnv();
+    expect(isFeedbackOriginAllowed(PLACEHOLDER_ORIGIN, env)).toBe(true);
+    expect(isFeedbackOriginAllowed("https://tracing.gnas.dev", env)).toBe(true);
+    expect(isFeedbackOriginAllowed("http://localhost:5176", env)).toBe(true);
+    expect(isFeedbackOriginAllowed("https://evil.example", env)).toBe(false);
+  });
+
+  it("respects ALLOWED_WEB_ORIGINS override for feedback", () => {
+    const env = makeEnv({ ALLOWED_WEB_ORIGINS: "https://custom.player.test" });
+    expect(isFeedbackOriginAllowed("https://custom.player.test", env)).toBe(true);
+    expect(isFeedbackOriginAllowed("https://tracing.gnas.dev", env)).toBe(false);
+  });
+});
+
+describe("feedback issue formatting", () => {
+  it("builds title and body with diagnostics", () => {
+    expect(buildFeedbackIssueTitle("hello\nworld")).toBe("Feedback: hello world");
+    const body = formatFeedbackIssueBody("note", {
+      extensionVersion: "1.0.0",
+      browserName: "Chrome",
+      browserVersion: "131",
+      os: "macOS",
+      locale: "en-US",
+    });
+    expect(body).toContain("Extension: 1.0.0");
+    expect(body).toContain("Browser: Chrome 131");
   });
 });
 
@@ -89,6 +153,150 @@ describe("OAuth token proxy - method handling", () => {
     expect(body.providers.google).toBe(true);
     expect(body.providers.dropbox).toBe(true);
     expect(body.providers).not.toHaveProperty("onedrive");
+    expect((body as { feedback?: boolean }).feedback).toBe(false);
+  });
+});
+
+describe("Feedback proxy", () => {
+  it("rejects forbidden origins", async () => {
+    const res = await worker.fetch(
+      makeFeedbackRequest({ message: "hi" }, "https://evil.example"),
+      makeEnv({
+        ALLOWED_EXTENSION_ORIGINS: "chrome-extension://only-this-one",
+        GITHUB_FEEDBACK_TOKEN: "ghs_placeholder",
+      }),
+    );
+    expect(res.status).toBe(403);
+  });
+
+  it("returns 503 when token is missing", async () => {
+    const res = await worker.fetch(makeFeedbackRequest({ message: "hi" }), makeEnv());
+    expect(res.status).toBe(503);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("server_misconfigured");
+  });
+
+  it("returns 400 for empty message", async () => {
+    const res = await worker.fetch(
+      makeFeedbackRequest({ message: "  " }),
+      makeEnv({ GITHUB_FEEDBACK_TOKEN: "ghs_placeholder" }),
+    );
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("invalid_request");
+  });
+
+  it("creates a GitHub issue on success", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      expect(String(input)).toBe("https://api.github.com/repos/gnasdev/gn-tracing/issues");
+      expect(init?.method).toBe("POST");
+      const headers = init?.headers as Record<string, string>;
+      expect(headers.Authorization).toBe("Bearer ghs_placeholder");
+      const payload = JSON.parse(String(init?.body ?? "{}")) as {
+        title: string;
+        body: string;
+        labels?: string[];
+      };
+      expect(payload.title.startsWith("Feedback: ")).toBe(true);
+      expect(payload.body).toContain("please improve");
+      expect(payload.body).toContain("Extension: 1.2.3");
+      expect(payload.labels).toEqual(["feedback"]);
+      return new Response(
+        JSON.stringify({
+          html_url: "https://github.com/gnasdev/gn-tracing/issues/42",
+          number: 42,
+        }),
+        { status: 201, headers: { "Content-Type": "application/json" } },
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const res = await worker.fetch(
+      makeFeedbackRequest({
+        message: "please improve",
+        diagnostics: {
+          extensionVersion: "1.2.3",
+          browserName: "Chrome",
+          browserVersion: "131",
+          os: "macOS",
+          locale: "en-US",
+          token: "must-be-ignored",
+        },
+      }),
+      makeEnv({ GITHUB_FEEDBACK_TOKEN: "ghs_placeholder" }),
+    );
+
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { ok: boolean; issueUrl: string; issueNumber: number };
+    expect(body.ok).toBe(true);
+    expect(body.issueUrl).toBe("https://github.com/gnasdev/gn-tracing/issues/42");
+    expect(body.issueNumber).toBe(42);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("accepts feedback from the hosted player web origin", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              html_url: "https://github.com/gnasdev/gn-tracing/issues/9",
+              number: 9,
+            }),
+            {
+              status: 201,
+              headers: { "Content-Type": "application/json" },
+            },
+          ),
+      ),
+    );
+
+    const res = await worker.fetch(
+      makeFeedbackRequest({ message: "from player" }, "https://tracing.gnas.dev"),
+      makeEnv({ GITHUB_FEEDBACK_TOKEN: "ghs_placeholder" }),
+    );
+    expect(res.status).toBe(201);
+    expect(res.headers.get("Access-Control-Allow-Origin")).toBe("https://tracing.gnas.dev");
+  });
+
+  it("rejects OAuth token exchange from web player origin", async () => {
+    const res = await worker.fetch(
+      makeTokenRequest("/token", undefined, "https://tracing.gnas.dev"),
+      makeEnv(),
+    );
+    expect(res.status).toBe(403);
+  });
+
+  it("retries without labels when GitHub rejects labels", async () => {
+    let calls = 0;
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      calls += 1;
+      const payload = JSON.parse(String(init?.body ?? "{}")) as { labels?: string[] };
+      if (calls === 1) {
+        expect(payload.labels).toEqual(["feedback"]);
+        return new Response(JSON.stringify({ message: "Label does not exist" }), {
+          status: 422,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      expect(payload.labels).toBeUndefined();
+      return new Response(
+        JSON.stringify({
+          html_url: "https://github.com/gnasdev/gn-tracing/issues/7",
+          number: 7,
+        }),
+        { status: 201, headers: { "Content-Type": "application/json" } },
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const res = await worker.fetch(
+      makeFeedbackRequest({ message: "label missing ok" }),
+      makeEnv({ GITHUB_FEEDBACK_TOKEN: "ghs_placeholder" }),
+    );
+    expect(res.status).toBe(201);
+    expect(calls).toBe(2);
   });
 });
 

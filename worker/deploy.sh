@@ -68,11 +68,15 @@ put_secret() {
 
 put_secret "GOOGLE_CLIENT_SECRET" "${GOOGLE_CLIENT_SECRET:-}"
 put_secret "DROPBOX_CLIENT_SECRET" "${DROPBOX_CLIENT_SECRET:-}"
+put_secret "GITHUB_FEEDBACK_TOKEN" "${GITHUB_FEEDBACK_TOKEN:-}"
 
 VAR_FLAGS=(
   --var "GOOGLE_CLIENT_ID:${GOOGLE_CLIENT_ID:-}"
   --var "DROPBOX_CLIENT_ID:${DROPBOX_CLIENT_ID:-}"
   --var "ALLOWED_EXTENSION_ORIGINS:${ALLOWED_ORIGINS}"
+  --var "GITHUB_REPO_OWNER:${GITHUB_REPO_OWNER:-gnasdev}"
+  --var "GITHUB_REPO_NAME:${GITHUB_REPO_NAME:-gn-tracing}"
+  --var "GITHUB_FEEDBACK_LABELS:${GITHUB_FEEDBACK_LABELS:-feedback}"
 )
 
 echo "Deploying gn-tracing-oauth-proxy Worker (google=$HAS_GOOGLE dropbox=$HAS_DROPBOX)..."
@@ -92,3 +96,8 @@ echo ""
 echo "Point extension env (then rebuild):"
 echo "  GOOGLE_TOKEN_PROXY_URL=${WORKER_URL}"
 echo "  DROPBOX_TOKEN_PROXY_URL=${WORKER_URL}/token/dropbox"
+echo "  FEEDBACK_PROXY_URL=${WORKER_URL}/feedback  # optional; derived from OAuth proxy origin when unset"
+if [ -z "${GITHUB_FEEDBACK_TOKEN:-}" ]; then
+  echo ""
+  echo "Note: GITHUB_FEEDBACK_TOKEN was empty — POST /feedback will return 503 until you set the secret."
+fi

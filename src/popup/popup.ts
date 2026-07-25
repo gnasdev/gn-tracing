@@ -3,10 +3,12 @@
  */
 
 import { DEFAULT_DRAW_COLOR, DRAW_COLOR_PRESETS, normalizeDrawColor } from "../shared/drawing";
+import { buildFeedbackDiagnostics, validateFeedbackMessage } from "../shared/feedback";
 import { resolveReplayOpenUrl } from "../shared/player-host";
 import { getRecordingTabTarget } from "../shared/recording-target";
 import { buildCloudRemoteOpenUrl, resolveHistoryProvider } from "../shared/storage-provider";
-import { attachThemeToggle } from "../shared/theme";
+import { attachThemeToggle, type ThemeToggleController } from "../shared/theme";
+import { attachLanguageSwitch, type UiLanguage } from "../shared/ui-language";
 import {
   escapeHtml,
   formatDateTime,
@@ -16,6 +18,7 @@ import {
   HISTORY_PAGE_PATH,
   handleUploadHistoryAction,
   renderUploadHistoryList,
+  setUploadHistoryUiLabels,
   sortUploadHistoryNewestFirst,
 } from "../shared/upload-history-ui";
 import type {
@@ -27,6 +30,307 @@ import type {
   UploadHistoryEntry,
 } from "../types/messages";
 
+type PopupLanguage = UiLanguage;
+
+const TRANSLATIONS: Record<PopupLanguage, Record<string, string>> = {
+  en: {
+    "actions.startRecording": "Start Recording",
+    "actions.stopUpload": "Stop & Upload",
+    "actions.stopping": "Stopping...",
+    "actions.stoppingTitle": "Stopping recording and preparing upload",
+    "actions.discard": "Discard",
+    "actions.openSettings": "Open settings",
+    "actions.openHistory": "History",
+    "actions.toggleTheme": "Toggle theme",
+    "theme.system": "System",
+    "theme.light": "Light",
+    "theme.dark": "Dark",
+    "theme.aria": "Theme: {label}",
+    "theme.titleSystem": "Theme: {label} (follows OS). Click to cycle System → Light → Dark.",
+    "theme.titleFixed": "Theme: {label}. Click to cycle System → Light → Dark.",
+    "stats.console": "Console",
+    "stats.network": "Network",
+    "drawing.sectionAria": "Drawing overlay",
+    "drawing.toggleTitle": "Toggle drawing pen",
+    "drawing.draw": "Draw",
+    "drawing.drawing": "Drawing",
+    "drawing.color": "Color",
+    "drawing.colorGroupAria": "Drawing pen color",
+    "drawing.customColor": "Custom pen color",
+    "drawing.customColorTitle": "Custom color",
+    "drawing.hint": "Toggle with Ctrl/Cmd+Shift+D",
+    "drawing.penColorAria": "Pen color {color}",
+    "storage.uploadTo": "Upload to",
+    "storage.noCloud": "No cloud connected",
+    "storage.ready": "{name} ready",
+    "storage.connectClouds": "Connect clouds",
+    "storage.manageClouds": "Manage clouds",
+    "storage.selectAria": "Connected storage provider",
+    "storage.connectFirst": "Connect a cloud first…",
+    "storage.hintDisconnected":
+      "Connect Google Drive or Dropbox on the cloud page. This popup only switches among already-connected providers.",
+    "storage.hintConnected":
+      "Only connected clouds appear here. Open Manage clouds to connect or disconnect accounts.",
+    "storage.notConnected": "{name} is not connected.",
+    "storage.switchFailed": "Could not switch storage provider.",
+    "storage.connectBeforeRecord": "Connect cloud storage before recording.",
+    "storage.connectCloudFirst": "Connect that cloud on the cloud page first.",
+    "sections.captureQueue": "Capture Queue",
+    "sections.latestUpload": "Latest Upload",
+    "password.sectionTitle": "Package password",
+    "password.label": "Zip password",
+    "password.placeholder": "Set password for new uploads",
+    "password.set": "Set password",
+    "password.save": "Save password",
+    "password.cancel": "Cancel",
+    "password.clear": "Remove password",
+    "password.saving": "Saving…",
+    "password.statusOn": "Password set",
+    "password.statusOff": "Not set",
+    "password.hintNone": "New uploads will not require a zip password.",
+    "password.hintConfigured": "New uploads will be zip-protected with the saved password.",
+    "password.saveSuccess": "Zip password saved.",
+    "password.clearSuccess": "Zip password removed.",
+    "password.saveFailed": "Could not update zip password.",
+    "password.required": "Enter a password to save.",
+    "footer.feedback": "Feedback",
+    "feedback.sectionAria": "Send feedback",
+    "feedback.label": "Feedback",
+    "feedback.placeholder": "Describe a bug, idea, or question…",
+    "feedback.hint":
+      "Creates a public GitHub issue. Includes extension version, browser, OS, and locale only. Do not include secrets or passwords.",
+    "feedback.submit": "Submit",
+    "feedback.cancel": "Cancel",
+    "feedback.sending": "Sending…",
+    "feedback.success": "Feedback submitted.",
+    "feedback.failed": "Could not submit feedback.",
+    "feedback.viewIssue": "View issue",
+    "session.empty": "No pending capture records.",
+    "session.duration": "Duration: {time}",
+    "session.waitingUpload": "Waiting to upload",
+    "session.progressAria": "Progress {percent}%",
+    "session.status.ready": "Ready",
+    "session.status.uploading": "Uploading",
+    "session.status.uploaded": "Uploaded",
+    "session.status.failed": "Failed",
+    "session.action.upload": "Upload",
+    "session.action.replay": "Replay",
+    "session.action.copyLink": "Copy link",
+    "session.action.openRemote": "Open remote",
+    "session.action.delete": "Delete",
+    "history.empty": "No uploads yet.",
+    "history.duration": "Duration: {time}",
+    "history.unknownTime": "Unknown time",
+    "history.unknownPage": "Unknown page",
+    "history.olderHidden": "{count} older upload{plural} hidden.",
+    "messages.checkingTab": "Checking whether this tab can be recorded.",
+    "messages.cannotInspectTab": "Cannot inspect the active tab for recording.",
+    "messages.stopFailed": "Failed to stop recording",
+    "messages.startFailed": "Failed to start recording",
+    "messages.removeFailed": "Failed to remove recording",
+    "messages.removed": "Recording removed.",
+    "messages.copySuccess": "Replay link copied.",
+    "messages.copyFailed": "Failed to copy replay link",
+    "messages.uploadFailed": "Failed to upload session",
+    "messages.deleteSessionFailed": "Failed to delete session",
+    "messages.deleteHistoryFailed": "Failed to delete history item",
+    "messages.drawColorFailed": "Could not update drawing color.",
+    "messages.drawToggleFailed": "Could not toggle drawing overlay.",
+    "toast.open": "Open",
+  },
+  vi: {
+    "actions.startRecording": "Bắt đầu ghi",
+    "actions.stopUpload": "Dừng & Upload",
+    "actions.stopping": "Đang dừng...",
+    "actions.stoppingTitle": "Đang dừng ghi và chuẩn bị upload",
+    "actions.discard": "Hủy",
+    "actions.openSettings": "Mở cài đặt",
+    "actions.openHistory": "Lịch sử",
+    "actions.toggleTheme": "Chuyển giao diện",
+    "theme.system": "Hệ thống",
+    "theme.light": "Sáng",
+    "theme.dark": "Tối",
+    "theme.aria": "Giao diện: {label}",
+    "theme.titleSystem": "Giao diện: {label} (theo OS). Bấm để chuyển Hệ thống → Sáng → Tối.",
+    "theme.titleFixed": "Giao diện: {label}. Bấm để chuyển Hệ thống → Sáng → Tối.",
+    "stats.console": "Console",
+    "stats.network": "Network",
+    "drawing.sectionAria": "Lớp vẽ",
+    "drawing.toggleTitle": "Bật/tắt bút vẽ",
+    "drawing.draw": "Vẽ",
+    "drawing.drawing": "Đang vẽ",
+    "drawing.color": "Màu",
+    "drawing.colorGroupAria": "Màu bút vẽ",
+    "drawing.customColor": "Màu bút tùy chỉnh",
+    "drawing.customColorTitle": "Màu tùy chỉnh",
+    "drawing.hint": "Bật/tắt bằng Ctrl/Cmd+Shift+D",
+    "drawing.penColorAria": "Màu bút {color}",
+    "storage.uploadTo": "Upload lên",
+    "storage.noCloud": "Chưa kết nối cloud",
+    "storage.ready": "{name} sẵn sàng",
+    "storage.connectClouds": "Kết nối cloud",
+    "storage.manageClouds": "Quản lý cloud",
+    "storage.selectAria": "Nhà cung cấp lưu trữ đã kết nối",
+    "storage.connectFirst": "Hãy kết nối cloud trước…",
+    "storage.hintDisconnected":
+      "Kết nối Google Drive hoặc Dropbox trên trang cloud. Popup chỉ chuyển giữa các provider đã kết nối.",
+    "storage.hintConnected":
+      "Chỉ hiện các cloud đã kết nối. Mở Quản lý cloud để kết nối hoặc ngắt kết nối.",
+    "storage.notConnected": "{name} chưa được kết nối.",
+    "storage.switchFailed": "Không chuyển được nhà cung cấp lưu trữ.",
+    "storage.connectBeforeRecord": "Hãy kết nối cloud trước khi ghi.",
+    "storage.connectCloudFirst": "Hãy kết nối cloud đó trên trang cloud trước.",
+    "sections.captureQueue": "Hàng đợi capture",
+    "sections.latestUpload": "Upload gần nhất",
+    "password.sectionTitle": "Mật khẩu package",
+    "password.label": "Mật khẩu zip",
+    "password.placeholder": "Đặt mật khẩu cho upload mới",
+    "password.set": "Đặt mật khẩu",
+    "password.save": "Lưu mật khẩu",
+    "password.cancel": "Hủy",
+    "password.clear": "Xóa mật khẩu",
+    "password.saving": "Đang lưu…",
+    "password.statusOn": "Đã đặt mật khẩu",
+    "password.statusOff": "Chưa đặt",
+    "password.hintNone": "Upload mới sẽ không yêu cầu mật khẩu zip.",
+    "password.hintConfigured": "Upload mới sẽ được bảo vệ zip bằng mật khẩu đã lưu.",
+    "password.saveSuccess": "Đã lưu mật khẩu zip.",
+    "password.clearSuccess": "Đã xóa mật khẩu zip.",
+    "password.saveFailed": "Không cập nhật được mật khẩu zip.",
+    "password.required": "Nhập mật khẩu để lưu.",
+    "footer.feedback": "Góp ý",
+    "feedback.sectionAria": "Gửi góp ý",
+    "feedback.label": "Góp ý",
+    "feedback.placeholder": "Mô tả lỗi, ý tưởng hoặc câu hỏi…",
+    "feedback.hint":
+      "Tạo issue GitHub công khai. Chỉ kèm version extension, browser, OS và locale. Không gửi mật khẩu hay secret.",
+    "feedback.submit": "Gửi",
+    "feedback.cancel": "Hủy",
+    "feedback.sending": "Đang gửi…",
+    "feedback.success": "Đã gửi góp ý.",
+    "feedback.failed": "Không gửi được góp ý.",
+    "feedback.viewIssue": "Xem issue",
+    "session.empty": "Không có bản ghi đang chờ.",
+    "session.duration": "Thời lượng: {time}",
+    "session.waitingUpload": "Đang chờ upload",
+    "session.progressAria": "Tiến độ {percent}%",
+    "session.status.ready": "Sẵn sàng",
+    "session.status.uploading": "Đang upload",
+    "session.status.uploaded": "Đã upload",
+    "session.status.failed": "Thất bại",
+    "session.action.upload": "Upload",
+    "session.action.replay": "Replay",
+    "session.action.copyLink": "Sao chép link",
+    "session.action.openRemote": "Mở remote",
+    "session.action.delete": "Xóa",
+    "history.empty": "Chưa có upload nào.",
+    "history.duration": "Thời lượng: {time}",
+    "history.unknownTime": "Thời gian không rõ",
+    "history.unknownPage": "Trang không rõ",
+    "history.olderHidden": "{count} upload cũ hơn bị ẩn.",
+    "messages.checkingTab": "Đang kiểm tra tab này có ghi được không.",
+    "messages.cannotInspectTab": "Không kiểm tra được tab đang mở để ghi.",
+    "messages.stopFailed": "Không dừng được bản ghi",
+    "messages.startFailed": "Không bắt đầu được bản ghi",
+    "messages.removeFailed": "Không hủy được bản ghi",
+    "messages.removed": "Đã hủy bản ghi.",
+    "messages.copySuccess": "Đã sao chép link replay.",
+    "messages.copyFailed": "Không sao chép được link replay",
+    "messages.uploadFailed": "Không upload được phiên",
+    "messages.deleteSessionFailed": "Không xóa được phiên",
+    "messages.deleteHistoryFailed": "Không xóa được mục lịch sử",
+    "messages.drawColorFailed": "Không cập nhật được màu vẽ.",
+    "messages.drawToggleFailed": "Không bật/tắt được lớp vẽ.",
+    "toast.open": "Mở",
+  },
+};
+
+let currentLanguage: PopupLanguage = "en";
+let themeToggleUi: ThemeToggleController | null = null;
+
+function t(key: string, replacements: Record<string, string> = {}): string {
+  const template = TRANSLATIONS[currentLanguage][key] || TRANSLATIONS.en[key] || key;
+  return Object.entries(replacements).reduce(
+    (text, [name, value]) => text.replaceAll(`{${name}}`, value),
+    template,
+  );
+}
+
+function applyStaticTranslations(): void {
+  document.documentElement.lang = currentLanguage;
+
+  setUploadHistoryUiLabels({
+    empty: t("history.empty"),
+    duration: t("history.duration"),
+    replay: t("session.action.replay"),
+    copyLink: t("session.action.copyLink"),
+    openRemote: t("session.action.openRemote"),
+    delete: t("session.action.delete"),
+    unknownTime: t("history.unknownTime"),
+    unknownPage: t("history.unknownPage"),
+  });
+
+  document.querySelectorAll<HTMLElement>("[data-i18n]").forEach((element) => {
+    element.textContent = t(element.dataset.i18n || "");
+  });
+
+  document.querySelectorAll<HTMLElement>("[data-i18n-aria]").forEach((element) => {
+    element.setAttribute("aria-label", t(element.dataset.i18nAria || ""));
+  });
+
+  document.querySelectorAll<HTMLElement>("[data-i18n-title]").forEach((element) => {
+    element.setAttribute("title", t(element.dataset.i18nTitle || ""));
+  });
+
+  document
+    .querySelectorAll<HTMLTextAreaElement | HTMLInputElement>("[data-i18n-placeholder]")
+    .forEach((element) => {
+      element.placeholder = t(element.dataset.i18nPlaceholder || "");
+    });
+
+  settingsPageBtn.setAttribute("aria-label", t("actions.openSettings"));
+  settingsPageBtn.setAttribute("title", t("actions.openSettings"));
+  themeToggleUi?.refreshLabels();
+  const feedbackToggle = document.getElementById("feedback-toggle-btn");
+  if (feedbackToggle) {
+    feedbackToggle.setAttribute("aria-label", t("footer.feedback"));
+    feedbackToggle.setAttribute("title", t("footer.feedback"));
+  }
+}
+
+/**
+ * Refresh all language-sensitive UI after a locale change (or first attach).
+ * Dynamic regions (recording controls, storage card, sessions, history) are
+ * re-rendered from the latest worker snapshot so labels stay consistent.
+ */
+function applyTranslations(): void {
+  applyStaticTranslations();
+
+  const connection = getActiveStorageConnection(latestPopupState);
+  updateStorageUI(connection.isConnected, connection.provider);
+
+  if (connection.isConnected || listConnectedProviderIds().length > 0) {
+    const selected = storageProviderSelect?.value;
+    const canRecord = Boolean(selected && connectedProviders.get(selected));
+    if (canRecord || getActiveStorageConnection(latestPopupState).isConnected) {
+      updateRecordingUI(latestPopupState?.recording ?? null);
+      renderSessions(latestPopupState?.sessions);
+    }
+  }
+
+  renderPopupUploadHistory(currentUploadHistory, { animateLatestSuccess: false });
+  renderDrawColorSwatches();
+  updateZipPasswordUi(Boolean(latestPopupState?.settings?.zipPasswordConfigured));
+  updateSessionQueueVisibility(latestPopupState?.sessions);
+
+  // Preserve draw active label if the pen is currently on.
+  if (drawToggleBtn.classList.contains("active")) {
+    setDrawButtonActive(true);
+  } else {
+    setDrawButtonActive(false);
+  }
+}
+
 /**
  * Popup UI controller.
  *
@@ -35,8 +339,6 @@ import type {
  * details such as timers/toasts local. Durable recording truth must stay in the
  * service worker because this window can close at any time.
  */
-const GITHUB_REPO_URL = "https://github.com/gnasdev/gn-tracing";
-const GITHUB_ISSUES_URL = `${GITHUB_REPO_URL}/issues`;
 const SERVICE_STATE_KEY = "gn_tracing_state";
 const MIRRORED_DRIVE_CONNECTED_KEY = "gn_tracing_google_drive_connected";
 const MIRRORED_DROPBOX_CONNECTED_KEY = "gn_tracing_dropbox_connected";
@@ -60,6 +362,19 @@ const consoleCount = document.getElementById("console-count")!;
 const networkCount = document.getElementById("network-count")!;
 const sessionQueueSection = document.getElementById("session-queue-section")!;
 const sessionList = document.getElementById("session-list")!;
+const zipPasswordSummary = document.getElementById("zip-password-summary")!;
+const zipPasswordForm = document.getElementById("zip-password-form")!;
+const zipPasswordStatus = document.getElementById("zip-password-status")!;
+const zipPasswordInput = document.getElementById("zip-password-input") as HTMLInputElement;
+const zipPasswordHint = document.getElementById("zip-password-hint")!;
+const zipPasswordSetBtn = document.getElementById("zip-password-set-btn") as HTMLButtonElement;
+const zipPasswordSaveBtn = document.getElementById("zip-password-save-btn") as HTMLButtonElement;
+const zipPasswordCancelBtn = document.getElementById(
+  "zip-password-cancel-btn",
+) as HTMLButtonElement;
+const zipPasswordClearBtn = document.getElementById("zip-password-clear-btn") as HTMLButtonElement;
+let zipPasswordConfigured = false;
+let zipPasswordFormOpen = false;
 const errorMsg = document.getElementById("error-msg")!;
 const toastEl = document.getElementById("toast")!;
 const toastIconEl = document.getElementById("toast-icon")!;
@@ -86,8 +401,12 @@ const uploadHistoryPageBtn = document.getElementById(
   "upload-history-page-btn",
 ) as HTMLButtonElement;
 
-const githubLinkBtn = document.getElementById("github-link-btn") as HTMLButtonElement;
-const contributeLinkBtn = document.getElementById("contribute-link-btn") as HTMLButtonElement;
+const feedbackWrap = document.getElementById("feedback-wrap") as HTMLElement | null;
+const feedbackToggleBtn = document.getElementById("feedback-toggle-btn") as HTMLButtonElement;
+const feedbackPanel = document.getElementById("feedback-panel")!;
+const feedbackMessageInput = document.getElementById("feedback-message") as HTMLTextAreaElement;
+const feedbackSubmitBtn = document.getElementById("feedback-submit-btn") as HTMLButtonElement;
+const feedbackCancelBtn = document.getElementById("feedback-cancel-btn") as HTMLButtonElement;
 
 let timerInterval: ReturnType<typeof setInterval> | null = null;
 let timerRecording: RecordingStatus | null = null;
@@ -98,7 +417,7 @@ const animatingUploadHistoryIds = new Set<string>();
 const uploadHistoryAnimationTimeouts = new Map<string, ReturnType<typeof setTimeout>>();
 let isUploadHistoryAnimationReady = false;
 let latestPopupState: PopupState | null = null;
-let activeTabRecordingError: string | null = "Checking whether this tab can be recorded.";
+let activeTabRecordingError: string | null = null;
 let toggleActionInFlight = false;
 let toggleActionMode: "start" | "stop" | null = null;
 let activeTabRecordingCheckId = 0;
@@ -274,7 +593,7 @@ function showToast(
   toastEl.setAttribute("aria-live", variant === "error" ? "assertive" : "polite");
   if (options.linkUrl) {
     toastLinkEl.href = options.linkUrl;
-    toastLinkEl.textContent = options.linkLabel || "Open";
+    toastLinkEl.textContent = options.linkLabel || t("toast.open");
     toastLinkEl.classList.remove("hidden");
   } else {
     toastLinkEl.removeAttribute("href");
@@ -404,7 +723,7 @@ function renderProgressItems(
     <div
       class="progress-item ${statusClass}"
       style="--item-progress:${fillPercent}%;"
-      aria-label="Progress ${percent.toFixed(1)}%"
+      aria-label="${escapeHtml(t("session.progressAria", { percent: percent.toFixed(1) }))}"
     ></div>
   `;
 }
@@ -412,25 +731,65 @@ function renderProgressItems(
 function getSessionStatusLabel(session: RecordingSessionSummary): string {
   switch (session.phase) {
     case "recorded":
-      return "Ready";
+      return t("session.status.ready");
     case "uploading":
-      return "Uploading";
+      return t("session.status.uploading");
     case "uploaded":
-      return "Uploaded";
+      return t("session.status.uploaded");
     case "failed":
-      return "Failed";
+      return t("session.status.failed");
     default:
       return session.phase;
   }
 }
 
+function getPendingSessions(
+  sessions: RecordingSessionSummary[] | undefined,
+): RecordingSessionSummary[] {
+  return Array.isArray(sessions) ? sessions.filter((session) => session.phase !== "uploaded") : [];
+}
+
+/**
+ * Capture queue is only shown when there is at least one non-uploaded session
+ * and capture controls are available (cloud connected).
+ */
+function updateSessionQueueVisibility(sessions?: RecordingSessionSummary[]): void {
+  const pending = getPendingSessions(sessions ?? latestPopupState?.sessions);
+  const captureAvailable = !recordingActions.classList.contains("hidden");
+  sessionQueueSection.classList.toggle("hidden", !(captureAvailable && pending.length > 0));
+}
+
+function setZipPasswordFormOpen(open: boolean): void {
+  zipPasswordFormOpen = open;
+  zipPasswordForm.classList.toggle("hidden", !open);
+  zipPasswordSummary.classList.toggle("hidden", open);
+  if (open) {
+    zipPasswordInput.value = "";
+    zipPasswordInput.focus();
+  }
+}
+
+function updateZipPasswordUi(configured: boolean): void {
+  zipPasswordConfigured = configured;
+  zipPasswordStatus.textContent = configured ? t("password.statusOn") : t("password.statusOff");
+  zipPasswordStatus.classList.toggle("is-on", configured);
+  zipPasswordStatus.classList.toggle("is-off", !configured);
+  zipPasswordHint.textContent = configured ? t("password.hintConfigured") : t("password.hintNone");
+  zipPasswordClearBtn.classList.toggle("hidden", !configured);
+  zipPasswordClearBtn.disabled = !configured;
+  // Do not auto-open the form; only close if it is not already open.
+  if (!zipPasswordFormOpen) {
+    zipPasswordForm.classList.add("hidden");
+    zipPasswordSummary.classList.remove("hidden");
+  }
+}
+
 function renderSessions(sessions: RecordingSessionSummary[] | undefined): void {
-  const items = Array.isArray(sessions)
-    ? sessions.filter((session) => session.phase !== "uploaded")
-    : [];
+  const items = getPendingSessions(sessions);
+  updateSessionQueueVisibility(items);
 
   if (items.length === 0) {
-    sessionList.innerHTML = `<div class="session-empty">No pending capture records.</div>`;
+    sessionList.innerHTML = "";
     return;
   }
 
@@ -459,14 +818,14 @@ function renderSessions(sessions: RecordingSessionSummary[] | undefined): void {
         </div>
         <div class="session-item-meta">
           ${escapeHtml(formatDateTime(session.stopTime || session.startTime))}<br>
-          Duration: ${escapeHtml(formatTime(session.elapsedMs))}
+          ${escapeHtml(t("session.duration", { time: formatTime(session.elapsedMs) }))}
         </div>
         ${session.error ? `<div class="session-item-error">${escapeHtml(session.error)}</div>` : ""}
         ${
           showProgress
             ? `
           <div class="session-item-progress">
-            <div class="session-progress-meta">${escapeHtml(session.message || "Waiting to upload")}</div>
+            <div class="session-progress-meta">${escapeHtml(session.message || t("session.waitingUpload"))}</div>
             <div class="session-progress-summary">${formatBytes(session.uploadedBytes)} / ${formatBytes(session.totalBytes)} (${session.progress.toFixed(1)}%)</div>
             <div class="progress-items">${renderProgressItems(session.items, session.progress)}</div>
           </div>
@@ -478,7 +837,7 @@ function renderSessions(sessions: RecordingSessionSummary[] | undefined): void {
             canUpload
               ? renderSessionActionButton({
                   action: "upload-session",
-                  label: "Upload",
+                  label: t("session.action.upload"),
                   attrName: "data-session-id",
                   attrValue: session.id,
                   icon: getUploadIcon(),
@@ -489,7 +848,7 @@ function renderSessions(sessions: RecordingSessionSummary[] | undefined): void {
             canReplay
               ? renderSessionActionButton({
                   action: "open-replay",
-                  label: "Replay",
+                  label: t("session.action.replay"),
                   attrName: "data-url",
                   attrValue: session.recordingUrl || "",
                   icon: getReplayIcon(),
@@ -500,7 +859,7 @@ function renderSessions(sessions: RecordingSessionSummary[] | undefined): void {
             canCopy
               ? renderSessionActionButton({
                   action: "copy-link",
-                  label: "Copy link",
+                  label: t("session.action.copyLink"),
                   attrName: "data-url",
                   attrValue: session.recordingUrl || "",
                   icon: getCopyIcon(),
@@ -511,7 +870,7 @@ function renderSessions(sessions: RecordingSessionSummary[] | undefined): void {
             canOpenFolder
               ? renderSessionActionButton({
                   action: "open-remote",
-                  label: "Open remote",
+                  label: t("session.action.openRemote"),
                   attrName: "data-recording-url",
                   attrValue: session.recordingUrl || "",
                   icon: getFolderIcon(),
@@ -526,7 +885,7 @@ function renderSessions(sessions: RecordingSessionSummary[] | undefined): void {
             canDelete
               ? renderSessionActionButton({
                   action: "delete-session",
-                  label: "Delete",
+                  label: t("session.action.delete"),
                   attrName: "data-session-id",
                   attrValue: session.id,
                   icon: getDeleteIcon(),
@@ -617,7 +976,7 @@ function updateSessionProgressSections(sessions: RecordingSessionSummary[]): boo
     }
 
     progressElement.innerHTML = `
-      <div class="session-progress-meta">${escapeHtml(session.message || "Waiting to upload")}</div>
+      <div class="session-progress-meta">${escapeHtml(session.message || t("session.waitingUpload"))}</div>
       <div class="session-progress-summary">${formatBytes(session.uploadedBytes)} / ${formatBytes(session.totalBytes)} (${session.progress.toFixed(1)}%)</div>
       <div class="progress-items">${renderProgressItems(session.items, session.progress)}</div>
     `;
@@ -641,7 +1000,12 @@ function renderPopupUploadHistory(
   popupUploadHistoryList.innerHTML = [
     renderUploadHistoryList(visibleItems),
     hiddenCount > 0
-      ? `<div class="history-empty">${hiddenCount} older upload${hiddenCount === 1 ? "" : "s"} hidden.</div>`
+      ? `<div class="history-empty">${escapeHtml(
+          t("history.olderHidden", {
+            count: String(hiddenCount),
+            plural: hiddenCount === 1 ? "" : "s",
+          }),
+        )}</div>`
       : "",
   ].join("");
   const latestUpload = currentUploadHistory[0] || null;
@@ -720,7 +1084,7 @@ function rebuildConnectedProviderSelect(preferred?: string): string | null {
   if (connected.length === 0) {
     const opt = document.createElement("option");
     opt.value = "";
-    opt.textContent = "Connect a cloud first…";
+    opt.textContent = t("storage.connectFirst");
     storageProviderSelect.append(opt);
     storageProviderSelect.value = "";
     storageProviderSelect.disabled = true;
@@ -755,40 +1119,42 @@ function updateStorageUI(_isConnected: boolean, provider?: string): void {
   }
 
   if (storageProviderLabel) {
-    storageProviderLabel.textContent = "Upload to";
+    storageProviderLabel.textContent = t("storage.uploadTo");
   }
 
   if (selectedConnected && selected) {
     const name = storageProviderDisplayName(selected);
-    googleDriveStatus.textContent = `${name} ready`;
+    googleDriveStatus.textContent = t("storage.ready", { name });
     googleDriveStatus.classList.add("is-connected");
   } else {
-    googleDriveStatus.textContent = "No cloud connected";
+    googleDriveStatus.textContent = t("storage.noCloud");
     googleDriveStatus.classList.remove("is-connected");
   }
 
   if (manageStorageBtn) {
-    manageStorageBtn.textContent = anyConnected ? "Manage clouds" : "Connect clouds";
+    manageStorageBtn.textContent = anyConnected
+      ? t("storage.manageClouds")
+      : t("storage.connectClouds");
     manageStorageBtn.classList.toggle("btn-start", !anyConnected);
   }
   if (storageConnectHint) {
     storageConnectHint.textContent = anyConnected
-      ? "Only connected clouds appear here. Open Manage clouds to connect or disconnect accounts."
-      : "Connect Google Drive or Dropbox on the cloud page. This popup only switches among already-connected providers.";
+      ? t("storage.hintConnected")
+      : t("storage.hintDisconnected");
   }
 }
 
 async function setActiveStorageProvider(provider: string): Promise<void> {
   const normalized = normalizePopupStorageProvider(provider);
   if (!connectedProviders.get(normalized)) {
-    throw new Error(`${storageProviderDisplayName(normalized)} is not connected.`);
+    throw new Error(t("storage.notConnected", { name: storageProviderDisplayName(normalized) }));
   }
   const result = (await chrome.runtime.sendMessage({
     action: "UPDATE_SETTINGS",
     data: { activeStorageProvider: normalized },
   })) as MessageResponse & { settings?: PopupState["settings"] };
   if (!result.ok) {
-    throw new Error(result.error || "Could not switch storage provider.");
+    throw new Error(result.error || t("storage.switchFailed"));
   }
   await refreshPopupFromStorage();
   void refreshAllProviderStatuses();
@@ -810,12 +1176,13 @@ function openStorageAuthPage(provider?: string): void {
 
 function setCaptureUiVisibility(isVisible: boolean): void {
   recordingActions.classList.toggle("hidden", !isVisible);
-  sessionQueueSection.classList.toggle("hidden", !isVisible);
 
   if (isVisible) {
+    updateSessionQueueVisibility(latestPopupState?.sessions);
     return;
   }
 
+  sessionQueueSection.classList.add("hidden");
   removeRecordingBtn.classList.add("hidden");
   drawingSection.classList.add("hidden");
   setDrawButtonActive(false);
@@ -858,11 +1225,11 @@ function setButtonLabel(button: HTMLButtonElement, icon: string, label: string):
 }
 
 function renderStopAndUploadLoading(recording: RecordingStatus | null): void {
-  setButtonLabel(toggleBtn, getLoadingIcon(), "Stopping...");
+  setButtonLabel(toggleBtn, getLoadingIcon(), t("actions.stopping"));
   toggleBtn.className = "btn btn-stop is-loading";
   toggleBtn.disabled = true;
   toggleBtn.setAttribute("aria-busy", "true");
-  toggleBtn.setAttribute("title", "Stopping recording and preparing upload");
+  toggleBtn.setAttribute("title", t("actions.stoppingTitle"));
   recordingActions.classList.add("is-recording");
   recordingActions.classList.remove("has-unavailable-reason");
   removeRecordingBtn.classList.remove("hidden");
@@ -882,7 +1249,7 @@ function renderStopAndUploadLoading(recording: RecordingStatus | null): void {
 
 async function refreshActiveTabRecordingAvailability(): Promise<void> {
   const checkId = ++activeTabRecordingCheckId;
-  activeTabRecordingError = "Checking whether this tab can be recorded.";
+  activeTabRecordingError = t("messages.checkingTab");
   if (
     getActiveStorageConnection(latestPopupState).isConnected &&
     !latestPopupState?.recording?.isRecording
@@ -900,8 +1267,7 @@ async function refreshActiveTabRecordingAvailability(): Promise<void> {
     if (checkId !== activeTabRecordingCheckId) {
       return;
     }
-    activeTabRecordingError =
-      (error as Error).message || "Cannot inspect the active tab for recording.";
+    activeTabRecordingError = (error as Error).message || t("messages.cannotInspectTab");
   }
 
   if (getActiveStorageConnection(latestPopupState).isConnected) {
@@ -916,7 +1282,7 @@ function updateRecordingUI(recording: RecordingStatus | null): void {
       return;
     }
 
-    setButtonLabel(toggleBtn, getStopRecordingIcon(), "Stop & Upload");
+    setButtonLabel(toggleBtn, getStopRecordingIcon(), t("actions.stopUpload"));
     toggleBtn.className = "btn btn-stop";
     toggleBtn.removeAttribute("aria-busy");
     recordingActions.classList.add("is-recording");
@@ -944,7 +1310,7 @@ function updateRecordingUI(recording: RecordingStatus | null): void {
     return;
   }
 
-  setButtonLabel(toggleBtn, getStartRecordingIcon(), "Start Recording");
+  setButtonLabel(toggleBtn, getStartRecordingIcon(), t("actions.startRecording"));
   toggleBtn.className = "btn btn-start";
   toggleBtn.removeAttribute("aria-busy");
   recordingActions.classList.remove("is-recording");
@@ -993,6 +1359,7 @@ function handleStateUpdate(state: PopupState): void {
   renderPopupUploadHistory(state.uploadHistory, {
     animateLatestSuccess: isUploadHistoryAnimationReady,
   });
+  updateZipPasswordUi(Boolean(state.settings?.zipPasswordConfigured));
 }
 
 async function refreshPopupFromStorage(): Promise<void> {
@@ -1075,7 +1442,7 @@ toggleBtn.addEventListener("click", async () => {
   try {
     const currentState = await loadStateFromStorage();
     if (!getActiveStorageConnection(currentState).isConnected) {
-      showError("Connect cloud storage before recording.");
+      showError(t("storage.connectBeforeRecord"));
       return;
     }
 
@@ -1088,7 +1455,7 @@ toggleBtn.addEventListener("click", async () => {
         action: "STOP_RECORDING",
       })) as MessageResponse;
       if (!result.ok) {
-        showError(result.error || "Failed to stop recording");
+        showError(result.error || t("messages.stopFailed"));
       }
     } else {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -1103,7 +1470,7 @@ toggleBtn.addEventListener("click", async () => {
         tabId: tab.id,
       })) as MessageResponse;
       if (!result.ok) {
-        showError(result.error || "Failed to start recording");
+        showError(result.error || t("messages.startFailed"));
       }
     }
   } catch (error) {
@@ -1122,7 +1489,7 @@ toggleBtn.addEventListener("click", async () => {
 });
 
 function setDrawButtonActive(active: boolean): void {
-  const label = active ? "Drawing" : "Draw";
+  const label = active ? t("drawing.drawing") : t("drawing.draw");
   drawToggleBtn.classList.toggle("active", active);
   drawToggleBtn.innerHTML = `
     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -1171,7 +1538,7 @@ function renderDrawColorSwatches(): void {
     button.dataset.color = color;
     button.style.backgroundColor = color;
     button.title = color;
-    button.setAttribute("aria-label", `Pen color ${color}`);
+    button.setAttribute("aria-label", t("drawing.penColorAria", { color }));
     button.setAttribute("aria-pressed", "false");
     button.addEventListener("click", () => {
       void applyDrawColor(color);
@@ -1200,7 +1567,7 @@ async function applyDrawColor(color: string): Promise<void> {
     })) as { ok: boolean; color?: string; error?: string };
     if (!response?.ok) {
       setSelectedDrawColor(previous);
-      showError(response?.error || "Could not update drawing color.");
+      showError(response?.error || t("messages.drawColorFailed"));
       return;
     }
     if (response.color) {
@@ -1231,7 +1598,7 @@ async function syncDrawButtonState(): Promise<void> {
   }
 }
 
-renderDrawColorSwatches();
+// Color swatches are painted by applyTranslations() (and again on language change).
 
 drawColorInput.addEventListener("input", () => {
   const color = normalizeDrawColor(drawColorInput.value);
@@ -1254,7 +1621,7 @@ drawToggleBtn.addEventListener("click", async () => {
       action: "TOGGLE_DRAWING_OVERLAY",
     })) as { ok: boolean; active?: boolean; error?: string };
     if (!response?.ok) {
-      showError(response?.error || "Could not toggle drawing overlay.");
+      showError(response?.error || t("messages.drawToggleFailed"));
       return;
     }
     setDrawButtonActive(Boolean(response.active));
@@ -1274,10 +1641,10 @@ removeRecordingBtn.addEventListener("click", async () => {
       action: "REMOVE_RECORDING",
     })) as MessageResponse;
     if (!result.ok) {
-      showError(result.error || "Failed to remove recording");
+      showError(result.error || t("messages.removeFailed"));
       return;
     }
-    showToast("Recording removed.", 1800, { variant: "success" });
+    showToast(t("messages.removed"), 1800, { variant: "success" });
   } catch (error) {
     showError((error as Error).message);
   } finally {
@@ -1307,7 +1674,7 @@ storageProviderSelect?.addEventListener("change", async () => {
   }
   const provider = normalizePopupStorageProvider(raw);
   if (!connectedProviders.get(provider)) {
-    showError("Connect that cloud on the cloud page first.");
+    showError(t("storage.connectCloudFirst"));
     openStorageAuthPage(provider);
     return;
   }
@@ -1354,9 +1721,9 @@ sessionList.addEventListener("click", async (event) => {
     target.disabled = true;
     try {
       await navigator.clipboard.writeText(url);
-      showSuccess("Replay link copied.");
+      showSuccess(t("messages.copySuccess"));
     } catch (error) {
-      showError((error as Error).message || "Failed to copy replay link");
+      showError((error as Error).message || t("messages.copyFailed"));
     } finally {
       target.disabled = false;
     }
@@ -1389,7 +1756,7 @@ sessionList.addEventListener("click", async (event) => {
         data: { sessionId },
       })) as MessageResponse;
       if (!result.ok) {
-        showError(result.error || "Failed to upload session");
+        showError(result.error || t("messages.uploadFailed"));
         button.disabled = false;
       }
     } catch (error) {
@@ -1411,7 +1778,7 @@ sessionList.addEventListener("click", async (event) => {
         data: { sessionId },
       })) as MessageResponse;
       if (!result.ok) {
-        showError(result.error || "Failed to delete session");
+        showError(result.error || t("messages.deleteSessionFailed"));
         target.disabled = false;
       }
     } catch (error) {
@@ -1434,9 +1801,9 @@ popupUploadHistoryList.addEventListener("click", async (event) => {
       button.disabled = true;
       try {
         await navigator.clipboard.writeText(url);
-        showSuccess("Replay link copied.");
+        showSuccess(t("messages.copySuccess"));
       } catch (error) {
-        showError((error as Error).message || "Failed to copy replay link");
+        showError((error as Error).message || t("messages.copyFailed"));
       } finally {
         button.disabled = false;
       }
@@ -1455,7 +1822,7 @@ popupUploadHistoryList.addEventListener("click", async (event) => {
         if (!result.ok) {
           pendingDeletedHistoryIds.delete(historyEntryId);
           renderPopupUploadHistory(previousHistory);
-          showError(result.error || "Failed to delete history item");
+          showError(result.error || t("messages.deleteHistoryFailed"));
           return;
         }
 
@@ -1486,6 +1853,90 @@ uploadHistoryPageBtn.addEventListener("click", () => {
   chrome.tabs.create({
     url: chrome.runtime.getURL(HISTORY_PAGE_PATH),
   });
+});
+
+async function saveZipPassword(options: { clear?: boolean } = {}): Promise<void> {
+  const clear = Boolean(options.clear);
+  const password = zipPasswordInput.value;
+  if (!clear && !password.trim()) {
+    showToast(t("password.required"), 2400, { variant: "error" });
+    return;
+  }
+
+  zipPasswordSaveBtn.disabled = true;
+  zipPasswordCancelBtn.disabled = true;
+  zipPasswordSetBtn.disabled = true;
+  zipPasswordClearBtn.disabled = true;
+  const previousSaveLabel = zipPasswordSaveBtn.textContent;
+  zipPasswordSaveBtn.textContent = t("password.saving");
+
+  try {
+    const result = (await chrome.runtime.sendMessage({
+      action: "UPDATE_SETTINGS",
+      data: clear ? { clearZipPassword: true } : { zipPassword: password, clearZipPassword: false },
+    })) as MessageResponse & { settings?: PopupState["settings"] };
+
+    if (!result?.ok) {
+      showToast(result?.error || t("password.saveFailed"), 3200, { variant: "error" });
+      return;
+    }
+
+    zipPasswordInput.value = "";
+    const configured = clear ? false : Boolean(result.settings?.zipPasswordConfigured ?? true);
+    zipPasswordFormOpen = false;
+    updateZipPasswordUi(configured);
+    setZipPasswordFormOpen(false);
+    if (latestPopupState?.settings) {
+      latestPopupState = {
+        ...latestPopupState,
+        settings: {
+          ...latestPopupState.settings,
+          zipPasswordConfigured: configured,
+        },
+      };
+    }
+    showToast(clear ? t("password.clearSuccess") : t("password.saveSuccess"), 1800, {
+      variant: "success",
+    });
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    showToast(detail || t("password.saveFailed"), 3200, { variant: "error" });
+  } finally {
+    zipPasswordSaveBtn.disabled = false;
+    zipPasswordCancelBtn.disabled = false;
+    zipPasswordSetBtn.disabled = false;
+    zipPasswordSaveBtn.textContent = previousSaveLabel || t("password.save");
+    zipPasswordClearBtn.disabled = !zipPasswordConfigured;
+  }
+}
+
+zipPasswordSetBtn.addEventListener("click", () => {
+  setZipPasswordFormOpen(true);
+});
+
+zipPasswordCancelBtn.addEventListener("click", () => {
+  zipPasswordInput.value = "";
+  setZipPasswordFormOpen(false);
+});
+
+zipPasswordSaveBtn.addEventListener("click", () => {
+  void saveZipPassword();
+});
+
+zipPasswordClearBtn.addEventListener("click", () => {
+  void saveZipPassword({ clear: true });
+});
+
+zipPasswordInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    void saveZipPassword();
+  }
+  if (event.key === "Escape") {
+    event.preventDefault();
+    zipPasswordInput.value = "";
+    setZipPasswordFormOpen(false);
+  }
 });
 
 chrome.runtime.onMessage.addListener((message: { action?: string; state?: PopupState }) => {
@@ -1551,14 +2002,105 @@ async function initPopup(): Promise<void> {
   });
 }
 
-githubLinkBtn.addEventListener("click", () => {
-  openExternalUrl(GITHUB_REPO_URL);
+function setFeedbackPanelOpen(open: boolean): void {
+  feedbackPanel.classList.toggle("hidden", !open);
+  feedbackToggleBtn.setAttribute("aria-expanded", open ? "true" : "false");
+  feedbackWrap?.classList.toggle("is-open", open);
+  if (open) {
+    feedbackMessageInput.focus();
+  }
+}
+
+feedbackToggleBtn.addEventListener("click", (event) => {
+  event.stopPropagation();
+  const open = feedbackPanel.classList.contains("hidden");
+  setFeedbackPanelOpen(open);
 });
 
-contributeLinkBtn.addEventListener("click", () => {
-  openExternalUrl(GITHUB_ISSUES_URL);
+feedbackCancelBtn.addEventListener("click", () => {
+  setFeedbackPanelOpen(false);
 });
 
-attachThemeToggle("theme-toggle-btn", "theme-toggle-icon");
+document.addEventListener("click", (event) => {
+  if (feedbackPanel.classList.contains("hidden")) {
+    return;
+  }
+  const target = event.target as Node | null;
+  if (target && feedbackWrap?.contains(target)) {
+    return;
+  }
+  setFeedbackPanelOpen(false);
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !feedbackPanel.classList.contains("hidden")) {
+    setFeedbackPanelOpen(false);
+    feedbackToggleBtn.focus();
+  }
+});
+
+feedbackSubmitBtn.addEventListener("click", async () => {
+  const validated = validateFeedbackMessage(feedbackMessageInput.value);
+  if (!validated.ok) {
+    showToast(validated.error, 2800, { variant: "error" });
+    return;
+  }
+
+  feedbackSubmitBtn.disabled = true;
+  feedbackMessageInput.disabled = true;
+  feedbackCancelBtn.disabled = true;
+  feedbackSubmitBtn.textContent = t("feedback.sending");
+
+  try {
+    const result = (await chrome.runtime.sendMessage({
+      action: "SUBMIT_FEEDBACK",
+      data: {
+        message: validated.message,
+        diagnostics: buildFeedbackDiagnostics(),
+      },
+    })) as MessageResponse;
+
+    if (!result?.ok) {
+      const error = result?.error || t("feedback.failed");
+      showToast(error, 4200, { variant: "error" });
+      return;
+    }
+
+    feedbackMessageInput.value = "";
+    setFeedbackPanelOpen(false);
+    showToast(result.message || t("feedback.success"), 5000, {
+      variant: "success",
+      linkUrl: result.issueUrl,
+      linkLabel: result.issueUrl ? t("feedback.viewIssue") : undefined,
+    });
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    showToast(detail || t("feedback.failed"), 4200, { variant: "error" });
+  } finally {
+    feedbackSubmitBtn.disabled = false;
+    feedbackMessageInput.disabled = false;
+    feedbackCancelBtn.disabled = false;
+    feedbackSubmitBtn.textContent = t("feedback.submit");
+  }
+});
+
+themeToggleUi = attachThemeToggle("theme-toggle-btn", "theme-toggle-icon", {
+  getLabels: () => ({
+    system: t("theme.system"),
+    light: t("theme.light"),
+    dark: t("theme.dark"),
+    aria: t("theme.aria"),
+    titleSystem: t("theme.titleSystem"),
+    titleFixed: t("theme.titleFixed"),
+  }),
+});
+
+currentLanguage = attachLanguageSwitch({
+  onChange: (language) => {
+    currentLanguage = language;
+    applyTranslations();
+  },
+});
+applyTranslations();
 
 void initPopup();

@@ -22,8 +22,8 @@
   const PLAYER_BRAND_TITLE = "GN Tracing";
   // Must match the OAuth consent-screen app name for Google branding checks.
   const DEFAULT_PLAYER_TITLE = "GN Tracing";
-  const GITHUB_REPO_URL = "https://github.com/gnasdev/gn-tracing";
   const DEFAULT_LAYOUT_MODE = "horizontal";
+  const FEEDBACK_MESSAGE_MAX_LENGTH = 4000;
   const DEFAULT_SPLIT_PERCENT = {
     horizontal: 50,
     vertical: 55,
@@ -42,10 +42,943 @@
   const ZIP_ENCRYPTION_KDF = "PBKDF2-SHA-256";
   const ZIP_FLAG_ENCRYPTED = 0x0001;
   const PROGRESS_END_SNAP_MS = 1000;
+  /**
+   * Seek/duration contract (keep in sync with src/shared/player-timeline-seek.ts).
+   * After assets are in memory, Drive and Dropbox share this path — provider only
+   * affects download URLs, not timeline math.
+   */
+  const SEEK_COMMIT_TOLERANCE_MS = 350;
+  const SEEK_PENDING_TIMEOUT_MS = 2000;
+  const SEEK_MAX_RETRIES = 3;
   const ZIP_CRYPTO_HEADER_BYTES = 12;
   const DYNAMIC_ROUTE_EXTENSIONS = new Set([".html", ".htm", ".php", ".asp", ".aspx", ".jsp"]);
 
   console.log("[GN Tracing Player] Mode:", IS_EXTENSION ? "extension" : "standalone");
+
+  // ===== UI LANGUAGE (EN / VI) =====
+  // Shared storage key with extension surfaces so language preference carries over
+  // when the player opens in the same browser profile (extension) or standalone origin.
+  const UI_LANGUAGE_STORAGE_KEY = "gn_tracing_ui_language";
+  const TRANSLATIONS = {
+    en: {
+      "loading.message": "Loading recording...",
+      "loading.package": "Loading recording package...",
+      "password.title": "Protected Recording",
+      "password.lead": "This recording package requires a password before it can be replayed.",
+      "password.label": "Recording password",
+      "password.placeholder": "Enter password",
+      "password.unlock": "Unlock",
+      "password.unlocking": "Unlocking...",
+      "password.wrong": "Wrong password or corrupted recording package. Please try again.",
+      "error.title": "Invalid Recording Parameters",
+      "error.default": "The recording parameters are missing or invalid.",
+      "error.invalidParams":
+        "Invalid or missing recording parameters. Please provide videos and metadata file IDs.",
+      "error.providerUnsupported":
+        'Storage provider "{provider}" is not supported in this player build yet.',
+      "controls.playPause": "Play/Pause (Space)",
+      "controls.mute": "Mute",
+      "controls.layoutGroup": "Player layout controls",
+      "controls.layoutHorizontal": "Horizontal layout",
+      "controls.layoutVertical": "Vertical layout",
+      "controls.expandVideo": "Expand video in tab",
+      "controls.exitExpandedVideo": "Exit expanded video",
+      "controls.splitter": "Resize player and logs panels",
+      "tabs.report": "Report",
+      "tabs.activity": "Activity",
+      "tabs.console": "Console",
+      "tabs.network": "Network",
+      "tabs.storage": "Storage",
+      "tabs.elements": "Elements",
+      "report.openPage": "Open recorded page",
+      "report.screenshotAlt": "Recording screenshot",
+      "console.search": "Search console",
+      "network.search": "Search network",
+      "network.method": "Method",
+      "network.url": "URL",
+      "network.status": "Status",
+      "network.type": "Type",
+      "network.size": "Size",
+      "network.websocketConnections": "WebSocket Connections",
+      "network.summary": "{visible}/{total} requests",
+      "filters.all": "All",
+      "filters.log": "Log",
+      "filters.warn": "Warn",
+      "filters.error": "Error",
+      "filters.info": "Info",
+      "filters.debug": "Debug",
+      "filters.fetch": "Fetch/XHR",
+      "filters.js": "JS",
+      "filters.css": "CSS",
+      "filters.img": "Img",
+      "filters.doc": "Doc",
+      "filters.font": "Font",
+      "filters.media": "Media",
+      "filters.ws": "WS",
+      "filters.other": "Other",
+      "storage.aria": "Storage snapshot diff",
+      "storage.empty": "No entries captured.",
+      "elements.aria": "DOM snapshot tree",
+      "elements.snapshot": "Snapshot",
+      "elements.selectAria": "Select DOM snapshot",
+      "elements.empty": "No DOM nodes captured.",
+      "source.lineTruncated": "Line truncated in recording artifact.",
+      "theme.system": "System",
+      "theme.light": "Light",
+      "theme.dark": "Dark",
+      "theme.aria": "Theme: {label}",
+      "theme.titleSystem": "Theme: {label} (follows OS). Click to cycle System → Light → Dark.",
+      "theme.titleFixed": "Theme: {label}. Click to cycle System → Light → Dark.",
+      "lang.switchToVi": "Switch to Vietnamese",
+      "lang.switchToEn": "Switch to English",
+      "intro.eyebrow": "Browser debugging extension",
+      "intro.logoAlt": "GN Tracing logo",
+      "intro.lead":
+        "<strong>GN Tracing</strong> is a browser extension that helps developers and QA create shareable bug reports. When you start a recording, GN Tracing captures the selected tab’s video, console logs, network activity, and related debugging artifacts, then packages them for review.",
+      "intro.purposeTitle": "Purpose of GN Tracing",
+      "intro.purposeBody1":
+        "The purpose of <strong>GN Tracing</strong> is to record a user-selected browser tab on demand, build a replayable debugging package, store that package in the user’s own cloud storage (Google Drive or Dropbox after the user connects a provider), and open a hosted replay so teammates can inspect what happened without reproducing the bug locally.",
+      "intro.purposeBody2":
+        "GN Tracing does not run continuous background surveillance. Recording starts only when you click record in the extension popup and stops when you stop recording or close the tab.",
+      "feedback.button": "Feedback",
+      "feedback.sectionAria": "Send feedback",
+      "feedback.label": "Feedback",
+      "feedback.placeholder": "Describe a bug, idea, or question…",
+      "feedback.hint":
+        "Creates a public GitHub issue. Includes extension version, browser, OS, and locale only. Do not include secrets or passwords.",
+      "feedback.submit": "Submit",
+      "feedback.cancel": "Cancel",
+      "feedback.sending": "Sending…",
+      "feedback.success": "Feedback submitted.",
+      "feedback.failed": "Could not submit feedback.",
+      "feedback.viewIssue": "View issue",
+      "feedback.notConfigured": "Feedback service is not configured for this player.",
+      "intro.whatTitle": "What GN Tracing does",
+      "intro.what1": "Records tab video and optional tab audio",
+      "intro.what2": "Captures console, network, and WebSocket debugging data",
+      "intro.what3": "Applies client-side redaction based on your privacy settings",
+      "intro.what4": "Uploads a zip package to <strong>your</strong> cloud storage",
+      "intro.what5": "Generates a shareable replay link for the hosted player",
+      "intro.howTitle": "How to use GN Tracing",
+      "intro.how1": "Install the <strong>GN Tracing</strong> browser extension.",
+      "intro.how2":
+        "Choose cloud storage in Settings and connect it in the popup (OAuth with limited file access).",
+      "intro.how3": "Start recording the tab you want to debug, then stop when finished.",
+      "intro.how4": "Upload the package and open the generated replay URL.",
+      "intro.cloudTitle": "Cloud storage access",
+      "intro.cloud1": "Supports Google Drive and Dropbox (user-owned cloud only).",
+      "intro.cloud2":
+        "Google Drive uses the <code>drive.file</code> scope only—not full Drive access.",
+      "intro.cloud3": "Packages stay in your account; SharePoint/site drives are not supported.",
+      "intro.cloud4":
+        "Replay files are link-readable so shared URLs work; optional zip passwords protect contents.",
+      "intro.footnote":
+        "Recording starts only when you choose to record. Packages stay in your cloud storage.",
+      "introStandalone.eyebrow": "Session Replay Player",
+      "introStandalone.lead":
+        "Replay a recorded browser session with synced video, console logs, network traffic, and WebSocket activity.",
+      "introStandalone.howTitle": "How to use",
+      "introStandalone.how1": "Install the GN Tracing extension and start recording a tab.",
+      "introStandalone.how2":
+        "Upload the capture to your connected cloud storage from the extension popup.",
+      "introStandalone.how3":
+        "Open the generated replay link to load the player with recording params.",
+      "introStandalone.paramsTitle": "Expected params",
+      "introStandalone.params1": "<code>videos</code> and <code>metadata</code> are required.",
+      "introStandalone.params2":
+        "<code>console</code>, <code>network</code>, and <code>websocket</code> are optional.",
+      "introStandalone.params3": "Links are generated automatically after a successful upload.",
+      "introStandalone.footnote":
+        "Contributions are welcome if you want to help improve replay quality, debugging ergonomics, or sharing flow.",
+      "report.recordedSession": "Recorded session",
+      "report.privacyTitle": "Privacy summary",
+      "report.chip.duration": "Duration {value}",
+      "report.chip.created": "Created {value}",
+      "report.chip.severity": "Severity {value}",
+      "report.chip.reference": "Reference {value}",
+      "report.chip.viewport": "Viewport {value}",
+      "report.chip.language": "Language {value}",
+      "report.chip.timezone": "Timezone {value}",
+      "report.privacy.policy": "Policy v{version} · {profile}",
+      "report.privacy.evidence": "Evidence: {list}",
+      "report.privacy.redactions": "{count} redaction(s) applied",
+      "report.privacy.limit": "Limit: {item}",
+      "report.privacy.unknownProfile": "unknown",
+      "activity.event": "Event",
+      "activity.navigation": "Navigation {detail}",
+      "activity.click": "Click {detail}",
+      "activity.contextmenu": "Right click {detail}",
+      "activity.scroll": "Scroll {direction} {detail}",
+      "activity.scrollUp": "up",
+      "activity.scrollDown": "down",
+      "activity.focus": "Focus {detail}",
+      "activity.submit": "Submit {detail}",
+      "activity.key": "Key {detail}",
+      "detail.time": "Time",
+      "detail.level": "Level",
+      "detail.arguments": "Arguments",
+      "detail.message": "Message",
+      "detail.source": "Source",
+      "detail.sourceMap": "Source Map",
+      "detail.sourcePreview": "Source Preview",
+      "detail.stackTrace": "Stack Trace",
+      "detail.url": "URL",
+      "detail.requestHeaders": "Request Headers",
+      "detail.requestBody": "Request Body",
+      "detail.responseHeaders": "Response Headers",
+      "detail.responseBody": "Response Body",
+      "detail.responsePreview": "Response Preview",
+      "detail.redirectChain": "Redirect Chain",
+      "detail.timing": "Timing",
+      "detail.initiator": "Initiator",
+      "detail.error": "Error",
+      "detail.frames": "Frames ({count})",
+      "detail.none": "(none)",
+      "detail.binaryData": "(binary data)",
+      "detail.truncated": "...(truncated)",
+      "detail.anonymous": "(anonymous)",
+      "detail.toggleDetails": "Toggle details",
+      "detail.responseTabsAria": "Response detail tabs",
+      "detail.hideGrayFrames": "Hide gray frames ({count})",
+      "detail.showGrayFrames": "Show gray frames ({count})",
+      "detail.showPreview": "Show preview",
+      "detail.hidePreview": "Hide preview",
+      "detail.copyCurl": "Copy cURL",
+      "detail.copyItem": "Copy Item",
+      "detail.copyResponse": "Copy Response",
+      "detail.copyCurlResponse": "Copy cURL + Response",
+      "detail.copied": "Copied!",
+      "loading.unlocked": "Loading unlocked recording...",
+      "password.enterRequired": "Enter the recording password.",
+      "password.unlockFailed": "Failed to unlock recording package.",
+      "error.loadFailed": "Failed to load recording",
+      "network.ws.frames": "{count} frames",
+      "network.ws.moreFrames": "... {count} more frames",
+      "network.ws.open": "Open",
+      "network.ws.closed": "Closed",
+      "storage.cookies": "Cookies",
+      "storage.status.added": "added",
+      "storage.status.removed": "removed",
+      "storage.status.changed": "changed",
+      "storage.status.unchanged": "unchanged",
+      "elements.masked": "masked",
+      "elements.maskedTitle": "Content masked for privacy",
+      "elements.snapshotFallback": "snapshot {index}",
+      "sourceMap.pending-frame-id": "Source map unavailable: waiting for frame id",
+      "sourceMap.missing-frame-id": "Source map unavailable: missing frame id",
+      "sourceMap.unsupported-target": "Source map unavailable: unsupported target",
+      "sourceMap.unsupported-url": "Source map unavailable: unsupported URL",
+      "sourceMap.too-large": "Source map unavailable: file too large",
+      "sourceMap.network-failed": "Source map unavailable: network load failed",
+      "sourceMap.http-error": "Source map unavailable: HTTP {status}",
+      "sourceMap.stream-read-failed": "Source map unavailable: stream read failed",
+      "sourceMap.html-fallback": "Source map response was HTML, not JSON",
+      "sourceMap.non-json-response": "Source map response was not JSON",
+      "sourceMap.json-parse-failed": "Source map JSON could not be parsed",
+      "sourceMap.unsupported-map": "Source map format is not supported",
+      "sourceMap.no-map-for-generated-url": "Source map unavailable for this generated URL",
+      "sourceMap.no-generated-line": "Source map loaded but this generated line was not mapped",
+      "sourceMap.no-segment-for-column":
+        "Source map loaded but no segment matched this generated column",
+      "sourceMap.no-original-segment":
+        "Source map loaded but matching segment had no original location",
+      "sourceMap.loadedNoMatch":
+        "Source map loaded, but this frame did not match a mapped segment.",
+      "sourceMap.unavailable": "Source map unavailable: {reason}",
+    },
+    vi: {
+      "loading.message": "Đang tải bản ghi...",
+      "loading.package": "Đang tải gói bản ghi...",
+      "password.title": "Bản ghi được bảo vệ",
+      "password.lead": "Gói bản ghi này cần mật khẩu trước khi phát lại.",
+      "password.label": "Mật khẩu bản ghi",
+      "password.placeholder": "Nhập mật khẩu",
+      "password.unlock": "Mở khóa",
+      "password.unlocking": "Đang mở khóa...",
+      "password.wrong": "Sai mật khẩu hoặc gói bản ghi bị hỏng. Hãy thử lại.",
+      "error.title": "Tham số bản ghi không hợp lệ",
+      "error.default": "Tham số bản ghi bị thiếu hoặc không hợp lệ.",
+      "error.invalidParams":
+        "Tham số bản ghi thiếu hoặc không hợp lệ. Cần cung cấp videos và metadata file ID.",
+      "error.providerUnsupported":
+        'Nhà cung cấp lưu trữ "{provider}" chưa được hỗ trợ trong bản player này.',
+      "controls.playPause": "Phát/Tạm dừng (Space)",
+      "controls.mute": "Tắt tiếng",
+      "controls.layoutGroup": "Điều khiển bố cục player",
+      "controls.layoutHorizontal": "Bố cục ngang",
+      "controls.layoutVertical": "Bố cục dọc",
+      "controls.expandVideo": "Phóng to video trong tab",
+      "controls.exitExpandedVideo": "Thoát chế độ phóng to video",
+      "controls.splitter": "Đổi kích thước panel player và logs",
+      "tabs.report": "Báo cáo",
+      "tabs.activity": "Hoạt động",
+      "tabs.console": "Console",
+      "tabs.network": "Network",
+      "tabs.storage": "Storage",
+      "tabs.elements": "Elements",
+      "report.openPage": "Mở trang đã ghi",
+      "report.screenshotAlt": "Ảnh chụp bản ghi",
+      "console.search": "Tìm trong console",
+      "network.search": "Tìm trong network",
+      "network.method": "Method",
+      "network.url": "URL",
+      "network.status": "Status",
+      "network.type": "Type",
+      "network.size": "Size",
+      "network.websocketConnections": "Kết nối WebSocket",
+      "network.summary": "{visible}/{total} request",
+      "filters.all": "Tất cả",
+      "filters.log": "Log",
+      "filters.warn": "Warn",
+      "filters.error": "Error",
+      "filters.info": "Info",
+      "filters.debug": "Debug",
+      "filters.fetch": "Fetch/XHR",
+      "filters.js": "JS",
+      "filters.css": "CSS",
+      "filters.img": "Img",
+      "filters.doc": "Doc",
+      "filters.font": "Font",
+      "filters.media": "Media",
+      "filters.ws": "WS",
+      "filters.other": "Khác",
+      "storage.aria": "Diff snapshot storage",
+      "storage.empty": "Không có entry nào được capture.",
+      "elements.aria": "Cây snapshot DOM",
+      "elements.snapshot": "Snapshot",
+      "elements.selectAria": "Chọn snapshot DOM",
+      "elements.empty": "Không có node DOM nào được capture.",
+      "source.lineTruncated": "Dòng bị cắt trong artifact bản ghi.",
+      "theme.system": "Hệ thống",
+      "theme.light": "Sáng",
+      "theme.dark": "Tối",
+      "theme.aria": "Giao diện: {label}",
+      "theme.titleSystem": "Giao diện: {label} (theo OS). Bấm để chuyển Hệ thống → Sáng → Tối.",
+      "theme.titleFixed": "Giao diện: {label}. Bấm để chuyển Hệ thống → Sáng → Tối.",
+      "lang.switchToVi": "Chuyển sang tiếng Việt",
+      "lang.switchToEn": "Chuyển sang English",
+      "intro.eyebrow": "Tiện ích debug trình duyệt",
+      "intro.logoAlt": "Logo GN Tracing",
+      "intro.lead":
+        "<strong>GN Tracing</strong> là tiện ích trình duyệt giúp developer và QA tạo báo cáo lỗi có thể chia sẻ. Khi bắt đầu ghi, GN Tracing capture video tab đã chọn, console log, network và các artifact debug liên quan, rồi đóng gói để review.",
+      "intro.purposeTitle": "Mục đích của GN Tracing",
+      "intro.purposeBody1":
+        "Mục đích của <strong>GN Tracing</strong> là ghi tab trình duyệt do người dùng chọn theo yêu cầu, tạo gói debug có thể phát lại, lưu gói đó trên cloud của chính người dùng (Google Drive hoặc Dropbox sau khi kết nối), và mở replay hosted để đồng nghiệp xem lại mà không cần tái hiện lỗi cục bộ.",
+      "intro.purposeBody2":
+        "GN Tracing không giám sát nền liên tục. Chỉ ghi khi bạn bấm record trong popup extension và dừng khi bạn stop hoặc đóng tab.",
+      "feedback.button": "Góp ý",
+      "feedback.sectionAria": "Gửi góp ý",
+      "feedback.label": "Góp ý",
+      "feedback.placeholder": "Mô tả lỗi, ý tưởng hoặc câu hỏi…",
+      "feedback.hint":
+        "Tạo issue GitHub công khai. Chỉ kèm version extension, browser, OS và locale. Không gửi mật khẩu hay secret.",
+      "feedback.submit": "Gửi",
+      "feedback.cancel": "Hủy",
+      "feedback.sending": "Đang gửi…",
+      "feedback.success": "Đã gửi góp ý.",
+      "feedback.failed": "Không gửi được góp ý.",
+      "feedback.viewIssue": "Xem issue",
+      "feedback.notConfigured": "Dịch vụ góp ý chưa được cấu hình cho player này.",
+      "intro.whatTitle": "GN Tracing làm gì",
+      "intro.what1": "Ghi video tab và tùy chọn audio tab",
+      "intro.what2": "Capture console, network và dữ liệu WebSocket",
+      "intro.what3": "Áp dụng redaction phía client theo cài đặt privacy",
+      "intro.what4": "Upload gói zip lên cloud storage <strong>của bạn</strong>",
+      "intro.what5": "Tạo link replay chia sẻ cho player hosted",
+      "intro.howTitle": "Cách dùng GN Tracing",
+      "intro.how1": "Cài <strong>GN Tracing</strong> browser extension.",
+      "intro.how2":
+        "Chọn cloud storage trong Settings và kết nối trong popup (OAuth với quyền file hạn chế).",
+      "intro.how3": "Bắt đầu ghi tab cần debug, rồi dừng khi xong.",
+      "intro.how4": "Upload gói và mở URL replay được tạo.",
+      "intro.cloudTitle": "Truy cập cloud storage",
+      "intro.cloud1": "Hỗ trợ Google Drive và Dropbox (chỉ cloud của user).",
+      "intro.cloud2":
+        "Google Drive chỉ dùng scope <code>drive.file</code>—không truy cập full Drive.",
+      "intro.cloud3": "Gói nằm trong tài khoản của bạn; không hỗ trợ SharePoint/site drive.",
+      "intro.cloud4":
+        "File replay đọc được qua link để URL chia sẻ hoạt động; mật khẩu zip tùy chọn bảo vệ nội dung.",
+      "intro.footnote": "Chỉ ghi khi bạn chủ động bấm ghi. Package nằm trên cloud storage của bạn.",
+      "introStandalone.eyebrow": "Player phát lại phiên",
+      "introStandalone.lead":
+        "Phát lại phiên trình duyệt đã ghi với video, console, network và WebSocket đồng bộ.",
+      "introStandalone.howTitle": "Cách dùng",
+      "introStandalone.how1": "Cài extension GN Tracing và bắt đầu ghi một tab.",
+      "introStandalone.how2": "Upload bản ghi lên cloud đã kết nối từ popup extension.",
+      "introStandalone.how3": "Mở link replay được tạo để load player với tham số bản ghi.",
+      "introStandalone.paramsTitle": "Tham số mong đợi",
+      "introStandalone.params1": "<code>videos</code> và <code>metadata</code> là bắt buộc.",
+      "introStandalone.params2":
+        "<code>console</code>, <code>network</code> và <code>websocket</code> là tùy chọn.",
+      "introStandalone.params3": "Link được tạo tự động sau khi upload thành công.",
+      "introStandalone.footnote":
+        "Hoan nghênh đóng góp để cải thiện chất lượng replay, trải nghiệm debug hoặc luồng chia sẻ.",
+      "report.recordedSession": "Phiên đã ghi",
+      "report.privacyTitle": "Tóm tắt privacy",
+      "report.chip.duration": "Thời lượng {value}",
+      "report.chip.created": "Tạo lúc {value}",
+      "report.chip.severity": "Mức độ {value}",
+      "report.chip.reference": "Tham chiếu {value}",
+      "report.chip.viewport": "Viewport {value}",
+      "report.chip.language": "Ngôn ngữ {value}",
+      "report.chip.timezone": "Múi giờ {value}",
+      "report.privacy.policy": "Chính sách v{version} · {profile}",
+      "report.privacy.evidence": "Bằng chứng: {list}",
+      "report.privacy.redactions": "{count} redaction đã áp dụng",
+      "report.privacy.limit": "Giới hạn: {item}",
+      "report.privacy.unknownProfile": "không rõ",
+      "activity.event": "Sự kiện",
+      "activity.navigation": "Điều hướng {detail}",
+      "activity.click": "Nhấp {detail}",
+      "activity.contextmenu": "Nhấp phải {detail}",
+      "activity.scroll": "Cuộn {direction} {detail}",
+      "activity.scrollUp": "lên",
+      "activity.scrollDown": "xuống",
+      "activity.focus": "Focus {detail}",
+      "activity.submit": "Gửi form {detail}",
+      "activity.key": "Phím {detail}",
+      "detail.time": "Thời gian",
+      "detail.level": "Mức",
+      "detail.arguments": "Tham số",
+      "detail.message": "Nội dung",
+      "detail.source": "Nguồn",
+      "detail.sourceMap": "Source Map",
+      "detail.sourcePreview": "Xem trước source",
+      "detail.stackTrace": "Stack Trace",
+      "detail.url": "URL",
+      "detail.requestHeaders": "Header request",
+      "detail.requestBody": "Body request",
+      "detail.responseHeaders": "Header response",
+      "detail.responseBody": "Body response",
+      "detail.responsePreview": "Xem trước response",
+      "detail.redirectChain": "Chuỗi redirect",
+      "detail.timing": "Timing",
+      "detail.initiator": "Initiator",
+      "detail.error": "Lỗi",
+      "detail.frames": "Frame ({count})",
+      "detail.none": "(không có)",
+      "detail.binaryData": "(dữ liệu nhị phân)",
+      "detail.truncated": "...(đã cắt)",
+      "detail.anonymous": "(ẩn danh)",
+      "detail.toggleDetails": "Mở/đóng chi tiết",
+      "detail.responseTabsAria": "Tab chi tiết response",
+      "detail.hideGrayFrames": "Ẩn frame xám ({count})",
+      "detail.showGrayFrames": "Hiện frame xám ({count})",
+      "detail.showPreview": "Hiện preview",
+      "detail.hidePreview": "Ẩn preview",
+      "detail.copyCurl": "Sao chép cURL",
+      "detail.copyItem": "Sao chép mục",
+      "detail.copyResponse": "Sao chép Response",
+      "detail.copyCurlResponse": "Sao chép cURL + Response",
+      "detail.copied": "Đã sao chép!",
+      "loading.unlocked": "Đang tải bản ghi đã mở khóa...",
+      "password.enterRequired": "Nhập mật khẩu bản ghi.",
+      "password.unlockFailed": "Không mở khóa được gói bản ghi.",
+      "error.loadFailed": "Không tải được bản ghi",
+      "network.ws.frames": "{count} frame",
+      "network.ws.moreFrames": "... còn {count} frame",
+      "network.ws.open": "Mở",
+      "network.ws.closed": "Đóng",
+      "storage.cookies": "Cookie",
+      "storage.status.added": "thêm",
+      "storage.status.removed": "xóa",
+      "storage.status.changed": "đổi",
+      "storage.status.unchanged": "giữ",
+      "elements.masked": "đã che",
+      "elements.maskedTitle": "Nội dung đã che vì privacy",
+      "elements.snapshotFallback": "snapshot {index}",
+      "sourceMap.pending-frame-id": "Không có source map: đang chờ frame id",
+      "sourceMap.missing-frame-id": "Không có source map: thiếu frame id",
+      "sourceMap.unsupported-target": "Không có source map: target không hỗ trợ",
+      "sourceMap.unsupported-url": "Không có source map: URL không hỗ trợ",
+      "sourceMap.too-large": "Không có source map: file quá lớn",
+      "sourceMap.network-failed": "Không có source map: tải network thất bại",
+      "sourceMap.http-error": "Không có source map: HTTP {status}",
+      "sourceMap.stream-read-failed": "Không có source map: đọc stream thất bại",
+      "sourceMap.html-fallback": "Phản hồi source map là HTML, không phải JSON",
+      "sourceMap.non-json-response": "Phản hồi source map không phải JSON",
+      "sourceMap.json-parse-failed": "Không parse được JSON source map",
+      "sourceMap.unsupported-map": "Định dạng source map không được hỗ trợ",
+      "sourceMap.no-map-for-generated-url": "Không có source map cho URL generated này",
+      "sourceMap.no-generated-line": "Đã tải source map nhưng dòng generated này không được map",
+      "sourceMap.no-segment-for-column":
+        "Đã tải source map nhưng không có segment khớp cột generated",
+      "sourceMap.no-original-segment":
+        "Đã tải source map nhưng segment khớp không có vị trí original",
+      "sourceMap.loadedNoMatch": "Đã tải source map nhưng frame này không khớp segment đã map.",
+      "sourceMap.unavailable": "Không có source map: {reason}",
+    },
+  };
+
+  // Exposed for automated catalog/parity checks (tests import the shipped player path).
+  if (typeof window !== "undefined") {
+    window.__GN_TRACING_PLAYER_I18N__ = {
+      TRANSLATIONS,
+      t: (key, replacements = {}, language = currentLanguage) => {
+        const table = TRANSLATIONS[language] || TRANSLATIONS.en;
+        const template = table[key] || TRANSLATIONS.en[key] || key;
+        return Object.entries(replacements).reduce(
+          (text, [name, value]) => text.replaceAll(`{${name}}`, value),
+          template,
+        );
+      },
+    };
+  }
+
+  let currentLanguage = "en";
+
+  function isUiLanguage(value) {
+    return value === "en" || value === "vi";
+  }
+
+  function detectBrowserLanguage() {
+    try {
+      return navigator.language.toLowerCase().startsWith("vi") ? "vi" : "en";
+    } catch {
+      return "en";
+    }
+  }
+
+  function getUiLanguage() {
+    try {
+      const stored = window.localStorage.getItem(UI_LANGUAGE_STORAGE_KEY);
+      if (isUiLanguage(stored)) {
+        return stored;
+      }
+    } catch {
+      // ignore storage errors
+    }
+    return detectBrowserLanguage();
+  }
+
+  function setUiLanguage(language) {
+    currentLanguage = language;
+    try {
+      window.localStorage.setItem(UI_LANGUAGE_STORAGE_KEY, language);
+    } catch {
+      // ignore storage errors
+    }
+  }
+
+  function t(key, replacements = {}) {
+    const table = TRANSLATIONS[currentLanguage] || TRANSLATIONS.en;
+    const template = table[key] || TRANSLATIONS.en[key] || key;
+    return Object.entries(replacements).reduce(
+      (text, [name, value]) => text.replaceAll(`{${name}}`, value),
+      template,
+    );
+  }
+
+  function syncLanguageToggleButton(button) {
+    if (!button) return;
+    const next = currentLanguage === "en" ? "vi" : "en";
+    button.textContent = next.toUpperCase();
+    button.dataset.language = currentLanguage;
+    const label = currentLanguage === "en" ? t("lang.switchToVi") : t("lang.switchToEn");
+    button.setAttribute("aria-label", label);
+    button.title = label;
+  }
+
+  function applyStaticTranslations() {
+    document.documentElement.lang = currentLanguage;
+
+    document.querySelectorAll("[data-i18n]").forEach((element) => {
+      const key = element.getAttribute("data-i18n");
+      if (!key) return;
+      // loading-message may be owned by dynamic loading progress; still safe to set default.
+      element.textContent = t(key);
+    });
+
+    document.querySelectorAll("[data-i18n-html]").forEach((element) => {
+      const key = element.getAttribute("data-i18n-html");
+      if (!key) return;
+      element.innerHTML = t(key);
+    });
+
+    document.querySelectorAll("[data-i18n-aria]").forEach((element) => {
+      const key = element.getAttribute("data-i18n-aria");
+      if (key) element.setAttribute("aria-label", t(key));
+    });
+
+    document.querySelectorAll("[data-i18n-title]").forEach((element) => {
+      const key = element.getAttribute("data-i18n-title");
+      if (key) element.setAttribute("title", t(key));
+    });
+
+    document.querySelectorAll("[data-i18n-placeholder]").forEach((element) => {
+      const key = element.getAttribute("data-i18n-placeholder");
+      if (key) element.setAttribute("placeholder", t(key));
+    });
+
+    document.querySelectorAll("[data-i18n-alt]").forEach((element) => {
+      const key = element.getAttribute("data-i18n-alt");
+      if (key) element.setAttribute("alt", t(key));
+    });
+
+    syncLanguageToggleButton(document.getElementById("lang-toggle-btn"));
+    syncLanguageToggleButton(document.getElementById("lang-toggle-btn-global"));
+
+    // Keep password submit label in sync unless a unlock is in flight.
+    if (elements.passwordSubmit && !passwordPromptBusy) {
+      elements.passwordSubmit.textContent = t("password.unlock");
+    }
+
+    // Keep the active loading message localized when it is still a default key string.
+    if (
+      loadingProgressMessage === TRANSLATIONS.en["loading.message"] ||
+      loadingProgressMessage === TRANSLATIONS.vi["loading.message"]
+    ) {
+      loadingProgressMessage = t("loading.message");
+      if (elements.loadingMessage) {
+        elements.loadingMessage.textContent = loadingProgressMessage;
+      }
+    } else if (
+      loadingProgressMessage === TRANSLATIONS.en["loading.package"] ||
+      loadingProgressMessage === TRANSLATIONS.vi["loading.package"]
+    ) {
+      loadingProgressMessage = t("loading.package");
+      if (elements.loadingMessage) {
+        elements.loadingMessage.textContent = loadingProgressMessage;
+      }
+    }
+  }
+
+  function attachLanguageSwitch() {
+    currentLanguage = getUiLanguage();
+    const buttons = [
+      document.getElementById("lang-toggle-btn"),
+      document.getElementById("lang-toggle-btn-global"),
+    ].filter(Boolean);
+
+    const onToggle = () => {
+      const next = currentLanguage === "en" ? "vi" : "en";
+      setUiLanguage(next);
+      applyStaticTranslations();
+      refreshDynamicLanguageUi();
+    };
+
+    for (const button of buttons) {
+      button.addEventListener("click", onToggle);
+    }
+    applyStaticTranslations();
+  }
+
+  function parseOsFromUserAgent(userAgent) {
+    const ua = userAgent || "";
+    if (/CrOS/i.test(ua)) return "Chrome OS";
+    if (/Android/i.test(ua)) return "Android";
+    if (/iPhone|iPad|iPod/i.test(ua)) return "iOS";
+    if (/Mac OS X|Macintosh/i.test(ua)) return "macOS";
+    if (/Windows/i.test(ua)) return "Windows";
+    if (/Linux/i.test(ua)) return "Linux";
+    return "Unknown";
+  }
+
+  function parseBrowserFromUserAgent(userAgent) {
+    const matchers = [
+      ["Edge", /Edg\/([0-9.]+)/],
+      ["Chrome", /Chrome\/([0-9.]+)/],
+      ["Firefox", /Firefox\/([0-9.]+)/],
+      ["Safari", /Version\/([0-9.]+).*Safari/],
+    ];
+    for (const [browserName, pattern] of matchers) {
+      const match = userAgent.match(pattern);
+      if (match?.[1]) {
+        return { browserName, browserVersion: match[1] };
+      }
+    }
+    return {};
+  }
+
+  function buildPlayerFeedbackDiagnostics() {
+    const userAgent = navigator.userAgent || "";
+    let extensionVersion = "";
+    try {
+      if (IS_EXTENSION && chrome.runtime?.getManifest) {
+        extensionVersion = chrome.runtime.getManifest().version || "";
+      }
+    } catch {
+      extensionVersion = "";
+    }
+    return {
+      extensionVersion: extensionVersion || (IS_STANDALONE ? "standalone-player" : "unknown"),
+      ...parseBrowserFromUserAgent(userAgent),
+      os: parseOsFromUserAgent(userAgent),
+      locale: navigator.language || undefined,
+    };
+  }
+
+  function canSubmitFeedbackViaExtension() {
+    try {
+      return (
+        typeof chrome !== "undefined" &&
+        Boolean(chrome.runtime?.id) &&
+        typeof chrome.runtime.sendMessage === "function"
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  function resolvePlayerFeedbackProxyUrl() {
+    const fromConfig =
+      typeof CONFIG.feedbackProxyUrl === "string" ? CONFIG.feedbackProxyUrl.trim() : "";
+    if (fromConfig) {
+      return fromConfig;
+    }
+    // Local standalone / vite defaults when the multi-issuer Worker is on 8787.
+    if (
+      typeof location !== "undefined" &&
+      (location.hostname === "localhost" || location.hostname === "127.0.0.1")
+    ) {
+      return "http://localhost:8787/feedback";
+    }
+    return "";
+  }
+
+  async function submitPlayerFeedback(message) {
+    const diagnostics = buildPlayerFeedbackDiagnostics();
+
+    if (canSubmitFeedbackViaExtension()) {
+      return (
+        (await chrome.runtime.sendMessage({
+          action: "SUBMIT_FEEDBACK",
+          data: { message, diagnostics },
+        })) || { ok: false, error: t("feedback.failed") }
+      );
+    }
+
+    const proxyUrl = resolvePlayerFeedbackProxyUrl();
+    if (!proxyUrl) {
+      return { ok: false, error: t("feedback.notConfigured") };
+    }
+
+    let response;
+    try {
+      response = await fetch(proxyUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message, diagnostics }),
+      });
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      return { ok: false, error: detail || t("feedback.failed") };
+    }
+
+    let body = {};
+    try {
+      body = await response.json();
+    } catch {
+      // Non-JSON body — fall through to status-based message.
+    }
+
+    if (!response.ok || body.ok === false) {
+      const detail =
+        body.error_description ||
+        body.error ||
+        (response.status === 429
+          ? t("feedback.failed")
+          : `Feedback service returned HTTP ${response.status}.`);
+      return { ok: false, error: detail };
+    }
+
+    return {
+      ok: true,
+      issueUrl: typeof body.issueUrl === "string" ? body.issueUrl : undefined,
+      message: t("feedback.success"),
+    };
+  }
+
+  function attachFeedbackUi() {
+    const wrap = document.getElementById("player-feedback-wrap");
+    const panel = document.getElementById("player-feedback-panel");
+    const messageInput = document.getElementById("player-feedback-message");
+    const submitBtn = document.getElementById("player-feedback-submit");
+    const cancelBtn = document.getElementById("player-feedback-cancel");
+    const statusEl = document.getElementById("player-feedback-status");
+    const triggers = [
+      document.getElementById("player-feedback-btn"),
+      document.getElementById("player-feedback-btn-header"),
+    ].filter(Boolean);
+
+    if (!wrap || !panel || !messageInput || !submitBtn || !cancelBtn || triggers.length === 0) {
+      return;
+    }
+
+    let open = false;
+    let submitting = false;
+
+    const setStatus = (text, kind = "info") => {
+      if (!statusEl) return;
+      if (!text) {
+        statusEl.textContent = "";
+        statusEl.classList.add("hidden");
+        statusEl.classList.remove("is-error", "is-success");
+        return;
+      }
+      statusEl.textContent = text;
+      statusEl.classList.remove("hidden", "is-error", "is-success");
+      if (kind === "error") statusEl.classList.add("is-error");
+      if (kind === "success") statusEl.classList.add("is-success");
+    };
+
+    const setOpen = (next) => {
+      open = next;
+      panel.classList.toggle("hidden", !next);
+      wrap.classList.toggle("is-open", next);
+      for (const trigger of triggers) {
+        trigger.setAttribute("aria-expanded", next ? "true" : "false");
+      }
+      if (next) {
+        setStatus("");
+        messageInput.focus();
+      }
+    };
+
+    const toggleOpen = (event) => {
+      event.stopPropagation();
+      setOpen(!open);
+    };
+
+    for (const trigger of triggers) {
+      trigger.addEventListener("click", toggleOpen);
+    }
+
+    cancelBtn.addEventListener("click", () => setOpen(false));
+
+    document.addEventListener("click", (event) => {
+      if (!open) return;
+      const target = event.target;
+      if (
+        target instanceof Node &&
+        (wrap.contains(target) ||
+          triggers.some((trigger) => trigger.contains(target) || trigger === target))
+      ) {
+        return;
+      }
+      setOpen(false);
+    });
+
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && open) {
+        setOpen(false);
+        triggers[0]?.focus();
+      }
+    });
+
+    submitBtn.addEventListener("click", async () => {
+      if (submitting) return;
+      const message = String(messageInput.value || "").trim();
+      if (!message) {
+        setStatus(t("feedback.failed"), "error");
+        return;
+      }
+      if (message.length > FEEDBACK_MESSAGE_MAX_LENGTH) {
+        setStatus(t("feedback.failed"), "error");
+        return;
+      }
+
+      submitting = true;
+      submitBtn.disabled = true;
+      messageInput.disabled = true;
+      cancelBtn.disabled = true;
+      submitBtn.textContent = t("feedback.sending");
+      setStatus("");
+
+      try {
+        const result = await submitPlayerFeedback(message);
+
+        if (!result?.ok) {
+          setStatus(result?.error || t("feedback.failed"), "error");
+          return;
+        }
+
+        messageInput.value = "";
+        setOpen(false);
+        setStatus(result.message || t("feedback.success"), "success");
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        setStatus(detail || t("feedback.failed"), "error");
+      } finally {
+        submitting = false;
+        submitBtn.disabled = false;
+        messageInput.disabled = false;
+        cancelBtn.disabled = false;
+        submitBtn.textContent = t("feedback.submit");
+      }
+    });
+  }
+
+  // Re-render open dynamic panels after a language switch (static attrs alone are not enough).
+  function refreshDynamicLanguageUi() {
+    try {
+      if (typeof updateThemeToggleLabels === "function") {
+        updateThemeToggleLabels();
+      }
+
+      if (
+        loadingProgressMessage === TRANSLATIONS.en["loading.message"] ||
+        loadingProgressMessage === TRANSLATIONS.vi["loading.message"]
+      ) {
+        loadingProgressMessage = t("loading.message");
+      } else if (
+        loadingProgressMessage === TRANSLATIONS.en["loading.package"] ||
+        loadingProgressMessage === TRANSLATIONS.vi["loading.package"]
+      ) {
+        loadingProgressMessage = t("loading.package");
+      } else if (
+        loadingProgressMessage === TRANSLATIONS.en["loading.unlocked"] ||
+        loadingProgressMessage === TRANSLATIONS.vi["loading.unlocked"]
+      ) {
+        loadingProgressMessage = t("loading.unlocked");
+      }
+      if (typeof renderLoadingProgress === "function") {
+        renderLoadingProgress();
+      }
+      if (typeof updateFullscreenButton === "function" && elements.videoFullscreenBtn) {
+        updateFullscreenButton();
+      }
+
+      if (typeof renderReportPanel === "function" && (report || privacySummary || screenshotUrl)) {
+        renderReportPanel();
+      }
+      if (typeof renderActivityPanel === "function" && userEvents.length) {
+        renderActivityPanel();
+      }
+
+      if (typeof renderConsoleEntries === "function" && consoleLogs.length) {
+        if (activeLogsTab === "console") {
+          renderConsoleEntries();
+        } else {
+          consolePanelDirty = true;
+        }
+      }
+      if (
+        typeof renderNetworkEntries === "function" &&
+        (networkLogs.length || webSocketLogs.length)
+      ) {
+        if (activeLogsTab === "network") {
+          renderNetworkEntries();
+        } else {
+          networkPanelDirty = true;
+        }
+      }
+      if (typeof updateStorageForTime === "function" && storageArtifact) {
+        storageActiveKey = "";
+        if (activeLogsTab === "storage") {
+          updateStorageForTime();
+        }
+      }
+      if (typeof updateElementsForTime === "function" && domArtifact) {
+        elementsActiveIndex = -1;
+        if (activeLogsTab === "elements") {
+          updateElementsForTime();
+        }
+      }
+    } catch {
+      // ignore re-render failures during early init
+    }
+  }
 
   // State
   let videoBlob = null;
@@ -77,6 +1010,22 @@
   let startTime = 0;
   let currentTimeMs = 0;
   let duration = 0;
+  /**
+   * After loadedmetadata, freeze the timeline scale so progressive demux growth of
+   * video.duration cannot reflow the playhead (looks like snap-back).
+   * Keep in sync with resolveTimelineDurationMs() in player-timeline-seek.ts.
+   */
+  let timelineDurationLocked = false;
+  /**
+   * While non-null, timeline UI tracks this target instead of video.currentTime.
+   * Cleared only when media lands near the target. Never trust a far `seeked`.
+   */
+  let pendingSeekTimeMs = null;
+  /** Monotonic id so stale seeked handlers from an earlier click/drag cannot commit. */
+  let seekRequestId = 0;
+  let pendingSeekTimeoutId = null;
+  /** Re-assert currentTime only a few times per user seek to avoid seeked loops. */
+  let pendingSeekRetryCount = 0;
   /** Active storage provider for the current replay URL (google-drive | dropbox | …). */
   let activeReplayProvider = "google-drive";
 
@@ -98,6 +1047,8 @@
   const wsRowMap = new Map();
   let closestConsoleIndex = -1;
   let closestNetworkIndex = -1;
+  // Index of the latest activity event at or before video currentTime (-1 = none).
+  let activeActivityIndex = -1;
   // Which logs tab is currently visible, plus dirty flags for the hidden ones so
   // playback ticks skip rendering panels the user can't see and catch up once
   // the tab is switched back to instead of paying the cost every tick.
@@ -106,11 +1057,12 @@
   let networkPanelDirty = false;
   let layoutState = loadLayoutState();
   let isVideoFullscreen = false;
-  let loadingProgressMessage = "Loading recording...";
+  let loadingProgressMessage = t("loading.message");
   const loadingProgressEntries = new Map();
   let expectedVideoBytes = 0;
   let passwordPromptResolve = null;
   let passwordPromptBusy = false;
+  let updateThemeToggleLabels = null;
 
   function releaseVideoResources() {
     if (videoUrl) {
@@ -161,7 +1113,6 @@
     elements.loadingMessage = document.getElementById("loading-message");
     elements.loadingProgressFill = document.getElementById("loading-progress-fill");
     elements.loadingProgressText = document.getElementById("loading-progress-text");
-    elements.loadingProgressList = document.getElementById("loading-progress-list");
     elements.passwordState = document.getElementById("password-state");
     elements.passwordForm = document.getElementById("recording-password-form");
     elements.passwordInput = document.getElementById("recording-password-input");
@@ -172,13 +1123,14 @@
     elements.playerState = document.getElementById("player-state");
     elements.mainLayout = document.querySelector(".main-layout");
     elements.playerTitle = document.getElementById("player-title");
+    elements.playerWebTitle = document.getElementById("player-web-title");
     elements.reportPanel = document.getElementById("report-panel");
     elements.reportTitle = document.getElementById("report-title");
     elements.reportPageLink = document.getElementById("report-page-link");
     elements.reportMeta = document.getElementById("report-meta");
     elements.privacySummary = document.getElementById("privacy-summary");
     elements.reportScreenshot = document.getElementById("report-screenshot");
-    elements.eventTimeline = document.getElementById("event-timeline");
+    elements.activityPanel = document.getElementById("activity-panel");
     elements.eventList = document.getElementById("event-list");
 
     // Video elements
@@ -213,14 +1165,15 @@
     elements.logsPanel = document.getElementById("logs-panel");
 
     // Header info
-    elements.recordingDuration = document.getElementById("recording-duration");
     elements.errorMessage = document.getElementById("error-message");
 
     // Tabs
     elements.reportTab = document.getElementById("report-tab");
+    elements.activityTab = document.getElementById("activity-tab");
     elements.consoleTab = document.getElementById("console-tab");
     elements.networkTab = document.getElementById("network-tab");
     elements.reportViewer = document.getElementById("report-viewer");
+    elements.activityViewer = document.getElementById("activity-viewer");
     elements.consoleViewer = document.getElementById("console-viewer");
     elements.networkViewer = document.getElementById("network-viewer");
     elements.storageTab = document.getElementById("storage-tab");
@@ -292,8 +1245,8 @@
     elements.fullscreenEnterIcon.classList.toggle("hidden", isVideoFullscreen);
     elements.fullscreenExitIcon.classList.toggle("hidden", !isVideoFullscreen);
     elements.videoFullscreenBtn.title = isVideoFullscreen
-      ? "Exit expanded video"
-      : "Expand video in tab";
+      ? t("controls.exitExpandedVideo")
+      : t("controls.expandVideo");
     elements.videoFullscreenBtn.setAttribute("aria-pressed", String(isVideoFullscreen));
   }
 
@@ -344,12 +1297,17 @@
     if (elements.loadingProgressText) {
       elements.loadingProgressText.textContent = `${formatBytes(uploadedBytes)} / ${formatBytes(totalBytes)} (${percent.toFixed(1)}%)`;
     }
-    if (elements.loadingProgressList) {
-      elements.loadingProgressList.innerHTML = "";
-    }
   }
 
-  function resetLoadingProgress(message = "Loading recording...") {
+  function normalizeLoadingStatus(status) {
+    const raw = String(status || "queued").toLowerCase();
+    if (raw === "queued" || raw === "loaded" || raw === "failed" || raw === "loading") {
+      return raw;
+    }
+    return "queued";
+  }
+
+  function resetLoadingProgress(message = t("loading.message")) {
     loadingProgressEntries.clear();
     expectedVideoBytes = 0;
     loadingProgressMessage = message;
@@ -375,14 +1333,14 @@
       total: 0,
       group,
       label: label || key,
-      status: "Queued",
+      status: "queued",
     };
     loadingProgressEntries.set(key, {
       loaded: Math.max(0, loaded),
       total: Math.max(0, total || previous.total || 0),
       group,
       label: label || previous.label || key,
-      status: status || previous.status || "Queued",
+      status: normalizeLoadingStatus(status || previous.status || "queued"),
     });
     if (message) {
       loadingProgressMessage = message;
@@ -390,7 +1348,7 @@
     renderLoadingProgress();
   }
 
-  function registerLoadingEntry(key, label, group, status = "Queued") {
+  function registerLoadingEntry(key, label, group, status = "queued") {
     updateLoadingEntry(key, { label, group, status, loaded: 0, total: 0 });
   }
 
@@ -403,18 +1361,18 @@
       total,
       group,
       label,
-      status: "Loaded",
+      status: "loaded",
     });
   }
 
   function markPendingLoadingEntriesFailed() {
     for (const [key, entry] of loadingProgressEntries.entries()) {
-      if (entry.status === "Loaded" || entry.status === "Failed") {
+      if (entry.status === "loaded" || entry.status === "failed") {
         continue;
       }
       loadingProgressEntries.set(key, {
         ...entry,
-        status: "Failed",
+        status: "failed",
       });
     }
     renderLoadingProgress();
@@ -427,7 +1385,7 @@
     }
     if (elements.passwordSubmit) {
       elements.passwordSubmit.disabled = isBusy;
-      elements.passwordSubmit.textContent = isBusy ? "Unlocking..." : "Unlock";
+      elements.passwordSubmit.textContent = isBusy ? t("password.unlocking") : t("password.unlock");
     }
   }
 
@@ -451,7 +1409,7 @@
 
   function createLoadingProgressReporter(key, group, label) {
     return ({ loaded, total }) => {
-      updateLoadingEntry(key, { loaded, total, group, label, status: "Loading" });
+      updateLoadingEntry(key, { loaded, total, group, label, status: "loading" });
     };
   }
 
@@ -515,16 +1473,73 @@
     return getFiniteDurationMs((elements.video?.duration || 0) * 1000);
   }
 
+  /**
+   * Timeline length for click mapping + progress bar.
+   * Mirror of resolveTimelineDurationMs in src/shared/player-timeline-seek.ts.
+   * Provider-neutral: same formula for Drive and Dropbox after assets load.
+   */
+  function resolveTimelineDurationMs(videoDurationMs, locked) {
+    const meta = getFiniteDurationMs(metadata?.duration);
+    const video = getFiniteDurationMs(videoDurationMs);
+    const previous = getFiniteDurationMs(duration);
+    if (locked) {
+      const lockedBase = Math.max(previous, meta);
+      if (video > lockedBase + 1000) {
+        return video;
+      }
+      return lockedBase > 0 ? lockedBase : Math.max(previous, video, meta);
+    }
+    return Math.max(meta, video, previous);
+  }
+
   function syncDurationState(extraDurationMs = 0) {
-    // MediaRecorder WebM metadata can report 0/Infinity while playback still advances.
-    duration = Math.max(
-      getFiniteDurationMs(duration),
-      getFiniteDurationMs(metadata?.duration),
-      getFiniteDurationMs(extraDurationMs),
-    );
-    elements.totalDuration.textContent = formatTime(duration);
-    elements.recordingDuration.textContent = formatTime(duration);
+    // Do not let partial demux (video.duration ticking up) reflow the bar after lock.
+    duration = resolveTimelineDurationMs(extraDurationMs, timelineDurationLocked);
+    if (elements.totalDuration) {
+      elements.totalDuration.textContent = formatTime(duration);
+    }
     return duration;
+  }
+
+  function lockTimelineDurationFromMedia() {
+    duration = resolveTimelineDurationMs(getVideoDurationMs(), false);
+    timelineDurationLocked = true;
+    if (elements.totalDuration) {
+      elements.totalDuration.textContent = formatTime(duration);
+    }
+    return duration;
+  }
+
+  /**
+   * Wait until the local blob URL has metadata (or timeout). Seeks before this
+   * often no-op or land at 0, then a later demux update looks like snap-back.
+   * Same for every provider — called only after full package bytes are in memory.
+   */
+  function waitForVideoMetadata(video, timeoutMs = 20000) {
+    return new Promise((resolve) => {
+      if (!video) {
+        resolve(false);
+        return;
+      }
+      if (video.readyState >= 1 && Number.isFinite(video.duration) && video.duration > 0) {
+        resolve(true);
+        return;
+      }
+      let settled = false;
+      const finish = (ok) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        video.removeEventListener("loadedmetadata", onMeta);
+        video.removeEventListener("error", onErr);
+        resolve(ok);
+      };
+      const onMeta = () => finish(true);
+      const onErr = () => finish(false);
+      const timer = setTimeout(() => finish(video.readyState >= 1), timeoutMs);
+      video.addEventListener("loadedmetadata", onMeta, { once: true });
+      video.addEventListener("error", onErr, { once: true });
+    });
   }
 
   function formatTimeMs(ms) {
@@ -618,17 +1633,40 @@
     return parts.filter(Boolean).join(" • ");
   }
 
-  function updatePlayerTitle(meta) {
+  function getWebTitleLabel(meta) {
+    const pageTitle =
+      report?.page && typeof report.page.title === "string" ? report.page.title.trim() : "";
+    if (pageTitle) {
+      return pageTitle;
+    }
     const reportTitle = report && typeof report.title === "string" ? report.title.trim() : "";
-    const label = reportTitle || getRecordingTitleLabel(meta);
+    if (reportTitle) {
+      return reportTitle;
+    }
+    return getRecordingTitleLabel(meta);
+  }
+
+  function updatePlayerTitle(meta) {
+    const webTitle = getWebTitleLabel(meta);
 
     if (elements.playerTitle) {
       elements.playerTitle.textContent = PLAYER_BRAND_TITLE;
-      elements.playerTitle.title = PLAYER_BRAND_TITLE;
     }
 
-    // Tab title: brand first, then short description after a dash.
-    document.title = label ? `${DEFAULT_PLAYER_TITLE} - ${label}` : DEFAULT_PLAYER_TITLE;
+    if (elements.playerWebTitle) {
+      if (webTitle) {
+        elements.playerWebTitle.textContent = webTitle;
+        elements.playerWebTitle.title = webTitle;
+        elements.playerWebTitle.classList.remove("hidden");
+      } else {
+        elements.playerWebTitle.textContent = "";
+        elements.playerWebTitle.removeAttribute("title");
+        elements.playerWebTitle.classList.add("hidden");
+      }
+    }
+
+    // Browser tab title: brand first, then web/page title after a dash.
+    document.title = webTitle ? `${DEFAULT_PLAYER_TITLE} - ${webTitle}` : DEFAULT_PLAYER_TITLE;
   }
 
   function getDisplayUrl(url) {
@@ -642,27 +1680,38 @@
   }
 
   function getEventLabel(event) {
-    if (!event || !event.type) return "Event";
+    if (!event || !event.type) return t("activity.event");
     if (event.type === "navigation") {
-      return `Navigation ${getDisplayUrl(event.url || "")}`.trim();
+      return t("activity.navigation", { detail: getDisplayUrl(event.url || "") }).trim();
     }
     if (event.type === "click") {
-      return `Click ${event.text || event.selector || event.role || ""}`.trim();
+      return t("activity.click", {
+        detail: event.text || event.selector || event.role || "",
+      }).trim();
     }
     if (event.type === "contextmenu") {
-      return `Right click ${event.text || event.selector || event.role || ""}`.trim();
+      return t("activity.contextmenu", {
+        detail: event.text || event.selector || event.role || "",
+      }).trim();
     }
     if (event.type === "scroll") {
-      return `Scroll ${event.direction === "up" ? "up" : "down"} ${event.selector || ""}`.trim();
+      const direction =
+        event.direction === "up" ? t("activity.scrollUp") : t("activity.scrollDown");
+      return t("activity.scroll", {
+        direction,
+        detail: event.selector || "",
+      }).trim();
     }
     if (event.type === "focus") {
-      return `Focus ${event.selector || event.inputType || ""}`.trim();
+      return t("activity.focus", {
+        detail: event.selector || event.inputType || "",
+      }).trim();
     }
     if (event.type === "submit") {
-      return `Submit ${event.selector || ""}`.trim();
+      return t("activity.submit", { detail: event.selector || "" }).trim();
     }
     if (event.type === "key") {
-      return `Key ${event.key || ""}`.trim();
+      return t("activity.key", { detail: event.key || "" }).trim();
     }
     return event.type;
   }
@@ -670,16 +1719,16 @@
   function getReportMetaChips() {
     const chips = [];
     if (duration) {
-      chips.push(`Duration ${formatTime(duration)}`);
+      chips.push(t("report.chip.duration", { value: formatTime(duration) }));
     }
     if (report?.createdAt) {
-      chips.push(`Created ${formatDate(report.createdAt)}`);
+      chips.push(t("report.chip.created", { value: formatDate(report.createdAt) }));
     }
     if (report?.severity) {
-      chips.push(`Severity ${report.severity}`);
+      chips.push(t("report.chip.severity", { value: report.severity }));
     }
     if (report?.reference) {
-      chips.push(`Reference ${report.reference}`);
+      chips.push(t("report.chip.reference", { value: report.reference }));
     }
 
     const env = report?.environment || {};
@@ -687,13 +1736,17 @@
       chips.push([env.browserName, env.browserVersion].filter(Boolean).join(" "));
     }
     if (env.viewport?.width && env.viewport?.height) {
-      chips.push(`Viewport ${env.viewport.width}x${env.viewport.height}`);
+      chips.push(
+        t("report.chip.viewport", {
+          value: `${env.viewport.width}x${env.viewport.height}`,
+        }),
+      );
     }
     if (env.language) {
-      chips.push(`Language ${env.language}`);
+      chips.push(t("report.chip.language", { value: env.language }));
     }
     if (env.timezone) {
-      chips.push(`Timezone ${env.timezone}`);
+      chips.push(t("report.chip.timezone", { value: env.timezone }));
     }
     return chips;
   }
@@ -703,41 +1756,51 @@
       return [];
     }
     const rows = [];
-    const profile = privacySummary.profile ? String(privacySummary.profile) : "unknown";
-    rows.push(`Policy v${privacySummary.policyVersion || 1} · ${profile}`);
+    const profile = privacySummary.profile
+      ? String(privacySummary.profile)
+      : t("report.privacy.unknownProfile");
+    rows.push(
+      t("report.privacy.policy", {
+        version: String(privacySummary.policyVersion || 1),
+        profile,
+      }),
+    );
     const flags = privacySummary.artifactFlags || {};
     const evidence = Object.entries(flags)
       .filter(([, enabled]) => Boolean(enabled))
       .map(([name]) => name)
       .slice(0, 8);
     if (evidence.length) {
-      rows.push(`Evidence: ${evidence.join(", ")}`);
+      rows.push(t("report.privacy.evidence", { list: evidence.join(", ") }));
     }
     const counts = Array.isArray(privacySummary.counts) ? privacySummary.counts : [];
     const redactionTotal = counts.reduce((sum, item) => sum + (Number(item.count) || 0), 0);
     if (redactionTotal > 0) {
-      rows.push(`${redactionTotal} redaction${redactionTotal === 1 ? "" : "s"} applied`);
+      rows.push(t("report.privacy.redactions", { count: String(redactionTotal) }));
     }
     const limitations = Array.isArray(privacySummary.limitations)
       ? privacySummary.limitations.filter(Boolean).slice(0, 2)
       : [];
-    rows.push(...limitations.map((item) => `Limit: ${item}`));
+    rows.push(...limitations.map((item) => t("report.privacy.limit", { item: String(item) })));
     return rows;
   }
 
   function showLogsTab(tabName) {
     const isReport = tabName === "report";
+    const isActivity = tabName === "activity";
     const isConsole = tabName === "console";
     const isNetwork = tabName === "network";
     const isStorage = tabName === "storage";
     const isElements = tabName === "elements";
 
     elements.reportTab?.classList.toggle("active", isReport);
+    elements.activityTab?.classList.toggle("active", isActivity);
     elements.consoleTab.classList.toggle("active", isConsole);
     elements.networkTab.classList.toggle("active", isNetwork);
     elements.storageTab?.classList.toggle("active", isStorage);
     elements.elementsTab?.classList.toggle("active", isElements);
     elements.reportViewer?.classList.toggle("hidden", !isReport);
+    elements.activityViewer?.classList.toggle("hidden", !isActivity);
     elements.consoleViewer.classList.toggle("hidden", !isConsole);
     elements.networkViewer.classList.toggle("hidden", !isNetwork);
     elements.storageViewer?.classList.toggle("hidden", !isStorage);
@@ -750,6 +1813,9 @@
     } else if (isNetwork && networkPanelDirty) {
       networkPanelDirty = false;
       renderNetworkEntries();
+    } else if (isActivity) {
+      // Catch up highlight + keep the current event in view when opening the tab.
+      updateActivityHighlight({ forceScroll: true });
     }
   }
 
@@ -813,13 +1879,13 @@
           .map(
             (row) => `
         <div class="storage-row storage-row-${row.status}">
-          <span class="storage-status-badge storage-status-${row.status}">${escapeHtml(row.status)}</span>
+          <span class="storage-status-badge storage-status-${row.status}">${escapeHtml(t(`storage.status.${row.status}`))}</span>
           <span class="storage-key">${escapeHtml(row.key)}</span>
           <span class="storage-value-cell">${getStorageDiffValueHtml(row)}</span>
         </div>`,
           )
           .join("")
-      : '<div class="storage-empty">No entries captured.</div>';
+      : `<div class="storage-empty">${escapeHtml(t("storage.empty"))}</div>`;
 
     return `
       <section class="storage-group" aria-label="${escapeHtml(label)}">
@@ -907,7 +1973,7 @@
     const groups = [
       { label: "localStorage", group: "localStorage" },
       { label: "sessionStorage", group: "sessionStorage" },
-      { label: "Cookies", group: "cookies" },
+      { label: t("storage.cookies"), group: "cookies" },
     ];
 
     elements.storageContent.innerHTML = groups
@@ -928,7 +1994,7 @@
   // Human-readable label for a DOM snapshot dropdown option (R8.2).
   function getDomSnapshotLabel(snapshot, index) {
     const rawLabel = snapshot && typeof snapshot.label === "string" ? snapshot.label : "";
-    const label = rawLabel || `snapshot ${index + 1}`;
+    const label = rawLabel || t("elements.snapshotFallback", { index: String(index + 1) });
     const capturedAt = Number(snapshot?.capturedAt);
     if (Number.isFinite(capturedAt) && capturedAt > 0) {
       const time = new Date(capturedAt).toLocaleTimeString();
@@ -946,7 +2012,7 @@
     const nodeType = Number(node.nodeType);
     const isMasked = node.masked === true;
     const maskedBadge = isMasked
-      ? '<span class="dom-masked-badge" title="Content masked for privacy">masked</span>'
+      ? `<span class="dom-masked-badge" title="${escapeHtml(t("elements.maskedTitle"))}">${escapeHtml(t("elements.masked"))}</span>`
       : "";
 
     // Text node (nodeType 3) / CDATA (4) / comment (8): render value only.
@@ -998,7 +2064,7 @@
     container.innerHTML = "";
 
     if (!rootNode || typeof rootNode !== "object") {
-      container.innerHTML = '<div class="dom-empty">No DOM nodes captured.</div>';
+      container.innerHTML = `<div class="dom-empty">${escapeHtml(t("elements.empty"))}</div>`;
       return;
     }
 
@@ -1061,8 +2127,7 @@
         const safeIndex = Number.isFinite(index) ? index : 0;
         const rel = getSnapshotRelativeMs(snapshots[safeIndex]);
         if (rel !== null && elements.video) {
-          elements.video.currentTime = Math.max(0, rel / 1000);
-          currentTimeMs = elements.video.currentTime * 1000;
+          seekVideoToMs(rel);
         }
         elementsActiveIndex = -1; // force re-render of the chosen snapshot
         updateElementsForTime(safeIndex);
@@ -1105,10 +2170,38 @@
     elements.privacySummary.classList.toggle("hidden", !hasPrivacyRows);
     elements.privacySummary.innerHTML = hasPrivacyRows
       ? [
-          '<div class="privacy-summary-title">Privacy summary</div>',
+          `<div class="privacy-summary-title">${escapeHtml(t("report.privacyTitle"))}</div>`,
           ...privacyRows.map((row) => `<div class="privacy-summary-row">${escapeHtml(row)}</div>`),
         ].join("")
       : "";
+  }
+
+  function hasReportArtifactContent() {
+    return Boolean(report || privacySummary || screenshotUrl);
+  }
+
+  function hasActivityContent() {
+    return userEvents.length > 0;
+  }
+
+  function fallbackOptionalTab(preferred) {
+    if (preferred === "report" && hasReportArtifactContent()) {
+      showLogsTab("report");
+      return;
+    }
+    if (preferred === "activity" && hasActivityContent()) {
+      showLogsTab("activity");
+      return;
+    }
+    if (hasReportArtifactContent()) {
+      showLogsTab("report");
+      return;
+    }
+    if (hasActivityContent()) {
+      showLogsTab("activity");
+      return;
+    }
+    showLogsTab("console");
   }
 
   function renderReportPanel() {
@@ -1116,25 +2209,20 @@
 
     const pageUrl = report?.page?.url || metadata.url || "";
     const title = report?.title || getRecordingTitleLabel(metadata);
-    const hasReportContent = Boolean(
-      report || privacySummary || userEvents.length || screenshotUrl,
-    );
-    const isFirstReportRender = elements.reportTab?.classList.contains("hidden");
+    const hasReportContent = hasReportArtifactContent();
+    const wasReportHidden = elements.reportTab?.classList.contains("hidden");
 
     elements.reportTab?.classList.toggle("hidden", !hasReportContent);
     elements.reportPanel.classList.toggle("hidden", !hasReportContent);
     renderPrivacySummary();
     if (!hasReportContent) {
       if (elements.reportTab?.classList.contains("active")) {
-        showLogsTab("console");
+        fallbackOptionalTab("activity");
       }
       return;
     }
-    if (isFirstReportRender) {
-      showLogsTab("report");
-    }
 
-    elements.reportTitle.textContent = title || "Recorded session";
+    elements.reportTitle.textContent = title || t("report.recordedSession");
     if (pageUrl) {
       elements.reportPageLink.href = pageUrl;
       elements.reportPageLink.textContent = getDisplayUrl(pageUrl);
@@ -1156,19 +2244,95 @@
       elements.reportScreenshot.classList.add("hidden");
     }
 
-    elements.eventTimeline.classList.toggle("hidden", userEvents.length === 0);
+    // Prefer Report on first reveal when report artifacts exist.
+    if (wasReportHidden) {
+      showLogsTab("report");
+    }
+  }
+
+  // Last event whose relativeMs is still at or before the playhead (userEvents is sorted).
+  function findActiveActivityIndex(timeMs) {
+    if (!userEvents.length) return -1;
+    let lo = 0;
+    let hi = userEvents.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >>> 1;
+      const eventMs = Math.max(0, Number(userEvents[mid].relativeMs) || 0);
+      if (eventMs <= timeMs) {
+        lo = mid + 1;
+      } else {
+        hi = mid;
+      }
+    }
+    return lo - 1;
+  }
+
+  // Toggle active/future classes from currentTimeMs without rebuilding the list.
+  function updateActivityHighlight(options = {}) {
+    const forceScroll = Boolean(options.forceScroll);
+    if (!elements.eventList) return;
+
+    const nextIndex = hasActivityContent() ? findActiveActivityIndex(currentTimeMs) : -1;
+    const changed = nextIndex !== activeActivityIndex;
+    activeActivityIndex = nextIndex;
+
+    const items = elements.eventList.querySelectorAll(".event-item");
+    items.forEach((item, index) => {
+      const timeMs = Number(item.dataset.timeMs);
+      const isFuture = Number.isFinite(timeMs) && timeMs > currentTimeMs;
+      item.classList.toggle("active", index === activeActivityIndex);
+      item.classList.toggle("is-future", isFuture);
+    });
+
+    if (
+      (changed || forceScroll) &&
+      activeActivityIndex >= 0 &&
+      activeLogsTab === "activity" &&
+      items[activeActivityIndex]
+    ) {
+      items[activeActivityIndex].scrollIntoView({ block: "nearest", inline: "nearest" });
+    }
+  }
+
+  function renderActivityPanel() {
+    if (!elements.eventList) return;
+
+    const hasActivity = hasActivityContent();
+    const wasActivityHidden = elements.activityTab?.classList.contains("hidden");
+
+    elements.activityTab?.classList.toggle("hidden", !hasActivity);
+    elements.activityPanel?.classList.toggle("hidden", !hasActivity);
+
+    if (!hasActivity) {
+      activeActivityIndex = -1;
+      elements.eventList.innerHTML = "";
+      if (elements.activityTab?.classList.contains("active")) {
+        fallbackOptionalTab("report");
+      }
+      return;
+    }
+
+    // Render every loaded user event (capture cap is MAX_RECORDED_USER_EVENTS = 2000).
+    // Activity viewer scrolls for long lists; highlight tracks video.currentTime.
     elements.eventList.innerHTML = userEvents
-      .slice(0, 12)
-      .map((event) => {
+      .map((event, index) => {
         const timeMs = Math.max(0, Number(event.relativeMs) || 0);
         return `
-        <button class="event-item" type="button" data-time-ms="${timeMs}">
+        <button class="event-item" type="button" data-index="${index}" data-time-ms="${timeMs}">
           <span class="event-time">${escapeHtml(formatTime(timeMs))}</span>
           <span class="event-label">${escapeHtml(getEventLabel(event))}</span>
         </button>
       `;
       })
       .join("");
+
+    activeActivityIndex = -1;
+    updateActivityHighlight({ forceScroll: activeLogsTab === "activity" });
+
+    // Only auto-open Activity when it first appears and Report is unavailable.
+    if (wasActivityHidden && !hasReportArtifactContent()) {
+      showLogsTab("activity");
+    }
   }
 
   function getNetworkUrlExtension(url) {
@@ -1430,7 +2594,7 @@
       <div class="source-preview">
         ${location ? `<div class="source-preview-location">${escapeHtml(location)}</div>` : ""}
         <div class="source-preview-code">${rows}</div>
-        ${snippet.truncated ? '<div class="source-preview-note">Line truncated in recording artifact.</div>' : ""}
+        ${snippet.truncated ? `<div class="source-preview-note">${escapeHtml(t("source.lineTruncated"))}</div>` : ""}
       </div>
     `;
   }
@@ -1458,7 +2622,7 @@
   function renderInitiatorStackFrames(stack) {
     let html = (stack.callFrames || [])
       .map((frame) => {
-        const fnName = frame.originalName || frame.functionName || "(anonymous)";
+        const fnName = frame.originalName || frame.functionName || t("detail.anonymous");
         const location = formatSourceLocation(frame);
         const isVendor = isNetworkVendorFrame(frame);
         return `<div class="stack-frame ${isVendor ? "vendor-frame" : ""}">at <span class="fn-name">${escapeHtml(fnName)}</span>${location ? ` <span class="location">(${escapeHtml(location)})</span>` : ""}</div>`;
@@ -1477,7 +2641,7 @@
     if (!initiator) return "";
     let html = `
       <div class="detail-section">
-        <h4>Initiator</h4>
+        <h4>${escapeHtml(t("detail.initiator"))}</h4>
         <pre>${escapeHtml(initiator.type || "other")}</pre>
     `;
     const loc = getNetworkInitiatorLocation(initiator);
@@ -1501,7 +2665,11 @@
               type="button"
               aria-pressed="${hideVendorFrames}"
             >
-              Hide gray frames (${vendorFrameCount})
+              ${escapeHtml(
+                t(hideVendorFrames ? "detail.showGrayFrames" : "detail.hideGrayFrames", {
+                  count: String(vendorFrameCount),
+                }),
+              )}
             </button>
           `;
         }
@@ -1550,25 +2718,14 @@
   }
 
   function formatSourceMapReason(reason, httpStatusCode) {
-    const messages = {
-      "pending-frame-id": "Source map unavailable: waiting for frame id",
-      "missing-frame-id": "Source map unavailable: missing frame id",
-      "unsupported-target": "Source map unavailable: unsupported target",
-      "unsupported-url": "Source map unavailable: unsupported URL",
-      "too-large": "Source map unavailable: file too large",
-      "network-failed": "Source map unavailable: network load failed",
-      "http-error": `Source map unavailable: HTTP ${httpStatusCode || "error"}`,
-      "stream-read-failed": "Source map unavailable: stream read failed",
-      "html-fallback": "Source map response was HTML, not JSON",
-      "non-json-response": "Source map response was not JSON",
-      "json-parse-failed": "Source map JSON could not be parsed",
-      "unsupported-map": "Source map format is not supported",
-      "no-map-for-generated-url": "Source map unavailable for this generated URL",
-      "no-generated-line": "Source map loaded but this generated line was not mapped",
-      "no-segment-for-column": "Source map loaded but no segment matched this generated column",
-      "no-original-segment": "Source map loaded but matching segment had no original location",
-    };
-    return messages[reason] || `Source map unavailable: ${reason || "unknown"}`;
+    const key = `sourceMap.${reason}`;
+    if (reason === "http-error") {
+      return t(key, { status: String(httpStatusCode || "error") });
+    }
+    if (TRANSLATIONS.en[key]) {
+      return t(key);
+    }
+    return t("sourceMap.unavailable", { reason: reason || "unknown" });
   }
 
   function getSourceMapDiagnosticMessage(location) {
@@ -1581,7 +2738,7 @@
     const diagnostic = getSourceMapDiagnosticForLocation(location);
     if (!diagnostic) return "";
     if (diagnostic.status === "success") {
-      return "Source map loaded, but this frame did not match a mapped segment.";
+      return t("sourceMap.loadedNoMatch");
     }
     return formatSourceMapReason(diagnostic.reason || diagnostic.status, diagnostic.httpStatusCode);
   }
@@ -1825,7 +2982,7 @@
         if (frame.asyncBoundary) {
           return `<div class="async-boundary">--- ${escapeHtml(frame.asyncBoundary)} ---</div>`;
         }
-        const fnName = frame.originalName || frame.functionName || "(anonymous)";
+        const fnName = frame.originalName || frame.functionName || t("detail.anonymous");
         const location = formatSourceLocation(frame);
         const sourceMapStatus = getSourceMapDiagnosticMessage(frame);
         return `
@@ -1857,7 +3014,7 @@
       case "symbol":
         return `<span class="gh-purple">${escapeHtml(obj.description || "Symbol()")}</span>`;
       case "function":
-        return `<span class="gh-purple italic">f ${escapeHtml(obj.description || "anonymous")}</span>`;
+        return `<span class="gh-purple italic">f ${escapeHtml(obj.description || t("detail.anonymous"))}</span>`;
       case "object":
         return renderObjectPreview(obj, options);
       default:
@@ -2073,7 +3230,7 @@
       case "symbol":
         return obj.description || "Symbol()";
       case "function":
-        return obj.description || "\u0192 anonymous";
+        return obj.description || `\u0192 ${t("detail.anonymous")}`;
       case "object": {
         if (obj.subtype === "null") return null;
         if (d > 5) return obj.description || obj.className || "Object";
@@ -2260,7 +3417,7 @@
   }
 
   function formatHeaders(headers) {
-    if (!headers) return "(none)";
+    if (!headers) return t("detail.none");
     if (Array.isArray(headers)) {
       return headers.map((h) => `${h.name}: ${h.value}`).join("\n");
     }
@@ -2398,7 +3555,7 @@
     }
 
     const isVisible = isNetworkJsonPreviewVisible(entry, bodyKind);
-    const label = isVisible ? "Hide preview" : "Show preview";
+    const label = isVisible ? t("detail.hidePreview") : t("detail.showPreview");
 
     return `
       <button
@@ -2613,8 +3770,8 @@
     if (isBinary) {
       return `
         <div class="detail-section">
-          <h4>Response Body</h4>
-          <pre class="response-body binary">(binary data)</pre>
+          <h4>${escapeHtml(t("detail.responseBody"))}</h4>
+          <pre class="response-body binary">${escapeHtml(t("detail.binaryData"))}</pre>
         </div>
       `;
     }
@@ -2625,13 +3782,13 @@
     const showJsonPreview = isJsonPreviewReplacingRaw(entry, "response", jsonValidation);
     const truncatedSuffix =
       displayText.length > MAX_RESPONSE_DISPLAY_CHARS
-        ? '\n<span class="token-comment">...(truncated)</span>'
+        ? `\n<span class="token-comment">${escapeHtml(t("detail.truncated"))}</span>`
         : "";
 
     return `
       <div class="detail-section">
         <div class="detail-section-heading">
-          <h4>Response Body</h4>
+          <h4>${escapeHtml(t("detail.responseBody"))}</h4>
           ${buildJsonPreviewToggle(entry, "response", jsonValidation)}
         </div>
         ${
@@ -2689,7 +3846,7 @@
 
     return `
       <div class="detail-section">
-        <div class="network-detail-tabs" role="tablist" aria-label="Response detail tabs">
+        <div class="network-detail-tabs" role="tablist" aria-label="${escapeHtml(t("detail.responseTabsAria"))}">
           ${
             hasPreview
               ? `
@@ -2700,7 +3857,7 @@
               aria-selected="${activeTab === "preview"}"
               data-tab="preview"
             >
-              Response Preview
+              ${escapeHtml(t("detail.responsePreview"))}
             </button>
           `
               : ""
@@ -2715,7 +3872,7 @@
               aria-selected="${activeTab === "body"}"
               data-tab="body"
             >
-              Response Body
+              ${escapeHtml(t("detail.responseBody"))}
             </button>
           `
               : ""
@@ -3669,7 +4826,7 @@
           elements.passwordInput.value = "";
         }
         showLoading();
-        resetLoadingProgress("Loading unlocked recording...");
+        resetLoadingProgress(t("loading.unlocked"));
         const innerEntries = await unzipStoredPackage(innerZipBlob);
         const innerIndexJson = await parseJsonBlob(
           getPackageEntry(innerEntries, "recording-index.json"),
@@ -3678,7 +4835,7 @@
         return buildRecordingFilesFromPackageEntries(innerEntries, innerIndexJson, indexId);
       } catch (error) {
         console.warn("[GN Tracing Player] Failed to unlock recording package:", error);
-        promptError = "Wrong password or corrupted recording package. Please try again.";
+        promptError = t("password.wrong");
         setPasswordPromptBusy(false);
       }
     }
@@ -3697,7 +4854,7 @@
           elements.passwordInput.value = "";
         }
         showLoading();
-        resetLoadingProgress("Loading unlocked recording...");
+        resetLoadingProgress(t("loading.unlocked"));
         const indexJson = await parseJsonBlob(
           getPackageEntry(entries, "recording-index.json"),
           "recording-index.json",
@@ -3706,8 +4863,8 @@
       } catch (error) {
         console.warn("[GN Tracing Player] Failed to unlock ZIP recording package:", error);
         promptError = isZipPasswordError(error)
-          ? "Wrong password or corrupted recording package. Please try again."
-          : error?.message || "Failed to unlock recording package.";
+          ? t("password.wrong")
+          : error?.message || t("password.unlockFailed");
         setPasswordPromptBusy(false);
       }
     }
@@ -3799,30 +4956,49 @@
   }
 
   /**
+   * Ensure the playable blob has a video/webm family type. Cloud downloads often
+   * report application/octet-stream; Chromium random-seek on blob URLs is far
+   * more reliable when Blob.type is an actual media MIME (esp. after cues rewrite).
+   * @param {Blob} blob
+   * @param {string} mimeType
+   * @returns {Blob}
+   */
+  function ensurePlayableVideoBlobType(blob, mimeType) {
+    const wanted = mimeType || "video/webm";
+    const current = String(blob?.type || "").toLowerCase();
+    if (current.includes("webm") || current.includes("matroska")) {
+      return blob;
+    }
+    return new Blob([blob], { type: wanted });
+  }
+
+  /**
    * Make MediaRecorder WebM seekable before playback.
    * Uses the same contract as src/shared/webm-seek-fix.ts via vendored
-   * window.gnMakeWebmSeekable (cues rewrite only). Fail-open returns the input.
+   * window.gnMakeWebmSeekable (cues rewrite only). Fail-open returns the input
+   * with a forced video MIME so timeline seeks still have a chance.
    * @param {Blob} blob
    * @param {string} mimeType
    * @returns {Promise<Blob>}
    */
   async function prepareSeekableVideoBlob(blob, mimeType) {
+    const playableType = mimeType || "video/webm";
     const makeSeekable = globalThis.gnMakeWebmSeekable;
     if (typeof makeSeekable !== "function") {
-      return blob;
+      return ensurePlayableVideoBlobType(blob, playableType);
     }
     try {
-      const result = await makeSeekable(blob, { mimeType });
+      const result = await makeSeekable(blob, { mimeType: playableType });
       if (result && result.ok && result.blob instanceof Blob) {
-        return result.blob;
+        return ensurePlayableVideoBlobType(result.blob, playableType);
       }
       if (result && !result.ok) {
         console.warn("[GN Tracing Player] WebM seek fix skipped:", result.reason);
       }
-      return blob;
+      return ensurePlayableVideoBlobType(blob, playableType);
     } catch (error) {
       console.warn("[GN Tracing Player] WebM seek fix failed; using original video blob:", error);
-      return blob;
+      return ensurePlayableVideoBlobType(blob, playableType);
     }
   }
 
@@ -3852,7 +5028,7 @@
           total: blob.size,
           group: "video",
           label: file.name || `video.part-${String(index).padStart(3, "0")}.webm`,
-          status: "Loaded",
+          status: "loaded",
         });
         return blob;
       }),
@@ -3868,14 +5044,14 @@
     } catch (err) {
       markPendingLoadingEntriesFailed();
       console.error("Failed to load recording:", err);
-      elements.errorMessage.textContent = err.message || "Failed to load recording";
+      elements.errorMessage.textContent = err.message || t("error.loadFailed");
       showError();
     }
   }
 
   async function loadRecordingData() {
     try {
-      resetLoadingProgress("Loading recording...");
+      resetLoadingProgress(t("loading.message"));
       report = null;
       privacySummary = null;
       sourceMapDiagnostics = [];
@@ -3884,9 +5060,9 @@
       drawingClears = [];
       releaseScreenshotResources();
       if (recordingFiles.packageId) {
-        registerLoadingEntry("package", "recording.zip", "other", "Loaded");
+        registerLoadingEntry("package", "recording.zip", "other", "loaded");
       } else if (recordingFiles.indexId) {
-        registerLoadingEntry("index", "recording-index.json", "other", "Loaded");
+        registerLoadingEntry("index", "recording-index.json", "other", "loaded");
       }
       registerLoadingEntry("metadata", "metadata.json", "other");
       if (recordingFiles.report) {
@@ -3934,12 +5110,19 @@
       markLoadingEntryLoaded("metadata", "metadata.json", "other");
       metadata = metadataJson.metadata || metadataJson;
       startTime = metadata.startTime || new Date(metadata.timestamp || "").getTime();
+      // Stable package duration first; lock after media metadata (see lockTimelineDurationFromMedia).
+      timelineDurationLocked = false;
       duration = getFiniteDurationMs(metadata.duration);
+      clearPendingSeekTimeout();
+      pendingSeekTimeMs = null;
+      pendingSeekRetryCount = 0;
+      currentTimeMs = 0;
       setExpectedVideoBytes(metadata.video?.totalBytes || 0);
       const videoMimeType =
         recordingFiles.manifest?.video?.mimeType || metadata.video?.mimeType || "video/webm";
 
       // Load video, report metadata, timeline events, console, network, and websocket in parallel.
+      // Provider only mattered for how package bytes were fetched; from here the path is shared.
       await Promise.all([
         // Load video
         recordingFiles.videoParts.length
@@ -3951,6 +5134,10 @@
               videoBlob = playableBlob;
               videoUrl = URL.createObjectURL(playableBlob);
               elements.video.src = videoUrl;
+              // Wait for demux of the local blob before showing UI so the first
+              // timeline click is not racing HAVE_NOTHING (provider-independent).
+              await waitForVideoMetadata(elements.video);
+              lockTimelineDurationFromMedia();
             })
           : Promise.resolve(),
 
@@ -3963,7 +5150,7 @@
                 report = reportJson && typeof reportJson === "object" ? reportJson : null;
               })
               .catch((error) => {
-                updateLoadingEntry("report", { status: "Failed" });
+                updateLoadingEntry("report", { status: "failed" });
                 console.warn("[GN Tracing Player] Failed to load optional report artifact:", error);
               })
           : Promise.resolve(),
@@ -3997,7 +5184,7 @@
                 );
               })
               .catch((error) => {
-                updateLoadingEntry("events", { status: "Failed" });
+                updateLoadingEntry("events", { status: "failed" });
                 console.warn("[GN Tracing Player] Failed to load optional event artifact:", error);
               })
           : Promise.resolve(),
@@ -4035,7 +5222,7 @@
                   .sort((a, b) => a - b);
               })
               .catch((error) => {
-                updateLoadingEntry("drawing", { status: "Failed" });
+                updateLoadingEntry("drawing", { status: "failed" });
                 console.warn(
                   "[GN Tracing Player] Failed to load optional drawing artifact:",
                   error,
@@ -4053,7 +5240,7 @@
                   privacyJson && typeof privacyJson === "object" ? privacyJson : null;
               })
               .catch((error) => {
-                updateLoadingEntry("privacy", { status: "Failed" });
+                updateLoadingEntry("privacy", { status: "failed" });
                 console.warn(
                   "[GN Tracing Player] Failed to load optional privacy artifact:",
                   error,
@@ -4072,7 +5259,7 @@
                   : [];
               })
               .catch((error) => {
-                updateLoadingEntry("diagnostics", { status: "Failed" });
+                updateLoadingEntry("diagnostics", { status: "failed" });
                 console.warn(
                   "[GN Tracing Player] Failed to load optional diagnostics artifact:",
                   error,
@@ -4098,7 +5285,7 @@
                 screenshotUrl = URL.createObjectURL(blob);
               })
               .catch((error) => {
-                updateLoadingEntry("screenshot", { status: "Failed" });
+                updateLoadingEntry("screenshot", { status: "failed" });
                 console.warn(
                   "[GN Tracing Player] Failed to load optional screenshot artifact:",
                   error,
@@ -4232,24 +5419,29 @@
           : Promise.resolve(),
       ]);
 
-      // Update UI
+      // Update UI (video metadata wait already ran inside the video load branch).
       updatePlayerTitle(metadata);
       renderReportPanel();
-      syncDurationState(getVideoDurationMs());
-      setLoadingMessage("Loading recording...");
+      renderActivityPanel();
+      if (!timelineDurationLocked) {
+        lockTimelineDurationFromMedia();
+      } else {
+        syncDurationState(getVideoDurationMs());
+      }
+      setLoadingMessage(t("loading.message"));
 
       showPlayer();
     } catch (err) {
       markPendingLoadingEntriesFailed();
       console.error("Failed to load recording:", err);
-      elements.errorMessage.textContent = err.message || "Failed to load recording";
+      elements.errorMessage.textContent = err.message || t("error.loadFailed");
       showError();
     }
   }
 
   // State management
   function showLoading() {
-    resetLoadingProgress("Loading recording...");
+    resetLoadingProgress(t("loading.message"));
     elements.loadingState.classList.remove("hidden");
     elements.passwordState.classList.add("hidden");
     elements.introState.classList.add("hidden");
@@ -4265,9 +5457,14 @@
     elements.playerState.classList.add("hidden");
   }
 
+  function setPlayerChromeActive(active) {
+    document.body.classList.toggle("player-active", Boolean(active));
+  }
+
   function showIntro() {
     resetLoadingProgress();
     updatePlayerTitle();
+    setPlayerChromeActive(false);
     elements.loadingState.classList.add("hidden");
     elements.passwordState.classList.add("hidden");
     elements.introState.classList.remove("hidden");
@@ -4276,6 +5473,7 @@
   }
 
   function showError() {
+    setPlayerChromeActive(false);
     elements.loadingState.classList.add("hidden");
     elements.passwordState.classList.add("hidden");
     elements.introState.classList.add("hidden");
@@ -4284,6 +5482,7 @@
   }
 
   function showPlayer() {
+    setPlayerChromeActive(true);
     elements.loadingState.classList.add("hidden");
     elements.passwordState.classList.add("hidden");
     elements.introState.classList.add("hidden");
@@ -4291,6 +5490,7 @@
     elements.playerState.classList.remove("hidden");
 
     renderReportPanel();
+    renderActivityPanel();
     renderConsoleEntries();
     renderNetworkEntries();
     renderStorageTab();
@@ -4331,7 +5531,7 @@
 
     return `
       <div class="${rowClass}" data-index="${index}">
-        <button class="toggle-expand" aria-label="Toggle details"><i class="ph ${isExpanded ? "ph-caret-down" : "ph-caret-right"}"></i></button>
+        <button class="toggle-expand" aria-label="${escapeHtml(t("detail.toggleDetails"))}"><i class="ph ${isExpanded ? "ph-caret-down" : "ph-caret-right"}"></i></button>
         <span class="console-time">${timeStr}</span>
         <span class="console-level console-level-${level}">${levelLabel}</span>
         <span class="console-message">
@@ -4382,7 +5582,7 @@
 
     return `
       <div class="${rowClass}" data-index="${index}">
-        <button class="toggle-expand" aria-label="Toggle details"><i class="ph ${isExpanded ? "ph-caret-down" : "ph-caret-right"}"></i></button>
+        <button class="toggle-expand" aria-label="${escapeHtml(t("detail.toggleDetails"))}"><i class="ph ${isExpanded ? "ph-caret-down" : "ph-caret-right"}"></i></button>
         <span class="col-method">${request.method || entry.method || "GET"}</span>
         <span class="col-url" title="${escapeHtml(urlTitle)}">
           <span class="network-url-main">${escapeHtml(truncateUrl(requestUrl))}</span>
@@ -4442,10 +5642,10 @@
 
     return `
       <div class="ws-row ${isExpanded ? "expanded" : ""}" data-index="${index}">
-        <button class="toggle-expand" aria-label="Toggle details"><i class="ph ${isExpanded ? "ph-caret-down" : "ph-caret-right"}"></i></button>
+        <button class="toggle-expand" aria-label="${escapeHtml(t("detail.toggleDetails"))}"><i class="ph ${isExpanded ? "ph-caret-down" : "ph-caret-right"}"></i></button>
         <span class="ws-url" title="${escapeHtml(ws.url || "")}">${escapeHtml(ws.url || "")}</span>
-        <span class="ws-frames">${(ws.frames || []).length} frames</span>
-        <span class="ws-status ${ws.closed ? "closed" : "open"}">${ws.closed ? "Closed" : "Open"}</span>
+        <span class="ws-frames">${escapeHtml(t("network.ws.frames", { count: String((ws.frames || []).length) }))}</span>
+        <span class="ws-status ${ws.closed ? "closed" : "open"}">${escapeHtml(ws.closed ? t("network.ws.closed") : t("network.ws.open"))}</span>
         ${isExpanded ? renderWsDetail(ws) : ""}
       </div>
     `;
@@ -4554,7 +5754,7 @@
     // Time
     detailHtml += `
       <div class="detail-section">
-        <h4>Time</h4>
+        <h4>${escapeHtml(t("detail.time"))}</h4>
         <pre>${timeStr}</pre>
       </div>
     `;
@@ -4562,7 +5762,7 @@
     // Level
     detailHtml += `
       <div class="detail-section">
-        <h4>Level</h4>
+        <h4>${escapeHtml(t("detail.level"))}</h4>
         <pre>${levelLabel}${sourceLabel}</pre>
       </div>
     `;
@@ -4571,7 +5771,7 @@
     if (entry.source !== "exception" && entry.source !== "browser" && Array.isArray(entry.args)) {
       detailHtml += `
         <div class="detail-section">
-          <h4>Arguments</h4>
+          <h4>${escapeHtml(t("detail.arguments"))}</h4>
           ${entry.args
             .map(
               (arg, i) => `
@@ -4587,7 +5787,7 @@
     } else if (entry.message) {
       detailHtml += `
         <div class="detail-section">
-          <h4>Message</h4>
+          <h4>${escapeHtml(t("detail.message"))}</h4>
           <pre class="message-pre">${escapeHtml(entry.message)}</pre>
         </div>
       `;
@@ -4598,7 +5798,7 @@
     if (sourceLocation) {
       detailHtml += `
         <div class="detail-section">
-          <h4>Source</h4>
+          <h4>${escapeHtml(t("detail.source"))}</h4>
           <pre>${escapeHtml(sourceLocation)}</pre>
         </div>
       `;
@@ -4607,7 +5807,7 @@
     if (sourceMapStatus) {
       detailHtml += `
         <div class="detail-section">
-          <h4>Source Map</h4>
+          <h4>${escapeHtml(t("detail.sourceMap"))}</h4>
           <pre>${escapeHtml(sourceMapStatus)}</pre>
         </div>
       `;
@@ -4617,7 +5817,7 @@
     if (sourceSnippet) {
       detailHtml += `
         <div class="detail-section">
-          <h4>Source Preview</h4>
+          <h4>${escapeHtml(t("detail.sourcePreview"))}</h4>
           ${renderSourceSnippet(sourceSnippet)}
         </div>
       `;
@@ -4627,14 +5827,14 @@
     if (entry.stackTrace && entry.stackTrace.length > 0) {
       detailHtml += `
         <div class="detail-section">
-          <h4>Stack Trace</h4>
+          <h4>${escapeHtml(t("detail.stackTrace"))}</h4>
           <div class="stack-trace">
       `;
       entry.stackTrace.forEach((frame, i) => {
         if (frame.asyncBoundary) {
           detailHtml += `<div class="async-boundary">--- ${escapeHtml(frame.asyncBoundary)} ---</div>`;
         } else {
-          const fnName = frame.originalName || frame.functionName || "(anonymous)";
+          const fnName = frame.originalName || frame.functionName || t("detail.anonymous");
           const location = formatSourceLocation(frame);
           const src = frame.originalSource || frame.url || "";
           const isVendor = src && src.includes("node_modules");
@@ -4672,7 +5872,10 @@
     const visibleWs = getVisibleWebSocketEntries();
 
     // Summary text
-    let summaryText = `${visibleCount}/${networkLogs.length} requests`;
+    let summaryText = t("network.summary", {
+      visible: String(visibleCount),
+      total: String(networkLogs.length),
+    });
     if (activeNetworkFilters.size > 0) summaryText += ` (${[...activeNetworkFilters].join(", ")})`;
     if (networkSearchQuery) summaryText += ` | search`;
     if (webSocketLogs.length > 0)
@@ -4726,7 +5929,7 @@
     // Time
     detailHtml += `
       <div class="detail-section">
-        <h4>Time</h4>
+        <h4>${escapeHtml(t("detail.time"))}</h4>
         <pre>${formatTimeMs(entry.relativeMs)}</pre>
       </div>
     `;
@@ -4735,7 +5938,7 @@
     if (entry.redirectChain && entry.redirectChain.length > 0) {
       detailHtml += `
         <div class="detail-section">
-          <h4>Redirect Chain</h4>
+          <h4>${escapeHtml(t("detail.redirectChain"))}</h4>
           <div class="redirect-chain">
       `;
       entry.redirectChain.forEach((r, i) => {
@@ -4758,7 +5961,7 @@
     // URL
     detailHtml += `
       <div class="detail-section">
-        <h4>URL</h4>
+        <h4>${escapeHtml(t("detail.url"))}</h4>
         <pre>${escapeHtml(request.url || entry.url || "")}</pre>
       </div>
     `;
@@ -4766,7 +5969,7 @@
     // Request Headers
     detailHtml += `
       <div class="detail-section">
-        <h4>Request Headers</h4>
+        <h4>${escapeHtml(t("detail.requestHeaders"))}</h4>
         <pre>${formatHeaders(request.headers || entry.requestHeaders)}</pre>
       </div>
     `;
@@ -4786,7 +5989,7 @@
       detailHtml += `
         <div class="detail-section">
           <div class="detail-section-heading">
-            <h4>Request Body</h4>
+            <h4>${escapeHtml(t("detail.requestBody"))}</h4>
             ${buildJsonPreviewToggle(entry, "request", requestJsonValidation)}
           </div>
           ${showRequestJsonPreview ? "" : `<pre>${escapeHtml(postData)}</pre>`}
@@ -4798,7 +6001,7 @@
     // Response Headers
     detailHtml += `
       <div class="detail-section">
-        <h4>Response Headers</h4>
+        <h4>${escapeHtml(t("detail.responseHeaders"))}</h4>
         <pre>${formatHeaders(response.headers || entry.responseHeaders)}</pre>
       </div>
     `;
@@ -4809,7 +6012,7 @@
     if (timings && Object.keys(timings).length > 0) {
       detailHtml += `
         <div class="detail-section">
-          <h4>Timing</h4>
+          <h4>${escapeHtml(t("detail.timing"))}</h4>
           <div class="timing-info">
       `;
       Object.entries(timings).forEach(([key, val]) => {
@@ -4830,7 +6033,7 @@
     if (entry.error) {
       detailHtml += `
         <div class="detail-section">
-          <h4>Error</h4>
+          <h4>${escapeHtml(t("detail.error"))}</h4>
           <pre class="error-text">${escapeHtml(entry.error)}</pre>
         </div>
       `;
@@ -4839,13 +6042,13 @@
     // Copy buttons
     detailHtml += `
       <div class="copy-actions">
-        <button class="copy-btn" data-action="copy-curl">Copy cURL</button>
-        <button class="copy-btn" data-action="copy-item">Copy Item</button>
+        <button class="copy-btn" data-action="copy-curl">${escapeHtml(t("detail.copyCurl"))}</button>
+        <button class="copy-btn" data-action="copy-item">${escapeHtml(t("detail.copyItem"))}</button>
         ${
           content.text
             ? `
-          <button class="copy-btn" data-action="copy-response">Copy Response</button>
-          <button class="copy-btn" data-action="copy-all">Copy cURL + Response</button>
+          <button class="copy-btn" data-action="copy-response">${escapeHtml(t("detail.copyResponse"))}</button>
+          <button class="copy-btn" data-action="copy-all">${escapeHtml(t("detail.copyCurlResponse"))}</button>
         `
             : ""
         }
@@ -4877,12 +6080,12 @@
     return `
       <div class="ws-detail">
         <div>
-          <h4>URL</h4>
+          <h4>${escapeHtml(t("detail.url"))}</h4>
           <pre>${escapeHtml(ws.url || "")}</pre>
         </div>
         ${renderInitiatorSection(ws.initiator)}
         <div>
-          <h4>Frames (${frames.length})</h4>
+          <h4>${escapeHtml(t("detail.frames", { count: String(frames.length) }))}</h4>
           <div class="ws-frames-table">
             ${frames
               .slice(0, maxFrames)
@@ -4902,7 +6105,7 @@
                 ? `
               <div class="ws-frame-row">
                 <span></span>
-                <span class="ws-payload">... ${frames.length - maxFrames} more frames</span>
+                <span class="ws-payload">${escapeHtml(t("network.ws.moreFrames", { count: String(frames.length - maxFrames) }))}</span>
               </div>
             `
                 : ""
@@ -5515,6 +6718,60 @@
     }
   }
 
+  function clearPendingSeekTimeout() {
+    if (pendingSeekTimeoutId != null) {
+      clearTimeout(pendingSeekTimeoutId);
+      pendingSeekTimeoutId = null;
+    }
+  }
+
+  /**
+   * Commit or hold the optimistic timeline after a media clock sample.
+   * Behavioral twin of reconcileSeekClock() in src/shared/player-timeline-seek.ts.
+   * @param {number} mediaTimeMs
+   * @param {{ allowRetry?: boolean, isDragging?: boolean }} [options]
+   */
+  function reconcileSeekClock(mediaTimeMs, options = {}) {
+    const mediaMs = Number(mediaTimeMs);
+    if (!Number.isFinite(mediaMs)) {
+      return false;
+    }
+
+    if (pendingSeekTimeMs == null) {
+      currentTimeMs = mediaMs;
+      return false;
+    }
+
+    const targetMs = pendingSeekTimeMs;
+    const delta = Math.abs(mediaMs - targetMs);
+    if (delta <= SEEK_COMMIT_TOLERANCE_MS) {
+      currentTimeMs = mediaMs;
+      if (!options.isDragging) {
+        pendingSeekTimeMs = null;
+        pendingSeekRetryCount = 0;
+        clearPendingSeekTimeout();
+      }
+      return true;
+    }
+
+    // Far from the user target: keep optimistic playhead (no snap-back).
+    currentTimeMs = targetMs;
+    if (
+      options.allowRetry &&
+      !options.isDragging &&
+      elements.video &&
+      pendingSeekRetryCount < SEEK_MAX_RETRIES
+    ) {
+      pendingSeekRetryCount += 1;
+      try {
+        elements.video.currentTime = targetMs / 1000;
+      } catch {
+        // Ignore InvalidStateError; loadedmetadata will re-apply.
+      }
+    }
+    return false;
+  }
+
   // Video event handlers
   function setupVideoListeners() {
     let isDragging = false;
@@ -5534,7 +6791,7 @@
       if (now - lastEmitTime < 250) return;
       lastEmitTime = now;
 
-      currentTimeMs = elements.video.currentTime * 1000;
+      reconcileSeekClock(elements.video.currentTime * 1000, { isDragging });
       updateProgress();
       if (activeLogsTab === "console") {
         renderConsoleEntries();
@@ -5546,6 +6803,9 @@
       } else {
         networkPanelDirty = true;
       }
+      if (activeLogsTab === "activity") {
+        updateActivityHighlight();
+      }
       updateStorageForTime();
       updateElementsForTime();
     });
@@ -5553,8 +6813,20 @@
     // Loaded metadata
     elements.video.addEventListener("loadedmetadata", () => {
       updateVideoFit();
-      syncDurationState(getVideoDurationMs());
+      if (!timelineDurationLocked) {
+        lockTimelineDurationFromMedia();
+      } else {
+        syncDurationState(getVideoDurationMs());
+      }
       renderMarkers();
+      // Re-apply a seek that was requested before metadata was available.
+      if (pendingSeekTimeMs != null && elements.video) {
+        try {
+          elements.video.currentTime = Math.max(0, pendingSeekTimeMs / 1000);
+        } catch {
+          // Ignore until the element is fully ready.
+        }
+      }
       updateProgress();
     });
 
@@ -5578,6 +6850,8 @@
       elements.pauseIcon.classList.add("hidden");
       stopEffectsScheduler();
       stopDrawingScheduler();
+      clearPendingSeekTimeout();
+      pendingSeekTimeMs = null;
       currentTimeMs = syncDurationState(getVideoDurationMs());
       updateProgress();
     });
@@ -5592,9 +6866,23 @@
       }
     });
     elements.video.addEventListener("seeked", () => {
+      // Do NOT blindly adopt video.currentTime here. For WebM without a full
+      // Cues index (or while demux is catching up), Chromium fires seeked at a
+      // clamped time — adopting it snaps the playhead off the click target.
+      // Only commit when media is near pendingSeekTimeMs; otherwise re-assert.
+      const requestIdAtEvent = seekRequestId;
+      reconcileSeekClock(elements.video.currentTime * 1000, {
+        allowRetry: true,
+        isDragging,
+      });
+      // Ignore work from a superseded seek request after reconcile scheduled retry.
+      if (requestIdAtEvent !== seekRequestId) {
+        return;
+      }
+      updateProgress();
       resetEffectsCursor();
-      renderDrawingUpTo(elements.video.currentTime * 1000);
-      if (!elements.video.paused && !elements.video.ended) {
+      renderDrawingUpTo(currentTimeMs);
+      if (!elements.video.paused && !elements.video.ended && pendingSeekTimeMs == null) {
         startEffectsScheduler();
         startDrawingScheduler();
       }
@@ -5637,7 +6925,20 @@
     });
 
     document.addEventListener("mouseup", () => {
+      if (!isDragging) {
+        return;
+      }
       isDragging = false;
+      // Finalize drag: re-assert the last target now that intermediate seeked
+      // events will no longer be ignored via isDragging.
+      if (pendingSeekTimeMs != null && elements.video) {
+        pendingSeekRetryCount = 0;
+        try {
+          elements.video.currentTime = pendingSeekTimeMs / 1000;
+        } catch {
+          // ignore
+        }
+      }
     });
 
     document.addEventListener("touchmove", (e) => {
@@ -5647,7 +6948,18 @@
     });
 
     document.addEventListener("touchend", () => {
+      if (!isDragging) {
+        return;
+      }
       isDragging = false;
+      if (pendingSeekTimeMs != null && elements.video) {
+        pendingSeekRetryCount = 0;
+        try {
+          elements.video.currentTime = pendingSeekTimeMs / 1000;
+        } catch {
+          // ignore
+        }
+      }
     });
 
     // Speed control
@@ -5695,14 +7007,11 @@
           break;
         case "ArrowLeft":
           e.preventDefault();
-          elements.video.currentTime = Math.max(
-            0,
-            elements.video.currentTime - (e.shiftKey ? 10 : 5),
-          );
+          seekVideoToMs(currentTimeMs - (e.shiftKey ? 10000 : 5000));
           break;
         case "ArrowRight":
           e.preventDefault();
-          elements.video.currentTime = elements.video.currentTime + (e.shiftKey ? 10 : 5);
+          seekVideoToMs(currentTimeMs + (e.shiftKey ? 10000 : 5000));
           break;
         case "Digit1":
           elements.video.playbackRate = 0.5;
@@ -5747,14 +7056,98 @@
     return Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
   }
 
-  function seekToRatio(ratio) {
-    elements.video.currentTime = (ratio * duration) / 1000;
-    currentTimeMs = elements.video.currentTime * 1000;
+  /**
+   * Seek playback to an absolute time (ms).
+   *
+   * Timeline UI updates immediately to the click target. The media element is
+   * assigned currentTime separately; we do NOT read currentTime back for the
+   * playhead, and we do NOT commit a far `seeked` sample (that was the
+   * jump-then-snap-back bug on slower/unindexed WebM demux paths).
+   *
+   * @param {number} timeMs
+   * @param {{ forceScrollActivity?: boolean }} [options]
+   */
+  function seekVideoToMs(timeMs, options = {}) {
+    if (!elements.video) {
+      return;
+    }
+    const playbackDuration = syncDurationState(getVideoDurationMs());
+    const maxMs = playbackDuration > 0 ? playbackDuration : Number.POSITIVE_INFINITY;
+    const targetMs = Math.max(0, Math.min(Number(timeMs) || 0, maxMs));
+
+    seekRequestId += 1;
+    const requestId = seekRequestId;
+    pendingSeekTimeMs = targetMs;
+    currentTimeMs = targetMs;
+    pendingSeekRetryCount = 0;
+
+    clearPendingSeekTimeout();
+    // Periodically re-assert currentTime while media has not confirmed the
+    // target. Never clear pendingSeekTimeMs just because time passed — clearing
+    // while media is still far lets timeupdate snap the handle backward.
+    let pendingSeekPolls = 0;
+    const maxPendingSeekPolls = 8;
+    pendingSeekTimeoutId = setTimeout(function reassertPendingSeek() {
+      pendingSeekTimeoutId = null;
+      if (requestId !== seekRequestId || pendingSeekTimeMs == null) {
+        return;
+      }
+      const mediaMs = elements.video ? elements.video.currentTime * 1000 : pendingSeekTimeMs;
+      if (Math.abs(mediaMs - pendingSeekTimeMs) <= SEEK_COMMIT_TOLERANCE_MS) {
+        currentTimeMs = mediaMs;
+        pendingSeekTimeMs = null;
+        pendingSeekRetryCount = 0;
+        updateProgress();
+        return;
+      }
+      currentTimeMs = pendingSeekTimeMs;
+      if (elements.video && pendingSeekRetryCount < SEEK_MAX_RETRIES) {
+        pendingSeekRetryCount += 1;
+        try {
+          elements.video.currentTime = pendingSeekTimeMs / 1000;
+        } catch {
+          // ignore
+        }
+      }
+      updateProgress();
+      pendingSeekPolls += 1;
+      // Keep polling a bounded number of times; leave pending so timeupdate still
+      // cannot snap the handle to a far media clock until media eventually lands
+      // or the user seeks again.
+      if (pendingSeekPolls < maxPendingSeekPolls) {
+        pendingSeekTimeoutId = setTimeout(reassertPendingSeek, SEEK_PENDING_TIMEOUT_MS);
+      }
+    }, SEEK_PENDING_TIMEOUT_MS);
+
     updateProgress();
+    updateActivityHighlight({
+      forceScroll: Boolean(options.forceScrollActivity) || activeLogsTab === "activity",
+    });
     renderConsoleEntries();
     renderNetworkEntries();
     updateStorageForTime();
     updateElementsForTime();
+
+    try {
+      // Use precise currentTime assignment only. HTMLMediaElement.fastSeek()
+      // intentionally jumps to a nearby keyframe and was causing visible
+      // land-off-target + seeked snap on some WebM packages.
+      elements.video.currentTime = targetMs / 1000;
+    } catch (error) {
+      // InvalidStateError before metadata — pendingSeekTimeMs is re-applied on loadedmetadata.
+      console.warn("[GN Tracing Player] Seek deferred until media is ready:", error);
+    }
+  }
+
+  function seekToRatio(ratio) {
+    const safeRatio = Math.max(0, Math.min(1, Number(ratio) || 0));
+    // Use the locked timeline duration (package metadata baseline), not a
+    // fluctuating video.duration from progressive demux.
+    const playbackDuration = syncDurationState(getVideoDurationMs());
+    if (playbackDuration <= 0) {
+      return;
+    }
+    seekVideoToMs(safeRatio * playbackDuration);
   }
 
   function clampProgressPercent(value) {
@@ -5920,6 +7313,12 @@
       }
     });
 
+    elements.activityTab?.addEventListener("click", () => {
+      if (!elements.activityTab.classList.contains("hidden")) {
+        showLogsTab("activity");
+      }
+    });
+
     elements.consoleTab.addEventListener("click", () => {
       showLogsTab("console");
     });
@@ -6038,7 +7437,7 @@
 
             navigator.clipboard.writeText(text).then(() => {
               const originalText = e.target.textContent;
-              e.target.textContent = "Copied!";
+              e.target.textContent = t("detail.copied");
               setTimeout(() => {
                 e.target.textContent = originalText;
               }, 1500);
@@ -6107,7 +7506,7 @@
 
       const password = elements.passwordInput?.value || "";
       if (!password) {
-        setPasswordPromptError("Enter the recording password.");
+        setPasswordPromptError(t("password.enterRequired"));
         return;
       }
 
@@ -6126,19 +7525,15 @@
       const timeMs = Number(item.dataset.timeMs);
       if (!Number.isFinite(timeMs) || !elements.video) return;
 
-      elements.video.currentTime = Math.max(0, timeMs / 1000);
-      currentTimeMs = elements.video.currentTime * 1000;
-      updateProgress();
-      renderConsoleEntries();
-      renderNetworkEntries();
-      updateStorageForTime();
-      updateElementsForTime();
+      seekVideoToMs(timeMs, { forceScrollActivity: true });
     });
   }
 
   // Initialize
   async function init() {
     initElements();
+    attachLanguageSwitch();
+    attachFeedbackUi();
     applyLayoutState();
     updateVolumeDisplay();
     document.title = DEFAULT_PLAYER_TITLE;
@@ -6154,31 +7549,83 @@
     setupPasswordListeners();
     setupReportListeners();
 
-    // Theme toggle
+    // Theme preference: system → light → dark (cycle). data-theme is always light|dark for CSS.
     const themeToggleBtn = document.getElementById("theme-toggle-btn");
     const themeToggleIcon = document.getElementById("theme-toggle-icon");
     if (themeToggleBtn && themeToggleIcon) {
-      const savedTheme = localStorage.getItem("gn_tracing_theme");
-      const systemLight =
-        window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches;
-      const currentTheme =
-        savedTheme === "light" || savedTheme === "dark"
-          ? savedTheme
-          : systemLight
-            ? "light"
-            : "dark";
-      document.documentElement.setAttribute("data-theme", currentTheme);
-      themeToggleIcon.className = currentTheme === "light" ? "ph ph-sun" : "ph ph-moon";
-      themeToggleBtn.addEventListener("click", () => {
-        // Read the live theme from the DOM each click so the toggle keeps
-        // working past the first press (a captured const would freeze it).
-        const activeTheme =
-          document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark";
-        const newTheme = activeTheme === "dark" ? "light" : "dark";
-        document.documentElement.setAttribute("data-theme", newTheme);
-        localStorage.setItem("gn_tracing_theme", newTheme);
-        themeToggleIcon.className = newTheme === "light" ? "ph ph-sun" : "ph ph-moon";
+      const THEME_STORAGE_KEY = "gn_tracing_theme";
+      const THEME_CYCLE = ["system", "light", "dark"];
+      const getThemeLabels = () => ({
+        system: t("theme.system"),
+        light: t("theme.light"),
+        dark: t("theme.dark"),
       });
+      const themeIcons = {
+        system: "ph ph-desktop",
+        light: "ph ph-sun",
+        dark: "ph ph-moon",
+      };
+
+      const systemPrefersLight = () =>
+        Boolean(window.matchMedia?.("(prefers-color-scheme: light)").matches);
+
+      const readThemePreference = () => {
+        const saved = localStorage.getItem(THEME_STORAGE_KEY);
+        if (saved === "light" || saved === "dark" || saved === "system") {
+          return saved;
+        }
+        return "system";
+      };
+
+      const resolveTheme = (preference) => {
+        if (preference === "light" || preference === "dark") {
+          return preference;
+        }
+        return systemPrefersLight() ? "light" : "dark";
+      };
+
+      const applyThemePreference = (preference) => {
+        const resolved = resolveTheme(preference);
+        document.documentElement.setAttribute("data-theme", resolved);
+        document.documentElement.setAttribute("data-theme-preference", preference);
+        localStorage.setItem(THEME_STORAGE_KEY, preference);
+        themeToggleIcon.className = themeIcons[preference] || themeIcons.system;
+        const labels = getThemeLabels();
+        const label = labels[preference] || labels.system;
+        const title =
+          preference === "system"
+            ? t("theme.titleSystem", { label })
+            : t("theme.titleFixed", { label });
+        themeToggleBtn.setAttribute("aria-label", t("theme.aria", { label }));
+        themeToggleBtn.title = title;
+      };
+
+      applyThemePreference(readThemePreference());
+      updateThemeToggleLabels = () => {
+        applyThemePreference(readThemePreference());
+      };
+
+      themeToggleBtn.addEventListener("click", () => {
+        const current = readThemePreference();
+        const index = THEME_CYCLE.indexOf(current);
+        const next = THEME_CYCLE[(index + 1) % THEME_CYCLE.length];
+        applyThemePreference(next);
+      });
+
+      // When preference is System, follow OS light/dark changes live.
+      const media = window.matchMedia?.("(prefers-color-scheme: light)");
+      if (media) {
+        const onSystemThemeChange = () => {
+          if (readThemePreference() === "system") {
+            applyThemePreference("system");
+          }
+        };
+        if (typeof media.addEventListener === "function") {
+          media.addEventListener("change", onSystemThemeChange);
+        } else if (typeof media.addListener === "function") {
+          media.addListener(onSystemThemeChange);
+        }
+      }
     }
 
     const urlParams = new URLSearchParams(window.location.search);
@@ -6191,12 +7638,14 @@
     if (replayRecordingId) {
       // Google Drive + Dropbox only.
       if (replayRef.provider !== "google-drive" && replayRef.provider !== "dropbox") {
-        elements.errorMessage.textContent = `Storage provider "${replayRef.provider}" is not supported in this player build yet.`;
+        elements.errorMessage.textContent = t("error.providerUnsupported", {
+          provider: replayRef.provider,
+        });
         showError();
         return;
       }
       activeReplayProvider = replayRef.provider;
-      resetLoadingProgress("Loading recording package...");
+      resetLoadingProgress(t("loading.package"));
       // Google: /api/drive. Dropbox: /api/dropbox.
       recordingFiles = await loadRecordingFilesFromIndex(replayRecordingId);
       await loadRecordingFromFiles();
@@ -6204,14 +7653,10 @@
       recordingFiles = buildDirectRecordingFiles(urlParams);
       await loadRecordingFromFiles();
     } else if (!hasParams) {
-      console.info(
-        "[GN Tracing Player] Showing intro state without replay params:",
-        GITHUB_REPO_URL,
-      );
+      console.info("[GN Tracing Player] Showing intro state without replay params");
       showIntro();
     } else {
-      elements.errorMessage.textContent =
-        "Invalid or missing recording parameters. Please provide videos and metadata file IDs.";
+      elements.errorMessage.textContent = t("error.invalidParams");
       showError();
     }
   }

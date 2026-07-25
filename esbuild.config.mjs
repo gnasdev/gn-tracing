@@ -38,6 +38,11 @@ const dropboxTokenProxyUrl = normalizeProxyUrl(
     ? getConfigValue("DROPBOX_TOKEN_PROXY_URL")
     : getConfigValue("DROPBOX_TOKEN_PROXY_URL_DEV", DEFAULT_DEV_DROPBOX_TOKEN_PROXY_URL),
 );
+// Feedback submit reuses the multi-issuer Worker at POST /feedback. Prefer an
+// explicit FEEDBACK_PROXY_URL; otherwise derive origin from a configured OAuth
+// proxy URL so host_permissions stay aligned with the same Worker.
+const DEFAULT_DEV_FEEDBACK_PROXY_URL = "http://localhost:8787/feedback";
+const feedbackProxyUrl = resolveFeedbackProxyUrl();
 const chromeExtensionPublicKey = getConfigValue("CHROME_EXTENSION_PUBLIC_KEY");
 const chromeExtensionPrivateKey = getConfigValue("CHROME_EXTENSION_PRIVATE_KEY");
 const chromeExtensionId = getConfigValue(
@@ -84,9 +89,46 @@ const commonOptions = {
     __GOOGLE_TOKEN_PROXY_URL__: JSON.stringify(googleTokenProxyUrl),
     __DROPBOX_CLIENT_ID__: JSON.stringify(dropboxClientId),
     __DROPBOX_TOKEN_PROXY_URL__: JSON.stringify(dropboxTokenProxyUrl),
+    __FEEDBACK_PROXY_URL__: JSON.stringify(feedbackProxyUrl),
     __PLAYER_LOCAL_PORT__: JSON.stringify(playerLocalPort),
   },
 };
+
+/**
+ * Resolve the feedback Worker endpoint for define + host_permissions.
+ * Empty string means the extension will refuse submit with a clear error.
+ */
+function resolveFeedbackProxyUrl() {
+  const explicit = normalizeProxyUrl(
+    isProductionBuild
+      ? getConfigValue("FEEDBACK_PROXY_URL")
+      : getConfigValue("FEEDBACK_PROXY_URL_DEV", DEFAULT_DEV_FEEDBACK_PROXY_URL),
+  );
+  if (explicit) {
+    // Allow either full /feedback URL or bare Worker origin.
+    if (/\/feedback\/?$/i.test(explicit)) {
+      return explicit.replace(/\/+$/, "");
+    }
+    try {
+      return `${new URL(explicit).origin}/feedback`;
+    } catch {
+      return explicit;
+    }
+  }
+
+  for (const proxyUrl of [googleTokenProxyUrl, dropboxTokenProxyUrl]) {
+    if (!proxyUrl) {
+      continue;
+    }
+    try {
+      return `${new URL(proxyUrl).origin}/feedback`;
+    } catch {
+      // try next
+    }
+  }
+
+  return isProductionBuild ? "" : DEFAULT_DEV_FEEDBACK_PROXY_URL;
+}
 
 function loadEnvFile(envPath) {
   if (!fs.existsSync(envPath)) {
@@ -287,6 +329,7 @@ function addTokenProxyHostPermission(manifest) {
   for (const [label, proxyUrl] of [
     ["GOOGLE_TOKEN_PROXY_URL", googleTokenProxyUrl],
     ["DROPBOX_TOKEN_PROXY_URL", dropboxTokenProxyUrl],
+    ["FEEDBACK_PROXY_URL", feedbackProxyUrl],
   ]) {
     if (!proxyUrl) {
       continue;

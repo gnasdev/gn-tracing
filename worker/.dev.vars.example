@@ -15,3 +15,10 @@ ALLOWED_EXTENSION_ORIGINS=chrome-extension://jbhlmonpecgenhinhffclanbbknjlbeh
 # OAuth client secrets (local only; never commit).
 GOOGLE_CLIENT_SECRET=
 DROPBOX_CLIENT_SECRET=
+
+# Opt-in product feedback → GitHub Issues (local only; never commit).
+# Fine-grained PAT with Issues: Write on gnasdev/gn-tracing.
+GITHUB_FEEDBACK_TOKEN=
+GITHUB_REPO_OWNER=gnasdev
+GITHUB_REPO_NAME=gn-tracing
+GITHUB_FEEDBACK_LABELS=feedback

@@ -1,10 +1,10 @@
 /**
  * Syncs worker/.dev.vars from the repo root .env for local `wrangler dev`.
  *
- * `task dev` runs the multi-issuer OAuth Worker on http://localhost:8787.
- * wrangler only loads secrets from worker/.dev.vars (not the root .env), so
- * this script keeps Google / Dropbox client ids + secrets in sync without
- * committing them.
+ * `task dev` runs the multi-issuer Worker on http://localhost:8787 (OAuth +
+ * optional POST /feedback). wrangler only loads secrets from worker/.dev.vars
+ * (not the root .env), so this script keeps Google / Dropbox / feedback vars
+ * in sync without committing them.
  *
  * Usage: node scripts/sync-worker-dev-vars.mjs
  * Exit 0 even when .env is missing (prints a short skip message).
@@ -19,6 +19,7 @@ const rootDir = path.resolve(__dirname, "..");
 const envPath = path.join(rootDir, ".env");
 const outPath = path.join(rootDir, "worker", ".dev.vars");
 
+/** Keys counted in the "populated" log summary when non-empty after sync. */
 const KEYS = [
   "GOOGLE_CLIENT_ID",
   "GOOGLE_CLIENT_SECRET",
@@ -26,6 +27,10 @@ const KEYS = [
   "DROPBOX_CLIENT_SECRET",
   "CHROME_EXTENSION_ID",
   "WORKER_ALLOWED_EXTENSION_ORIGINS",
+  "GITHUB_FEEDBACK_TOKEN",
+  "GITHUB_REPO_OWNER",
+  "GITHUB_REPO_NAME",
+  "GITHUB_FEEDBACK_LABELS",
 ];
 
 function loadEnvFile(filePath) {
@@ -73,6 +78,12 @@ function main() {
     `DROPBOX_CLIENT_SECRET=${env.DROPBOX_CLIENT_SECRET || ""}`,
     `ALLOWED_EXTENSION_ORIGINS=${allowed}`,
     "",
+    "# Opt-in product feedback → GitHub Issues (POST /feedback)",
+    `GITHUB_FEEDBACK_TOKEN=${env.GITHUB_FEEDBACK_TOKEN || ""}`,
+    `GITHUB_REPO_OWNER=${env.GITHUB_REPO_OWNER || "gnasdev"}`,
+    `GITHUB_REPO_NAME=${env.GITHUB_REPO_NAME || "gn-tracing"}`,
+    `GITHUB_FEEDBACK_LABELS=${env.GITHUB_FEEDBACK_LABELS || "feedback"}`,
+    "",
   ];
 
   fs.mkdirSync(path.dirname(outPath), { recursive: true });
@@ -81,6 +92,10 @@ function main() {
   const configured = KEYS.filter((k) => {
     if (k === "CHROME_EXTENSION_ID" || k === "WORKER_ALLOWED_EXTENSION_ORIGINS") {
       return Boolean(allowed);
+    }
+    if (k === "GITHUB_REPO_OWNER" || k === "GITHUB_REPO_NAME" || k === "GITHUB_FEEDBACK_LABELS") {
+      // Always written with defaults; count only when user set them or feedback token is present.
+      return Boolean(env[k] || env.GITHUB_FEEDBACK_TOKEN);
     }
     return Boolean(env[k]);
   });

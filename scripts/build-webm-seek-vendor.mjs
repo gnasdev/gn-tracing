@@ -54,8 +54,19 @@ ${libCode}
     return normalized.indexOf("webm") !== -1 || normalized.indexOf("matroska") !== -1;
   }
 
+  /**
+   * Force a playable WebM mime. Never leave application/octet-stream (common
+   * from cloud download Content-Type) on the blob URL — Chromium random-seek
+   * is unreliable for MediaRecorder WebM when the blob type is not video/*.
+   */
   function withMimeType(blob, mimeType) {
-    if (blob.type || !mimeType) return blob;
+    if (!mimeType) return blob;
+    var current = String(blob.type || "").toLowerCase();
+    var wanted = String(mimeType).toLowerCase();
+    if (current && isWebmMime(current) && current === wanted) return blob;
+    if (current && isWebmMime(current) && isWebmMime(wanted)) {
+      if (current.indexOf("codecs") !== -1 || wanted.indexOf("codecs") === -1) return blob;
+    }
     return new Blob([blob], { type: mimeType });
   }
 
@@ -77,12 +88,12 @@ ${libCode}
     try {
       var fixed = await fixWithCues(input);
       if (!(fixed instanceof Blob) || fixed.size === 0) {
-        return { ok: false, blob: input, reason: "cues-rewrite-empty" };
+        return { ok: false, blob: withMimeType(input, mimeType), reason: "cues-rewrite-empty" };
       }
       return { ok: true, blob: withMimeType(fixed, mimeType), method: "cues" };
     } catch (error) {
       var reason = error instanceof Error ? error.message : "webm-cues-fix-failed";
-      return { ok: false, blob: input, reason: reason };
+      return { ok: false, blob: withMimeType(input, mimeType), reason: reason };
     }
   }
 

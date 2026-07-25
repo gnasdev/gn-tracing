@@ -13,7 +13,7 @@
 
 html,
 body {
-  width: 360px;
+  width: 380px;
 }
 
 body {
@@ -26,60 +26,102 @@ body {
 }
 
 #app {
+  position: relative;
   max-height: 600px;
+  overflow-x: clip;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 12px 14px 14px;
+  padding: 14px 16px 16px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
 }
 
 /* ---------- Header ---------- */
 /* Popup reuses brand/action classes from theme but is not a full-page
-   sticky bar. Force a single row: brand left, actions right. */
+   sticky bar. Brand + timer left; icon tools right. */
 #header.gn-topbar {
   position: static;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: 12px;
   width: 100%;
   height: auto;
-  min-height: 32px;
-  padding: 0;
-  border-bottom: none;
+  min-height: 40px;
+  padding: 0 0 10px;
+  border-bottom: 1px solid var(--border-subtle);
   background: transparent;
   box-shadow: none;
 }
 
 #header .gn-topbar-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   flex: 1;
   min-width: 0;
+}
+
+#header .gn-topbar-logo {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+}
+
+#header .gn-topbar-name {
+  flex-shrink: 0;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
 }
 
 #header .gn-topbar-actions,
 .header-actions {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   flex-shrink: 0;
 }
 
-/* Recording status pill */
+/* Slightly denser icon chrome in the popup toolbar only. */
+#header .icon-btn {
+  width: 30px;
+  height: 30px;
+}
+
+#header .icon-btn svg,
+#header .theme-toggle-icon,
+#header .theme-toggle-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+#header .icon-btn.gn-lang-toggle {
+  font-size: 10px;
+}
+
+/* Recording timer sits with the brand so the right side stays open. */
 #status-bar {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 4px 10px;
-  border: 1px solid color-mix(in srgb, var(--record) 32%, transparent);
+  gap: 6px;
+  margin-left: 2px;
+  padding: 4px 9px;
+  border: 1px solid color-mix(in srgb, var(--record) 34%, transparent);
   border-radius: var(--radius-full);
-  background: var(--record-soft);
+  background: color-mix(in srgb, var(--record) 12%, var(--bg-elevated));
+  box-shadow: none;
+}
+
+#status-bar.hidden {
+  display: none !important;
 }
 
 #recording-indicator {
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
   flex-shrink: 0;
   border-radius: var(--radius-full);
   background: var(--record);
@@ -88,7 +130,7 @@ body {
 
 @keyframes gn-record-pulse {
   0% {
-    box-shadow: 0 0 0 0 var(--record-soft);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--record) 45%, transparent);
   }
   70% {
     box-shadow: 0 0 0 6px transparent;
@@ -100,11 +142,34 @@ body {
 
 #timer {
   font-family: var(--font-mono);
-  font-size: var(--fs-sm);
-  font-weight: 600;
+  font-size: 12px;
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
   line-height: 1;
+  letter-spacing: 0.02em;
   color: var(--record);
+}
+
+/* ---------- Live recording panel (actions + stats + draw) ---------- */
+.recording-live {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.recording-live:has(#recording-actions.is-recording) {
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--accent) 18%, var(--border-default));
+  border-radius: var(--radius-lg);
+  background:
+    radial-gradient(
+      circle at 0% 0%,
+      color-mix(in srgb, var(--accent) 9%, transparent),
+      transparent 42%
+    ),
+    var(--bg-card);
+  box-shadow: var(--shadow-sm);
+  overflow: visible;
 }
 
 /* ---------- Recording actions ---------- */
@@ -117,25 +182,36 @@ body {
 #recording-actions.is-recording {
   flex-direction: row;
   align-items: stretch;
+  gap: 8px;
 }
 
 #toggle-btn {
   width: 100%;
-  min-height: 48px;
+  min-height: 46px;
   font-size: var(--fs-md);
   font-weight: 700;
   letter-spacing: -0.01em;
 }
 
 #recording-actions.is-recording #toggle-btn {
-  flex: 1;
+  flex: 1 1 auto;
   width: auto;
   min-width: 0;
+  min-height: 42px;
+  font-size: var(--fs-base);
 }
 
 #remove-recording-btn {
-  flex-shrink: 0;
+  flex: 0 0 auto;
+  min-width: 42px;
+  min-height: 42px;
   width: auto;
+  padding-inline: 12px;
+}
+
+#recording-actions.is-recording #remove-recording-btn {
+  /* Keep discard secondary but same height as stop */
+  align-self: stretch;
 }
 
 #recording-unavailable-msg {
@@ -156,30 +232,37 @@ body {
   gap: 8px;
 }
 
+#stats.hidden {
+  display: none !important;
+}
+
 .stat-row {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  justify-content: center;
+  gap: 4px;
+  min-height: 58px;
   padding: 10px 12px;
-  border: 1px solid var(--border-default);
+  border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
-  background: var(--bg-card);
-  box-shadow: var(--shadow-sm);
+  background: color-mix(in srgb, var(--bg-elevated) 88%, transparent);
 }
 
 .stat-label {
-  font-size: var(--fs-xs);
-  font-weight: 600;
-  letter-spacing: 0.06em;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
   text-transform: uppercase;
-  color: var(--text-muted);
+  color: var(--text-dim);
 }
 
 .stat-value {
   font-family: var(--font-mono);
-  font-size: 18px;
-  font-weight: 600;
+  font-size: 20px;
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  line-height: 1;
   color: var(--text-primary);
 }
 
@@ -187,21 +270,35 @@ body {
 #drawing-section {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 12px;
+  gap: 8px;
+  padding: 10px;
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
-  background: var(--bg-card);
+  background: color-mix(in srgb, var(--bg-elevated) 90%, transparent);
+  overflow: visible;
+}
+
+#drawing-section.hidden {
+  display: none !important;
+}
+
+.drawing-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 #draw-toggle-btn {
   width: 100%;
+  min-height: 36px;
+  justify-content: center;
 }
 
 #draw-toggle-btn.active {
-  border-color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border-default));
   background: var(--bg-accent-soft);
   color: var(--accent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent);
 }
 
 .drawing-color-row {
@@ -209,50 +306,68 @@ body {
   align-items: center;
   gap: 8px;
   min-width: 0;
+  /* Extra vertical room so selected-ring (outline outside the swatch) is not clipped. */
+  padding: 10px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface-solid, var(--bg-base));
+  overflow: visible;
 }
 
 .drawing-color-label {
   flex-shrink: 0;
-  font-size: var(--fs-xs);
-  color: var(--text-muted);
+  width: 2.4em;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-dim);
 }
 
 .drawing-color-swatches {
   display: flex;
   flex: 1;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   min-width: 0;
+  /* Keep overflow visible so the selected ring is not cut off at the track edges. */
+  overflow: visible;
+  padding: 2px 0;
 }
 
 /* Swatch buttons are created by JS; fill color is set inline. */
 .drawing-color-swatch {
   width: 18px;
   height: 18px;
+  flex: 0 0 18px;
   padding: 0;
-  border: 2px solid var(--border-default);
+  border: 2px solid color-mix(in srgb, var(--bg-base) 70%, var(--border-default));
   border-radius: var(--radius-full);
   cursor: pointer;
   transition:
     transform var(--dur-fast) var(--ease-standard),
     box-shadow var(--dur-fast) var(--ease-standard),
-    border-color var(--dur-fast) var(--ease-standard);
+    border-color var(--dur-fast) var(--ease-standard),
+    outline-color var(--dur-fast) var(--ease-standard);
 }
 
 .drawing-color-swatch:hover:not(:disabled) {
-  transform: scale(1.12);
+  transform: scale(1.1);
 }
 
 .drawing-color-swatch:focus-visible {
   outline: 2px solid var(--accent-muted);
-  outline-offset: 2px;
+  outline-offset: 3px;
 }
 
+/* Use outline (not multi-layer box-shadow) so the ring paints outside the box
+   and survives parent padding; outline is not clipped by overflow:auto. */
 .drawing-color-swatch.is-selected {
-  box-shadow:
-    0 0 0 2px var(--bg-base),
-    0 0 0 4px var(--accent);
+  border-color: var(--bg-base);
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  box-shadow: none;
 }
 
 .drawing-color-swatch:disabled {
@@ -263,7 +378,7 @@ body {
 /* Custom color picker styled like a dashed swatch. */
 .drawing-color-custom {
   position: relative;
-  flex-shrink: 0;
+  flex: 0 0 18px;
   width: 18px;
   height: 18px;
   overflow: hidden;
@@ -276,7 +391,7 @@ body {
 }
 
 .drawing-color-custom:hover {
-  transform: scale(1.12);
+  transform: scale(1.1);
   border-color: var(--border-strong);
 }
 
@@ -313,7 +428,10 @@ body {
 }
 
 .drawing-hint {
-  font-size: var(--fs-xs);
+  margin: 0;
+  padding-left: 2px;
+  font-size: 10px;
+  line-height: 1.35;
   color: var(--text-dim);
 }
 
@@ -594,31 +712,144 @@ body {
 
 .history-page-btn {
   flex-shrink: 0;
+  white-space: nowrap;
 }
 
-/* ---------- Disclosure & footer ---------- */
-#capture-disclosure {
+/* ---------- Package password ---------- */
+.package-security-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  background: var(--bg-surface-solid);
+}
+
+.package-security-summary {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
-.capture-disclosure-copy {
+.package-security-summary.hidden,
+.package-security-form.hidden {
+  display: none !important;
+}
+
+.package-security-status-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.package-security-status {
+  display: inline-flex;
+  align-self: flex-start;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  line-height: 1.3;
+}
+
+.package-security-status.is-on {
+  color: var(--success);
+  background: var(--success-bg, var(--bg-success-soft));
+  border: 1px solid var(--success-border, var(--border-success));
+}
+
+.package-security-status.is-off {
+  color: var(--text-muted);
+  background: var(--bg-card-hover);
+  border: 1px solid var(--border-subtle);
+}
+
+.package-security-hint {
+  margin: 0;
   font-size: var(--fs-xs);
-  line-height: 1.5;
+  line-height: 1.45;
   color: var(--text-muted);
 }
 
-.popup-footer.gn-footer {
-  padding-top: 10px;
-  border-top: 1px solid var(--border-subtle);
+.package-security-summary-actions,
+.package-security-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
 }
 
-.popup-footer-tagline {
-  font-size: 10px;
-  font-weight: 500;
-  color: var(--text-dim);
+.package-security-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
+
+.package-security-field {
+  display: block;
+  width: 100%;
+}
+
+.package-security-field input {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 32px;
+  padding: 6px 10px;
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--fs-sm);
+}
+
+.package-security-field input:focus {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 1px;
+  border-color: var(--border-hover);
+}
+
+.package-security-actions .btn:disabled,
+.package-security-summary-actions .btn:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/*
+ * Feedback popover must stay fully inside the 360px popup.
+ * Detach positioning from the icon wrap so left/right inset against #app.
+ */
+#header .gn-feedback {
+  position: static;
+}
+
+#header .gn-feedback-popover {
+  left: 0;
+  right: 0;
+  width: auto;
+  max-width: none;
+  /* Below topbar (brand row + bottom border padding). */
+  top: 48px;
+  z-index: 80;
+}
+
+/* Match sibling .icon-btn (lang / theme / settings) — no size override. */
 
 .community-actions {
   display: flex;

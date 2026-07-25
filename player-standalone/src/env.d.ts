@@ -6,6 +6,8 @@
 interface GNTracingConfig {
   mode: "extension" | "standalone";
   driveApiKey?: string;
+  /** POST endpoint for opt-in product feedback (Worker /feedback). */
+  feedbackProxyUrl?: string;
 }
 
 declare global {
@@ -16,6 +18,7 @@ declare global {
   interface ImportMetaEnv {
     readonly VITE_DRIVE_API_KEY: string | undefined;
     readonly VITE_BASE_PATH: string | undefined;
+    readonly VITE_FEEDBACK_PROXY_URL: string | undefined;
   }
 
   interface ImportMeta {

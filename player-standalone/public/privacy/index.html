@@ -10,23 +10,7 @@
   <link rel="icon" type="image/png" sizes="32x32" href="/icons/icon32.png">
   <link rel="stylesheet" href="/theme.css">
   <link rel="stylesheet" href="/legal.css">
-  <script>
-    (() => {
-      var t;
-      try {
-        t = localStorage.getItem("gn_tracing_theme");
-        if (t === "light" || t === "dark") {
-          document.documentElement.setAttribute("data-theme", t);
-        } else if (window.matchMedia?.("(prefers-color-scheme: light)").matches) {
-          document.documentElement.setAttribute("data-theme", "light");
-        } else {
-          document.documentElement.setAttribute("data-theme", "dark");
-        }
-      } catch {
-        document.documentElement.setAttribute("data-theme", "dark");
-      }
-    })();
-  </script>
+  <script src="/theme-init.js"></script>
 </head>
 <body class="legal-page">
   <header class="legal-header">
@@ -38,7 +22,6 @@
       <nav class="legal-nav" aria-label="Legal">
         <a href="/privacy/" aria-current="page">Privacy Policy</a>
         <a href="/terms/">Terms of Service</a>
-        <a href="https://github.com/gnasdev/gn-tracing" target="_blank" rel="noreferrer">GitHub</a>
       </nav>
     </div>
   </header>
@@ -239,6 +222,17 @@
       tokens or file bodies.
     </p>
 
+    <h2>Optional Product Feedback</h2>
+    <p>
+      When you use the in-extension <strong>Feedback</strong> control and press Submit, GN Tracing
+      sends only the text you typed plus light environment diagnostics (extension version, browser
+      name/version, operating system label, and locale) to a maintainer-operated Cloudflare Worker.
+      That Worker creates a <strong>public</strong> GitHub issue on the GN Tracing repository so the
+      maintainer can review the report. Feedback is opt-in and never submitted automatically. Do not
+      include passwords, OAuth tokens, or confidential recording contents in feedback text. Feedback
+      is not part of the recording/upload pipeline and is separate from cloud storage packages.
+    </p>
+
     <h2>Google API Limited Use</h2>
     <p>
       When Google Drive is used, GN Tracing's use and transfer of information received from Google
@@ -261,24 +255,24 @@
         <strong>Dropbox</strong> — OAuth sign-in and Dropbox storage of user-uploaded packages (when
         Dropbox is selected)
       </li>
-      <li></li>
       <li>
         <strong>Cloudflare</strong> — hosting of the public replay player and related static pages
         at <a href="https://tracing.gnas.dev/">tracing.gnas.dev</a>
       </li>
       <li>
-        <strong>GitHub</strong> — optional source hosting and issue tracking if you contact us through
-        the repository
+        <strong>GitHub</strong> — source hosting and issue tracking; also receives public issues created
+        when you submit optional in-extension feedback
+      </li>
+      <li>
+        <strong>Cloudflare Worker</strong> — optional OAuth token-exchange proxy and optional feedback
+        proxy that creates GitHub issues on your behalf (when configured)
       </li>
     </ul>
 
     <h2>Contact</h2>
     <p>
-      For questions, support, or deletion help, open an issue at
-      <a href="https://github.com/gnasdev/gn-tracing/issues" target="_blank" rel="noreferrer">
-        https://github.com/gnasdev/gn-tracing/issues
-      </a>
-      or contact the developer at
+      For questions, support, or deletion help, use the in-extension Feedback button (opt-in product
+      feedback) or contact the developer at
       <a href="mailto:ngosangns@gmail.com">ngosangns@gmail.com</a>.
     </p>
     <p>

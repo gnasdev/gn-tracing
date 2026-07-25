@@ -17,31 +17,74 @@
 </head>
 <body>
   <div id="app">
+    <div class="player-global-actions">
+      <div class="gn-feedback player-feedback" id="player-feedback-wrap">
+        <button
+          type="button"
+          id="player-feedback-btn"
+          class="control-btn player-feedback-btn"
+          aria-expanded="false"
+          aria-haspopup="dialog"
+          aria-controls="player-feedback-panel"
+          data-i18n-aria="feedback.button"
+          data-i18n-title="feedback.button"
+          aria-label="Feedback"
+          title="Feedback"
+        >
+          <i class="ph ph-chat-circle-dots" aria-hidden="true"></i>
+        </button>
+        <div
+          id="player-feedback-panel"
+          class="gn-feedback-popover player-feedback-popover hidden"
+          role="dialog"
+          data-i18n-aria="feedback.sectionAria"
+          aria-label="Send feedback"
+        >
+          <label class="gn-feedback-label" for="player-feedback-message" data-i18n="feedback.label">Feedback</label>
+          <textarea
+            id="player-feedback-message"
+            class="gn-feedback-message"
+            rows="4"
+            maxlength="4000"
+            data-i18n-placeholder="feedback.placeholder"
+            placeholder="Describe a bug, idea, or question…"
+          ></textarea>
+          <p class="gn-feedback-hint" data-i18n="feedback.hint">
+            Creates a public GitHub issue. Includes extension version, browser, OS, and locale only. Do not include secrets or passwords.
+          </p>
+          <div class="gn-feedback-status hidden" id="player-feedback-status" role="status" aria-live="polite"></div>
+          <div class="gn-feedback-actions">
+            <button type="button" id="player-feedback-submit" class="btn btn-start btn-small" data-i18n="feedback.submit">Submit</button>
+            <button type="button" id="player-feedback-cancel" class="btn btn-secondary btn-small" data-i18n="feedback.cancel">Cancel</button>
+          </div>
+        </div>
+      </div>
+      <button id="lang-toggle-btn-global" class="control-btn player-lang-toggle" type="button" aria-label="Switch language">VI</button>
+    </div>
     <!-- Loading state (hidden until recording params are present) -->
     <div id="loading-state" class="state-container hidden">
       <div class="spinner"></div>
-      <p id="loading-message">Loading recording...</p>
+      <p id="loading-message" data-i18n="loading.message">Loading recording...</p>
       <div class="loading-progress-bar">
         <div id="loading-progress-fill" class="loading-progress-fill"></div>
       </div>
       <p id="loading-progress-text" class="loading-progress-text">0 B / 0 B (0.0%)</p>
-      <div id="loading-progress-list" class="loading-progress-list"></div>
     </div>
 
     <div id="password-state" class="state-container hidden">
       <div class="password-panel">
-        <h2>Protected Recording</h2>
-        <p>This recording package requires a password before it can be replayed.</p>
+        <h2 data-i18n="password.title">Protected Recording</h2>
+        <p data-i18n="password.lead">This recording package requires a password before it can be replayed.</p>
         <form id="recording-password-form" class="password-form">
-          <label for="recording-password-input">Recording password</label>
+          <label for="recording-password-input" data-i18n="password.label">Recording password</label>
           <div class="password-entry-row">
             <input
               id="recording-password-input"
               type="password"
               autocomplete="current-password"
-              placeholder="Enter password"
+              placeholder="Enter password" data-i18n-placeholder="password.placeholder"
             >
-            <button id="recording-password-submit" type="submit">Unlock</button>
+            <button id="recording-password-submit" type="submit" data-i18n="password.unlock">Unlock</button>
           </div>
           <p id="recording-password-error" class="password-error hidden"></p>
         </form>
@@ -50,77 +93,58 @@
 
     <!-- Error state -->
     <div id="error-state" class="state-container hidden">
-      <h2>Invalid Recording Parameters</h2>
-      <p id="error-message">The recording parameters are missing or invalid.</p>
+      <h2 data-i18n="error.title">Invalid Recording Parameters</h2>
+      <p id="error-message" data-i18n="error.default">The recording parameters are missing or invalid.</p>
     </div>
 
     <div id="intro-state" class="state-container">
       <div class="intro-card">
-        <span class="intro-eyebrow">Browser debugging extension</span>
+        <span class="intro-eyebrow" data-i18n="intro.eyebrow">Browser debugging extension</span>
         <div class="intro-brand">
-          <img class="intro-brand-logo" src="../icons/icon.svg" alt="GN Tracing logo" width="48" height="48">
+          <img class="intro-brand-logo" src="../icons/icon.svg" alt="GN Tracing logo" width="48" height="48" data-i18n-alt="intro.logoAlt">
           <h1>GN Tracing</h1>
         </div>
-        <p class="intro-lead">
-          <strong>GN Tracing</strong> is a browser extension that helps developers and QA create
-          shareable bug reports. When you start a recording, GN Tracing captures the selected tab’s
-          video, console logs, network activity, and related debugging artifacts, then packages them
-          for review.
-        </p>
+        <p class="intro-lead" data-i18n-html="intro.lead"></p>
         <section class="intro-purpose" aria-labelledby="intro-purpose-heading">
-          <h2 id="intro-purpose-heading">Purpose of GN Tracing</h2>
-          <p>
-            The purpose of <strong>GN Tracing</strong> is to record a user-selected browser tab on
-            demand, build a replayable debugging package, store that package in the user’s own cloud
-            storage (Google Drive or Dropbox after the user connects a provider),
-            and open a hosted replay so teammates can inspect what happened without reproducing the
-            bug locally.
-          </p>
-          <p>
+          <h2 id="intro-purpose-heading" data-i18n="intro.purposeTitle">Purpose of GN Tracing</h2>
+          <p data-i18n-html="intro.purposeBody1"></p>
+          <p data-i18n="intro.purposeBody2">
             GN Tracing does not run continuous background surveillance. Recording starts only when
             you click record in the extension popup and stops when you stop recording or close the
             tab.
           </p>
         </section>
-        <div class="intro-actions">
-          <a class="intro-link intro-link-primary" href="https://github.com/gnasdev/gn-tracing" target="_blank" rel="noreferrer">
-            View GN Tracing on GitHub
-          </a>
-        </div>
         <div class="intro-grid intro-grid-3">
           <section class="intro-panel">
-            <h2>What GN Tracing does</h2>
+            <h2 data-i18n="intro.whatTitle">What GN Tracing does</h2>
             <ul>
-              <li>Records tab video and optional tab audio</li>
-              <li>Captures console, network, and WebSocket debugging data</li>
-              <li>Applies client-side redaction based on your privacy settings</li>
-              <li>Uploads a zip package to <strong>your</strong> cloud storage</li>
-              <li>Generates a shareable replay link for the hosted player</li>
+              <li data-i18n="intro.what1">Records tab video and optional tab audio</li>
+              <li data-i18n="intro.what2">Captures console, network, and WebSocket debugging data</li>
+              <li data-i18n="intro.what3">Applies client-side redaction based on your privacy settings</li>
+              <li data-i18n-html="intro.what4"></li>
+              <li data-i18n="intro.what5">Generates a shareable replay link for the hosted player</li>
             </ul>
           </section>
           <section class="intro-panel">
-            <h2>How to use GN Tracing</h2>
+            <h2 data-i18n="intro.howTitle">How to use GN Tracing</h2>
             <ol>
-              <li>Install the <strong>GN Tracing</strong> browser extension.</li>
-              <li>Choose cloud storage in Settings and connect it in the popup (OAuth with limited file access).</li>
-              <li>Start recording the tab you want to debug, then stop when finished.</li>
-              <li>Upload the package and open the generated replay URL.</li>
+              <li data-i18n-html="intro.how1"></li>
+              <li data-i18n="intro.how2">Choose cloud storage in Settings and connect it in the popup (OAuth with limited file access).</li>
+              <li data-i18n="intro.how3">Start recording the tab you want to debug, then stop when finished.</li>
+              <li data-i18n="intro.how4">Upload the package and open the generated replay URL.</li>
             </ol>
           </section>
           <section class="intro-panel">
-            <h2>Cloud storage access</h2>
+            <h2 data-i18n="intro.cloudTitle">Cloud storage access</h2>
             <ul>
-              <li>Supports Google Drive and Dropbox (user-owned cloud only).</li>
-              <li>Google Drive uses the <code>drive.file</code> scope only—not full Drive access.</li>
-              <li>Packages stay in your account; SharePoint/site drives are not supported.</li>
-              <li>Replay files are link-readable so shared URLs work; optional zip passwords protect contents.</li>
+              <li data-i18n="intro.cloud1">Supports Google Drive and Dropbox (user-owned cloud only).</li>
+              <li data-i18n-html="intro.cloud2"></li>
+              <li data-i18n="intro.cloud3">Packages stay in your account; SharePoint/site drives are not supported.</li>
+              <li data-i18n="intro.cloud4">Replay files are link-readable so shared URLs work; optional zip passwords protect contents.</li>
             </ul>
           </section>
         </div>
-        <p class="intro-footnote">
-          Source:
-          <a href="https://github.com/gnasdev/gn-tracing" target="_blank" rel="noreferrer">github.com/gnasdev/gn-tracing</a>.
-        </p>
+        <p class="intro-footnote" data-i18n-html="intro.footnote"></p>
       </div>
     </div>
 
@@ -131,11 +155,26 @@
         <div class="player-brand" aria-label="GN Tracing">
           <img class="player-brand-logo" src="../icons/icon.svg" alt="" aria-hidden="true">
           <h1 id="player-title">GN Tracing</h1>
+          <span id="player-web-title" class="player-web-title hidden"></span>
         </div>
         <div class="header-info">
-          <span id="recording-duration"></span>
-          <button id="theme-toggle-btn" class="control-btn" type="button" aria-label="Toggle theme" title="Toggle light/dark mode">
-            <i id="theme-toggle-icon" class="ph ph-moon"></i>
+          <button
+            type="button"
+            id="player-feedback-btn-header"
+            class="control-btn player-feedback-btn"
+            aria-expanded="false"
+            aria-haspopup="dialog"
+            aria-controls="player-feedback-panel"
+            data-i18n-aria="feedback.button"
+            data-i18n-title="feedback.button"
+            aria-label="Feedback"
+            title="Feedback"
+          >
+            <i class="ph ph-chat-circle-dots" aria-hidden="true"></i>
+          </button>
+          <button id="lang-toggle-btn" class="control-btn player-lang-toggle" type="button" aria-label="Switch language">VI</button>
+          <button id="theme-toggle-btn" class="control-btn" type="button" aria-label="Theme: System" title="Theme: System (follows OS). Click to cycle System → Light → Dark.">
+            <i id="theme-toggle-icon" class="ph ph-desktop" aria-hidden="true"></i>
           </button>
         </div>
       </header>
@@ -154,7 +193,7 @@
           <!-- Video controls -->
           <div class="video-controls">
             <!-- Play/Pause -->
-            <button type="button" id="play-pause-btn" class="control-btn" title="Play/Pause (Space)">
+            <button type="button" id="play-pause-btn" class="control-btn" title="Play/Pause (Space)" data-i18n-title="controls.playPause">
               <i id="play-icon" class="ph ph-play-circle"></i>
               <i id="pause-icon" class="ph ph-pause-circle hidden"></i>
             </button>
@@ -191,21 +230,21 @@
 
             <!-- Volume -->
             <div class="volume-control">
-              <button type="button" id="mute-btn" class="control-btn" title="Mute">
+              <button type="button" id="mute-btn" class="control-btn" title="Mute" data-i18n-title="controls.mute">
                 <i id="volume-on" class="ph ph-speaker-simple-high"></i>
                 <i id="volume-off" class="ph ph-speaker-simple-x hidden"></i>
               </button>
               <input type="range" id="volume-slider" class="volume-slider" min="0" max="1" step="0.05" value="1">
             </div>
 
-            <div class="layout-control-group" aria-label="Player layout controls">
-              <button type="button" id="layout-horizontal-btn" class="control-btn layout-btn active" title="Horizontal layout">
+            <div class="layout-control-group" aria-label="Player layout controls" data-i18n-aria="controls.layoutGroup">
+              <button type="button" id="layout-horizontal-btn" class="control-btn layout-btn active" title="Horizontal layout" data-i18n-title="controls.layoutHorizontal">
                 <i class="ph ph-columns"></i>
               </button>
-              <button type="button" id="layout-vertical-btn" class="control-btn layout-btn" title="Vertical layout">
+              <button type="button" id="layout-vertical-btn" class="control-btn layout-btn" title="Vertical layout" data-i18n-title="controls.layoutVertical">
                 <i class="ph ph-rows"></i>
               </button>
-              <button type="button" id="video-fullscreen-btn" class="control-btn" title="Expand video in tab">
+              <button type="button" id="video-fullscreen-btn" class="control-btn" title="Expand video in tab" data-i18n-title="controls.expandVideo">
                 <i id="fullscreen-enter-icon" class="ph ph-arrows-out-simple"></i>
                 <i id="fullscreen-exit-icon" class="ph ph-arrows-in-simple hidden"></i>
               </button>
@@ -217,7 +256,7 @@
           id="layout-splitter"
           class="layout-splitter"
           role="separator"
-          aria-label="Resize player and logs panels"
+          aria-label="Resize player and logs panels" data-i18n-aria="controls.splitter"
           aria-orientation="vertical"
           aria-valuemin="25"
           aria-valuemax="75"
@@ -229,11 +268,12 @@
         <div id="logs-panel" class="logs-panel">
           <!-- Tab bar -->
           <div class="tab-bar">
-            <button type="button" id="report-tab" class="tab-btn hidden">Report</button>
-            <button type="button" id="console-tab" class="tab-btn active">Console</button>
-            <button type="button" id="network-tab" class="tab-btn">Network</button>
-            <button type="button" id="storage-tab" class="tab-btn hidden">Storage</button>
-            <button type="button" id="elements-tab" class="tab-btn hidden">Elements</button>
+            <button type="button" id="report-tab" class="tab-btn hidden" data-i18n="tabs.report">Report</button>
+            <button type="button" id="activity-tab" class="tab-btn hidden" data-i18n="tabs.activity">Activity</button>
+            <button type="button" id="console-tab" class="tab-btn active" data-i18n="tabs.console">Console</button>
+            <button type="button" id="network-tab" class="tab-btn" data-i18n="tabs.network">Network</button>
+            <button type="button" id="storage-tab" class="tab-btn hidden" data-i18n="tabs.storage">Storage</button>
+            <button type="button" id="elements-tab" class="tab-btn hidden" data-i18n="tabs.elements">Elements</button>
           </div>
 
           <!-- Report viewer -->
@@ -241,18 +281,21 @@
             <div id="report-panel" class="report-panel hidden">
               <div class="report-main">
                 <div class="report-heading">
-                  <span class="report-eyebrow">Report</span>
+                  <span class="report-eyebrow" data-i18n="tabs.report">Report</span>
                   <h2 id="report-title"></h2>
                 </div>
-                <a id="report-page-link" class="report-page-link" href="#" target="_blank" rel="noreferrer" aria-label="Open recorded page"></a>
+                <a id="report-page-link" class="report-page-link" href="#" target="_blank" rel="noreferrer" aria-label="Open recorded page" data-i18n-aria="report.openPage"></a>
               </div>
               <div id="report-meta" class="report-meta"></div>
               <div id="privacy-summary" class="privacy-summary hidden"></div>
-              <img id="report-screenshot" class="report-screenshot hidden" alt="Recording screenshot">
-              <div id="event-timeline" class="event-timeline hidden">
-                <div class="event-timeline-title">Activity</div>
-                <div id="event-list" class="event-list"></div>
-              </div>
+              <img id="report-screenshot" class="report-screenshot hidden" alt="Recording screenshot" data-i18n-alt="report.screenshotAlt">
+            </div>
+          </div>
+
+          <!-- Activity viewer (user-event timeline) -->
+          <div id="activity-viewer" class="viewer-container activity-viewer hidden">
+            <div id="activity-panel" class="activity-panel hidden">
+              <div id="event-list" class="event-list"></div>
             </div>
           </div>
 
@@ -262,16 +305,16 @@
               <div class="filter-meta">
                 <label class="search-input-wrap">
                   <i class="ph ph-magnifying-glass"></i>
-                  <input id="console-search" class="search-input" type="search" placeholder="Search console">
+                  <input id="console-search" class="search-input" type="search" placeholder="Search console" data-i18n-placeholder="console.search">
                 </label>
               </div>
               <div class="filter-buttons" id="console-filters">
-                <button type="button" class="filter-btn active" data-filter="all">All</button>
-                <button type="button" class="filter-btn" data-filter="log">Log</button>
-                <button type="button" class="filter-btn" data-filter="warn">Warn</button>
-                <button type="button" class="filter-btn" data-filter="error">Error</button>
-                <button type="button" class="filter-btn" data-filter="info">Info</button>
-                <button type="button" class="filter-btn" data-filter="debug">Debug</button>
+                <button type="button" class="filter-btn active" data-filter="all" data-i18n="filters.all">All</button>
+                <button type="button" class="filter-btn" data-filter="log" data-i18n="filters.log">Log</button>
+                <button type="button" class="filter-btn" data-filter="warn" data-i18n="filters.warn">Warn</button>
+                <button type="button" class="filter-btn" data-filter="error" data-i18n="filters.error">Error</button>
+                <button type="button" class="filter-btn" data-filter="info" data-i18n="filters.info">Info</button>
+                <button type="button" class="filter-btn" data-filter="debug" data-i18n="filters.debug">Debug</button>
               </div>
             </div>
             <div id="console-entries" class="entries-scroll"></div>
@@ -283,49 +326,49 @@
               <div class="filter-meta">
                 <label class="search-input-wrap">
                   <i class="ph ph-magnifying-glass"></i>
-                  <input id="network-search" class="search-input" type="search" placeholder="Search network">
+                  <input id="network-search" class="search-input" type="search" placeholder="Search network" data-i18n-placeholder="network.search">
                 </label>
                 <span id="network-summary" class="network-summary"></span>
               </div>
               <div class="filter-buttons" id="network-filters">
-                <button type="button" class="filter-btn active" data-filter="all">All</button>
-                <button type="button" class="filter-btn" data-filter="fetch">Fetch/XHR</button>
-                <button type="button" class="filter-btn" data-filter="js">JS</button>
-                <button type="button" class="filter-btn" data-filter="css">CSS</button>
-                <button type="button" class="filter-btn" data-filter="img">Img</button>
-                <button type="button" class="filter-btn" data-filter="doc">Doc</button>
-                <button type="button" class="filter-btn" data-filter="font">Font</button>
-                <button type="button" class="filter-btn" data-filter="media">Media</button>
-                <button type="button" class="filter-btn" data-filter="ws">WS</button>
-                <button type="button" class="filter-btn" data-filter="other">Other</button>
+                <button type="button" class="filter-btn active" data-filter="all" data-i18n="filters.all">All</button>
+                <button type="button" class="filter-btn" data-filter="fetch" data-i18n="filters.fetch">Fetch/XHR</button>
+                <button type="button" class="filter-btn" data-filter="js" data-i18n="filters.js">JS</button>
+                <button type="button" class="filter-btn" data-filter="css" data-i18n="filters.css">CSS</button>
+                <button type="button" class="filter-btn" data-filter="img" data-i18n="filters.img">Img</button>
+                <button type="button" class="filter-btn" data-filter="doc" data-i18n="filters.doc">Doc</button>
+                <button type="button" class="filter-btn" data-filter="font" data-i18n="filters.font">Font</button>
+                <button type="button" class="filter-btn" data-filter="media" data-i18n="filters.media">Media</button>
+                <button type="button" class="filter-btn" data-filter="ws" data-i18n="filters.ws">WS</button>
+                <button type="button" class="filter-btn" data-filter="other" data-i18n="filters.other">Other</button>
               </div>
             </div>
             <div id="network-entries" class="entries-scroll">
               <div class="network-header">
-                <span class="col-method">Method</span>
-                <span class="col-url">URL</span>
-                <span class="col-status">Status</span>
-                <span class="col-type">Type</span>
-                <span class="col-size">Size</span>
+                <span class="col-method" data-i18n="network.method">Method</span>
+                <span class="col-url" data-i18n="network.url">URL</span>
+                <span class="col-status" data-i18n="network.status">Status</span>
+                <span class="col-type" data-i18n="network.type">Type</span>
+                <span class="col-size" data-i18n="network.size">Size</span>
               </div>
               <div id="network-rows"></div>
             </div>
             <div id="websocket-section" class="websocket-section hidden">
-              <h3>WebSocket Connections</h3>
+              <h3 data-i18n="network.websocketConnections">WebSocket Connections</h3>
               <div id="websocket-rows"></div>
             </div>
           </div>
 
           <!-- Storage viewer -->
-          <div id="storage-viewer" class="viewer-container storage-viewer hidden" aria-label="Storage snapshot diff">
+          <div id="storage-viewer" class="viewer-container storage-viewer hidden" aria-label="Storage snapshot diff" data-i18n-aria="storage.aria">
             <div id="storage-content" class="entries-scroll storage-content"></div>
           </div>
 
           <!-- Elements viewer -->
-          <div id="elements-viewer" class="viewer-container elements-viewer hidden" aria-label="DOM snapshot tree">
+          <div id="elements-viewer" class="viewer-container elements-viewer hidden" aria-label="DOM snapshot tree" data-i18n-aria="elements.aria">
             <div class="filter-bar elements-toolbar">
-              <label class="elements-snapshot-label" for="elements-snapshot-select">Snapshot</label>
-              <select id="elements-snapshot-select" class="elements-snapshot-select" aria-label="Select DOM snapshot"></select>
+              <label class="elements-snapshot-label" for="elements-snapshot-select" data-i18n="elements.snapshot">Snapshot</label>
+              <select id="elements-snapshot-select" class="elements-snapshot-select" aria-label="Select DOM snapshot" data-i18n-aria="elements.selectAria"></select>
             </div>
             <div id="elements-tree" class="entries-scroll elements-tree"></div>
           </div>

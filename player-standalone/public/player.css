@@ -66,84 +66,6 @@ body {
   color: var(--text-muted);
 }
 
-.loading-progress-list {
-  width: min(420px, calc(100vw - 48px));
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.loading-progress-item {
-  position: relative;
-  overflow: hidden;
-  height: 10px;
-  padding: 0;
-  border-radius: 999px;
-  border: 1px solid var(--border-input);
-  background: var(--bg-input);
-}
-
-.loading-progress-item::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  width: var(--item-progress, 0%);
-  border-radius: inherit;
-  background: var(--gradient-accent);
-  transition: width 0.2s ease;
-}
-
-.loading-progress-item.is-success::before {
-  background: var(--gradient-success);
-}
-
-.loading-progress-item.is-failed::before {
-  background: var(--gradient-danger);
-}
-
-.loading-progress-item-header,
-.loading-progress-item-meta {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.loading-progress-item-header {
-  margin-bottom: 4px;
-}
-
-.loading-progress-item-label {
-  color: var(--text-primary);
-  font-size: 12px;
-  font-weight: 600;
-  word-break: break-word;
-}
-
-.loading-progress-item-status {
-  color: var(--text-muted);
-  font-size: 10px;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-
-.loading-progress-item.is-success .loading-progress-item-status {
-  color: var(--success);
-}
-
-.loading-progress-item.is-failed .loading-progress-item-status {
-  color: var(--danger-soft);
-}
-
-.loading-progress-item-meta {
-  color: var(--text-secondary);
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-}
-
 @keyframes spin {
   to {
     transform: rotate(360deg);
@@ -630,10 +552,12 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
   padding: 10px 16px;
   background: var(--bg-surface);
   border-bottom: 1px solid var(--border-default);
   flex-shrink: 0;
+  min-width: 0;
 }
 
 .player-brand {
@@ -641,6 +565,8 @@ body {
   align-items: center;
   gap: 8px;
   min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
 }
 
 .player-brand-logo {
@@ -650,18 +576,108 @@ body {
 }
 
 .header h1 {
+  flex: 0 0 auto;
   font-size: 15px;
   font-weight: 600;
   color: var(--text-secondary);
   line-height: 1;
+  white-space: nowrap;
+}
+
+/* Recorded page/web title next to the brand; CSS-only truncation. */
+.player-web-title {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.player-web-title::before {
+  content: "·";
+  margin-right: 8px;
+  color: var(--text-dim);
 }
 
 .header-info {
   display: flex;
-  gap: 16px;
+  gap: 8px;
   align-items: center;
+  flex: 0 0 auto;
   font-size: 12px;
   color: var(--text-muted);
+}
+
+.player-lang-toggle {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
+  min-width: 32px;
+}
+
+.player-global-actions {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.player-global-actions .control-btn {
+  background: var(--bg-card);
+  border: 1px solid var(--border-default);
+  box-shadow: var(--shadow-sm);
+}
+
+.player-feedback-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  min-width: 32px;
+  padding: 0;
+}
+
+.player-feedback-btn .ph {
+  font-size: 16px;
+  line-height: 1;
+}
+
+.player-feedback-popover {
+  right: 0;
+  top: calc(100% + 8px);
+  width: min(320px, calc(100vw - 24px));
+  max-width: calc(100vw - 24px);
+}
+
+/* While replaying, header owns lang/theme/feedback; hide floating controls
+   but keep the shared popover mount fixed so header can open it. */
+body.player-active .player-global-actions > .player-lang-toggle,
+body.player-active .player-global-actions > .player-feedback > .player-feedback-btn {
+  display: none;
+}
+
+body.player-active .player-global-actions {
+  pointer-events: none;
+}
+
+body.player-active .player-global-actions .player-feedback-popover:not(.hidden) {
+  pointer-events: auto;
+  position: fixed;
+  top: 56px;
+  right: 12px;
+}
+
+/* Hide the floating toggle while the main player chrome is visible (header has its own). */
+body:has(#player-state:not(.hidden)) .player-lang-toggle--global {
+  display: none;
 }
 
 /* Main layout */
@@ -715,11 +731,12 @@ body {
 }
 
 /*
- * Report tab must scroll vertically inside the logs panel.
+ * Report and Activity tabs must scroll vertically inside the logs panel.
  * .viewer-container sets overflow:hidden later in this file — override it here
- * with higher specificity so long report/timeline content is not clipped.
+ * with higher specificity so long report/activity content is not clipped.
  */
-.viewer-container.report-viewer {
+.viewer-container.report-viewer,
+.viewer-container.activity-viewer {
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -727,20 +744,24 @@ body {
   -webkit-overflow-scrolling: touch;
 }
 
-.viewer-container.report-viewer::-webkit-scrollbar {
+.viewer-container.report-viewer::-webkit-scrollbar,
+.viewer-container.activity-viewer::-webkit-scrollbar {
   width: 6px;
 }
 
-.viewer-container.report-viewer::-webkit-scrollbar-track {
+.viewer-container.report-viewer::-webkit-scrollbar-track,
+.viewer-container.activity-viewer::-webkit-scrollbar-track {
   background: var(--bg-base);
 }
 
-.viewer-container.report-viewer::-webkit-scrollbar-thumb {
+.viewer-container.report-viewer::-webkit-scrollbar-thumb,
+.viewer-container.activity-viewer::-webkit-scrollbar-thumb {
   background: var(--border-input);
   border-radius: 3px;
 }
 
-.viewer-container.report-viewer::-webkit-scrollbar-thumb:hover {
+.viewer-container.report-viewer::-webkit-scrollbar-thumb:hover,
+.viewer-container.activity-viewer::-webkit-scrollbar-thumb:hover {
   background: var(--text-dim);
 }
 
@@ -755,8 +776,7 @@ body {
   min-width: 0;
 }
 
-.report-eyebrow,
-.event-timeline-title {
+.report-eyebrow {
   display: block;
   margin-bottom: 2px;
   color: var(--text-muted);
@@ -843,10 +863,14 @@ body {
   background: #000;
 }
 
-.event-timeline {
+.activity-panel {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
+  padding: 8px;
+  color: var(--text-secondary);
+  background: var(--bg-base);
+  min-height: min-content;
 }
 
 .event-list {
@@ -862,6 +886,7 @@ body {
   width: 100%;
   padding: 5px 7px;
   border: 1px solid transparent;
+  border-left: 3px solid transparent;
   border-radius: 6px;
   color: var(--text-secondary);
   background: var(--bg-base);
@@ -869,12 +894,32 @@ body {
   text-align: left;
   transition:
     background 150ms ease,
-    border-color 150ms ease;
+    border-color 150ms ease,
+    opacity 150ms ease,
+    color 150ms ease;
 }
 
 .event-item:hover {
   border-color: var(--accent);
+  border-left-color: var(--accent);
   background: var(--bg-card-hover);
+}
+
+/* Playhead is at or past this event; dim events still in the future. */
+.event-item.is-future {
+  opacity: 0.5;
+}
+
+.event-item.active {
+  border-color: var(--accent);
+  border-left-color: var(--accent);
+  background: var(--bg-card-hover);
+  color: var(--text-primary);
+  opacity: 1;
+}
+
+.event-item.active .event-time {
+  color: var(--accent);
 }
 
 .event-time {
@@ -1242,9 +1287,11 @@ body {
   bottom: 100%;
   right: 0;
   margin-bottom: 4px;
-  background: var(--bg-card-hover);
+  /* Solid elevated surface — not --bg-card-hover (translucent rgba). */
+  background: var(--bg-elevated);
   border: 1px solid var(--border-default);
   border-radius: 6px;
+  box-shadow: var(--shadow-md);
   overflow: hidden;
   min-width: 80px;
   z-index: 100;
@@ -1266,7 +1313,7 @@ body {
 }
 
 .speed-option:hover {
-  background: var(--border-default);
+  background: var(--bg-base);
   color: var(--text-primary);
 }
 

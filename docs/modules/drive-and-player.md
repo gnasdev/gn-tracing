@@ -187,7 +187,7 @@ See [DEVELOPER.md](../../DEVELOPER.md) for redirect URIs, scopes, and rebuild no
 - Player unpacks store-only and DEFLATE packages; password unlock decrypts in-browser.
 - Optional artifacts are tolerant loads.
 - Layout preferences live in per-origin `localStorage`.
-- Player `document.title` uses `GN Tracing - <short description>`; topbar stays product-branded.
+- Player `document.title` uses `GN Tracing - <web title>`; the topbar shows the product brand plus the recorded page/web title (CSS-truncated), without video duration.
 
 ## 5. Constraints & Assumptions
 

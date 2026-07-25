@@ -62,6 +62,7 @@ export interface MessageHandlers {
     data: Record<string, unknown> | undefined,
   ) => UploadArtifactChunkResponse;
   patchUploadProgress: (sessionId: string, data: Record<string, unknown>) => void;
+  submitFeedback: (data: Record<string, unknown> | undefined) => Promise<MessageResponse>;
 }
 
 export function registerMessageListeners(handlers: MessageHandlers): void {
@@ -170,6 +171,8 @@ async function handleMessage(
       return { ok: true };
     case "GET_UPLOAD_ARTIFACT_CHUNK":
       return handlers.getUploadArtifactChunk(message.data);
+    case "SUBMIT_FEEDBACK":
+      return handlers.submitFeedback(message.data);
     default:
       return { ok: false, error: "Unknown action" };
   }

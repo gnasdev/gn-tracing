@@ -18,11 +18,10 @@
         <span class="gn-topbar-page-title" data-i18n="topbar.pageTitle">Upload History</span>
       </div>
       <div class="gn-topbar-actions">
+        <div id="feedback-mount" class="gn-feedback-mount"></div>
         <button id="lang-toggle-btn" class="icon-btn gn-lang-toggle" type="button" aria-label="Switch language">VI</button>
-        <button id="theme-toggle-btn" class="icon-btn" type="button" aria-label="Toggle theme" title="Toggle light/dark mode">
-          <svg id="theme-toggle-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
-          </svg>
+        <button id="theme-toggle-btn" class="icon-btn" type="button" aria-label="Theme: System" title="Theme: System (follows OS). Click to cycle System → Light → Dark.">
+          <span id="theme-toggle-icon" class="theme-toggle-icon" aria-hidden="true"></span>
         </button>
         <div class="gn-nav">
           <button
@@ -59,12 +58,6 @@
               Review previous uploads, jump back into a replay, copy a shareable link, or clean up old items.
             </p>
           </div>
-          <div class="gn-page-hero-actions history-hero-actions">
-            <div class="history-hero-stats">
-              <div class="history-stat-label" data-i18n="stats.savedUploads">Saved Uploads</div>
-              <div id="history-count" class="history-stat-value">0</div>
-            </div>
-          </div>
         </header>
 
         <section class="history-panel">
@@ -89,10 +82,6 @@
 
       <footer class="gn-footer">
         <div class="gn-footer-row">
-          <div class="gn-footer-links">
-            <a class="gn-footer-link" href="https://github.com/gnasdev/gn-tracing" target="_blank" rel="noopener noreferrer">GitHub</a>
-            <a class="gn-footer-link" href="https://github.com/gnasdev/gn-tracing/issues" target="_blank" rel="noopener noreferrer">Contribute</a>
-          </div>
           <span>GN Tracing — dev-tool replay for the web</span>
         </div>
       </footer>
