@@ -167,7 +167,6 @@ const TRANSLATIONS: Record<SettingsLanguage, Record<string, string>> = {
     "feedback.sending": "Sending…",
     "feedback.success": "Feedback submitted.",
     "feedback.failed": "Could not submit feedback.",
-    "feedback.viewIssue": "View issue",
     "page.title": "Settings",
     "page.lead": "Choose what each recording captures before you start a session.",
     "actions.save": "Save Settings",
@@ -304,7 +303,6 @@ const TRANSLATIONS: Record<SettingsLanguage, Record<string, string>> = {
     "feedback.sending": "Đang gửi…",
     "feedback.success": "Đã gửi góp ý.",
     "feedback.failed": "Không gửi được góp ý.",
-    "feedback.viewIssue": "Xem issue",
     "page.title": "Cài đặt",
     "page.lead": "Chọn dữ liệu cần capture trước khi bắt đầu phiên ghi.",
     "actions.save": "Lưu cài đặt",
@@ -1517,7 +1515,6 @@ if (feedbackMount) {
       sending: t("feedback.sending"),
       success: t("feedback.success"),
       failed: t("feedback.failed"),
-      viewIssue: t("feedback.viewIssue"),
     }),
     onResult: (result) => {
       showToast(result.message, 4200, { variant: result.ok ? "success" : "error" });

@@ -377,6 +377,23 @@
       </div>
     </div>
   </div>
+  <div id="player-toast" class="toast hidden" role="status" aria-live="polite">
+    <span id="player-toast-icon" class="toast-icon" aria-hidden="true"></span>
+    <span id="player-toast-message" class="toast-message"></span>
+    <button
+      id="player-toast-close"
+      class="toast-close-btn"
+      type="button"
+      data-i18n-aria="toast.dismiss"
+      data-i18n-title="toast.dismiss"
+      aria-label="Dismiss"
+      title="Dismiss"
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
+        <path d="M6 6l12 12M18 6 6 18"/>
+      </svg>
+    </button>
+  </div>
   <!-- Vendored luna-* UI components (prebuilt UMD, MIT). Loaded BEFORE player.js
        so window.LunaObjectViewer / window.LunaJsonEditor are available at startup. -->
   <script src="vendor/luna/luna-object-viewer.js"></script>

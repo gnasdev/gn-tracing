@@ -104,7 +104,6 @@ const TRANSLATIONS: Record<PopupLanguage, Record<string, string>> = {
     "feedback.sending": "Sending…",
     "feedback.success": "Feedback submitted.",
     "feedback.failed": "Could not submit feedback.",
-    "feedback.viewIssue": "View issue",
     "session.empty": "No pending capture records.",
     "session.duration": "Duration: {time}",
     "session.waitingUpload": "Waiting to upload",
@@ -136,7 +135,6 @@ const TRANSLATIONS: Record<PopupLanguage, Record<string, string>> = {
     "messages.deleteHistoryFailed": "Failed to delete history item",
     "messages.drawColorFailed": "Could not update drawing color.",
     "messages.drawToggleFailed": "Could not toggle drawing overlay.",
-    "toast.open": "Open",
   },
   vi: {
     "actions.startRecording": "Bắt đầu ghi",
@@ -209,7 +207,6 @@ const TRANSLATIONS: Record<PopupLanguage, Record<string, string>> = {
     "feedback.sending": "Đang gửi…",
     "feedback.success": "Đã gửi góp ý.",
     "feedback.failed": "Không gửi được góp ý.",
-    "feedback.viewIssue": "Xem issue",
     "session.empty": "Không có bản ghi đang chờ.",
     "session.duration": "Thời lượng: {time}",
     "session.waitingUpload": "Đang chờ upload",
@@ -241,7 +238,6 @@ const TRANSLATIONS: Record<PopupLanguage, Record<string, string>> = {
     "messages.deleteHistoryFailed": "Không xóa được mục lịch sử",
     "messages.drawColorFailed": "Không cập nhật được màu vẽ.",
     "messages.drawToggleFailed": "Không bật/tắt được lớp vẽ.",
-    "toast.open": "Mở",
   },
 };
 
@@ -379,7 +375,7 @@ const errorMsg = document.getElementById("error-msg")!;
 const toastEl = document.getElementById("toast")!;
 const toastIconEl = document.getElementById("toast-icon")!;
 const toastMessageEl = document.getElementById("toast-message")!;
-const toastLinkEl = document.getElementById("toast-link") as HTMLAnchorElement;
+
 const toastCloseBtn = document.getElementById("toast-close-btn") as HTMLButtonElement;
 
 const googleDriveSection = document.getElementById("google-drive-section")!;
@@ -576,7 +572,7 @@ function getToastIcon(variant: ToastVariant): string {
 function showToast(
   message: string,
   durationMs = 1800,
-  options: { variant?: ToastVariant; linkUrl?: string; linkLabel?: string } = {},
+  options: { variant?: ToastVariant } = {},
 ): void {
   const variant = options.variant || "success";
   toastIconEl.textContent = getToastIcon(variant);
@@ -585,15 +581,6 @@ function showToast(
   toastEl.classList.add(`toast-${variant}`);
   toastEl.setAttribute("role", variant === "error" ? "alert" : "status");
   toastEl.setAttribute("aria-live", variant === "error" ? "assertive" : "polite");
-  if (options.linkUrl) {
-    toastLinkEl.href = options.linkUrl;
-    toastLinkEl.textContent = options.linkLabel || t("toast.open");
-    toastLinkEl.classList.remove("hidden");
-  } else {
-    toastLinkEl.removeAttribute("href");
-    toastLinkEl.textContent = "";
-    toastLinkEl.classList.add("hidden");
-  }
   toastEl.classList.remove("hidden");
   if (toastTimeout) {
     clearTimeout(toastTimeout);
@@ -1645,15 +1632,6 @@ toastCloseBtn.addEventListener("click", () => {
   hideToast();
 });
 
-toastLinkEl.addEventListener("click", (event) => {
-  event.preventDefault();
-  const url = toastLinkEl.getAttribute("href");
-  if (url) {
-    openExternalUrl(url);
-    hideToast();
-  }
-});
-
 settingsPageBtn.addEventListener("click", openSettingsPage);
 
 storageProviderSelect?.addEventListener("change", async () => {
@@ -2057,10 +2035,8 @@ feedbackSubmitBtn.addEventListener("click", async () => {
 
     feedbackMessageInput.value = "";
     setFeedbackPanelOpen(false);
-    showToast(result.message || t("feedback.success"), 5000, {
+    showToast(result.message || t("feedback.success"), 4200, {
       variant: "success",
-      linkUrl: result.issueUrl,
-      linkLabel: result.issueUrl ? t("feedback.viewIssue") : undefined,
     });
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);

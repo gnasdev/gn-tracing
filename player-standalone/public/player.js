@@ -150,8 +150,8 @@
       "feedback.sending": "Sending…",
       "feedback.success": "Feedback submitted.",
       "feedback.failed": "Could not submit feedback.",
-      "feedback.viewIssue": "View issue",
       "feedback.notConfigured": "Feedback service is not configured for this player.",
+      "toast.dismiss": "Dismiss",
       "intro.whatTitle": "What GN Tracing does",
       "intro.what1": "Records tab video and optional tab audio",
       "intro.what2": "Captures console, network, and WebSocket debugging data",
@@ -376,8 +376,8 @@
       "feedback.sending": "Đang gửi…",
       "feedback.success": "Đã gửi góp ý.",
       "feedback.failed": "Không gửi được góp ý.",
-      "feedback.viewIssue": "Xem issue",
       "feedback.notConfigured": "Dịch vụ góp ý chưa được cấu hình cho player này.",
+      "toast.dismiss": "Đóng",
       "intro.whatTitle": "GN Tracing làm gì",
       "intro.what1": "Ghi video tab và tùy chọn audio tab",
       "intro.what2": "Capture console, network và dữ liệu WebSocket",
@@ -788,6 +788,89 @@
     };
   }
 
+  /** Toast host used after feedback submit (panel closes, so popover status is invisible). */
+  let playerToastTimeout = null;
+  let playerToastCloseBound = false;
+
+  function ensurePlayerToastElements() {
+    let toastEl = document.getElementById("player-toast");
+    if (!toastEl) {
+      toastEl = document.createElement("div");
+      toastEl.id = "player-toast";
+      toastEl.className = "toast hidden";
+      toastEl.setAttribute("role", "status");
+      toastEl.setAttribute("aria-live", "polite");
+      toastEl.innerHTML = `
+        <span id="player-toast-icon" class="toast-icon" aria-hidden="true"></span>
+        <span id="player-toast-message" class="toast-message"></span>
+        <button id="player-toast-close" class="toast-close-btn" type="button" aria-label="Dismiss" title="Dismiss">
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
+            <path d="M6 6l12 12M18 6 6 18"/>
+          </svg>
+        </button>
+      `;
+      document.body.appendChild(toastEl);
+    }
+
+    const iconEl = document.getElementById("player-toast-icon");
+    const messageEl = document.getElementById("player-toast-message");
+    const closeBtn = document.getElementById("player-toast-close");
+    if (!iconEl || !messageEl || !closeBtn) {
+      return null;
+    }
+
+    if (!playerToastCloseBound) {
+      playerToastCloseBound = true;
+      closeBtn.addEventListener("click", () => hidePlayerToast());
+    }
+
+    return { toastEl, iconEl, messageEl, closeBtn };
+  }
+
+  function hidePlayerToast() {
+    const parts = ensurePlayerToastElements();
+    if (!parts) return;
+    parts.toastEl.classList.add("hidden");
+    if (playerToastTimeout) {
+      clearTimeout(playerToastTimeout);
+      playerToastTimeout = null;
+    }
+  }
+
+  /**
+   * Fixed top-right toast (theme.css `.toast` + player.css position/width).
+   * Used for feedback results after the popover closes so the user still sees
+   * success/error feedback.
+   */
+  function showPlayerToast(message, durationMs = 3200, options = {}) {
+    const parts = ensurePlayerToastElements();
+    if (!parts) return;
+
+    const variant =
+      options.variant === "error" || options.variant === "info" ? options.variant : "success";
+    const text = String(message || "")
+      .trim()
+      .replace(/\.+$/, "");
+    parts.iconEl.textContent = variant === "error" ? "!" : variant === "info" ? "i" : "✓";
+    parts.messageEl.textContent = text;
+    parts.toastEl.classList.remove("toast-success", "toast-info", "toast-error");
+    parts.toastEl.classList.add(`toast-${variant}`);
+    parts.toastEl.setAttribute("role", variant === "error" ? "alert" : "status");
+    parts.toastEl.setAttribute("aria-live", variant === "error" ? "assertive" : "polite");
+
+    parts.closeBtn.setAttribute("aria-label", t("toast.dismiss"));
+    parts.closeBtn.setAttribute("title", t("toast.dismiss"));
+    parts.toastEl.classList.remove("hidden");
+
+    if (playerToastTimeout) {
+      clearTimeout(playerToastTimeout);
+      playerToastTimeout = null;
+    }
+    if (durationMs > 0) {
+      playerToastTimeout = setTimeout(() => hidePlayerToast(), durationMs);
+    }
+  }
+
   function attachFeedbackUi() {
     const wrap = document.getElementById("player-feedback-wrap");
     const panel = document.getElementById("player-feedback-panel");
@@ -888,16 +971,23 @@
         const result = await submitPlayerFeedback(message);
 
         if (!result?.ok) {
-          setStatus(result?.error || t("feedback.failed"), "error");
+          const errorMessage = result?.error || t("feedback.failed");
+          setStatus(errorMessage, "error");
+          showPlayerToast(errorMessage, 4200, { variant: "error" });
           return;
         }
 
         messageInput.value = "";
         setOpen(false);
-        setStatus(result.message || t("feedback.success"), "success");
+        // Panel status is hidden once closed — surface success via toast.
+        showPlayerToast(result.message || t("feedback.success"), 4200, {
+          variant: "success",
+        });
       } catch (error) {
         const detail = error instanceof Error ? error.message : String(error);
-        setStatus(detail || t("feedback.failed"), "error");
+        const errorMessage = detail || t("feedback.failed");
+        setStatus(errorMessage, "error");
+        showPlayerToast(errorMessage, 4200, { variant: "error" });
       } finally {
         submitting = false;
         submitBtn.disabled = false;

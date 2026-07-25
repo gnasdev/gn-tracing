@@ -19,7 +19,6 @@ export interface FeedbackUiLabels {
   sending: string;
   success: string;
   failed: string;
-  viewIssue: string;
 }
 
 export interface FeedbackUiController {
@@ -48,12 +47,7 @@ export interface AttachFeedbackPopoverOptions {
    * Result toast/status. Surfaces that already have toasts should pass this.
    * Defaults to a brief text status inside the popover.
    */
-  onResult?: (result: {
-    ok: boolean;
-    message: string;
-    issueUrl?: string;
-    linkLabel?: string;
-  }) => void;
+  onResult?: (result: { ok: boolean; message: string }) => void;
 }
 
 const FEEDBACK_ICON = `
@@ -297,8 +291,6 @@ export function attachFeedbackPopover(options: AttachFeedbackPopoverOptions): Fe
       options.onResult?.({
         ok: true,
         message: successMessage,
-        issueUrl: result.issueUrl,
-        linkLabel: result.issueUrl ? labels.viewIssue : undefined,
       });
       if (!options.onResult) {
         setStatus(successMessage, "success");

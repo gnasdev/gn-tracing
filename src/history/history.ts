@@ -50,7 +50,6 @@ const TRANSLATIONS: Record<HistoryLanguage, Record<string, string>> = {
     "feedback.sending": "Sending…",
     "feedback.success": "Feedback submitted.",
     "feedback.failed": "Could not submit feedback.",
-    "feedback.viewIssue": "View issue",
     "page.title": "Upload History",
     "page.lead":
       "Review previous uploads, jump back into a replay, copy a shareable link, or clean up old items.",
@@ -93,7 +92,6 @@ const TRANSLATIONS: Record<HistoryLanguage, Record<string, string>> = {
     "feedback.sending": "Đang gửi…",
     "feedback.success": "Đã gửi góp ý.",
     "feedback.failed": "Không gửi được góp ý.",
-    "feedback.viewIssue": "Xem issue",
     "page.title": "Lịch sử upload",
     "page.lead":
       "Xem lại các upload trước, mở lại replay, sao chép link chia sẻ, hoặc dọn các mục cũ.",
@@ -275,7 +273,6 @@ if (feedbackMount) {
       sending: t("feedback.sending"),
       success: t("feedback.success"),
       failed: t("feedback.failed"),
-      viewIssue: t("feedback.viewIssue"),
     }),
   });
 }

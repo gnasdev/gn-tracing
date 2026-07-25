@@ -230,7 +230,6 @@ const FEEDBACK_LABELS = {
     sending: "Sending…",
     success: "Feedback submitted.",
     failed: "Could not submit feedback.",
-    viewIssue: "View issue",
   },
   vi: {
     button: "Góp ý",
@@ -243,7 +242,6 @@ const FEEDBACK_LABELS = {
     sending: "Đang gửi…",
     success: "Đã gửi góp ý.",
     failed: "Không gửi được góp ý.",
-    viewIssue: "Xem issue",
   },
 } as const;
 

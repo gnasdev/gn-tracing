@@ -689,18 +689,6 @@ select {
   overflow-wrap: anywhere;
 }
 
-.toast-link {
-  flex-shrink: 0;
-  font-size: var(--fs-xs);
-  font-weight: 600;
-  color: var(--accent);
-  text-decoration: none;
-}
-
-.toast-link:hover {
-  text-decoration: underline;
-}
-
 .toast-close-btn {
   flex-shrink: 0;
   width: 22px;

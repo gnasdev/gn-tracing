@@ -657,6 +657,37 @@ body {
   max-width: calc(100vw - 24px);
 }
 
+/* Toast sits above player chrome (header controls use z-index up to 100).
+   theme.css places `.toast` full-width at bottom for extension pages;
+   player feedback toasts are top-right and shrink to content. */
+#player-toast.toast {
+  top: 12px;
+  right: 12px;
+  bottom: auto;
+  left: auto;
+  width: fit-content;
+  max-width: min(420px, calc(100vw - 24px));
+  z-index: 200;
+  pointer-events: auto;
+  animation-name: gn-player-toast-in;
+}
+
+#player-toast .toast-message {
+  /* Don't grow to fill a stretched bar — keep toast width content-sized. */
+  flex: 0 1 auto;
+}
+
+@keyframes gn-player-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 /* While replaying, header owns lang/theme/feedback; hide floating controls
    but keep the shared popover mount fixed so header can open it. */
 body.player-active .player-global-actions > .player-lang-toggle,
