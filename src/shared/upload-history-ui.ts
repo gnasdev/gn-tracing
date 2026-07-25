@@ -49,10 +49,6 @@ export function setUploadHistoryUiLabels(labels: Partial<UploadHistoryUiLabels>)
   activeLabels = { ...DEFAULT_UPLOAD_HISTORY_UI_LABELS, ...labels };
 }
 
-export function getUploadHistoryUiLabels(): UploadHistoryUiLabels {
-  return activeLabels;
-}
-
 function applyLabelTemplate(template: string, replacements: Record<string, string>): string {
   return Object.entries(replacements).reduce(
     (text, [name, value]) => text.replaceAll(`{${name}}`, value),

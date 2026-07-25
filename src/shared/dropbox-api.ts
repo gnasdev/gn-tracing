@@ -512,21 +512,3 @@ async function createOrGetSharedLink(authToken: string, path: string): Promise<s
 
   throw new Error(`Dropbox share failed: ${detail}`);
 }
-
-/**
- * Authenticated download of a shared-link file (extension player).
- * Uses Dropbox content API `sharing/get_shared_link_file`.
- */
-export function getDropboxAuthenticatedDownloadHeaders(
-  authToken: string,
-  replayId: string,
-): { url: string; headers: Record<string, string> } {
-  const sharedUrl = buildDropboxSharedLinkUrl(replayId);
-  return {
-    url: `${DROPBOX_CONTENT}/sharing/get_shared_link_file`,
-    headers: {
-      Authorization: `Bearer ${authToken}`,
-      "Dropbox-API-Arg": encodeDropboxApiArg({ url: sharedUrl }),
-    },
-  };
-}

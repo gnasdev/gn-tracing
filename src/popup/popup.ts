@@ -476,12 +476,6 @@ async function loadMirroredStorageConnected(): Promise<{
   }
 }
 
-/** @deprecated Prefer loadMirroredStorageConnected */
-async function loadMirroredDriveConnected(): Promise<boolean | null> {
-  const mirrored = await loadMirroredStorageConnected();
-  return mirrored.isConnected;
-}
-
 function subscribeToStateChanges(callback: (state: PopupState) => void): () => void {
   const listener = (changes: { [key: string]: chrome.storage.StorageChange }) => {
     if (changes[SERVICE_STATE_KEY]?.newValue) {
@@ -1158,11 +1152,6 @@ async function setActiveStorageProvider(provider: string): Promise<void> {
   }
   await refreshPopupFromStorage();
   void refreshAllProviderStatuses();
-}
-
-/** @deprecated Prefer updateStorageUI */
-function updateGoogleDriveUI(isConnected: boolean): void {
-  updateStorageUI(isConnected, latestPopupState?.storage?.provider);
 }
 
 function openStorageAuthPage(provider?: string): void {

@@ -10,10 +10,7 @@
 export {
   buildFeedbackIssueTitle,
   FEEDBACK_MESSAGE_MAX_LENGTH,
-  FEEDBACK_TITLE_BODY_MAX,
-  FEEDBACK_TITLE_PREFIX,
   type FeedbackDiagnostics,
-  type FeedbackValidationResult,
   formatFeedbackIssueBody,
   normalizeFeedbackDiagnostics,
   validateFeedbackMessage,

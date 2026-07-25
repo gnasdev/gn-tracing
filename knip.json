@@ -4,7 +4,11 @@
     "src/popup/popup.ts",
     "src/offscreen/offscreen.ts",
     "src/content/recording-events.ts",
+    "src/content/drawing-overlay.ts",
+    "src/content/in-page-capture.ts",
+    "src/content/in-page-relay.ts",
     "src/drive-auth/drive-auth.ts",
+    "src/storage-auth/storage-auth.ts",
     "src/history/history.ts",
     "src/settings/settings.ts",
     "scripts/*.mjs"
@@ -18,6 +22,6 @@
     "shared/**",
     "store-assets/**"
   ],
-  "ignoreBinaries": ["vite", "task", "watch", "knip"],
+  "ignoreBinaries": ["vite", "task", "watch", "knip", "blue,green,magenta"],
   "ignoreExportsUsedInFile": true
 }

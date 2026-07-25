@@ -8,9 +8,11 @@ import {
   getStorageProvider,
   isStorageProviderRegistered,
   listRegisteredStorageProviders,
+  registerStorageProvider,
   requireRegisteredStorageProvider,
   resolveRegisteredUploadProviderId,
 } from "./registry";
+import type { StorageProvider } from "./types";
 
 describe("storage provider registry", () => {
   it("registers only google-drive and dropbox by default", () => {
@@ -59,5 +61,21 @@ describe("storage provider registry", () => {
     const dropboxUrl = getDropboxProvider().buildReplayUrl("scl/fi/x/file.zip?rlkey=y");
     expect(dropboxUrl).toContain("/dropbox/");
     expect(dropboxUrl).toContain(encodeURIComponent("scl/fi/x/file.zip?rlkey=y"));
+  });
+
+  it("registerStorageProvider replaces the map entry used by getStorageProvider", () => {
+    const original = getStorageProvider("google-drive");
+    const stub: StorageProvider = {
+      ...original,
+      id: "google-drive",
+      buildReplayUrl: (id) => `stub://${id}`,
+    };
+    registerStorageProvider(stub);
+    expect(getStorageProvider("google-drive").buildReplayUrl("x")).toBe("stub://x");
+    // getGoogleDriveProvider stays the module singleton (auth wiring), not the map.
+    expect(getGoogleDriveProvider().buildReplayUrl("x")).toContain("/gdrive/x");
+    // Restore so later suites stay hermetic.
+    registerStorageProvider(original);
+    expect(getStorageProvider("google-drive").buildReplayUrl("x")).toContain("/gdrive/x");
   });
 });

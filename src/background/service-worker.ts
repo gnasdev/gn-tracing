@@ -418,17 +418,6 @@ async function loadMirroredStorageConnectionState(): Promise<{
   }
 }
 
-/** @deprecated Prefer loadMirroredStorageConnectionState */
-async function loadMirroredGoogleDriveState(): Promise<boolean | null> {
-  try {
-    const result = await chrome.storage.local.get("gn_tracing_google_drive_connected");
-    const value = result.gn_tracing_google_drive_connected;
-    return typeof value === "boolean" ? value : null;
-  } catch {
-    return null;
-  }
-}
-
 async function buildPopupState(): Promise<PopupState> {
   const [settings, uploadHistory] = await Promise.all([getUploadSettings(), getUploadHistory()]);
   const activeProvider = settings.activeStorageProvider;

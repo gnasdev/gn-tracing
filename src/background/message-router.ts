@@ -75,20 +75,26 @@ export function registerMessageListeners(handlers: MessageHandlers): void {
     return true;
   });
 
-  chrome.runtime.onMessage.addListener((message: any, _sender, sendResponse) => {
-    if (
-      message.target !== "offscreen" ||
-      message.type !== "UPLOAD_PROGRESS" ||
-      !message.data?.sessionId
-    ) {
-      return false;
-    }
+  chrome.runtime.onMessage.addListener(
+    (
+      message: { target?: string; type?: string; data?: Record<string, unknown> },
+      _sender,
+      sendResponse,
+    ) => {
+      if (
+        message.target !== "offscreen" ||
+        message.type !== "UPLOAD_PROGRESS" ||
+        !message.data?.sessionId
+      ) {
+        return false;
+      }
 
-    const sessionId = String(message.data.sessionId);
-    handlers.patchUploadProgress(sessionId, message.data || {});
-    sendResponse({ ok: true });
-    return true;
-  });
+      const sessionId = String(message.data.sessionId);
+      handlers.patchUploadProgress(sessionId, message.data || {});
+      sendResponse({ ok: true });
+      return true;
+    },
+  );
 }
 
 async function handleMessage(

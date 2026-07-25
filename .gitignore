@@ -1,12 +1,19 @@
 .DS_Store
+Thumbs.db
 *.log
+npm-debug.log*
+yarn-error.log*
 *.tsbuildinfo
 
-# Build / packages
+# Build / packages / coverage
 dist/
+**/dist/
 node_modules/
+**/node_modules/
 coverage/
 *.zip
+*.crx
+*.pem
 
 # Env and secrets (keep .env.example tracked)
 .env
@@ -16,6 +23,9 @@ coverage/
 client_secret*.json
 credentials.json
 token.json
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
 
 # Local tooling / agent state
 graphify-out/
@@ -28,7 +38,19 @@ graphify-out/
 .cursor/
 .grok/
 AGENTS.md
+.idea/
+.vscode/
+*.swp
+*.swo
+.cache/
+tmp/
+**/tmp/
 
 # Cloudflare Wrangler local state (dev/deploy cache)
 .wrangler/
 **/.wrangler/
+
+# OS / editor noise
+.Spotlight-V100
+.Trashes
+ehthumbs.db

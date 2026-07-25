@@ -50,13 +50,6 @@ export type InPageCaptureKind = "console" | "network" | "websocket" | "storage";
 
 export type InPageCaptureEntry = ConsoleEntry | NetworkEntry | WebSocketEntry | StorageSnapshot;
 
-/** Discriminated payload sent service-worker bound for a single captured entry. */
-export interface InPageCaptureEntryData {
-  sessionId: string;
-  kind: InPageCaptureKind;
-  entry: InPageCaptureEntry;
-}
-
 /** Window-bridge message tag shared by the MAIN-world script and ISOLATED relay. */
 export const IN_PAGE_CAPTURE_MESSAGE_TAG = "__gnTracingInPageCapture" as const;
 
