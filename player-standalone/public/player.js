@@ -43,12 +43,11 @@
   const ZIP_FLAG_ENCRYPTED = 0x0001;
   const PROGRESS_END_SNAP_MS = 1000;
   /**
-   * Seek/duration contract (keep in sync with src/shared/player-timeline-seek.ts).
-   * After assets are in memory, Drive and Dropbox share this path — provider only
-   * affects download URLs, not timeline math.
+   * Single seek/duration source: vendored src/shared/player-timeline-seek.ts
+   * (`npm run vendor:player-timeline-seek` → window.gnPlayerTimelineSeek).
+   * After package bytes are in memory, Drive and Dropbox share this path.
    */
-  const SEEK_COMMIT_TOLERANCE_MS = 350;
-  const SEEK_PENDING_TIMEOUT_MS = 2000;
+  const TimelineSeek = globalThis.gnPlayerTimelineSeek;
   const SEEK_MAX_RETRIES = 3;
   const ZIP_CRYPTO_HEADER_BYTES = 12;
   const DYNAMIC_ROUTE_EXTENSIONS = new Set([".html", ".htm", ".php", ".asp", ".aspx", ".jsp"]);
@@ -1010,21 +1009,11 @@
   let startTime = 0;
   let currentTimeMs = 0;
   let duration = 0;
-  /**
-   * After loadedmetadata, freeze the timeline scale so progressive demux growth of
-   * video.duration cannot reflow the playhead (looks like snap-back).
-   * Keep in sync with resolveTimelineDurationMs() in player-timeline-seek.ts.
-   */
+  /** Freeze timeline scale after media ready (see TimelineSeek.resolveTimelineDurationMs). */
   let timelineDurationLocked = false;
-  /**
-   * While non-null, timeline UI tracks this target instead of video.currentTime.
-   * Cleared only when media lands near the target. Never trust a far `seeked`.
-   */
+  /** Optimistic click target; null when following media clock. */
   let pendingSeekTimeMs = null;
-  /** Monotonic id so stale seeked handlers from an earlier click/drag cannot commit. */
-  let seekRequestId = 0;
-  let pendingSeekTimeoutId = null;
-  /** Re-assert currentTime only a few times per user seek to avoid seeked loops. */
+  /** Bounded re-assigns of video.currentTime after a far seeked sample. */
   let pendingSeekRetryCount = 0;
   /** Active storage provider for the current replay URL (google-drive | dropbox | …). */
   let activeReplayProvider = "google-drive";
@@ -1465,6 +1454,9 @@
   }
 
   function getFiniteDurationMs(value) {
+    if (TimelineSeek && typeof TimelineSeek.getFiniteDurationMs === "function") {
+      return TimelineSeek.getFiniteDurationMs(value);
+    }
     const durationMs = Number(value);
     return Number.isFinite(durationMs) && durationMs > 0 ? durationMs : 0;
   }
@@ -1473,28 +1465,23 @@
     return getFiniteDurationMs((elements.video?.duration || 0) * 1000);
   }
 
-  /**
-   * Timeline length for click mapping + progress bar.
-   * Mirror of resolveTimelineDurationMs in src/shared/player-timeline-seek.ts.
-   * Provider-neutral: same formula for Drive and Dropbox after assets load.
-   */
-  function resolveTimelineDurationMs(videoDurationMs, locked) {
-    const meta = getFiniteDurationMs(metadata?.duration);
-    const video = getFiniteDurationMs(videoDurationMs);
-    const previous = getFiniteDurationMs(duration);
-    if (locked) {
-      const lockedBase = Math.max(previous, meta);
-      if (video > lockedBase + 1000) {
-        return video;
-      }
-      return lockedBase > 0 ? lockedBase : Math.max(previous, video, meta);
-    }
-    return Math.max(meta, video, previous);
-  }
-
   function syncDurationState(extraDurationMs = 0) {
     // Do not let partial demux (video.duration ticking up) reflow the bar after lock.
-    duration = resolveTimelineDurationMs(extraDurationMs, timelineDurationLocked);
+    if (TimelineSeek && typeof TimelineSeek.resolveTimelineDurationMs === "function") {
+      const resolved = TimelineSeek.resolveTimelineDurationMs({
+        durationMs: duration,
+        metadataDurationMs: metadata?.duration,
+        videoDurationMs: extraDurationMs,
+        locked: timelineDurationLocked,
+      });
+      duration = resolved.durationMs;
+    } else {
+      duration = Math.max(
+        getFiniteDurationMs(duration),
+        getFiniteDurationMs(metadata?.duration),
+        getFiniteDurationMs(extraDurationMs),
+      );
+    }
     if (elements.totalDuration) {
       elements.totalDuration.textContent = formatTime(duration);
     }
@@ -1502,7 +1489,21 @@
   }
 
   function lockTimelineDurationFromMedia() {
-    duration = resolveTimelineDurationMs(getVideoDurationMs(), false);
+    if (TimelineSeek && typeof TimelineSeek.resolveTimelineDurationMs === "function") {
+      const resolved = TimelineSeek.resolveTimelineDurationMs({
+        durationMs: duration,
+        metadataDurationMs: metadata?.duration,
+        videoDurationMs: getVideoDurationMs(),
+        locked: false,
+      });
+      duration = resolved.durationMs;
+    } else {
+      duration = Math.max(
+        getFiniteDurationMs(duration),
+        getFiniteDurationMs(metadata?.duration),
+        getVideoDurationMs(),
+      );
+    }
     timelineDurationLocked = true;
     if (elements.totalDuration) {
       elements.totalDuration.textContent = formatTime(duration);
@@ -5113,7 +5114,6 @@
       // Stable package duration first; lock after media metadata (see lockTimelineDurationFromMedia).
       timelineDurationLocked = false;
       duration = getFiniteDurationMs(metadata.duration);
-      clearPendingSeekTimeout();
       pendingSeekTimeMs = null;
       pendingSeekRetryCount = 0;
       currentTimeMs = 0;
@@ -6718,53 +6718,48 @@
     }
   }
 
-  function clearPendingSeekTimeout() {
-    if (pendingSeekTimeoutId != null) {
-      clearTimeout(pendingSeekTimeoutId);
-      pendingSeekTimeoutId = null;
-    }
-  }
-
   /**
-   * Commit or hold the optimistic timeline after a media clock sample.
-   * Behavioral twin of reconcileSeekClock() in src/shared/player-timeline-seek.ts.
+   * Apply pure TimelineSeek.reconcileSeekClock to module state.
+   * Never adopts a far media clock while a user seek is pending (no snap-back).
    * @param {number} mediaTimeMs
    * @param {{ allowRetry?: boolean, isDragging?: boolean }} [options]
+   * @returns {boolean} true when the pending seek fully committed
    */
-  function reconcileSeekClock(mediaTimeMs, options = {}) {
-    const mediaMs = Number(mediaTimeMs);
-    if (!Number.isFinite(mediaMs)) {
-      return false;
-    }
-
-    if (pendingSeekTimeMs == null) {
-      currentTimeMs = mediaMs;
-      return false;
-    }
-
-    const targetMs = pendingSeekTimeMs;
-    const delta = Math.abs(mediaMs - targetMs);
-    if (delta <= SEEK_COMMIT_TOLERANCE_MS) {
-      currentTimeMs = mediaMs;
-      if (!options.isDragging) {
-        pendingSeekTimeMs = null;
-        pendingSeekRetryCount = 0;
-        clearPendingSeekTimeout();
+  function applySeekClock(mediaTimeMs, options = {}) {
+    if (!TimelineSeek || typeof TimelineSeek.reconcileSeekClock !== "function") {
+      // Vendor missing: fall back to media clock only (degraded).
+      if (pendingSeekTimeMs == null) {
+        currentTimeMs = Number(mediaTimeMs) || 0;
       }
+      return false;
+    }
+
+    const result = TimelineSeek.reconcileSeekClock(
+      {
+        pendingSeekTimeMs,
+        currentTimeMs,
+        mediaTimeMs,
+        isDragging: Boolean(options.isDragging),
+      },
+      {
+        allowRetry: Boolean(options.allowRetry),
+        retryCount: pendingSeekRetryCount,
+        maxRetries: SEEK_MAX_RETRIES,
+      },
+    );
+
+    pendingSeekTimeMs = result.pendingSeekTimeMs;
+    currentTimeMs = result.currentTimeMs;
+
+    if (result.committed) {
+      pendingSeekRetryCount = 0;
       return true;
     }
 
-    // Far from the user target: keep optimistic playhead (no snap-back).
-    currentTimeMs = targetMs;
-    if (
-      options.allowRetry &&
-      !options.isDragging &&
-      elements.video &&
-      pendingSeekRetryCount < SEEK_MAX_RETRIES
-    ) {
+    if (result.shouldRetrySeek && elements.video && pendingSeekTimeMs != null) {
       pendingSeekRetryCount += 1;
       try {
-        elements.video.currentTime = targetMs / 1000;
+        elements.video.currentTime = pendingSeekTimeMs / 1000;
       } catch {
         // Ignore InvalidStateError; loadedmetadata will re-apply.
       }
@@ -6791,7 +6786,7 @@
       if (now - lastEmitTime < 250) return;
       lastEmitTime = now;
 
-      reconcileSeekClock(elements.video.currentTime * 1000, { isDragging });
+      applySeekClock(elements.video.currentTime * 1000, { isDragging });
       updateProgress();
       if (activeLogsTab === "console") {
         renderConsoleEntries();
@@ -6850,8 +6845,8 @@
       elements.pauseIcon.classList.add("hidden");
       stopEffectsScheduler();
       stopDrawingScheduler();
-      clearPendingSeekTimeout();
       pendingSeekTimeMs = null;
+      pendingSeekRetryCount = 0;
       currentTimeMs = syncDurationState(getVideoDurationMs());
       updateProgress();
     });
@@ -6866,19 +6861,12 @@
       }
     });
     elements.video.addEventListener("seeked", () => {
-      // Do NOT blindly adopt video.currentTime here. For WebM without a full
-      // Cues index (or while demux is catching up), Chromium fires seeked at a
-      // clamped time — adopting it snaps the playhead off the click target.
-      // Only commit when media is near pendingSeekTimeMs; otherwise re-assert.
-      const requestIdAtEvent = seekRequestId;
-      reconcileSeekClock(elements.video.currentTime * 1000, {
+      // Pure TimelineSeek: commit only when media is near the click target.
+      // Far seeked samples keep the optimistic playhead (no snap-back).
+      applySeekClock(elements.video.currentTime * 1000, {
         allowRetry: true,
         isDragging,
       });
-      // Ignore work from a superseded seek request after reconcile scheduled retry.
-      if (requestIdAtEvent !== seekRequestId) {
-        return;
-      }
       updateProgress();
       resetEffectsCursor();
       renderDrawingUpTo(currentTimeMs);
@@ -7058,12 +7046,8 @@
 
   /**
    * Seek playback to an absolute time (ms).
-   *
-   * Timeline UI updates immediately to the click target. The media element is
-   * assigned currentTime separately; we do NOT read currentTime back for the
-   * playhead, and we do NOT commit a far `seeked` sample (that was the
-   * jump-then-snap-back bug on slower/unindexed WebM demux paths).
-   *
+   * UI jumps optimistically; media assignment is separate. Far seeked samples
+   * never replace the playhead (TimelineSeek.reconcileSeekClock).
    * @param {number} timeMs
    * @param {{ forceScrollActivity?: boolean }} [options]
    */
@@ -7075,49 +7059,9 @@
     const maxMs = playbackDuration > 0 ? playbackDuration : Number.POSITIVE_INFINITY;
     const targetMs = Math.max(0, Math.min(Number(timeMs) || 0, maxMs));
 
-    seekRequestId += 1;
-    const requestId = seekRequestId;
     pendingSeekTimeMs = targetMs;
     currentTimeMs = targetMs;
     pendingSeekRetryCount = 0;
-
-    clearPendingSeekTimeout();
-    // Periodically re-assert currentTime while media has not confirmed the
-    // target. Never clear pendingSeekTimeMs just because time passed — clearing
-    // while media is still far lets timeupdate snap the handle backward.
-    let pendingSeekPolls = 0;
-    const maxPendingSeekPolls = 8;
-    pendingSeekTimeoutId = setTimeout(function reassertPendingSeek() {
-      pendingSeekTimeoutId = null;
-      if (requestId !== seekRequestId || pendingSeekTimeMs == null) {
-        return;
-      }
-      const mediaMs = elements.video ? elements.video.currentTime * 1000 : pendingSeekTimeMs;
-      if (Math.abs(mediaMs - pendingSeekTimeMs) <= SEEK_COMMIT_TOLERANCE_MS) {
-        currentTimeMs = mediaMs;
-        pendingSeekTimeMs = null;
-        pendingSeekRetryCount = 0;
-        updateProgress();
-        return;
-      }
-      currentTimeMs = pendingSeekTimeMs;
-      if (elements.video && pendingSeekRetryCount < SEEK_MAX_RETRIES) {
-        pendingSeekRetryCount += 1;
-        try {
-          elements.video.currentTime = pendingSeekTimeMs / 1000;
-        } catch {
-          // ignore
-        }
-      }
-      updateProgress();
-      pendingSeekPolls += 1;
-      // Keep polling a bounded number of times; leave pending so timeupdate still
-      // cannot snap the handle to a far media clock until media eventually lands
-      // or the user seeks again.
-      if (pendingSeekPolls < maxPendingSeekPolls) {
-        pendingSeekTimeoutId = setTimeout(reassertPendingSeek, SEEK_PENDING_TIMEOUT_MS);
-      }
-    }, SEEK_PENDING_TIMEOUT_MS);
 
     updateProgress();
     updateActivityHighlight({
@@ -7129,25 +7073,23 @@
     updateElementsForTime();
 
     try {
-      // Use precise currentTime assignment only. HTMLMediaElement.fastSeek()
-      // intentionally jumps to a nearby keyframe and was causing visible
-      // land-off-target + seeked snap on some WebM packages.
+      // Precise currentTime only — never fastSeek (keyframe snap).
       elements.video.currentTime = targetMs / 1000;
     } catch (error) {
-      // InvalidStateError before metadata — pendingSeekTimeMs is re-applied on loadedmetadata.
       console.warn("[GN Tracing Player] Seek deferred until media is ready:", error);
     }
   }
 
   function seekToRatio(ratio) {
-    const safeRatio = Math.max(0, Math.min(1, Number(ratio) || 0));
-    // Use the locked timeline duration (package metadata baseline), not a
-    // fluctuating video.duration from progressive demux.
     const playbackDuration = syncDurationState(getVideoDurationMs());
     if (playbackDuration <= 0) {
       return;
     }
-    seekVideoToMs(safeRatio * playbackDuration);
+    const targetMs =
+      TimelineSeek && typeof TimelineSeek.ratioToTimeMs === "function"
+        ? TimelineSeek.ratioToTimeMs(ratio, playbackDuration)
+        : Math.max(0, Math.min(1, Number(ratio) || 0)) * playbackDuration;
+    seekVideoToMs(targetMs);
   }
 
   function clampProgressPercent(value) {

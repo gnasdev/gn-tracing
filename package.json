@@ -16,7 +16,8 @@
     "deadcode": "npx knip --no-progress",
     "docs:check": "node scripts/check-docs.mjs",
     "store:assets": "node scripts/generate-store-assets.mjs",
-    "vendor:webm-seek": "node scripts/build-webm-seek-vendor.mjs"
+    "vendor:webm-seek": "node scripts/build-webm-seek-vendor.mjs",
+    "vendor:player-timeline-seek": "node scripts/build-player-timeline-seek-vendor.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.15",

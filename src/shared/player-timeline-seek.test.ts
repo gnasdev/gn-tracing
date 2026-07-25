@@ -143,3 +143,42 @@ describe("getFiniteDurationMs", () => {
     expect(getFiniteDurationMs(1200)).toBe(1200);
   });
 });
+
+describe("vendored IIFE matches pure module exports", () => {
+  it("exposes the same reconcile and duration APIs the player loads", async () => {
+    const fs = await import("node:fs");
+    const path = await import("node:path");
+    const vm = await import("node:vm");
+    const { fileURLToPath } = await import("node:url");
+    const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+    const vendorPath = path.join(
+      root,
+      "player/vendor/player-timeline-seek/player-timeline-seek.iife.js",
+    );
+    expect(fs.existsSync(vendorPath)).toBe(true);
+    const code = fs.readFileSync(vendorPath, "utf8");
+    const sandbox: Record<string, unknown> = { console };
+    sandbox.globalThis = sandbox;
+    sandbox.window = sandbox;
+    vm.runInNewContext(code, sandbox);
+    const api = sandbox.gnPlayerTimelineSeek as typeof import("./player-timeline-seek");
+    expect(typeof api.reconcileSeekClock).toBe("function");
+    expect(typeof api.resolveTimelineDurationMs).toBe("function");
+
+    const far = api.reconcileSeekClock({
+      pendingSeekTimeMs: 30_000,
+      currentTimeMs: 30_000,
+      mediaTimeMs: 1_000,
+    });
+    expect(far.currentTimeMs).toBe(30_000);
+    expect(far.pendingSeekTimeMs).toBe(30_000);
+
+    const locked = api.resolveTimelineDurationMs({
+      durationMs: 45_000,
+      metadataDurationMs: 45_000,
+      videoDurationMs: 12_000,
+      locked: true,
+    });
+    expect(locked.durationMs).toBe(45_000);
+  });
+});

@@ -107,6 +107,23 @@ describe("buildFeedbackIssueTitle / formatFeedbackIssueBody", () => {
     expect(body).toContain("Extension: 1.0.0");
     expect(body).toContain("Browser: Chrome 131");
   });
+
+  it("matches Worker re-exports of the pure format module (single source of truth)", async () => {
+    // Worker imports and re-exports the same pure helpers — prove no fork.
+    const worker = await import("../../worker/src/index");
+    const message = "hello\nworld with more detail for triage";
+    const diagnostics = {
+      extensionVersion: "2.0.0",
+      browserName: "Chrome",
+      browserVersion: "140",
+      os: "macOS",
+      locale: "en-US",
+    };
+    expect(worker.buildFeedbackIssueTitle(message)).toBe(buildFeedbackIssueTitle(message));
+    expect(worker.formatFeedbackIssueBody(message, diagnostics)).toBe(
+      formatFeedbackIssueBody(message, diagnostics),
+    );
+  });
 });
 
 describe("buildFeedbackDiagnostics", () => {

@@ -16,7 +16,20 @@
  *
  * Access is restricted to configured chrome-extension:// origins for OAuth.
  * Feedback additionally allows the hosted player web origins.
+ *
+ * Issue title/body formatting is imported from the extension shared pure module
+ * (`src/shared/feedback-format.ts`) so client and Worker cannot drift.
  */
+
+import {
+  buildFeedbackIssueTitle,
+  formatFeedbackIssueBody,
+  normalizeFeedbackDiagnostics,
+  validateFeedbackMessage,
+} from "../../src/shared/feedback-format";
+
+// Re-export formatters for worker unit tests (same functions as extension shared).
+export { buildFeedbackIssueTitle, formatFeedbackIssueBody };
 
 const ALLOWED_GRANT_TYPES = new Set(["authorization_code", "refresh_token"]);
 // Fields the extension may forward. client_id / client_secret are injected.
@@ -29,10 +42,8 @@ const FORWARDED_FIELDS = [
   "scope",
 ] as const;
 
-const FEEDBACK_MESSAGE_MAX_LENGTH = 4000;
 const FEEDBACK_RATE_LIMIT = 5;
 const FEEDBACK_RATE_WINDOW_MS = 60 * 60 * 1000;
-const FEEDBACK_TITLE_BODY_MAX = 60;
 
 /** Default browser origins that may POST /feedback (standalone player). */
 const DEFAULT_FEEDBACK_WEB_ORIGINS = [
@@ -317,73 +328,6 @@ async function handleTokenExchange(
   });
 }
 
-interface FeedbackDiagnostics {
-  extensionVersion: string;
-  browserName?: string;
-  browserVersion?: string;
-  os?: string;
-  locale?: string;
-}
-
-function pickDiagnosticField(
-  raw: Record<string, unknown>,
-  key: string,
-  max: number,
-): string | undefined {
-  const value = raw[key];
-  if (typeof value !== "string") {
-    return undefined;
-  }
-  const trimmed = value.replace(/\s+/g, " ").trim();
-  if (!trimmed) {
-    return undefined;
-  }
-  return trimmed.length > max ? trimmed.slice(0, max) : trimmed;
-}
-
-function normalizeFeedbackDiagnostics(value: unknown): FeedbackDiagnostics {
-  const raw = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
-  return {
-    extensionVersion: pickDiagnosticField(raw, "extensionVersion", 32) || "unknown",
-    browserName: pickDiagnosticField(raw, "browserName", 40),
-    browserVersion: pickDiagnosticField(raw, "browserVersion", 40),
-    os: pickDiagnosticField(raw, "os", 40),
-    locale: pickDiagnosticField(raw, "locale", 40),
-  };
-}
-
-export function buildFeedbackIssueTitle(message: string): string {
-  const oneLine = message.replace(/\s+/g, " ").trim();
-  const snippet =
-    oneLine.length > FEEDBACK_TITLE_BODY_MAX
-      ? `${oneLine.slice(0, FEEDBACK_TITLE_BODY_MAX)}…`
-      : oneLine;
-  return `Feedback: ${snippet || "from extension"}`;
-}
-
-export function formatFeedbackIssueBody(message: string, diagnostics: FeedbackDiagnostics): string {
-  const safeMessage = message.replace(/```/g, "'''");
-  const browser =
-    [diagnostics.browserName, diagnostics.browserVersion].filter(Boolean).join(" ") || "unknown";
-  return [
-    "## Feedback",
-    "",
-    "```",
-    safeMessage,
-    "```",
-    "",
-    "## Diagnostics",
-    "",
-    `- Extension: ${diagnostics.extensionVersion || "unknown"}`,
-    `- Browser: ${browser}`,
-    `- OS: ${diagnostics.os || "unknown"}`,
-    `- Locale: ${diagnostics.locale || "unknown"}`,
-    "",
-    "---",
-    "Submitted from the GN Tracing browser extension.",
-  ].join("\n");
-}
-
 function parseFeedbackLabels(env: Env): string[] {
   const raw = (env.GITHUB_FEEDBACK_LABELS ?? "feedback").trim();
   if (!raw) {
@@ -561,26 +505,14 @@ async function handleFeedback(
     );
   }
 
-  const messageRaw = typeof payload.message === "string" ? payload.message.trim() : "";
-  if (!messageRaw) {
-    return reply(
-      { error: "invalid_request", error_description: "Feedback message is required." },
-      400,
-    );
-  }
-  if (messageRaw.length > FEEDBACK_MESSAGE_MAX_LENGTH) {
-    return reply(
-      {
-        error: "invalid_request",
-        error_description: `Feedback message must be at most ${FEEDBACK_MESSAGE_MAX_LENGTH} characters.`,
-      },
-      400,
-    );
+  const validated = validateFeedbackMessage(payload.message);
+  if (!validated.ok) {
+    return reply({ error: "invalid_request", error_description: validated.error }, 400);
   }
 
   const diagnostics = normalizeFeedbackDiagnostics(payload.diagnostics);
-  const title = buildFeedbackIssueTitle(messageRaw);
-  const body = formatFeedbackIssueBody(messageRaw, diagnostics);
+  const title = buildFeedbackIssueTitle(validated.message);
+  const body = formatFeedbackIssueBody(validated.message, diagnostics);
   const owner = (env.GITHUB_REPO_OWNER ?? "gnasdev").trim() || "gnasdev";
   const repo = (env.GITHUB_REPO_NAME ?? "gn-tracing").trim() || "gn-tracing";
   const labels = parseFeedbackLabels(env);

@@ -1,11 +1,13 @@
 /**
  * Pure timeline seek / duration helpers for the replay player.
  *
- * Kept free of DOM so unit tests can lock the Drive/Dropbox-shared seek contract:
- * after assets are downloaded, provider must not change seek behavior.
+ * Single behavioral source of truth:
+ * - Unit tests import this module directly.
+ * - Browser player loads the vendored IIFE (`player/vendor/player-timeline-seek/`)
+ *   built by `npm run vendor:player-timeline-seek` as `globalThis.gnPlayerTimelineSeek`.
  *
- * Port behavioral changes into `player/player.js` (search: reconcileSeekClock,
- * resolveTimelineDurationMs, SEEK_COMMIT_TOLERANCE_MS).
+ * After package bytes are in memory, Drive and Dropbox share this contract —
+ * provider only affects download, not timeline math.
  */
 
 /** Accept media clock as "landed" when within this window of the user target. */

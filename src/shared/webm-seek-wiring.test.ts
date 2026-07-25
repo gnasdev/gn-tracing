@@ -50,8 +50,11 @@ describe("webm seek single-path wiring", () => {
     expect(source).toContain("ensurePlayableVideoBlobType");
     expect(source).toContain("function seekVideoToMs");
     expect(source).toContain("pendingSeekTimeMs");
-    expect(source).toContain("function reconcileSeekClock");
-    expect(source).toContain("SEEK_COMMIT_TOLERANCE_MS");
+    // Runtime uses vendored pure helpers — no hand-ported reconcileSeekClock body.
+    expect(source).toContain("gnPlayerTimelineSeek");
+    expect(source).toContain("function applySeekClock");
+    expect(source).toContain("TimelineSeek.reconcileSeekClock");
+    expect(source).not.toContain("function reconcileSeekClock");
     expect(source).toContain("timelineDurationLocked");
     expect(source).toContain("waitForVideoMetadata");
     expect(source).toContain("lockTimelineDurationFromMedia");
@@ -59,10 +62,13 @@ describe("webm seek single-path wiring", () => {
     expect(source).not.toMatch(
       /addEventListener\(\s*["']seeked["'][\s\S]{0,200}currentTimeMs\s*=\s*elements\.video\.currentTime/,
     );
-    // Shared pure contract lives next to packaging seek-fix.
+    // Shared pure contract + vendor IIFE.
     const pure = readRepo("src/shared/player-timeline-seek.ts");
     expect(pure).toContain("export function reconcileSeekClock");
     expect(pure).toContain("export function resolveTimelineDurationMs");
+    expect(
+      existsRepo("player", "vendor", "player-timeline-seek", "player-timeline-seek.iife.js"),
+    ).toBe(true);
     // Old dual stack must be gone.
     expect(source).not.toContain("ysFixWebmDuration");
     expect(source).not.toContain("GnWebmDurationFix");
@@ -74,28 +80,35 @@ describe("webm seek single-path wiring", () => {
     expect(prepareIdx).toBeLessThan(objectUrlIdx);
   });
 
-  it("HTML loads a single seek-fix vendor before player runtime", () => {
+  it("HTML loads seek vendors before player runtime", () => {
     const extensionHtml = readRepo("player/player.html");
     const standaloneHtml = readRepo("player-standalone/index.html");
     const vendorScript =
       /<script\b[^>]*\bsrc=["'][^"']*vendor\/webm-seek-fix\/webm-seek-fix\.iife\.js["']/;
+    const timelineVendor =
+      /<script\b[^>]*\bsrc=["'][^"']*vendor\/player-timeline-seek\/player-timeline-seek\.iife\.js["']/;
     const obsoleteDuration =
       /vendor\/webm-seek-fix\/(fix-webm-duration|webm-duration-fix\.iife)\.js/;
 
     for (const html of [extensionHtml, standaloneHtml]) {
       expect(html).toMatch(vendorScript);
+      expect(html).toMatch(timelineVendor);
       expect(html).not.toMatch(obsoleteDuration);
     }
 
     const extVendor = extensionHtml.search(vendorScript);
+    const extTimeline = extensionHtml.search(timelineVendor);
     const extPlayer = extensionHtml.search(/<script\b[^>]*\bsrc=["']player\.js["']/);
     expect(extVendor).toBeGreaterThan(-1);
-    expect(extPlayer).toBeGreaterThan(extVendor);
+    expect(extTimeline).toBeGreaterThan(extVendor);
+    expect(extPlayer).toBeGreaterThan(extTimeline);
 
     const saVendor = standaloneHtml.search(vendorScript);
+    const saTimeline = standaloneHtml.search(timelineVendor);
     const saMain = standaloneHtml.search(/<script\b[^>]*\bsrc=["'][^"']*src\/main\.ts["']/);
     expect(saVendor).toBeGreaterThan(-1);
-    expect(saMain).toBeGreaterThan(saVendor);
+    expect(saTimeline).toBeGreaterThan(saVendor);
+    expect(saMain).toBeGreaterThan(saTimeline);
   });
 
   it("vendor artifact exposes gnMakeWebmSeekable and no second duration stack", () => {
