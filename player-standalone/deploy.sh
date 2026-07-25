@@ -3,23 +3,89 @@
 # Deploys the hosted GN Tracing replay player to Cloudflare Pages.
 #
 # Reads CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID, and optional overrides
-# from the process environment (export them in the shell or CI). Does not
-# load a repository .env file.
+# from the process environment. When present, also sources the repo root
+# `.env` (git-ignored) so local deploys pick up the same Worker URLs as the
+# extension build without requiring a second export step.
 
 set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+if [ -f "$ROOT_DIR/.env" ]; then
+  echo "Loading env from $ROOT_DIR/.env"
+  set -a
+  # shellcheck disable=SC1091
+  source "$ROOT_DIR/.env"
+  set +a
+fi
 
 PROJECT_NAME="${CLOUDFLARE_PAGES_PROJECT:-gn-tracing-player}"
 PLAYER_HOST_URL="${PLAYER_HOST_URL:-https://tracing.gnas.dev/}"
 VITE_BASE_PATH="${VITE_BASE_PATH:-/}"
+
 # Hosted player feedback posts to the multi-issuer Worker /feedback route.
-# Prefer VITE_FEEDBACK_PROXY_URL; fall back to FEEDBACK_PROXY_URL from root env.
-if [ -z "${VITE_FEEDBACK_PROXY_URL:-}" ] && [ -n "${FEEDBACK_PROXY_URL:-}" ]; then
-  VITE_FEEDBACK_PROXY_URL="${FEEDBACK_PROXY_URL}"
+# Prefer explicit VITE_FEEDBACK_PROXY_URL / FEEDBACK_PROXY_URL; otherwise derive
+# from the OAuth proxy origin (same rule as esbuild.config.mjs for the extension).
+normalize_proxy_url() {
+  local value
+  value="$(printf '%s' "${1:-}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e 's|/*$||')"
+  printf '%s' "$value"
+}
+
+origin_of_url() {
+  local raw
+  raw="$(normalize_proxy_url "${1:-}")"
+  if [ -z "$raw" ]; then
+    return 1
+  fi
+  # Strip path/query so .../token/dropbox → https://host
+  printf '%s' "$raw" | sed -E 's|(https?://[^/]+).*|\1|'
+}
+
+resolve_feedback_proxy_url() {
+  local explicit candidate origin
+  explicit="$(normalize_proxy_url "${VITE_FEEDBACK_PROXY_URL:-}")"
+  if [ -z "$explicit" ]; then
+    explicit="$(normalize_proxy_url "${FEEDBACK_PROXY_URL:-}")"
+  fi
+  if [ -n "$explicit" ]; then
+    if printf '%s' "$explicit" | grep -Eqi '/feedback/?$'; then
+      printf '%s' "$explicit"
+    else
+      origin="$(origin_of_url "$explicit" || true)"
+      if [ -n "${origin:-}" ]; then
+        printf '%s/feedback' "$origin"
+      else
+        printf '%s' "$explicit"
+      fi
+    fi
+    return 0
+  fi
+
+  for candidate in "${GOOGLE_TOKEN_PROXY_URL:-}" "${DROPBOX_TOKEN_PROXY_URL:-}"; do
+    origin="$(origin_of_url "$candidate" || true)"
+    if [ -n "${origin:-}" ]; then
+      printf '%s/feedback' "$origin"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+if ! VITE_FEEDBACK_PROXY_URL="$(resolve_feedback_proxy_url)"; then
+  echo "error: could not resolve VITE_FEEDBACK_PROXY_URL for the hosted player." >&2
+  echo "Set VITE_FEEDBACK_PROXY_URL or FEEDBACK_PROXY_URL to the Worker /feedback URL," >&2
+  echo "or set GOOGLE_TOKEN_PROXY_URL / DROPBOX_TOKEN_PROXY_URL so the origin can be derived." >&2
+  exit 1
 fi
+
 export VITE_BASE_PATH
-export VITE_FEEDBACK_PROXY_URL="${VITE_FEEDBACK_PROXY_URL:-}"
+export VITE_FEEDBACK_PROXY_URL
 
 echo "Deploying GN Tracing Player to Cloudflare Pages..."
+echo "  feedbackProxyUrl (baked at build): ${VITE_FEEDBACK_PROXY_URL}"
 
 if ! command -v wrangler >/dev/null 2>&1; then
   echo "wrangler CLI not found. Install it with: npm i -g wrangler"
@@ -32,10 +98,14 @@ if [ -z "${CLOUDFLARE_API_TOKEN:-}" ] || [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]; th
 fi
 
 echo "Building standalone player..."
-task -d .. player:build:cloudflare
+# Pass VITE_* into the nested task so the Cloudflare build bakes the same URL.
+VITE_BASE_PATH="$VITE_BASE_PATH" \
+  VITE_FEEDBACK_PROXY_URL="$VITE_FEEDBACK_PROXY_URL" \
+  task -d .. player:build:cloudflare
 
 echo "Publishing dist/ to project ${PROJECT_NAME}..."
 npx wrangler pages deploy dist --project-name="${PROJECT_NAME}"
 
 echo "Deploy complete."
 echo "Player host: ${PLAYER_HOST_URL}"
+echo "Feedback:    ${VITE_FEEDBACK_PROXY_URL}"

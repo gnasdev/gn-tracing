@@ -83,8 +83,13 @@ export function setupDriveAdapter(): void {
     listFolderFiles: listDriveFolderFiles,
   };
 
+  // Merge, don't replace — main.ts already sets feedbackProxyUrl (and other
+  // hosted-player fields). Clobbering the object dropped feedback in prod and
+  // showed "not configured" even when VITE_FEEDBACK_PROXY_URL was baked in.
+  const previous = window.GN_TRACING_CONFIG ?? { mode: "standalone" as const };
   window.GN_TRACING_CONFIG = {
+    ...previous,
     mode: "standalone",
-    driveApiKey: import.meta.env.VITE_DRIVE_API_KEY || undefined,
+    driveApiKey: import.meta.env.VITE_DRIVE_API_KEY || previous.driveApiKey || undefined,
   };
 }

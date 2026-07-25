@@ -100,6 +100,9 @@ tasks:
     desc: Build the standalone player for Cloudflare Pages.
     env:
       VITE_BASE_PATH: '{{.VITE_BASE_PATH | default "/"}}'
+      # VITE_FEEDBACK_PROXY_URL is intentionally NOT forced here — deploy.sh
+      # resolves and exports it so nested vite builds inherit the real Worker URL.
+      # Blanking it in this map would ship feedback as "not configured" in prod.
     cmds:
       - task: player:dist
 
