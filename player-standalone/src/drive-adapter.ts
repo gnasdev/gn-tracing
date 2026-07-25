@@ -16,12 +16,9 @@ interface DriveFileEntry {
   size?: string;
 }
 
+// GN_TRACING_CONFIG shape lives in env.d.ts (includes feedbackProxyUrl).
 declare global {
   interface Window {
-    GN_TRACING_CONFIG: {
-      mode: "extension" | "standalone";
-      driveApiKey?: string;
-    };
     GN_DRIVE_ADAPTER?: {
       loadJson: typeof loadDriveJson;
       loadBlob: typeof loadDriveBlob;
