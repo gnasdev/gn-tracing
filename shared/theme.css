@@ -369,7 +369,8 @@ html[data-theme] {
   color: var(--accent-contrast);
 }
 
-.btn-stop.is-loading {
+.btn-stop.is-loading,
+.btn.is-loading {
   opacity: 0.85;
   cursor: progress;
 }
@@ -415,8 +416,8 @@ html[data-theme] {
   width: 14px;
   height: 14px;
   flex-shrink: 0;
-  border: 2px solid rgba(255, 255, 255, 0.35);
-  border-top-color: #ffffff;
+  border: 2px solid color-mix(in srgb, currentColor 35%, transparent);
+  border-top-color: currentColor;
   border-radius: 50%;
   animation: gn-spin 0.7s linear infinite;
 }

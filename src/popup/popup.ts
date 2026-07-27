@@ -2,6 +2,7 @@
  * Drives the extension popup UI and service-worker message interactions.
  */
 
+import { buttonSpinnerHtml } from "../shared/button-loading";
 import { DEFAULT_DRAW_COLOR, DRAW_COLOR_PRESETS, normalizeDrawColor } from "../shared/drawing";
 import { buildFeedbackDiagnostics, validateFeedbackMessage } from "../shared/feedback";
 import { resolveReplayOpenUrl } from "../shared/player-host";
@@ -104,7 +105,6 @@ const TRANSLATIONS: Record<PopupLanguage, Record<string, string>> = {
     "feedback.sending": "Sending…",
     "feedback.success": "Feedback submitted.",
     "feedback.failed": "Could not submit feedback.",
-    "session.empty": "No pending capture records.",
     "session.duration": "Duration: {time}",
     "session.waitingUpload": "Waiting to upload",
     "session.progressAria": "Progress {percent}%",
@@ -210,7 +210,6 @@ const TRANSLATIONS: Record<PopupLanguage, Record<string, string>> = {
     "feedback.sending": "Đang gửi…",
     "feedback.success": "Đã gửi góp ý.",
     "feedback.failed": "Không gửi được góp ý.",
-    "session.empty": "Không có bản ghi đang chờ.",
     "session.duration": "Thời lượng: {time}",
     "session.waitingUpload": "Đang chờ upload",
     "session.progressAria": "Tiến độ {percent}%",
@@ -424,6 +423,7 @@ let activeTabRecordingError: string | null = null;
 let toggleActionInFlight = false;
 let toggleActionMode: "start" | "stop" | null = null;
 let activeTabRecordingCheckId = 0;
+let activeTabRecordingCheckInFlight = false;
 let selectedDrawColor = DEFAULT_DRAW_COLOR;
 let drawColorUpdateInFlight = false;
 
@@ -711,6 +711,10 @@ function renderProgressItems(
     <div
       class="progress-item ${statusClass}"
       style="--item-progress:${fillPercent}%;"
+      role="progressbar"
+      aria-valuemin="0"
+      aria-valuemax="100"
+      aria-valuenow="${Math.round(fillPercent)}"
       aria-label="${escapeHtml(t("session.progressAria", { percent: percent.toFixed(1) }))}"
     ></div>
   `;
@@ -1200,7 +1204,7 @@ function getStopRecordingIcon(): string {
 }
 
 function getLoadingIcon(): string {
-  return `<span class="btn-spinner" aria-hidden="true"></span>`;
+  return buttonSpinnerHtml();
 }
 
 function setButtonLabel(button: HTMLButtonElement, icon: string, label: string): void {
@@ -1232,6 +1236,7 @@ function renderStopAndUploadLoading(recording: RecordingStatus | null): void {
 
 async function refreshActiveTabRecordingAvailability(): Promise<void> {
   const checkId = ++activeTabRecordingCheckId;
+  activeTabRecordingCheckInFlight = true;
   activeTabRecordingError = t("messages.checkingTab");
   if (
     getActiveStorageConnection(latestPopupState).isConnected &&
@@ -1251,6 +1256,10 @@ async function refreshActiveTabRecordingAvailability(): Promise<void> {
       return;
     }
     activeTabRecordingError = (error as Error).message || t("messages.cannotInspectTab");
+  } finally {
+    if (checkId === activeTabRecordingCheckId) {
+      activeTabRecordingCheckInFlight = false;
+    }
   }
 
   if (getActiveStorageConnection(latestPopupState).isConnected) {
@@ -1293,9 +1302,15 @@ function updateRecordingUI(recording: RecordingStatus | null): void {
     return;
   }
 
-  setButtonLabel(toggleBtn, getStartRecordingIcon(), t("actions.startRecording"));
-  toggleBtn.className = "btn btn-start";
-  toggleBtn.removeAttribute("aria-busy");
+  const checkingTab = activeTabRecordingCheckInFlight;
+  if (checkingTab) {
+    setButtonLabel(toggleBtn, getLoadingIcon(), t("actions.startRecording"));
+    toggleBtn.setAttribute("aria-busy", "true");
+  } else {
+    setButtonLabel(toggleBtn, getStartRecordingIcon(), t("actions.startRecording"));
+    toggleBtn.removeAttribute("aria-busy");
+  }
+  toggleBtn.className = checkingTab ? "btn btn-start is-loading" : "btn btn-start";
   recordingActions.classList.remove("is-recording");
   removeRecordingBtn.classList.add("hidden");
   removeRecordingBtn.disabled = false;
@@ -1303,13 +1318,15 @@ function updateRecordingUI(recording: RecordingStatus | null): void {
   setDrawButtonActive(false);
   statusBar.classList.add("hidden");
   stats.classList.add("hidden");
-  const unavailableReason = activeTabRecordingError;
-  toggleBtn.disabled = toggleActionInFlight || Boolean(unavailableReason);
+  const unavailableReason = checkingTab ? null : activeTabRecordingError;
+  toggleBtn.disabled = toggleActionInFlight || checkingTab || Boolean(unavailableReason);
   recordingActions.classList.toggle("has-unavailable-reason", Boolean(unavailableReason));
   recordingUnavailableMsg.classList.toggle("hidden", !unavailableReason);
   recordingUnavailableMsg.textContent = unavailableReason || "";
   if (unavailableReason) {
     toggleBtn.setAttribute("title", unavailableReason);
+  } else if (checkingTab) {
+    toggleBtn.setAttribute("title", t("messages.checkingTab"));
   } else {
     toggleBtn.removeAttribute("title");
   }

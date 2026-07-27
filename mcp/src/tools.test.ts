@@ -263,7 +263,7 @@ describe("tool definitions", () => {
       note: string;
     };
 
-    expect(data.configuredWindowMs).toBe(30_000);
+    expect(data.configuredWindowMs).toBe(120_000);
     expect(data.actuallyCoveredMs).toBe(4_200);
     // The gap between the two is exactly the thing a model must not paper over.
     expect(data.note).toMatch(/absence of an event here is not evidence/);

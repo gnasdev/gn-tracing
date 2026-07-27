@@ -6,6 +6,7 @@
  */
 
 import type { MessageResponse } from "../types/messages";
+import { setButtonLoading } from "./button-loading";
 import { buildFeedbackDiagnostics, validateFeedbackMessage } from "./feedback";
 
 export interface FeedbackUiLabels {
@@ -261,12 +262,14 @@ export function attachFeedbackPopover(options: AttachFeedbackPopoverOptions): Fe
     }
 
     submitting = true;
-    submitBtn.disabled = true;
     messageInput.disabled = true;
     if (cancelBtn) {
       cancelBtn.disabled = true;
     }
-    submitBtn.textContent = labels.sending;
+    const loading = setButtonLoading(submitBtn, {
+      label: labels.sending,
+      spinner: true,
+    });
     setStatus("", "clear");
 
     try {
@@ -302,6 +305,7 @@ export function attachFeedbackPopover(options: AttachFeedbackPopoverOptions): Fe
       options.onResult?.({ ok: false, message });
     } finally {
       submitting = false;
+      loading.clear();
       submitBtn.disabled = false;
       messageInput.disabled = false;
       if (cancelBtn) {

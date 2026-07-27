@@ -2,6 +2,7 @@
  * Multi-cloud connect page (Google Drive / Dropbox).
  * Opened in a normal tab so OAuth popups are not killed when the extension popup closes.
  */
+import { buttonSpinnerHtml } from "../shared/button-loading";
 import { attachFeedbackPopover, type FeedbackUiController } from "../shared/feedback-ui";
 import { attachPageNav } from "../shared/page-nav";
 import { attachThemeToggle, type ThemeToggleController } from "../shared/theme";
@@ -140,7 +141,9 @@ function render(): void {
     status.className = "status";
     if (busy) {
       status.classList.add("is-busy");
-      status.textContent = currentLanguage === "vi" ? "Đang xử lý…" : "Working…";
+      status.innerHTML = `${buttonSpinnerHtml()}<span>${
+        currentLanguage === "vi" ? "Đang xử lý…" : "Working…"
+      }</span>`;
     } else if (error) {
       status.classList.add("is-error");
       status.textContent = error;

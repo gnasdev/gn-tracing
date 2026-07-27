@@ -218,23 +218,18 @@ describe("player i18n catalog", () => {
     expect(hits).toEqual([]);
   });
 
-  it("shows a toast after feedback submit (panel closes so status alone is invisible)", () => {
-    expect(source).toContain("function showPlayerToast");
-    expect(source).toContain("function hidePlayerToast");
-    expect(source).toContain('getElementById("player-toast")');
-    // Success path: close popover then toast (no issue link in UI).
-    expect(source).toMatch(/setOpen\(false\)[\s\S]{0,240}showPlayerToast\(/);
-    expect(source).not.toContain("player-toast-link");
+  it("surfaces action feedback on button text + color only (no toast)", () => {
+    expect(source).toContain("function flashButtonLabel");
+    expect(source).toContain("is-label-success");
+    expect(source).not.toContain("function showPlayerToast");
+    expect(source).not.toContain("player-toast");
     expect(source).not.toContain("feedback.viewIssue");
-    expect(source).toMatch(/showPlayerToast\([\s\S]*?variant:\s*"success"/);
-    expect(source).toMatch(/showPlayerToast\([\s\S]*?variant:\s*"error"/);
-    expect(catalog.en["toast.dismiss"]).toBeTruthy();
-    expect(catalog.vi["toast.dismiss"]).toBeTruthy();
+    expect(source).toMatch(/flashButtonLabel\([\s\S]*?detail\.copied/);
+    expect(source).toMatch(/flashButtonLabel\([\s\S]*?screenshots\.urlCopied/);
 
     for (const htmlPath of playerHtmlPaths) {
       const html = readFileSync(htmlPath, "utf8");
-      expect(html, htmlPath).toContain('id="player-toast"');
-      expect(html, htmlPath).toContain('id="player-toast-message"');
+      expect(html, htmlPath).not.toContain('id="player-toast"');
     }
   });
 });

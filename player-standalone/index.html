@@ -64,7 +64,15 @@
     <div id="loading-state" class="state-container">
       <div class="spinner"></div>
       <p id="loading-message" data-i18n="loading.message">Loading recording...</p>
-      <div class="loading-progress-bar">
+      <div
+        id="loading-progress-bar"
+        class="loading-progress-bar"
+        role="progressbar"
+        aria-valuemin="0"
+        aria-valuemax="100"
+        aria-valuenow="0"
+        aria-labelledby="loading-message"
+      >
         <div id="loading-progress-fill" class="loading-progress-fill"></div>
       </div>
       <p id="loading-progress-text" class="loading-progress-text">0 B / 0 B (0.0%)</p>
@@ -164,6 +172,11 @@
 
       <div class="main-layout">
         <section id="video-section" class="video-section">
+          <div id="no-video-notice" class="no-video-notice hidden">
+            <i class="ph ph-monitor-play" aria-hidden="true"></i>
+            <p id="no-video-notice-title" data-i18n="noVideo.title">This recording has no video</p>
+            <p id="no-video-notice-hint" class="no-video-hint" data-i18n="noVideo.hint">It was captured by the in-page SDK, which records console, network, and WebSocket activity without a screen recording.</p>
+          </div>
           <div id="video-container" class="video-container">
             <!-- biome-ignore lint/a11y/useMediaCaption: Replay videos are raw browser recordings without authored captions. -->
             <video id="video-player"></video>
@@ -246,6 +259,7 @@
             <button type="button" id="network-tab" class="tab-btn" data-i18n="tabs.network">Network</button>
             <button type="button" id="storage-tab" class="tab-btn hidden" data-i18n="tabs.storage">Storage</button>
             <button type="button" id="elements-tab" class="tab-btn hidden" data-i18n="tabs.elements">Elements</button>
+            <button type="button" id="screenshots-tab" class="tab-btn hidden" data-i18n="tabs.screenshots">Screenshots</button>
           </div>
 
           <div id="report-viewer" class="viewer-container report-viewer hidden">
@@ -339,27 +353,14 @@
             <div id="elements-tree" class="entries-scroll elements-tree"></div>
           </div>
 
+          <!-- Annotated screenshots -->
+          <div id="screenshots-viewer" class="viewer-container screenshots-viewer hidden" aria-label="Annotated screenshots" data-i18n-aria="screenshots.aria">
+            <div id="screenshots-content" class="entries-scroll screenshots-content"></div>
+          </div>
+
         </div>
       </div>
     </div>
-  </div>
-
-  <div id="player-toast" class="toast hidden" role="status" aria-live="polite">
-    <span id="player-toast-icon" class="toast-icon" aria-hidden="true"></span>
-    <span id="player-toast-message" class="toast-message"></span>
-    <button
-      id="player-toast-close"
-      class="toast-close-btn"
-      type="button"
-      data-i18n-aria="toast.dismiss"
-      data-i18n-title="toast.dismiss"
-      aria-label="Dismiss"
-      title="Dismiss"
-    >
-      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
-        <path d="M6 6l12 12M18 6 6 18"/>
-      </svg>
-    </button>
   </div>
   <script>
     window.GN_TRACING_CONFIG = {

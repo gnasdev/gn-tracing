@@ -92,14 +92,25 @@
       "tabs.elements": "Elements",
       "tabs.screenshots": "Screenshots",
       "screenshots.aria": "Annotated screenshots",
-      "screenshots.sourceImage": "captured image",
-      "screenshots.sourceDom": "re-rendered DOM snapshot",
+      "screenshots.sourceImage": "Captured image",
+      "screenshots.sourceDom": "DOM snapshot",
       "screenshots.domSnapshot":
         "This screenshot is a DOM snapshot the in-page SDK recorded, not a captured image. Open the Elements tab to inspect it.",
       "screenshots.imageMissing": "The image for this screenshot is not in the package.",
       "screenshots.instantReplay": "Instant replay (before the report)",
       "screenshots.instantReplayMeta":
         "{frames} frames covering {seconds}s before the report ({dropped} dropped to stay inside the buffer).",
+      "screenshots.badge": "Screenshot report",
+      "screenshots.noCaption": "No caption from the reporter",
+      "screenshots.noAnnotations": "No shapes or notes were drawn on this screenshot.",
+      "screenshots.openPage": "Open page",
+      "screenshots.copyUrl": "Copy URL",
+      "screenshots.urlCopied": "URL copied",
+      "screenshots.viewportChip": "{width}×{height}",
+      "screenshots.shotIndex": "{current} / {total}",
+      "screenshots.prev": "Previous screenshot",
+      "screenshots.next": "Next screenshot",
+      "screenshots.annotationsHeading": "Annotations",
       "report.openPage": "Open recorded page",
       "report.screenshotAlt": "Recording screenshot",
       "console.search": "Search console",
@@ -162,7 +173,6 @@
       "feedback.success": "Feedback submitted.",
       "feedback.failed": "Could not submit feedback.",
       "feedback.notConfigured": "Feedback service is not configured for this player.",
-      "toast.dismiss": "Dismiss",
       "intro.whatTitle": "What GN Tracing does",
       "intro.what1": "Records tab video and optional tab audio",
       "intro.what2": "Captures console, network, and WebSocket debugging data",
@@ -265,6 +275,12 @@
       "noVideo.title": "This recording has no video",
       "noVideo.hint":
         "It was captured by the in-page SDK, which records console, network, and WebSocket activity without a screen recording.",
+      "noVideo.screenshotTitle": "Screenshot report",
+      "noVideo.screenshotHint":
+        "This package is an annotated screenshot — there is no screen recording to play. Use the Screenshots tab for the reporter's image, notes, and shapes.",
+      "presentation.emptyTitle": "No replay evidence in this package",
+      "presentation.emptyHint":
+        "The package loaded, but it has no video, screenshots, or log artifacts to inspect.",
       "loading.unlocked": "Loading unlocked recording...",
       "password.enterRequired": "Enter the recording password.",
       "password.unlockFailed": "Failed to unlock recording package.",
@@ -335,14 +351,25 @@
       "tabs.elements": "Elements",
       "tabs.screenshots": "Ảnh màn hình",
       "screenshots.aria": "Ảnh màn hình có chú thích",
-      "screenshots.sourceImage": "ảnh chụp thật",
-      "screenshots.sourceDom": "dựng lại từ ảnh chụp DOM",
+      "screenshots.sourceImage": "Ảnh chụp",
+      "screenshots.sourceDom": "Ảnh chụp DOM",
       "screenshots.domSnapshot":
         "Ảnh này là ảnh chụp DOM do SDK trong trang ghi lại, không phải ảnh chụp màn hình thật. Mở tab Elements để xem chi tiết.",
       "screenshots.imageMissing": "Gói không chứa ảnh cho mục này.",
       "screenshots.instantReplay": "Instant replay (trước khi báo cáo)",
       "screenshots.instantReplayMeta":
         "{frames} khung hình bao phủ {seconds}s trước lúc báo cáo ({dropped} khung bị bỏ để vừa bộ đệm).",
+      "screenshots.badge": "Báo cáo ảnh chụp màn hình",
+      "screenshots.noCaption": "Người báo cáo không để chú thích",
+      "screenshots.noAnnotations": "Không có hình vẽ hay ghi chú trên ảnh này.",
+      "screenshots.openPage": "Mở trang",
+      "screenshots.copyUrl": "Sao chép URL",
+      "screenshots.urlCopied": "Đã sao chép URL",
+      "screenshots.viewportChip": "{width}×{height}",
+      "screenshots.shotIndex": "{current} / {total}",
+      "screenshots.prev": "Ảnh trước",
+      "screenshots.next": "Ảnh sau",
+      "screenshots.annotationsHeading": "Chú thích",
       "report.openPage": "Mở trang đã ghi",
       "report.screenshotAlt": "Ảnh chụp bản ghi",
       "console.search": "Tìm trong console",
@@ -405,7 +432,6 @@
       "feedback.success": "Đã gửi góp ý.",
       "feedback.failed": "Không gửi được góp ý.",
       "feedback.notConfigured": "Dịch vụ góp ý chưa được cấu hình cho player này.",
-      "toast.dismiss": "Đóng",
       "intro.whatTitle": "GN Tracing làm gì",
       "intro.what1": "Ghi video tab và tùy chọn audio tab",
       "intro.what2": "Capture console, network và dữ liệu WebSocket",
@@ -505,6 +531,12 @@
       "noVideo.title": "Bản ghi này không có video",
       "noVideo.hint":
         "Bản ghi được tạo bởi SDK nhúng trong trang, ghi lại console, network và WebSocket mà không quay màn hình.",
+      "noVideo.screenshotTitle": "Báo cáo ảnh chụp màn hình",
+      "noVideo.screenshotHint":
+        "Gói này là ảnh có chú thích — không có video để phát. Dùng tab Ảnh màn hình để xem ảnh, ghi chú và hình vẽ của người báo cáo.",
+      "presentation.emptyTitle": "Gói không có bằng chứng để xem lại",
+      "presentation.emptyHint":
+        "Gói đã tải được nhưng không có video, ảnh chụp màn hình, hay log để kiểm tra.",
       "loading.unlocked": "Đang tải bản ghi đã mở khóa...",
       "password.enterRequired": "Nhập mật khẩu bản ghi.",
       "password.unlockFailed": "Không mở khóa được gói bản ghi.",
@@ -654,6 +686,8 @@
 
     // Keep password submit label in sync unless a unlock is in flight.
     if (elements.passwordSubmit && !passwordPromptBusy) {
+      elements.passwordSubmit.classList.remove("is-loading");
+      elements.passwordSubmit.removeAttribute("aria-busy");
       elements.passwordSubmit.textContent = t("password.unlock");
     }
 
@@ -823,87 +857,90 @@
     };
   }
 
-  /** Toast host used after feedback submit (panel closes, so popover status is invisible). */
-  let playerToastTimeout = null;
-  let playerToastCloseBound = false;
-
-  function ensurePlayerToastElements() {
-    let toastEl = document.getElementById("player-toast");
-    if (!toastEl) {
-      toastEl = document.createElement("div");
-      toastEl.id = "player-toast";
-      toastEl.className = "toast hidden";
-      toastEl.setAttribute("role", "status");
-      toastEl.setAttribute("aria-live", "polite");
-      toastEl.innerHTML = `
-        <span id="player-toast-icon" class="toast-icon" aria-hidden="true"></span>
-        <span id="player-toast-message" class="toast-message"></span>
-        <button id="player-toast-close" class="toast-close-btn" type="button" aria-label="Dismiss" title="Dismiss">
-          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
-            <path d="M6 6l12 12M18 6 6 18"/>
-          </svg>
-        </button>
-      `;
-      document.body.appendChild(toastEl);
-    }
-
-    const iconEl = document.getElementById("player-toast-icon");
-    const messageEl = document.getElementById("player-toast-message");
-    const closeBtn = document.getElementById("player-toast-close");
-    if (!iconEl || !messageEl || !closeBtn) {
-      return null;
-    }
-
-    if (!playerToastCloseBound) {
-      playerToastCloseBound = true;
-      closeBtn.addEventListener("click", () => hidePlayerToast());
-    }
-
-    return { toastEl, iconEl, messageEl, closeBtn };
-  }
-
-  function hidePlayerToast() {
-    const parts = ensurePlayerToastElements();
-    if (!parts) return;
-    parts.toastEl.classList.add("hidden");
-    if (playerToastTimeout) {
-      clearTimeout(playerToastTimeout);
-      playerToastTimeout = null;
-    }
-  }
+  /** Per-button timers for temporary label awareness (player has no toast). */
+  const buttonLabelFlashTimers = new WeakMap();
 
   /**
-   * Fixed top-right toast (theme.css `.toast` + player.css position/width).
-   * Used for feedback results after the popover closes so the user still sees
-   * success/error feedback.
+   * Copied/success awareness: only swap text content + color, then restore.
+   * Keeps layout stable (no spinner, no width/padding expansion).
    */
-  function showPlayerToast(message, durationMs = 3200, options = {}) {
-    const parts = ensurePlayerToastElements();
-    if (!parts) return;
+  function flashButtonLabel(button, label, { durationMs = 1500, error = false } = {}) {
+    if (!button) return;
 
-    const variant =
-      options.variant === "error" || options.variant === "info" ? options.variant : "success";
-    const text = String(message || "")
-      .trim()
-      .replace(/\.+$/, "");
-    parts.iconEl.textContent = variant === "error" ? "!" : variant === "info" ? "i" : "✓";
-    parts.messageEl.textContent = text;
-    parts.toastEl.classList.remove("toast-success", "toast-info", "toast-error");
-    parts.toastEl.classList.add(`toast-${variant}`);
-    parts.toastEl.setAttribute("role", variant === "error" ? "alert" : "status");
-    parts.toastEl.setAttribute("aria-live", variant === "error" ? "assertive" : "polite");
-
-    parts.closeBtn.setAttribute("aria-label", t("toast.dismiss"));
-    parts.closeBtn.setAttribute("title", t("toast.dismiss"));
-    parts.toastEl.classList.remove("hidden");
-
-    if (playerToastTimeout) {
-      clearTimeout(playerToastTimeout);
-      playerToastTimeout = null;
+    const prevTimer = buttonLabelFlashTimers.get(button);
+    if (prevTimer) {
+      clearTimeout(prevTimer);
+      buttonLabelFlashTimers.delete(button);
     }
-    if (durationMs > 0) {
-      playerToastTimeout = setTimeout(() => hidePlayerToast(), durationMs);
+
+    if (button.dataset.idleHtml == null) {
+      button.dataset.idleHtml = button.innerHTML;
+      button.dataset.idleAria = button.getAttribute("aria-label") || "";
+      button.dataset.idleTitle = button.getAttribute("title") || "";
     }
+
+    const text = String(label || "").trim();
+    button.textContent = text;
+    button.classList.remove("is-label-error", "is-label-success");
+    button.classList.add(error ? "is-label-error" : "is-label-success");
+    if (button.getAttribute("aria-label") != null || button.dataset.idleAria) {
+      button.setAttribute("aria-label", text);
+    }
+    if (button.getAttribute("title") != null || button.dataset.idleTitle) {
+      button.setAttribute("title", text);
+    }
+
+    const timer = setTimeout(() => {
+      buttonLabelFlashTimers.delete(button);
+      if (button.dataset.idleHtml != null) {
+        button.innerHTML = button.dataset.idleHtml;
+        if (button.dataset.idleAria) {
+          button.setAttribute("aria-label", button.dataset.idleAria);
+        } else {
+          button.removeAttribute("aria-label");
+        }
+        if (button.dataset.idleTitle) {
+          button.setAttribute("title", button.dataset.idleTitle);
+        } else {
+          button.removeAttribute("title");
+        }
+        delete button.dataset.idleHtml;
+        delete button.dataset.idleAria;
+        delete button.dataset.idleTitle;
+      }
+      button.classList.remove("is-label-error", "is-label-success");
+    }, durationMs);
+    buttonLabelFlashTimers.set(button, timer);
+  }
+
+  /** Busy submit labels (feedback): spinner + label while request is in flight. */
+  function setButtonBusyLabel(button, label) {
+    if (!button) return () => {};
+
+    const prevTimer = buttonLabelFlashTimers.get(button);
+    if (prevTimer) {
+      clearTimeout(prevTimer);
+      buttonLabelFlashTimers.delete(button);
+    }
+
+    const idleHtml = button.innerHTML;
+    const idleDisabled = button.disabled;
+    button.disabled = true;
+    button.setAttribute("aria-busy", "true");
+    button.classList.add("is-loading");
+    button.classList.remove("is-label-error", "is-label-success");
+    button.innerHTML = `<span class="btn-spinner" aria-hidden="true"></span><span></span>`;
+    const span = button.querySelector("span:last-child");
+    if (span) {
+      span.textContent = label;
+    }
+
+    return () => {
+      button.removeAttribute("aria-busy");
+      button.disabled = idleDisabled;
+      button.classList.remove("is-loading");
+      button.innerHTML = idleHtml;
+    };
   }
 
   function attachFeedbackUi() {
@@ -987,19 +1024,20 @@
       if (submitting) return;
       const message = String(messageInput.value || "").trim();
       if (!message) {
+        flashButtonLabel(submitBtn, t("feedback.failed"), { error: true });
         setStatus(t("feedback.failed"), "error");
         return;
       }
       if (message.length > FEEDBACK_MESSAGE_MAX_LENGTH) {
+        flashButtonLabel(submitBtn, t("feedback.failed"), { error: true });
         setStatus(t("feedback.failed"), "error");
         return;
       }
 
       submitting = true;
-      submitBtn.disabled = true;
       messageInput.disabled = true;
       cancelBtn.disabled = true;
-      submitBtn.textContent = t("feedback.sending");
+      const clearBusy = setButtonBusyLabel(submitBtn, t("feedback.sending"));
       setStatus("");
 
       try {
@@ -1007,28 +1045,36 @@
 
         if (!result?.ok) {
           const errorMessage = result?.error || t("feedback.failed");
+          clearBusy();
+          flashButtonLabel(submitBtn, t("feedback.failed"), { error: true });
           setStatus(errorMessage, "error");
-          showPlayerToast(errorMessage, 4200, { variant: "error" });
           return;
         }
 
         messageInput.value = "";
-        setOpen(false);
-        // Panel status is hidden once closed — surface success via toast.
-        showPlayerToast(result.message || t("feedback.success"), 4200, {
-          variant: "success",
-        });
+        clearBusy();
+        // Keep popover open so success stays visible on the Submit button.
+        flashButtonLabel(submitBtn, result.message || t("feedback.success"));
+        setStatus(result.message || t("feedback.success"), "success");
+        window.setTimeout(() => {
+          if (!submitting) {
+            setOpen(false);
+            submitBtn.textContent = t("feedback.submit");
+            submitBtn.classList.remove("is-label-success", "is-label-error", "is-loading");
+          }
+        }, 1500);
       } catch (error) {
         const detail = error instanceof Error ? error.message : String(error);
         const errorMessage = detail || t("feedback.failed");
+        clearBusy();
+        flashButtonLabel(submitBtn, t("feedback.failed"), { error: true });
         setStatus(errorMessage, "error");
-        showPlayerToast(errorMessage, 4200, { variant: "error" });
       } finally {
         submitting = false;
-        submitBtn.disabled = false;
         messageInput.disabled = false;
         cancelBtn.disabled = false;
-        submitBtn.textContent = t("feedback.submit");
+        submitBtn.disabled = false;
+        submitBtn.removeAttribute("aria-busy");
       }
     });
   }
@@ -1116,6 +1162,8 @@
   /** Object URLs for screenshot images, revoked when a new recording loads. */
   const screenshotObjectUrls = [];
   let instantReplayArtifact = null;
+  /** Active index when the Screenshots stage shows one of several shots. */
+  let screenshotActiveIndex = 0;
   // Track which snapshot each time-synced panel is currently showing, so the
   // panels only re-render when the active (by-playback-time) snapshot changes.
   let storageActiveKey = "";
@@ -1229,6 +1277,7 @@
   function initElements() {
     elements.loadingState = document.getElementById("loading-state");
     elements.loadingMessage = document.getElementById("loading-message");
+    elements.loadingProgressBar = document.getElementById("loading-progress-bar");
     elements.loadingProgressFill = document.getElementById("loading-progress-fill");
     elements.loadingProgressText = document.getElementById("loading-progress-text");
     elements.passwordState = document.getElementById("password-state");
@@ -1415,6 +1464,9 @@
     if (elements.loadingProgressFill) {
       elements.loadingProgressFill.style.width = `${percent}%`;
     }
+    if (elements.loadingProgressBar) {
+      elements.loadingProgressBar.setAttribute("aria-valuenow", String(Math.round(percent)));
+    }
     if (elements.loadingProgressText) {
       elements.loadingProgressText.textContent = `${formatBytes(uploadedBytes)} / ${formatBytes(totalBytes)} (${percent.toFixed(1)}%)`;
     }
@@ -1506,7 +1558,24 @@
     }
     if (elements.passwordSubmit) {
       elements.passwordSubmit.disabled = isBusy;
-      elements.passwordSubmit.textContent = isBusy ? t("password.unlocking") : t("password.unlock");
+      if (isBusy) {
+        elements.passwordSubmit.setAttribute("aria-busy", "true");
+        elements.passwordSubmit.classList.add("is-loading");
+        elements.passwordSubmit.innerHTML =
+          '<span class="btn-spinner" aria-hidden="true"></span><span></span>';
+        const label = elements.passwordSubmit.querySelector("span:last-child");
+        if (label) {
+          label.textContent = t("password.unlocking");
+        }
+      } else {
+        elements.passwordSubmit.removeAttribute("aria-busy");
+        elements.passwordSubmit.classList.remove("is-loading");
+        if (!passwordPromptBusy) {
+          elements.passwordSubmit.classList.remove("is-loading");
+          elements.passwordSubmit.removeAttribute("aria-busy");
+          elements.passwordSubmit.textContent = t("password.unlock");
+        }
+      }
     }
   }
 
@@ -2223,67 +2292,125 @@
   }
 
   /**
-   * Render the Screenshots tab.
+   * Render the Screenshots stage.
    *
-   * Two kinds of screenshot end up here and they are not interchangeable: an
-   * extension capture is a real image entry in the package, while an SDK
-   * capture is a DOM snapshot the player has to re-render. The second is
-   * labelled as such rather than dressed up as a photograph — a reader
-   * comparing a "screenshot" against production needs to know that canvas
-   * contents and cross-origin frames were never in it.
-   *
-   * Annotations are drawn by the shared renderer in `window.gnCore`, the same
-   * one the extension's editor previews with, so an arrow lands where the
-   * reporter put it.
+   * Screenshot-report mode treats stills as the primary product: one focused
+   * card (with multi-shot nav when needed), report chrome above the figure, and
+   * optional instant-replay summary below. Recording mode reuses the same card
+   * so annotations stay consistent.
    */
+  function revokeScreenshotObjectUrls() {
+    while (screenshotObjectUrls.length > 0) {
+      const url = screenshotObjectUrls.pop();
+      try {
+        URL.revokeObjectURL(url);
+      } catch {
+        // ignore
+      }
+    }
+  }
+
   function renderScreenshotsTab() {
     const shots = Array.isArray(screenshotsArtifact?.screenshots)
       ? screenshotsArtifact.screenshots
       : [];
-    const hasShots = shots.length > 0;
+    const container = elements.screenshotsContent;
+    if (!container) return;
 
-    elements.screenshotsTab?.classList.toggle("hidden", !hasShots);
+    revokeScreenshotObjectUrls();
 
-    if (!hasShots) {
-      if (elements.screenshotsTab?.classList.contains("active")) {
-        showLogsTab("console");
-      }
-      if (elements.screenshotsContent) {
-        elements.screenshotsContent.innerHTML = "";
-      }
+    if (shots.length === 0) {
+      container.replaceChildren();
       return;
     }
 
-    const container = elements.screenshotsContent;
-    if (!container) return;
+    if (screenshotActiveIndex >= shots.length) {
+      screenshotActiveIndex = 0;
+    }
+
     container.replaceChildren();
 
-    for (const shot of shots) {
-      container.append(buildScreenshotCard(shot));
+    const stage = document.createElement("div");
+    stage.className = "screenshot-stage";
+
+    if (shots.length > 1) {
+      stage.append(buildScreenshotNav(shots.length));
     }
+
+    stage.append(
+      buildScreenshotCard(shots[screenshotActiveIndex], {
+        index: screenshotActiveIndex,
+        total: shots.length,
+      }),
+    );
 
     if (instantReplayArtifact) {
-      container.append(buildInstantReplayCard(instantReplayArtifact));
+      stage.append(buildInstantReplayCard(instantReplayArtifact));
     }
+
+    container.append(stage);
   }
 
-  /** @param {any} shot */
-  function buildScreenshotCard(shot) {
-    const card = document.createElement("section");
+  /** @param {number} total */
+  function buildScreenshotNav(total) {
+    const nav = document.createElement("div");
+    nav.className = "screenshot-nav";
+
+    const prev = document.createElement("button");
+    prev.type = "button";
+    prev.className = "screenshot-nav-btn";
+    prev.textContent = "\u2039";
+    prev.title = t("screenshots.prev");
+    prev.setAttribute("aria-label", t("screenshots.prev"));
+    prev.disabled = screenshotActiveIndex <= 0;
+    prev.addEventListener("click", () => {
+      if (screenshotActiveIndex <= 0) return;
+      screenshotActiveIndex -= 1;
+      renderScreenshotsTab();
+    });
+
+    const label = document.createElement("span");
+    label.className = "screenshot-nav-label";
+    label.textContent = t("screenshots.shotIndex", {
+      current: String(screenshotActiveIndex + 1),
+      total: String(total),
+    });
+
+    const next = document.createElement("button");
+    next.type = "button";
+    next.className = "screenshot-nav-btn";
+    next.textContent = "\u203a";
+    next.title = t("screenshots.next");
+    next.setAttribute("aria-label", t("screenshots.next"));
+    next.disabled = screenshotActiveIndex >= total - 1;
+    next.addEventListener("click", () => {
+      if (screenshotActiveIndex >= total - 1) return;
+      screenshotActiveIndex += 1;
+      renderScreenshotsTab();
+    });
+
+    nav.append(prev, label, next);
+    return nav;
+  }
+
+  /**
+   * @param {any} shot
+   * @param {{ index?: number, total?: number }} [options]
+   */
+  function buildScreenshotCard(shot, options = {}) {
+    const card = document.createElement("article");
     card.className = "screenshot-card";
 
-    if (shot.caption) {
-      const caption = document.createElement("p");
-      caption.className = "screenshot-caption";
-      caption.textContent = shot.caption;
-      card.append(caption);
-    }
+    card.append(buildScreenshotReportStrip(shot));
 
     const figure = document.createElement("div");
     figure.className = "screenshot-figure";
 
     const viewport = shot.viewport || { width: 1280, height: 800 };
     figure.style.aspectRatio = `${viewport.width} / ${viewport.height}`;
+
+    /** @type {string | null} */
+    let imageObjectUrl = null;
 
     if (shot.source?.kind === "image") {
       const blob = recordingFiles?.packageEntries
@@ -2292,9 +2419,10 @@
       if (blob) {
         const img = document.createElement("img");
         img.className = "screenshot-image";
-        img.alt = shot.caption || "Annotated screenshot";
-        img.src = URL.createObjectURL(blob);
-        screenshotObjectUrls.push(img.src);
+        img.alt = shot.caption || shot.title || t("tabs.screenshots");
+        imageObjectUrl = URL.createObjectURL(blob);
+        img.src = imageObjectUrl;
+        screenshotObjectUrls.push(imageObjectUrl);
         figure.append(img);
       } else {
         figure.append(buildScreenshotPlaceholder(t("screenshots.imageMissing")));
@@ -2316,22 +2444,18 @@
 
     card.append(figure);
 
-    const meta = document.createElement("p");
-    meta.className = "screenshot-meta";
-    meta.textContent = [
-      shot.url || "",
-      `${viewport.width}\u00d7${viewport.height}`,
-      shot.source?.kind === "image" ? t("screenshots.sourceImage") : t("screenshots.sourceDom"),
-    ]
-      .filter(Boolean)
-      .join(" \u2022 ");
-    card.append(meta);
-
+    const annotations = Array.isArray(shot.annotations) ? shot.annotations : [];
     const described = globalThis.gnCore?.annotate?.describeAnnotation;
-    if (described && Array.isArray(shot.annotations) && shot.annotations.length > 0) {
+    if (described && annotations.length > 0) {
+      const block = document.createElement("div");
+      block.className = "screenshot-annotations-block";
+      const heading = document.createElement("h3");
+      heading.className = "screenshot-annotations-heading";
+      heading.textContent = t("screenshots.annotationsHeading");
+      block.append(heading);
       const list = document.createElement("ul");
       list.className = "screenshot-annotation-list";
-      for (const annotation of shot.annotations) {
+      for (const annotation of annotations) {
         const item = document.createElement("li");
         item.textContent = described(annotation);
         if (annotation.type === "redact") {
@@ -2339,10 +2463,147 @@
         }
         list.append(item);
       }
-      card.append(list);
+      block.append(list);
+      card.append(block);
+    } else if (!shot.caption && annotations.length === 0) {
+      const empty = document.createElement("p");
+      empty.className = "screenshot-empty-note";
+      empty.textContent = t("screenshots.noAnnotations");
+      card.append(empty);
     }
 
     return card;
+  }
+
+  /** @param {any} shot */
+  function buildScreenshotReportStrip(shot) {
+    const strip = document.createElement("header");
+    strip.className = "screenshot-report-strip";
+
+    const badgeRow = document.createElement("div");
+    badgeRow.className = "screenshot-badge-row";
+    const badge = document.createElement("span");
+    badge.className = "screenshot-badge";
+    badge.textContent = t("screenshots.badge");
+    badgeRow.append(badge);
+    strip.append(badgeRow);
+
+    const captionText = typeof shot.caption === "string" ? shot.caption.trim() : "";
+    const caption = document.createElement("p");
+    caption.className = captionText ? "screenshot-caption" : "screenshot-caption is-placeholder";
+    caption.textContent = captionText || t("screenshots.noCaption");
+    strip.append(caption);
+
+    if (shot.title && shot.title !== captionText) {
+      const pageTitle = document.createElement("p");
+      pageTitle.className = "screenshot-page-title";
+      pageTitle.textContent = shot.title;
+      strip.append(pageTitle);
+    }
+
+    const chips = document.createElement("div");
+    chips.className = "screenshot-chips";
+    const viewport = shot.viewport || {};
+    const width = Number(viewport.width) || 0;
+    const height = Number(viewport.height) || 0;
+    if (width > 0 && height > 0) {
+      chips.append(
+        buildScreenshotChip(
+          t("screenshots.viewportChip", { width: String(width), height: String(height) }),
+        ),
+      );
+    }
+    chips.append(
+      buildScreenshotChip(
+        shot.source?.kind === "image" ? t("screenshots.sourceImage") : t("screenshots.sourceDom"),
+      ),
+    );
+    if (Number.isFinite(shot.capturedAt) && shot.capturedAt > 0) {
+      chips.append(buildScreenshotChip(formatScreenshotCapturedAt(shot.capturedAt)));
+    }
+    strip.append(chips);
+
+    if (shot.url) {
+      strip.append(buildScreenshotUrlRow(shot.url));
+    }
+
+    return strip;
+  }
+
+  /** @param {string} label */
+  function buildScreenshotChip(label) {
+    const chip = document.createElement("span");
+    chip.className = "screenshot-chip";
+    chip.textContent = label;
+    return chip;
+  }
+
+  /** @param {number} epochMs */
+  function formatScreenshotCapturedAt(epochMs) {
+    try {
+      return new Date(epochMs).toLocaleString(undefined, {
+        dateStyle: "medium",
+        timeStyle: "short",
+      });
+    } catch {
+      return String(epochMs);
+    }
+  }
+
+  /** @param {string} url */
+  function buildScreenshotUrlRow(url) {
+    const row = document.createElement("div");
+    row.className = "screenshot-url-row";
+
+    const link = document.createElement("a");
+    link.className = "screenshot-url-link";
+    link.href = url;
+    link.target = "_blank";
+    link.rel = "noreferrer";
+    link.title = url;
+    link.textContent = truncateScreenshotUrl(url);
+    row.append(link);
+
+    const openBtn = document.createElement("a");
+    openBtn.className = "screenshot-url-action";
+    openBtn.href = url;
+    openBtn.target = "_blank";
+    openBtn.rel = "noreferrer";
+    openBtn.textContent = t("screenshots.openPage");
+    row.append(openBtn);
+
+    const copyBtn = document.createElement("button");
+    copyBtn.type = "button";
+    copyBtn.className = "screenshot-url-action";
+    copyBtn.textContent = t("screenshots.copyUrl");
+    copyBtn.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(url);
+        flashButtonLabel(copyBtn, t("screenshots.urlCopied"));
+      } catch {
+        flashButtonLabel(copyBtn, t("screenshots.copyUrl"), { error: true });
+      }
+    });
+    row.append(copyBtn);
+
+    return row;
+  }
+
+  /** @param {string} url */
+  function truncateScreenshotUrl(url) {
+    const raw = String(url || "");
+    if (raw.length <= 72) {
+      return raw;
+    }
+    try {
+      const parsed = new URL(raw);
+      const host = parsed.hostname.replace(/^www\./, "");
+      const path = `${parsed.pathname}${parsed.search}` || "/";
+      const shortPath = path.length > 40 ? `${path.slice(0, 18)}\u2026${path.slice(-14)}` : path;
+      return `${host}${shortPath}`;
+    } catch {
+      return `${raw.slice(0, 34)}\u2026${raw.slice(-20)}`;
+    }
   }
 
   /** @param {string} message */
@@ -2368,7 +2629,7 @@
     card.className = "screenshot-card instant-replay-card";
 
     const title = document.createElement("h3");
-    title.className = "screenshot-caption";
+    title.className = "screenshot-section-title";
     title.textContent = t("screenshots.instantReplay");
     card.append(title);
 
@@ -2395,6 +2656,32 @@
     }
 
     return card;
+  }
+
+  /** Centered empty state when a package has metadata but no evidence. */
+  function renderEmptyEvidenceState() {
+    const container = elements.screenshotsContent || elements.consoleEntries;
+    if (!container || container.dataset.emptyEvidence === "1") {
+      // Prefer a dedicated host under logs panel when screenshots content exists.
+    }
+    const host = elements.logsPanel;
+    if (!host) return;
+    let panel = document.getElementById("empty-evidence-panel");
+    if (!panel) {
+      panel = document.createElement("div");
+      panel.id = "empty-evidence-panel";
+      panel.className = "empty-evidence-panel hidden";
+      host.append(panel);
+    }
+    panel.replaceChildren();
+    const title = document.createElement("p");
+    title.className = "empty-evidence-title";
+    title.textContent = t("presentation.emptyTitle");
+    const hint = document.createElement("p");
+    hint.className = "empty-evidence-hint";
+    hint.textContent = t("presentation.emptyHint");
+    panel.append(title, hint);
+    return panel;
   }
 
   // Render the Elements tab: hide when there is no DOM artifact/snapshot
@@ -4595,16 +4882,219 @@
   }
 
   /**
-   * Toggle the no-video presentation. Console, network, WebSocket, storage, and
-   * the event timeline all still work — only the media surface is absent.
-   * @param {boolean} hasNoVideo
+   * Apply the shell for recording vs screenshot vs SDK packages.
+   *
+   * Tab visibility for optional evidence still comes from the individual
+   * renderers; this function is the final authority for mode chrome (video
+   * column, splitter, console/network policy, default tab, no-video copy).
+   *
+   * @param {import("../src/shared/player-presentation").PresentationPlan | null | undefined} plan
+   * @param {{ videoPartCount?: number }} [options]
    */
-  function applyNoVideoPresentation(hasNoVideo) {
-    document.body.classList.toggle("no-video", hasNoVideo);
-    const notice = document.getElementById("no-video-notice");
-    if (notice) {
-      notice.classList.toggle("hidden", !hasNoVideo);
+  function applyPresentationMode(plan, options = {}) {
+    const mode = plan?.mode || "recording";
+    const hasNoVideo = (options.videoPartCount || 0) === 0;
+    const root = elements.playerState || document.body;
+
+    document.body.classList.toggle("no-video", hasNoVideo && mode !== "screenshot");
+    document.body.classList.toggle("presentation-screenshot", mode === "screenshot");
+    document.body.classList.toggle("presentation-sdk-logs", mode === "sdk-logs");
+    document.body.classList.toggle("presentation-empty", mode === "empty-evidence");
+    root.classList.toggle("presentation-screenshot", mode === "screenshot");
+    root.classList.toggle("presentation-sdk-logs", mode === "sdk-logs");
+    root.classList.toggle("presentation-empty", mode === "empty-evidence");
+
+    if (elements.videoSection) {
+      elements.videoSection.classList.toggle("hidden", plan ? !plan.showVideoSection : false);
     }
+    if (elements.layoutSplitter) {
+      elements.layoutSplitter.classList.toggle("hidden", plan ? !plan.showLayoutSplitter : false);
+      elements.layoutSplitter.setAttribute(
+        "aria-hidden",
+        plan && !plan.showLayoutSplitter ? "true" : "false",
+      );
+    }
+    if (elements.layoutHorizontalBtn) {
+      elements.layoutHorizontalBtn.classList.toggle(
+        "hidden",
+        mode === "screenshot" || mode === "empty-evidence",
+      );
+    }
+    if (elements.layoutVerticalBtn) {
+      elements.layoutVerticalBtn.classList.toggle(
+        "hidden",
+        mode === "screenshot" || mode === "empty-evidence",
+      );
+    }
+    if (elements.videoFullscreenBtn) {
+      elements.videoFullscreenBtn.classList.toggle(
+        "hidden",
+        mode === "screenshot" || mode === "empty-evidence" || hasNoVideo,
+      );
+    }
+
+    const notice = document.getElementById("no-video-notice");
+    const noticeTitle = document.getElementById("no-video-notice-title");
+    const noticeHint = document.getElementById("no-video-notice-hint");
+    if (notice) {
+      const kind = plan?.noVideoNotice || (hasNoVideo ? "sdk" : "none");
+      const showNotice =
+        Boolean(plan?.showVideoSection) && (kind === "sdk" || kind === "screenshot");
+      notice.classList.toggle("hidden", !showNotice);
+      if (showNotice && noticeTitle && noticeHint) {
+        if (kind === "screenshot") {
+          noticeTitle.textContent = t("noVideo.screenshotTitle");
+          noticeHint.textContent = t("noVideo.screenshotHint");
+        } else {
+          noticeTitle.textContent = t("noVideo.title");
+          noticeHint.textContent = t("noVideo.hint");
+        }
+      }
+    }
+
+    if (!plan) {
+      return;
+    }
+
+    elements.consoleTab?.classList.toggle("hidden", !plan.showConsoleTab);
+    elements.networkTab?.classList.toggle("hidden", !plan.showNetworkTab);
+    elements.screenshotsTab?.classList.toggle("hidden", !plan.showScreenshotsTab);
+    elements.reportTab?.classList.toggle("hidden", !plan.showReportTab);
+    elements.activityTab?.classList.toggle("hidden", !plan.showActivityTab);
+    elements.storageTab?.classList.toggle("hidden", !plan.showStorageTab);
+    elements.elementsTab?.classList.toggle("hidden", !plan.showElementsTab);
+
+    // A lone Screenshots tab is chrome without a job — hide the whole tab bar
+    // when screenshot mode has no other evidence tabs (or the package is empty).
+    const hasSiblingTabs =
+      plan.showConsoleTab ||
+      plan.showNetworkTab ||
+      plan.showReportTab ||
+      plan.showActivityTab ||
+      plan.showStorageTab ||
+      plan.showElementsTab;
+    const hideTabBar = mode === "empty-evidence" || (mode === "screenshot" && !hasSiblingTabs);
+    const tabBar = elements.logsPanel?.querySelector(".tab-bar");
+    tabBar?.classList.toggle("hidden", hideTabBar);
+    tabBar?.setAttribute("aria-hidden", hideTabBar ? "true" : "false");
+
+    const emptyPanel = renderEmptyEvidenceState();
+    if (emptyPanel) {
+      emptyPanel.classList.toggle("hidden", mode !== "empty-evidence");
+      if (mode === "empty-evidence") {
+        elements.consoleViewer?.classList.add("hidden");
+        elements.networkViewer?.classList.add("hidden");
+        elements.screenshotsViewer?.classList.add("hidden");
+        elements.reportViewer?.classList.add("hidden");
+        elements.activityViewer?.classList.add("hidden");
+        elements.storageViewer?.classList.add("hidden");
+        elements.elementsViewer?.classList.add("hidden");
+      }
+    }
+
+    // Leave video-fullscreen if screenshot mode collapses the media column.
+    if (
+      (mode === "screenshot" || mode === "empty-evidence") &&
+      elements.playerState?.classList.contains("is-video-fullscreen")
+    ) {
+      elements.playerState.classList.remove("is-video-fullscreen");
+    }
+  }
+
+  /** @deprecated Use applyPresentationMode — kept name for older call sites during load. */
+  function applyNoVideoPresentation(hasNoVideo) {
+    applyPresentationMode(
+      {
+        mode: hasNoVideo ? "sdk-logs" : "recording",
+        defaultTab: "console",
+        showVideoSection: true,
+        showLayoutSplitter: true,
+        showConsoleTab: true,
+        showNetworkTab: true,
+        showScreenshotsTab: false,
+        showReportTab: false,
+        showActivityTab: false,
+        showStorageTab: false,
+        showElementsTab: false,
+        noVideoNotice: hasNoVideo ? "sdk" : "none",
+      },
+      { videoPartCount: hasNoVideo ? 0 : 1 },
+    );
+  }
+
+  /**
+   * Build the presentation plan from whatever the package actually loaded.
+   * @param {{ videoPartCount: number }} options
+   */
+  function buildPresentationPlan(options) {
+    const resolve = globalThis.gnCore?.presentation?.resolvePresentationMode;
+    const evidence = {
+      hasVideo: (options.videoPartCount || 0) > 0,
+      screenshotCount: Array.isArray(screenshotsArtifact?.screenshots)
+        ? screenshotsArtifact.screenshots.length
+        : 0,
+      consoleCount: Array.isArray(consoleLogs) ? consoleLogs.length : 0,
+      networkCount: Array.isArray(networkLogs) ? networkLogs.length : 0,
+      websocketCount: Array.isArray(webSocketLogs) ? webSocketLogs.length : 0,
+      activityCount: Array.isArray(userEvents) ? userEvents.length : 0,
+      hasStorage: Array.isArray(storageArtifact?.snapshots) && storageArtifact.snapshots.length > 0,
+      hasDom: Array.isArray(domArtifact?.snapshots)
+        ? domArtifact.snapshots.length > 0
+        : Boolean(domArtifact?.root || domArtifact?.document),
+      hasReportContent: hasReportArtifactContent(),
+    };
+
+    if (typeof resolve === "function") {
+      return resolve(evidence);
+    }
+
+    // Fallback when gn-core is missing: keep previous no-video behaviour.
+    if (evidence.hasVideo) {
+      return {
+        mode: "recording",
+        defaultTab: "console",
+        showVideoSection: true,
+        showLayoutSplitter: true,
+        showConsoleTab: true,
+        showNetworkTab: true,
+        showScreenshotsTab: evidence.screenshotCount > 0,
+        showReportTab: evidence.hasReportContent,
+        showActivityTab: evidence.activityCount > 0,
+        showStorageTab: evidence.hasStorage,
+        showElementsTab: evidence.hasDom,
+        noVideoNotice: "none",
+      };
+    }
+    if (evidence.screenshotCount > 0) {
+      return {
+        mode: "screenshot",
+        defaultTab: "screenshots",
+        showVideoSection: false,
+        showLayoutSplitter: false,
+        showConsoleTab: evidence.consoleCount > 0,
+        showNetworkTab: evidence.networkCount > 0 || evidence.websocketCount > 0,
+        showScreenshotsTab: true,
+        showReportTab: evidence.hasReportContent,
+        showActivityTab: evidence.activityCount > 0,
+        showStorageTab: evidence.hasStorage,
+        showElementsTab: evidence.hasDom,
+        noVideoNotice: "screenshot",
+      };
+    }
+    return {
+      mode: "sdk-logs",
+      defaultTab: "console",
+      showVideoSection: true,
+      showLayoutSplitter: true,
+      showConsoleTab: true,
+      showNetworkTab: true,
+      showScreenshotsTab: false,
+      showReportTab: evidence.hasReportContent,
+      showActivityTab: evidence.activityCount > 0,
+      showStorageTab: evidence.hasStorage,
+      showElementsTab: evidence.hasDom,
+      noVideoNotice: "sdk",
+    };
   }
 
   async function parseJsonBlob(blob, label) {
@@ -5477,9 +5967,9 @@
       pendingSeekTimeMs = null;
       pendingSeekRetryCount = 0;
       currentTimeMs = 0;
-      // A recording with no video is a valid SDK recording, not a broken one:
-      // swap the player for an explanation and drop the transport controls
-      // rather than leaving a dead black box behind them.
+      // Shell chrome is finalized after artifacts load via buildPresentationPlan.
+      // Apply a conservative no-video class early so the video element is not
+      // shown empty while the rest of the package streams in.
       applyNoVideoPresentation(recordingFiles.videoParts.length === 0);
       setExpectedVideoBytes(metadata.video?.totalBytes || 0);
       const videoMimeType =
@@ -5809,6 +6299,7 @@
 
       // Update UI (video metadata wait already ran inside the video load branch).
       updatePlayerTitle(metadata);
+      screenshotActiveIndex = 0;
       renderScreenshotsTab();
       renderReportPanel();
       renderActivityPanel();
@@ -5819,7 +6310,17 @@
       }
       setLoadingMessage(t("loading.message"));
 
+      const presentationPlan = buildPresentationPlan({
+        videoPartCount: recordingFiles.videoParts.length,
+      });
+
       showPlayer();
+      // Apply after showPlayer's panel renderers so mode chrome wins over their
+      // individual tab toggles and default-tab side effects.
+      applyPresentationMode(presentationPlan, {
+        videoPartCount: recordingFiles.videoParts.length,
+      });
+      showLogsTab(presentationPlan.defaultTab);
     } catch (err) {
       markPendingLoadingEntriesFailed();
       console.error("Failed to load recording:", err);
@@ -7773,11 +8274,7 @@
             }
 
             navigator.clipboard.writeText(text).then(() => {
-              const originalText = e.target.textContent;
-              e.target.textContent = t("detail.copied");
-              setTimeout(() => {
-                e.target.textContent = originalText;
-              }, 1500);
+              flashButtonLabel(e.target, t("detail.copied"));
             });
           }
         }
@@ -7805,7 +8302,7 @@
     button.addEventListener("click", async () => {
       const api = globalThis.gnCore?.agentReport;
       if (!api || typeof api.buildAgentReportMarkdown !== "function") {
-        showPlayerToast(t("agentReport.unavailable"), 3200, { variant: "error" });
+        flashButtonLabel(button, t("agentReport.unavailable"), { error: true });
         return;
       }
 
@@ -7817,7 +8314,7 @@
           console: consoleLogs,
           network: { schemaVersion: 2, entries: networkLogs },
           websocket: webSocketLogs,
-          events: { schemaVersion: 1, events: userEvents },
+          events: { schemaVersion: 1, entries: userEvents },
           privacy: privacySummary,
           report,
           availableArtifacts: listLoadedArtifactIds(),
@@ -7825,10 +8322,10 @@
         });
 
         await navigator.clipboard.writeText(markdown);
-        showPlayerToast(t("agentReport.copied"));
+        flashButtonLabel(button, t("detail.copied"));
       } catch (error) {
         console.warn("[GN Tracing Player] Copy for AI failed:", error);
-        showPlayerToast(t("agentReport.failed"), 3200, { variant: "error" });
+        flashButtonLabel(button, t("agentReport.failed"), { error: true });
       }
     });
   }
@@ -8045,11 +8542,13 @@
         return;
       }
       activeReplayProvider = replayRef.provider;
-      resetLoadingProgress(t("loading.package"));
+      showLoading();
+      setLoadingMessage(t("loading.package"));
       // Google: /api/drive. Dropbox: /api/dropbox.
       recordingFiles = await loadRecordingFilesFromIndex(replayRecordingId);
       await loadRecordingFromFiles();
     } else if (videos && metadataFileId) {
+      showLoading();
       recordingFiles = buildDirectRecordingFiles(urlParams);
       await loadRecordingFromFiles();
     } else if (!hasParams) {

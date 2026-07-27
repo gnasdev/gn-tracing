@@ -301,7 +301,7 @@ export function buildSampleArtifacts(options: SampleRecordingOptions = {}) {
 
   const instantReplay: InstantReplayArtifact = {
     schemaVersion: 1,
-    windowMs: 30_000,
+    windowMs: 120_000,
     coveredMs: 4_200,
     droppedFrames: 12,
     frames: [

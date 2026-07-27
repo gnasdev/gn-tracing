@@ -43,7 +43,7 @@ body {
   border: 3px solid var(--border-input);
   border-top-color: var(--accent);
   border-radius: 50%;
-  animation: spin 1s linear infinite;
+  animation: gn-spin 1s linear infinite;
 }
 
 .loading-progress-bar {
@@ -66,7 +66,26 @@ body {
   color: var(--text-muted);
 }
 
-@keyframes spin {
+#recording-password-submit.is-loading {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: progress;
+}
+
+#recording-password-submit .btn-spinner {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  border: 2px solid color-mix(in srgb, currentColor 35%, transparent);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: gn-spin 0.7s linear infinite;
+}
+
+/* Local alias when theme.css keyframes are unavailable (standalone always links theme). */
+@keyframes gn-spin {
   to {
     transform: rotate(360deg);
   }
@@ -657,35 +676,32 @@ body {
   max-width: calc(100vw - 24px);
 }
 
-/* Toast sits above player chrome (header controls use z-index up to 100).
-   theme.css places `.toast` full-width at bottom for extension pages;
-   player feedback toasts are top-right and shrink to content. */
-#player-toast.toast {
-  top: 12px;
-  right: 12px;
-  bottom: auto;
-  left: auto;
-  width: fit-content;
-  max-width: min(420px, calc(100vw - 24px));
-  z-index: 200;
-  pointer-events: auto;
-  animation-name: gn-player-toast-in;
+/* Copied/success awareness: text + color only (no layout shift). */
+.is-label-success {
+  color: var(--success) !important;
 }
 
-#player-toast .toast-message {
-  /* Don't grow to fill a stretched bar — keep toast width content-sized. */
-  flex: 0 1 auto;
+.is-label-error {
+  color: var(--danger) !important;
 }
 
-@keyframes gn-player-toast-in {
-  from {
-    opacity: 0;
-    transform: translateY(-8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+/* Busy submit (feedback): spinner stays inside the button. */
+.btn.is-loading {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  cursor: progress;
+}
+
+.btn .btn-spinner {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  border: 2px solid color-mix(in srgb, currentColor 35%, transparent);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: gn-spin 0.7s linear infinite;
 }
 
 /* While replaying, header owns lang/theme/feedback; hide floating controls
@@ -2914,7 +2930,108 @@ body.no-video .video-controls {
   display: none;
 }
 
-/* ===== Screenshots tab ===== */
+/*
+ * Screenshot-report presentation: annotated stills are the product, not a
+ * side tab beside an empty video column. Collapse the media pane and let the
+ * screenshots viewer own the layout.
+ */
+/*
+ * Horizontal layout pins .logs-panel to grid-column: 3. If we only collapse
+ * template columns to 1fr without resetting that placement, the panel sits in
+ * an implicit third column and the stage looks right-aligned in a void.
+ */
+body.presentation-screenshot .main-layout,
+#player-state.presentation-screenshot .main-layout,
+body.presentation-empty .main-layout,
+#player-state.presentation-empty .main-layout,
+.player-container[data-layout-mode="horizontal"].presentation-screenshot .main-layout,
+.player-container[data-layout-mode="vertical"].presentation-screenshot .main-layout,
+.player-container[data-layout-mode="horizontal"].presentation-empty .main-layout,
+.player-container[data-layout-mode="vertical"].presentation-empty .main-layout {
+  grid-template-columns: minmax(0, 1fr) !important;
+  grid-template-rows: minmax(0, 1fr) !important;
+}
+
+body.presentation-screenshot .video-section,
+#player-state.presentation-screenshot .video-section,
+body.presentation-empty .video-section,
+#player-state.presentation-empty .video-section {
+  display: none !important;
+}
+
+body.presentation-screenshot .layout-splitter,
+#player-state.presentation-screenshot .layout-splitter,
+body.presentation-empty .layout-splitter,
+#player-state.presentation-empty .layout-splitter {
+  display: none !important;
+}
+
+body.presentation-screenshot .logs-panel,
+#player-state.presentation-screenshot .logs-panel,
+body.presentation-empty .logs-panel,
+#player-state.presentation-empty .logs-panel,
+.player-container[data-layout-mode="horizontal"].presentation-screenshot .logs-panel,
+.player-container[data-layout-mode="vertical"].presentation-screenshot .logs-panel,
+.player-container[data-layout-mode="horizontal"].presentation-empty .logs-panel,
+.player-container[data-layout-mode="vertical"].presentation-empty .logs-panel {
+  grid-column: 1 / -1 !important;
+  grid-row: 1 / -1 !important;
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+body.presentation-screenshot .screenshots-viewer,
+#player-state.presentation-screenshot .screenshots-viewer {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+body.presentation-screenshot .screenshots-content,
+#player-state.presentation-screenshot .screenshots-content {
+  flex: 1 1 auto;
+  max-width: min(1120px, 100%);
+  margin: 0 auto;
+  width: 100%;
+  padding: 20px 20px 32px;
+  overflow: auto;
+}
+
+body.presentation-screenshot .tab-bar.hidden,
+#player-state.presentation-screenshot .tab-bar.hidden {
+  display: none !important;
+}
+
+body.presentation-screenshot .screenshot-card,
+#player-state.presentation-screenshot .screenshot-card {
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  gap: 14px;
+}
+
+body.presentation-screenshot .screenshot-figure,
+#player-state.presentation-screenshot .screenshot-figure {
+  max-width: 100%;
+  max-height: min(78vh, 900px);
+  width: auto;
+  margin-inline: auto;
+  border-radius: 10px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+}
+
+body.presentation-screenshot .screenshot-image,
+#player-state.presentation-screenshot .screenshot-image {
+  width: 100%;
+  height: 100%;
+  object-fit: fill;
+  background: var(--bg-elevated, #0f1115);
+}
+
+/* ===== Screenshots tab / stage ===== */
 .screenshots-content {
   display: flex;
   flex-direction: column;
@@ -2922,21 +3039,167 @@ body.no-video .video-controls {
   padding: 16px;
 }
 
+.screenshot-stage {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  width: 100%;
+}
+
+.screenshot-nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+
+.screenshot-nav-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.screenshot-nav-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.screenshot-nav-btn:not(:disabled):hover {
+  border-color: var(--border-strong, var(--border-subtle));
+  background: var(--bg-elevated, var(--bg-card));
+}
+
+.screenshot-nav-label {
+  min-width: 4.5rem;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
 .screenshot-card {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
   padding: 12px;
   border: 1px solid var(--border-subtle);
   border-radius: 12px;
   background: var(--bg-card);
 }
 
+.screenshot-report-strip {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.screenshot-badge-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.screenshot-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent, #5b8cff) 18%, transparent);
+  color: var(--accent, #8eb0ff);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
 .screenshot-caption {
   margin: 0;
   color: var(--text-primary);
-  font-size: 14px;
+  font-size: 18px;
   font-weight: 600;
+  line-height: 1.35;
+}
+
+.screenshot-caption.is-placeholder {
+  color: var(--text-muted);
+  font-size: 15px;
+  font-weight: 500;
+  font-style: italic;
+}
+
+.screenshot-page-title {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.screenshot-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.screenshot-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  background: var(--bg-elevated, var(--bg-base));
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.screenshot-url-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  min-width: 0;
+}
+
+.screenshot-url-link {
+  min-width: 0;
+  flex: 1 1 12rem;
+  color: var(--text-secondary);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-decoration: none;
+}
+
+.screenshot-url-link:hover {
+  color: var(--text-primary);
+  text-decoration: underline;
+}
+
+.screenshot-url-action {
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.screenshot-url-action:hover {
+  color: var(--text-primary);
+  border-color: var(--border-strong, var(--border-subtle));
+  background: var(--bg-elevated, transparent);
 }
 
 /*
@@ -2947,6 +3210,7 @@ body.no-video .video-controls {
 .screenshot-figure {
   position: relative;
   width: 100%;
+  height: auto;
   overflow: hidden;
   border: 1px solid var(--border-subtle);
   border-radius: 8px;
@@ -2976,7 +3240,7 @@ body.no-video .video-controls {
   align-items: center;
   justify-content: center;
   height: 100%;
-  min-height: 120px;
+  min-height: 160px;
   padding: 24px;
   color: var(--text-muted);
   font-size: 13px;
@@ -2988,6 +3252,21 @@ body.no-video .video-controls {
   color: var(--text-muted);
   font-size: 12px;
   overflow-wrap: anywhere;
+}
+
+.screenshot-annotations-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 4px;
+}
+
+.screenshot-annotations-heading,
+.screenshot-section-title {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 600;
 }
 
 .screenshot-annotation-list {
@@ -3004,6 +3283,47 @@ body.no-video .video-controls {
   color: var(--danger);
 }
 
+.screenshot-empty-note {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
 .instant-replay-card {
-  border-style: dashed;
+  margin-top: 4px;
+  padding: 14px 16px;
+  border: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--accent, #5b8cff);
+  border-radius: 10px;
+  background: var(--bg-card);
+}
+
+.empty-evidence-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 40vh;
+  padding: 32px 24px;
+  text-align: center;
+}
+
+.empty-evidence-panel.hidden {
+  display: none;
+}
+
+.empty-evidence-title {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.empty-evidence-hint {
+  margin: 0;
+  max-width: 36rem;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.45;
 }

@@ -24,6 +24,7 @@ var gnCore = (() => {
     agentReport: () => agentReport,
     annotate: () => annotate,
     capabilities: () => capabilities,
+    presentation: () => presentation,
     summary: () => summary,
     timelineSeek: () => timelineSeek
   });
@@ -913,6 +914,82 @@ var gnCore = (() => {
     });
   }
 
+  // src/shared/player-presentation.ts
+  function hasLogEvidence(evidence) {
+    return evidence.consoleCount > 0 || evidence.networkCount > 0 || evidence.websocketCount > 0 || evidence.activityCount > 0 || evidence.hasStorage || evidence.hasDom;
+  }
+  function resolvePresentationMode(evidence) {
+    const hasScreenshots = evidence.screenshotCount > 0;
+    const hasLogs = hasLogEvidence(evidence);
+    if (evidence.hasVideo) {
+      return {
+        mode: "recording",
+        defaultTab: evidence.hasReportContent ? "report" : evidence.activityCount > 0 ? "activity" : "console",
+        showVideoSection: true,
+        showLayoutSplitter: true,
+        // DevTools-like: keep console/network visible even when the session was quiet.
+        showConsoleTab: true,
+        showNetworkTab: true,
+        showScreenshotsTab: hasScreenshots,
+        showReportTab: evidence.hasReportContent,
+        showActivityTab: evidence.activityCount > 0,
+        showStorageTab: evidence.hasStorage,
+        showElementsTab: evidence.hasDom,
+        noVideoNotice: "none"
+      };
+    }
+    if (hasScreenshots) {
+      const hasConsoleData = evidence.consoleCount > 0;
+      const hasNetworkData = evidence.networkCount > 0 || evidence.websocketCount > 0;
+      return {
+        mode: "screenshot",
+        defaultTab: "screenshots",
+        showVideoSection: false,
+        showLayoutSplitter: false,
+        // Only surface log tabs when the package actually carried them (forward-compat
+        // if screenshot reports later attach console/network).
+        showConsoleTab: hasConsoleData,
+        showNetworkTab: hasNetworkData,
+        showScreenshotsTab: true,
+        showReportTab: evidence.hasReportContent,
+        showActivityTab: evidence.activityCount > 0,
+        showStorageTab: evidence.hasStorage,
+        showElementsTab: evidence.hasDom,
+        noVideoNotice: "screenshot"
+      };
+    }
+    if (hasLogs) {
+      return {
+        mode: "sdk-logs",
+        defaultTab: evidence.consoleCount > 0 ? "console" : evidence.networkCount > 0 || evidence.websocketCount > 0 ? "network" : evidence.hasStorage ? "storage" : evidence.hasDom ? "elements" : evidence.activityCount > 0 ? "activity" : "console",
+        showVideoSection: true,
+        showLayoutSplitter: true,
+        showConsoleTab: true,
+        showNetworkTab: true,
+        showScreenshotsTab: false,
+        showReportTab: evidence.hasReportContent,
+        showActivityTab: evidence.activityCount > 0,
+        showStorageTab: evidence.hasStorage,
+        showElementsTab: evidence.hasDom,
+        noVideoNotice: "sdk"
+      };
+    }
+    return {
+      mode: "empty-evidence",
+      defaultTab: evidence.hasReportContent ? "report" : "console",
+      showVideoSection: false,
+      showLayoutSplitter: false,
+      showConsoleTab: true,
+      showNetworkTab: false,
+      showScreenshotsTab: false,
+      showReportTab: evidence.hasReportContent,
+      showActivityTab: false,
+      showStorageTab: false,
+      showElementsTab: false,
+      noVideoNotice: "none"
+    };
+  }
+
   // src/shared/player-timeline-seek.ts
   var SEEK_COMMIT_TOLERANCE_MS = 350;
   function getFiniteDurationMs(value) {
@@ -994,6 +1071,7 @@ var gnCore = (() => {
     reconcileSeekClock,
     resolveTimelineDurationMs
   };
+  var presentation = { resolvePresentationMode };
   var capabilities = { hasCapability, resolveCapabilities };
   var summary = { buildAgentSummary, renderBugReportMarkdown };
   var annotate = {

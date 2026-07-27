@@ -18,6 +18,7 @@ import type {
   NormalizedPoint,
   Screenshot,
 } from "../../packages/replay-core/src/schema/annotation";
+import { setButtonLoading } from "../shared/button-loading";
 import {
   assertReadyToSave,
   createShape,
@@ -25,6 +26,34 @@ import {
   type EditorTool,
   hitTest,
 } from "./editor-model";
+
+const ANNOTATE_COPY = {
+  en: {
+    emptyShapes: "Nothing annotated yet.",
+    packaging: "Packaging and uploading…",
+    uploaded: "Uploaded. Opening the replay…",
+    ready: "Draw on the screenshot, then save.",
+    noPending: "No screenshot is waiting to be annotated.",
+    uploadFailed: "Upload failed.",
+  },
+  vi: {
+    emptyShapes: "Chưa có chú thích.",
+    packaging: "Đang đóng gói và tải lên…",
+    uploaded: "Đã tải lên. Đang mở replay…",
+    ready: "Vẽ trên ảnh chụp, rồi lưu.",
+    noPending: "Không có ảnh chụp nào đang chờ chú thích.",
+    uploadFailed: "Tải lên thất bại.",
+  },
+} as const;
+
+function annotateLang(): "en" | "vi" {
+  const lang = document.documentElement.lang?.toLowerCase() || "en";
+  return lang.startsWith("vi") ? "vi" : "en";
+}
+
+function annotateT<K extends keyof (typeof ANNOTATE_COPY)["en"]>(key: K): string {
+  return ANNOTATE_COPY[annotateLang()][key];
+}
 
 interface PendingScreenshot {
   id: string;
@@ -126,7 +155,7 @@ const TOOL_SHORTCUTS: Record<string, EditorTool> = {
     if (history.annotations.length === 0) {
       const empty = document.createElement("li");
       empty.className = "shape-list-empty";
-      empty.textContent = "Nothing annotated yet.";
+      empty.textContent = annotateT("emptyShapes");
       elements.shapeList.append(empty);
       return;
     }
@@ -279,6 +308,7 @@ const TOOL_SHORTCUTS: Record<string, EditorTool> = {
       return;
     }
 
+    let loading: ReturnType<typeof setButtonLoading> | null = null;
     try {
       // The offscreen document bakes redactions before packaging; this guard
       // catches the case where a shape somehow reached save unbaked, so the
@@ -289,8 +319,11 @@ const TOOL_SHORTCUTS: Record<string, EditorTool> = {
       }
 
       saving = true;
-      elements.save.disabled = true;
-      setStatus("Packaging and uploading…");
+      loading = setButtonLoading(elements.save, {
+        label: annotateT("packaging"),
+        spinner: true,
+      });
+      setStatus(annotateT("packaging"));
 
       const screenshot: Screenshot = {
         id: pending.id,
@@ -310,16 +343,17 @@ const TOOL_SHORTCUTS: Record<string, EditorTool> = {
       })) as { ok: boolean; error?: string; recordingUrl?: string };
 
       if (!response?.ok) {
-        throw new Error(response?.error || "Upload failed.");
+        throw new Error(response?.error || annotateT("uploadFailed"));
       }
 
-      setStatus("Uploaded. Opening the replay…");
+      setStatus(annotateT("uploaded"));
       if (response.recordingUrl) {
         await chrome.tabs.create({ url: response.recordingUrl });
       }
       window.close();
     } catch (error) {
       saving = false;
+      loading?.clear();
       elements.save.disabled = false;
       setStatus((error as Error).message, true);
     }
@@ -331,7 +365,7 @@ const TOOL_SHORTCUTS: Record<string, EditorTool> = {
     })) as { ok: boolean; screenshot?: PendingScreenshot; error?: string };
 
     if (!response?.ok || !response.screenshot) {
-      setStatus(response?.error || "No screenshot is waiting to be annotated.", true);
+      setStatus(response?.error || annotateT("noPending"), true);
       elements.save.disabled = true;
       return;
     }
@@ -341,7 +375,7 @@ const TOOL_SHORTCUTS: Record<string, EditorTool> = {
     elements.wrap.style.aspectRatio = `${pending.viewport.width} / ${pending.viewport.height}`;
     selectTool("select");
     render();
-    setStatus("Draw on the screenshot, then save.");
+    setStatus(annotateT("ready"));
   }
 
   void load();

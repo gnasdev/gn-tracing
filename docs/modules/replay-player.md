@@ -8,6 +8,8 @@ source_paths:
   - "player/player.js"
   - "player/player.css"
   - "player/player.html"
+  - "player/core-entry.ts"
+  - "src/shared/player-presentation.ts"
   - "player-standalone/src/main.ts"
   - "player-standalone/src/drive-adapter.ts"
   - "player-standalone/src/extension-detector.ts"
@@ -49,6 +51,16 @@ The same `player/player.js` and `player/player.css` runtime is used by the packa
 - A direct-file query parser for `videos`, `metadata`, `console`, `network`, and `websocket` remains available for older/debug links.
 - Opening the player without replay parameters shows an intro state instead of an invalid-params error.
 
+## Loading UI state machine
+
+Mutually exclusive shells: `loading-state` | `password-state` | `error-state` | `intro-state` | `player-state`.
+
+- HTML default (extension + standalone parity): loading visible, intro hidden.
+- No replay params → `showIntro()`.
+- Replay/direct params → `showLoading()` before network I/O; progress via `loadingProgressEntries` and a determinate bar (`role="progressbar"`, live `aria-valuenow`).
+- Password packages → `showPasswordPrompt()`; unlock button uses spinner + `aria-busy`; after unlock → `showLoading()` then parse.
+- Success → `showPlayer()`; failure → `showError()`.
+
 ## Package Loading
 
 The primary package format is a single `gn-tracing-*.zip` containing:
@@ -88,19 +100,33 @@ Standalone mode depends on Cloudflare Pages functions:
 
 Proxies return non-cacheable errors for non-binary/HTML interstitial responses that would corrupt the zip cache.
 
+## Presentation Modes
+
+After a package loads, the player resolves a **presentation mode** from what is actually present (video parts, screenshots, logs) via `src/shared/player-presentation.ts` → `window.gnCore.presentation.resolvePresentationMode`. Mode drives chrome, not just a single “no video” flag:
+
+| Mode | When | Shell |
+| --- | --- | --- |
+| `recording` | Playable video parts | Two-column video + logs; Console/Network stay visible even if empty (DevTools-like) |
+| `screenshot` | Annotated `screenshots.json`, no video | Video column and splitter hidden; Screenshots tab primary/full-width; Console/Network only if those artifacts have entries |
+| `sdk-logs` | No video, but console/network/storage/DOM/activity | Video column shows SDK no-video notice; default Console (or first available log tab) |
+| `empty-evidence` | Metadata only | Minimal shell; no empty video chrome |
+
+Screenshot packages (`metadata.capabilities` without `video`, plus `screenshots.json`) must not use the SDK “no screen recording” copy. Standalone and extension HTML shells must share critical DOM ids (`#screenshots-tab`, `#no-video-notice`, …); parity is guarded by `player/player-html-parity.test.ts`.
+
 ## Inspection UX
 
 The player renders:
 
 - a `Report` tab with report metadata, environment chips, privacy summary, and optional screenshot (hidden when those artifacts are absent)
 - a separate `Activity` tab with the full redacted user-event timeline (click/contextmenu/scroll/key/navigation/focus/submit); hidden when `events.json` is empty/missing; rows seek the video on click; the latest event at or before `video.currentTime` is highlighted and future rows are dimmed as playback advances
+- a `Screenshots` stage for annotated stills (`screenshots.json`): report strip (badge, caption or placeholder, viewport/source/time chips, truncated URL with open/copy), image + SVG annotation overlay (`gnCore.annotate`), prose annotation list, multi-shot prev/next when needed, and optional instant-replay summary; in pure screenshot presentation mode the log tab bar is hidden so stills are the only chrome
 - timeline markers from log evidence and user events
 - searchable/filterable console, network, and WebSocket lists
 - source-mapped console locations, parsed Error argument stacks, bounded source snippets, and source-map diagnostic messages
 - network request/response details, headers, body text, cURL copy, response previews for HTML/media, syntax-highlighted source views, and JSON pretty preview when validation succeeds
 - network and WebSocket initiator sections with source-mapped locations, full stack frames including async parent stacks, and source-map diagnostic messages
 - when present, a `Storage` tab with localStorage/sessionStorage/cookie groups and a start↔stop diff (added/removed/changed/unchanged), and an `Elements` tab with a snapshot-selectable, inspectable DOM tree; both tabs are hidden when their artifact is absent
-- draggable horizontal/vertical layout, persisted split percentage, and in-tab immersive video mode
+- draggable horizontal/vertical layout, persisted split percentage, and in-tab immersive video mode (layout controls hidden in screenshot presentation mode)
 - an input-effects overlay on top of the video: a ripple for left clicks, a distinctly colored ripple for right clicks (`contextmenu`), a directional arrow chip for scroll bursts, and a bottom-center key chip for keyboard events (`key` labels such as `Enter` or `Ctrl+S`), synchronized to `video.currentTime` against each event's `relativeMs`. Pointer effects map `event.x`/`event.y` using the per-event `viewportWidth`/`viewportHeight` when present (else `report.environment.viewport`), first into the recorded page's sub-rectangle inside the captured video frame when Chrome letterboxes a non-matching aspect ratio into a fixed-size frame, then onto the live on-screen video content rect (accounting for player `object-fit` letterboxing). Near-matching aspect ratios skip letterbox offsets so rounding does not invent false bars. Key chips do not use page coordinates or require viewport metadata; they stack in the bottom-right corner of the video content rect with the newest key always in the bottom slot and older chips shifting upward. Seeking resets the effect scheduler to a small trailing window instead of replaying every skipped effect.
 
 ## Source-Map Rendering

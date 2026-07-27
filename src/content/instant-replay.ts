@@ -20,7 +20,7 @@ import {
 } from "../../packages/replay-core/src/capture/instant-replay";
 
 /** How often the buffer is discarded outright, regardless of the time window. */
-const PURGE_INTERVAL_MS = 120_000;
+const PURGE_INTERVAL_MS = 480_000;
 
 interface InstantReplayWindow extends Window {
   __gnTracingInstantReplay?: InstantReplayRecorder;

@@ -399,6 +399,8 @@ export default defineConfig(({ mode }) => ({
   publicDir: "public",
   server: {
     port: 5176,
-    open: true,
+    // `task dev` / `task player:dev` should stay in the terminal; open the
+    // player manually when needed (http://localhost:5176).
+    open: false,
   },
 }));

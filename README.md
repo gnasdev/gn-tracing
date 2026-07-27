@@ -115,13 +115,13 @@ only version of "redacted" worth having.
 
 ## Instant Replay (opt-in)
 
-With instant replay on, GN Tracing keeps a short rolling buffer of DOM snapshots for the pages you
-browse, so a screenshot report can include what the page looked like before the bug — no reproduction
-needed.
+With instant replay on, GN Tracing keeps a rolling buffer of the last 120 seconds of DOM snapshots for
+the pages you browse, so a screenshot report can include what the page looked like before the bug —
+no reproduction needed.
 
 It is off by default and turning it on asks for permission to run on every site, because it is the one
 capture that observes pages you have not asked to record. Nothing leaves the browser until you file a
-report, the buffer is discarded every two minutes, and it disables itself on pages too heavy to
+report, the buffer is discarded every eight minutes, and it disables itself on pages too heavy to
 snapshot without slowing them down.
 
 ## Privacy Controls

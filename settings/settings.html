@@ -201,8 +201,8 @@
         <section class="settings-panel-full">
           <div class="settings-group">
             <h3 data-i18n="sections.instantReplay">Instant replay</h3>
-            <label class="settings-check"><input id="instant-replay-input" type="checkbox"><span data-i18n="fields.instantReplay.label">Keep the last 30 seconds of page activity</span></label>
-            <p class="setting-hint" data-i18n="hints.instantReplay">Off by default. When on, GN Tracing keeps a rolling DOM snapshot buffer of pages you browse so a screenshot report can include what happened before the bug — no need to reproduce it. Turning this on asks for permission to run on every site. Nothing leaves your browser until you file a report, the buffer is discarded every two minutes, and it disables itself on pages too heavy to snapshot without slowing them down.</p>
+            <label class="settings-check"><input id="instant-replay-input" type="checkbox"><span data-i18n="fields.instantReplay.label">Keep the last 120 seconds of page activity</span></label>
+            <p class="setting-hint" data-i18n="hints.instantReplay">Off by default. When on, GN Tracing keeps a rolling DOM snapshot buffer of pages you browse so a screenshot report can include what happened before the bug — no need to reproduce it. Turning this on asks for permission to run on every site. Nothing leaves your browser until you file a report, the buffer is discarded every eight minutes, and it disables itself on pages too heavy to snapshot without slowing them down.</p>
           </div>
         </section>
 

@@ -40,7 +40,7 @@ export interface InstantReplayOptions extends DomSnapshotOptions {
   maxConsecutiveOverruns?: number;
 }
 
-export const DEFAULT_INSTANT_REPLAY_WINDOW_MS = 30_000;
+export const DEFAULT_INSTANT_REPLAY_WINDOW_MS = 120_000;
 export const DEFAULT_INSTANT_REPLAY_INTERVAL_MS = 1_000;
 export const DEFAULT_INSTANT_REPLAY_MAX_BYTES = 8 * 1024 * 1024;
 export const DEFAULT_MAX_SNAPSHOT_MS = 50;
@@ -112,7 +112,7 @@ export class InstantReplayBuffer {
   /**
    * Materialises the artifact. `coveredMs` is the span actually retained, which
    * is shorter than `windowMs` whenever the byte cap evicted first — a reader
-   * that trusted `windowMs` would think it was looking at 30 seconds of history
+   * that trusted `windowMs` would think it was looking at 120 seconds of history
    * when it had 4.
    */
   toArtifact(): InstantReplayArtifact {

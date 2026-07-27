@@ -193,9 +193,9 @@ const TRANSLATIONS: Record<SettingsLanguage, Record<string, string>> = {
     "sections.websocket": "WebSocket",
     "sections.inspector": "Inspector capture (preview)",
     "sections.instantReplay": "Instant replay",
-    "fields.instantReplay.label": "Keep the last 30 seconds of page activity",
+    "fields.instantReplay.label": "Keep the last 120 seconds of page activity",
     "hints.instantReplay":
-      "Off by default. When on, GN Tracing keeps a rolling DOM snapshot buffer of pages you browse so a screenshot report can include what happened before the bug — no need to reproduce it. Turning this on asks for permission to run on every site. Nothing leaves your browser until you file a report, the buffer is discarded every two minutes, and it disables itself on pages too heavy to snapshot without slowing them down.",
+      "Off by default. When on, GN Tracing keeps a rolling DOM snapshot buffer of pages you browse so a screenshot report can include what happened before the bug — no need to reproduce it. Turning this on asks for permission to run on every site. Nothing leaves your browser until you file a report, the buffer is discarded every eight minutes, and it disables itself on pages too heavy to snapshot without slowing them down.",
     "profile.lean.label": "Lean",
     "profile.lean.help": "Metadata, minimal headers, compact console, no bodies.",
     "profile.balanced.label": "Balanced",
@@ -333,9 +333,9 @@ const TRANSLATIONS: Record<SettingsLanguage, Record<string, string>> = {
     "sections.websocket": "WebSocket",
     "sections.inspector": "Thu thập inspector (xem trước)",
     "sections.instantReplay": "Instant replay",
-    "fields.instantReplay.label": "Giữ lại 30 giây hoạt động gần nhất của trang",
+    "fields.instantReplay.label": "Giữ lại 120 giây hoạt động gần nhất của trang",
     "hints.instantReplay":
-      "Mặc định tắt. Khi bật, GN Tracing giữ một bộ đệm ảnh chụp DOM cuộn theo thời gian cho các trang bạn duyệt, để báo cáo ảnh màn hình có thể kèm những gì xảy ra trước khi lỗi xuất hiện — không cần tái hiện lại. Bật lên sẽ xin quyền chạy trên mọi trang. Không có gì rời khỏi trình duyệt cho tới khi bạn gửi báo cáo, bộ đệm bị xoá mỗi hai phút, và tính năng tự tắt trên những trang quá nặng để tránh làm chậm trang.",
+      "Mặc định tắt. Khi bật, GN Tracing giữ một bộ đệm ảnh chụp DOM cuộn theo thời gian cho các trang bạn duyệt, để báo cáo ảnh màn hình có thể kèm những gì xảy ra trước khi lỗi xuất hiện — không cần tái hiện lại. Bật lên sẽ xin quyền chạy trên mọi trang. Không có gì rời khỏi trình duyệt cho tới khi bạn gửi báo cáo, bộ đệm bị xoá mỗi tám phút, và tính năng tự tắt trên những trang quá nặng để tránh làm chậm trang.",
     "profile.lean.label": "Gọn nhẹ",
     "profile.lean.help": "Metadata, header tối thiểu, console gọn, không lưu body.",
     "profile.balanced.label": "Cân bằng",

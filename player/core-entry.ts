@@ -31,6 +31,12 @@ import {
 } from "../packages/replay-core/src/index";
 import { buildAgentReportMarkdown, buildAgentSummaryForPlayer } from "../src/shared/agent-report";
 import {
+  type PresentationEvidence,
+  type PresentationMode,
+  type PresentationPlan,
+  resolvePresentationMode,
+} from "../src/shared/player-presentation";
+import {
   getFiniteDurationMs,
   ratioToTimeMs,
   reconcileSeekClock,
@@ -38,7 +44,13 @@ import {
   SEEK_COMMIT_TOLERANCE_MS,
 } from "../src/shared/player-timeline-seek";
 
-export type { PackageMetadata, RecordingCapability };
+export type {
+  PackageMetadata,
+  PresentationEvidence,
+  PresentationMode,
+  PresentationPlan,
+  RecordingCapability,
+};
 
 /** "Copy for AI" — the player's Markdown export of a recording. */
 export const agentReport = { buildAgentReportMarkdown, buildAgentSummaryForPlayer };
@@ -51,6 +63,9 @@ export const timelineSeek = {
   reconcileSeekClock,
   resolveTimelineDurationMs,
 };
+
+/** Which shell to show for recording vs screenshot vs SDK packages. */
+export const presentation = { resolvePresentationMode };
 
 /**
  * What the producer claims it could capture. The player uses this to tell a

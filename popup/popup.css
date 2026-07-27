@@ -704,7 +704,6 @@ body {
   box-shadow: none;
 }
 
-#session-queue-section .session-empty,
 #upload-history-section .history-empty {
   border-style: solid;
   background: var(--bg-surface-solid);

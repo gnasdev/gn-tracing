@@ -56,6 +56,18 @@ The popup is the quick recording surface. It:
 
 Stop is presented as "Stop & Upload" because a valid token for the active provider can auto-start upload after capture finalization.
 
+### Loading, busy, and empty feedback
+
+- **Stop & Upload**: `.btn-spinner` + `aria-busy` via shared `buttonSpinnerHtml` / stop loading path.
+- **Start while tab-check is in flight**: Start button shows spinner, `aria-busy`, and stays disabled until the active-tab check finishes.
+- **Upload queue**: determinate segmented bars with `role="progressbar"` and live `aria-valuenow`; the queue section stays **hidden when empty** (no empty-card in the compact popup).
+- **Upload history**: shared empty card via `upload-history-ui` (`.history-empty`).
+- **Feedback submit** (popup and other surfaces using `feedback-ui`): spinner + `aria-busy` on Submit while the Worker request is in flight.
+- **storage-auth**: busy provider status shows spinner + “Working…”; connect/disconnect buttons disable while that provider is busy.
+- **Annotate**: save button uses shared button-loading spinner; empty shape list copy is EN/VI.
+
+Shared primitives live in `shared/theme.css` (`.btn-spinner`, `.btn.is-loading`, empty cards) and `src/shared/button-loading.ts`.
+
 Capture disclosure copy refers to cloud storage generically (Google Drive or Dropbox). Capture detail and password options live in Settings.
 
 ## Settings Page

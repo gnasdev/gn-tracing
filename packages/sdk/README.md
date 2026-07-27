@@ -51,7 +51,7 @@ Off by default. When enabled it snapshots the DOM on a timer and keeps a bounded
 lookback, so a reporter can capture a bug that already happened:
 
 ```ts
-const session = startRecording({ instantReplay: { windowMs: 30_000 } });
+const session = startRecording({ instantReplay: { windowMs: 120_000 } });
 ```
 
 The buffer is bounded by time *and* bytes. On a page that rewrites its DOM

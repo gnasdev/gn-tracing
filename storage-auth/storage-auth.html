@@ -90,7 +90,14 @@
       color: var(--success);
     }
     .provider-card .status.is-busy {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
       color: var(--text-secondary);
+    }
+    .provider-card .status .btn-spinner {
+      width: 12px;
+      height: 12px;
     }
     .provider-card .status.is-error {
       color: var(--danger, #e35);
