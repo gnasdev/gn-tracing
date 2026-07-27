@@ -11,13 +11,14 @@
     "lint": "biome lint . --files-ignore-unknown=true",
     "format": "biome format --write . --files-ignore-unknown=true",
     "format:check": "biome format . --files-ignore-unknown=true && npm run docs:check",
-    "check": "biome check . --files-ignore-unknown=true && npm run docs:check",
-    "check:write": "biome check --write . --files-ignore-unknown=true && npm run docs:check",
+    "check": "biome check . --files-ignore-unknown=true && npm run docs:check && npm run mcp:check",
+    "check:write": "biome check --write . --files-ignore-unknown=true && npm run docs:check && npm run mcp:check",
     "deadcode": "npx knip --no-progress",
     "docs:check": "node scripts/check-docs.mjs",
+    "mcp:check": "node scripts/check-mcp-release.mjs",
     "store:assets": "node scripts/generate-store-assets.mjs",
-    "vendor:webm-seek": "node scripts/build-webm-seek-vendor.mjs",
-    "vendor:player-timeline-seek": "node scripts/build-player-timeline-seek-vendor.mjs"
+    "vendor:player-core": "node scripts/build-player-core-vendor.mjs",
+    "vendor:webm-seek": "node scripts/build-webm-seek-vendor.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.15",

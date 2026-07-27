@@ -22,6 +22,7 @@
     "https://www.dropbox.com/",
     "https://dl.dropboxusercontent.com/"
   ],
+  "optional_host_permissions": ["http://*/*", "https://*/*"],
   "oauth2": {
     "client_id": "{{GOOGLE_CLIENT_ID}}",
     "scopes": ["https://www.googleapis.com/auth/drive.file"]

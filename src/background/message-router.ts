@@ -63,6 +63,10 @@ export interface MessageHandlers {
   ) => UploadArtifactChunkResponse;
   patchUploadProgress: (sessionId: string, data: Record<string, unknown>) => void;
   submitFeedback: (data: Record<string, unknown> | undefined) => Promise<MessageResponse>;
+  captureScreenshot: (tabId: number | undefined) => Promise<MessageResponse>;
+  getPendingScreenshot: () => Promise<MessageResponse & { screenshot?: unknown }>;
+  discardPendingScreenshot: () => Promise<MessageResponse>;
+  saveAnnotatedScreenshot: (data: Record<string, unknown> | undefined) => Promise<MessageResponse>;
 }
 
 export function registerMessageListeners(handlers: MessageHandlers): void {
@@ -177,6 +181,14 @@ async function handleMessage(
       return { ok: true };
     case "GET_UPLOAD_ARTIFACT_CHUNK":
       return handlers.getUploadArtifactChunk(message.data);
+    case "CAPTURE_SCREENSHOT":
+      return handlers.captureScreenshot(message.tabId);
+    case "GET_PENDING_SCREENSHOT":
+      return handlers.getPendingScreenshot();
+    case "DISCARD_PENDING_SCREENSHOT":
+      return handlers.discardPendingScreenshot();
+    case "SAVE_ANNOTATED_SCREENSHOT":
+      return handlers.saveAnnotatedScreenshot(message.data);
     case "SUBMIT_FEEDBACK":
       return handlers.submitFeedback(message.data);
     default:

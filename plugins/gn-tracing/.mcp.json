@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "gn-tracing": {
+      "command": "npx",
+      "args": ["-y", "gn-tracing-mcp"]
+    }
+  }
+}

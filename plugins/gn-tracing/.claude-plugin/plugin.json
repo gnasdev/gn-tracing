@@ -1,0 +1,24 @@
+{
+  "name": "gn-tracing",
+  "displayName": "GN Tracing",
+  "version": "1.0.0",
+  "description": "Debug from a browser recording or an annotated screenshot: paste a GN Tracing replay link and trace the failure back to a file and line in your codebase.",
+  "author": {
+    "name": "gnasdev",
+    "url": "https://github.com/gnasdev"
+  },
+  "homepage": "https://github.com/gnasdev/gn-tracing/blob/main/mcp/README.md",
+  "repository": "https://github.com/gnasdev/gn-tracing",
+  "license": "GPL-3.0-or-later",
+  "keywords": [
+    "debugging",
+    "session-replay",
+    "browser",
+    "root-cause",
+    "source-maps",
+    "screenshot",
+    "annotation",
+    "mcp"
+  ],
+  "mcpServers": "./.mcp.json"
+}

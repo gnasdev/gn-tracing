@@ -977,6 +977,40 @@ body:has(#player-state:not(.hidden)) .player-lang-toggle--global {
   overflow: hidden;
 }
 
+/*
+ * Placeholder for recordings captured without video (the in-page SDK). It takes
+ * the video's place rather than collapsing the section, so the console/network
+ * panes keep the layout they have in a normal replay.
+ */
+.no-video-notice {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  text-align: center;
+  color: var(--text-secondary);
+}
+
+.no-video-notice i {
+  font-size: 40px;
+  opacity: 0.55;
+}
+
+.no-video-notice p {
+  margin: 0;
+  font-size: 14px;
+}
+
+.no-video-notice .no-video-hint {
+  max-width: 42ch;
+  font-size: 12px;
+  opacity: 0.8;
+}
+
 #video-player {
   display: block;
   width: 100%;
@@ -2869,4 +2903,107 @@ body:has(#player-state:not(.hidden)) .player-lang-toggle--global {
   .layout-control-group {
     display: none;
   }
+}
+
+/*
+ * No-video presentation. Placed last so it wins over the `.video-container` /
+ * `.video-controls` rules above without relying on specificity ordering.
+ */
+body.no-video .video-container,
+body.no-video .video-controls {
+  display: none;
+}
+
+/* ===== Screenshots tab ===== */
+.screenshots-content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+}
+
+.screenshot-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  background: var(--bg-card);
+}
+
+.screenshot-caption {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/*
+ * The overlay is positioned against the figure, not the image, so annotations
+ * stay aligned when the image is letterboxed by `object-fit` at a viewport
+ * ratio that does not match the container.
+ */
+.screenshot-figure {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--bg-base);
+}
+
+.screenshot-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: fill;
+}
+
+.screenshot-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.screenshot-overlay svg {
+  width: 100%;
+  height: 100%;
+}
+
+.screenshot-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  min-height: 120px;
+  padding: 24px;
+  color: var(--text-muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+.screenshot-meta {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.screenshot-annotation-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding-left: 18px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.screenshot-annotation-list li.is-redaction {
+  color: var(--danger);
+}
+
+.instant-replay-card {
+  border-style: dashed;
 }

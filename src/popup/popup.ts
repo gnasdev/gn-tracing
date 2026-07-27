@@ -127,6 +127,9 @@ const TRANSLATIONS: Record<PopupLanguage, Record<string, string>> = {
     "messages.stopFailed": "Failed to stop recording",
     "messages.startFailed": "Failed to start recording",
     "messages.removeFailed": "Failed to remove recording",
+    "messages.screenshotFailed": "Could not capture a screenshot of this tab",
+    "actions.screenshot": "Screenshot",
+    "actions.screenshotTitle": "Capture and annotate a screenshot",
     "messages.removed": "Recording removed.",
     "messages.copySuccess": "Replay link copied.",
     "messages.copyFailed": "Failed to copy replay link",
@@ -230,6 +233,9 @@ const TRANSLATIONS: Record<PopupLanguage, Record<string, string>> = {
     "messages.stopFailed": "Không dừng được bản ghi",
     "messages.startFailed": "Không bắt đầu được bản ghi",
     "messages.removeFailed": "Không hủy được bản ghi",
+    "messages.screenshotFailed": "Không chụp được màn hình tab này",
+    "actions.screenshot": "Chụp màn hình",
+    "actions.screenshotTitle": "Chụp và chú thích ảnh màn hình",
     "messages.removed": "Đã hủy bản ghi.",
     "messages.copySuccess": "Đã sao chép link replay.",
     "messages.copyFailed": "Không sao chép được link replay",
@@ -343,6 +349,7 @@ const UPLOAD_SETTINGS_KEY = "gn_tracing_upload_settings";
 const recordingActions = document.getElementById("recording-actions")!;
 const toggleBtn = document.getElementById("toggle-btn") as HTMLButtonElement;
 const removeRecordingBtn = document.getElementById("remove-recording-btn") as HTMLButtonElement;
+const screenshotBtn = document.getElementById("screenshot-btn") as HTMLButtonElement;
 const drawToggleBtn = document.getElementById("draw-toggle-btn") as HTMLButtonElement;
 const drawingSection = document.getElementById("drawing-section")!;
 const drawColorSwatches = document.getElementById("draw-color-swatches")!;
@@ -1605,6 +1612,32 @@ drawToggleBtn.addEventListener("click", async () => {
     showError((error as Error).message);
   } finally {
     drawToggleBtn.disabled = false;
+  }
+});
+
+/**
+ * Screenshot reports open their own editor tab, so the popup closes right
+ * after: leaving it open behind a newly focused tab just makes the user
+ * dismiss it.
+ */
+screenshotBtn.addEventListener("click", async () => {
+  screenshotBtn.disabled = true;
+  errorMsg.classList.add("hidden");
+
+  try {
+    const result = (await chrome.runtime.sendMessage({
+      action: "CAPTURE_SCREENSHOT",
+    })) as MessageResponse;
+
+    if (!result?.ok) {
+      showError(result?.error || t("messages.screenshotFailed"));
+      return;
+    }
+    window.close();
+  } catch (error) {
+    showError((error as Error).message);
+  } finally {
+    screenshotBtn.disabled = false;
   }
 });
 

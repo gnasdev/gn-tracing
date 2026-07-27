@@ -1,8 +1,17 @@
 /**
  * Message contracts shared between extension UIs, service worker, and offscreen runtime.
  */
+// Privacy settings live in the shared schema so the extension and the browser
+// SDK feed the same redaction policy. Re-exported below for existing importers.
+import type {
+  PrivacyProfile,
+  PrivacyRedactionSettings,
+  WebSocketPayloadRedactionMode,
+} from "../../packages/replay-core/src/schema/privacy";
 import type { StorageProviderId } from "../shared/storage-provider";
 import type { ConsoleEntry, NetworkEntry, StorageSnapshot, WebSocketEntry } from "./recording";
+
+export type { PrivacyProfile, PrivacyRedactionSettings, WebSocketPayloadRedactionMode };
 
 type MessageAction =
   | "START_RECORDING"
@@ -34,7 +43,12 @@ type MessageAction =
   | "RECORDING_COMPLETE"
   | "GET_UPLOAD_ARTIFACT_CHUNK"
   | "GET_UPLOAD_STATE"
-  | "SUBMIT_FEEDBACK";
+  | "SUBMIT_FEEDBACK"
+  // Screenshot reports: capture, annotate in a page, package without video.
+  | "CAPTURE_SCREENSHOT"
+  | "GET_PENDING_SCREENSHOT"
+  | "DISCARD_PENDING_SCREENSHOT"
+  | "SAVE_ANNOTATED_SCREENSHOT";
 
 /**
  * In-page (MAIN world) capture protocol.
@@ -201,25 +215,15 @@ export interface UploadSettings {
   redactStorageValues: boolean;
   captureDomSnapshots: boolean;
   redactDomTextContent: boolean;
+  /** Rolling pre-bug DOM buffer; needs host permission, so off by default. */
+  instantReplayEnabled: boolean;
   // Capture mechanism: CDP (full fidelity, debugger banner) or in-page (lower fidelity, no banner).
   captureMode: CaptureMode;
 }
 
 export type CaptureMode = "cdp" | "in-page";
 export type CaptureProfile = "lean" | "balanced" | "full" | "custom";
-export type PrivacyProfile = "standard" | "strict" | "custom";
-type WebSocketPayloadRedactionMode = "off" | "sensitive-fields" | "all";
-export interface PrivacyRedactionSettings {
-  privacyProfile: PrivacyProfile;
-  redactSensitiveHeaders: boolean;
-  redactSensitiveQueryParams: boolean;
-  redactRequestBodyFields: boolean;
-  redactResponseBodyFields: boolean;
-  redactConsoleValues: boolean;
-  redactWebSocketPayloads: WebSocketPayloadRedactionMode;
-  redactEventMetadata: boolean;
-  maskDomSelectors: string[];
-}
+
 export type ConsolePreviewDepth = "none" | "shallow" | "full";
 export type ConsoleStackMode = "off" | "errors" | "warnings-errors" | "all";
 export type ConsoleSourceSnippetMode = "off" | "errors" | "warnings-errors" | "all";

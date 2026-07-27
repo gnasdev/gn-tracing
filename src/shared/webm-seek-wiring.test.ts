@@ -51,7 +51,7 @@ describe("webm seek single-path wiring", () => {
     expect(source).toContain("function seekVideoToMs");
     expect(source).toContain("pendingSeekTimeMs");
     // Runtime uses vendored pure helpers — no hand-ported reconcileSeekClock body.
-    expect(source).toContain("gnPlayerTimelineSeek");
+    expect(source).toContain("gnCore?.timelineSeek");
     expect(source).toContain("function applySeekClock");
     expect(source).toContain("TimelineSeek.reconcileSeekClock");
     expect(source).not.toContain("function reconcileSeekClock");
@@ -66,9 +66,7 @@ describe("webm seek single-path wiring", () => {
     const pure = readRepo("src/shared/player-timeline-seek.ts");
     expect(pure).toContain("export function reconcileSeekClock");
     expect(pure).toContain("export function resolveTimelineDurationMs");
-    expect(
-      existsRepo("player", "vendor", "player-timeline-seek", "player-timeline-seek.iife.js"),
-    ).toBe(true);
+    expect(existsRepo("player", "vendor", "gn-core", "gn-core.iife.js")).toBe(true);
     // Old dual stack must be gone.
     expect(source).not.toContain("ysFixWebmDuration");
     expect(source).not.toContain("GnWebmDurationFix");
@@ -85,8 +83,8 @@ describe("webm seek single-path wiring", () => {
     const standaloneHtml = readRepo("player-standalone/index.html");
     const vendorScript =
       /<script\b[^>]*\bsrc=["'][^"']*vendor\/webm-seek-fix\/webm-seek-fix\.iife\.js["']/;
-    const timelineVendor =
-      /<script\b[^>]*\bsrc=["'][^"']*vendor\/player-timeline-seek\/player-timeline-seek\.iife\.js["']/;
+    // Timeline seek now reaches the player through the single core bundle.
+    const timelineVendor = /<script\b[^>]*\bsrc=["'][^"']*vendor\/gn-core\/gn-core\.iife\.js["']/;
     const obsoleteDuration =
       /vendor\/webm-seek-fix\/(fix-webm-duration|webm-duration-fix\.iife)\.js/;
 

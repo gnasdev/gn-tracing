@@ -70,6 +70,12 @@ export interface UploadSettingsStore extends PrivacyRedactionSettings {
   redactStorageValues: boolean;
   captureDomSnapshots: boolean;
   redactDomTextContent: boolean;
+  /**
+   * Rolling pre-bug DOM buffer. Off by default and gated on a host-permission
+   * grant: it is the only capture that observes pages the user has not asked to
+   * record, so it must be a deliberate choice rather than a default.
+   */
+  instantReplayEnabled: boolean;
   // Capture mechanism is profile-independent (CDP vs in-page); presets never change it.
   captureMode: CaptureMode;
 }
@@ -87,6 +93,7 @@ type CaptureSettingsStore = Omit<
   | "redactStorageValues"
   | "captureDomSnapshots"
   | "redactDomTextContent"
+  | "instantReplayEnabled"
   | "captureMode"
   | keyof PrivacyRedactionSettings
 >;
@@ -128,6 +135,7 @@ export const DEFAULT_CAPTURE_PRIVACY_SETTINGS = {
   redactStorageValues: true,
   captureDomSnapshots: false,
   redactDomTextContent: true,
+  instantReplayEnabled: false,
   // Capture mechanism defaults to in-page so recordings do not show the
   // chrome.debugger banner. CDP remains available for full fidelity (real
   // source maps, cross-origin response bodies) when the user opts in.
@@ -571,6 +579,10 @@ function normalizeUploadSettingsStore(
       storedUploadSettings?.redactDomTextContent,
       DEFAULT_CAPTURE_PRIVACY_SETTINGS.redactDomTextContent,
     ),
+    instantReplayEnabled: normalizeBoolean(
+      storedUploadSettings?.instantReplayEnabled,
+      DEFAULT_CAPTURE_PRIVACY_SETTINGS.instantReplayEnabled,
+    ),
     // Capture mechanism falls back to "cdp" when missing or invalid (R9.1).
     captureMode: normalizeEnum<CaptureMode>(
       storedUploadSettings?.captureMode,
@@ -682,6 +694,7 @@ export function getSettingsSnapshot(settings: UploadSettingsStore): UploadSettin
     redactStorageValues: settings.redactStorageValues,
     captureDomSnapshots: settings.captureDomSnapshots,
     redactDomTextContent: settings.redactDomTextContent,
+    instantReplayEnabled: settings.instantReplayEnabled,
     captureMode: settings.captureMode,
   };
 }

@@ -1,0 +1,85 @@
+# Publishes the MCP server to npm and lists it on the official MCP Registry.
+#
+# Trigger: push a tag shaped `mcp-v<version>` (for example `mcp-v1.0.1`). The tag
+# prefix keeps this separate from extension releases, which version independently.
+#
+# One-time setup:
+#   1. Add repository secret `NPM_TOKEN` (npm automation token with publish rights).
+#   2. Nothing else — registry auth uses GitHub OIDC, which proves the
+#      `io.github.gnasdev` namespace without a stored credential.
+#
+# Release flow:
+#   - bump `version` in mcp/package.json AND both version fields in mcp/server.json
+#   - `node scripts/check-mcp-release.mjs` (also runs below, and in `task check`)
+#   - `git tag mcp-v1.0.1 && git push origin mcp-v1.0.1`
+name: Publish MCP server
+
+on:
+  push:
+    tags: ["mcp-v*"]
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write # OIDC for the MCP Registry (and npm provenance)
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: "lts/*"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Install MCP server dependencies
+        run: npm ci
+        working-directory: mcp
+
+      # Guards the release before anything is published: name/version agreement
+      # across package.json and server.json, and plugin files that are not ignored.
+      - name: Check release manifests
+        run: node scripts/check-mcp-release.mjs
+
+      - name: Verify the tag matches the package version
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            TAG_VERSION="${GITHUB_REF_NAME#mcp-v}"
+            PKG_VERSION="$(node -p "require('./mcp/package.json').version")"
+            if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+              echo "Tag ${GITHUB_REF_NAME} does not match mcp/package.json version ${PKG_VERSION}" >&2
+              exit 1
+            fi
+          fi
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build the server bundle
+        run: npm run build
+        working-directory: mcp
+
+      - name: Publish to npm
+        run: npm publish --provenance --access public
+        working-directory: mcp
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Install mcp-publisher
+        run: |
+          curl -L "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
+          sudo mv mcp-publisher /usr/local/bin/
+
+      - name: Authenticate to the MCP Registry
+        run: mcp-publisher login github-oidc
+
+      - name: Publish to the MCP Registry
+        run: mcp-publisher publish
+        working-directory: mcp

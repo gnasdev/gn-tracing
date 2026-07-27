@@ -2,6 +2,15 @@
  * Runs tab media capture and cloud storage upload work in an offscreen document.
  */
 
+import type { Screenshot } from "../../packages/replay-core/src/schema/annotation";
+import {
+  EXTENSION_CAPABILITIES,
+  type PackageMetadata,
+} from "../../packages/replay-core/src/schema/package";
+import {
+  type AttachableArtifactId,
+  buildRecordingPackage,
+} from "../../packages/replay-core/src/write";
 import {
   DROPBOX_UPLOAD_SESSION_THRESHOLD_BYTES,
   makeDropboxPublicReadable,
@@ -18,6 +27,8 @@ import { buildExternalPlayerUrl } from "../shared/player-host";
 import type { StorageProviderId } from "../shared/storage-provider";
 import { makeWebmSeekable } from "../shared/webm-seek-fix";
 import type { ProgressItemSnapshot, ProgressItemStatus } from "../types/messages";
+import { createAgentSummaryBlob } from "./agent-summary";
+import { buildScreenshotPackage, type ScreenshotInput } from "./screenshot-package";
 
 /**
  * Offscreen document runtime for media capture and multi-cloud package uploads.
@@ -115,40 +126,6 @@ interface UploadArtifactChunkResponse {
   error?: string;
 }
 
-interface DriveFileDescriptor {
-  id: string;
-  name: string;
-  size?: number;
-  mimeType?: string;
-}
-
-interface RecordingManifest {
-  schemaVersion: number;
-  folderId: string | null;
-  video: {
-    mimeType: string;
-    totalBytes: number;
-    parts: Array<{
-      name: string;
-      size: number;
-    }>;
-  };
-  artifacts: {
-    metadata: string;
-    report?: string;
-    events?: string;
-    drawing?: string;
-    privacy?: string;
-    diagnostics?: string;
-    screenshot?: string;
-    console?: string;
-    network?: string;
-    websocket?: string;
-    storage?: string;
-    dom?: string;
-  };
-}
-
 interface UploadProgressSnapshot {
   sessionId: string;
   step: number;
@@ -168,14 +145,6 @@ const MAX_DROPBOX_SIMPLE_UPLOAD_BYTES = DROPBOX_UPLOAD_SESSION_THRESHOLD_BYTES;
 const MAX_PACKAGE_PART_BYTES = Math.min(MAX_DRIVE_UPLOAD_BYTES, MAX_DROPBOX_SIMPLE_UPLOAD_BYTES);
 const UPLOAD_PROGRESS_THROTTLE_MS = 250;
 const UPLOAD_PROGRESS_MIN_DELTA = 0.5;
-const ZIP_LOCAL_FILE_HEADER_SIGNATURE = 0x04034b50;
-const ZIP_CENTRAL_DIRECTORY_SIGNATURE = 0x02014b50;
-const ZIP_END_OF_CENTRAL_DIRECTORY_SIGNATURE = 0x06054b50;
-const ZIP_FLAG_ENCRYPTED = 0x0001;
-const ZIP_FLAG_UTF8 = 0x0800;
-const ZIP_METHOD_STORE = 0;
-const ZIP_METHOD_DEFLATE = 8;
-const ZIP_CRYPTO_HEADER_BYTES = 12;
 
 // The offscreen document exposes a small command surface to the service worker.
 // Keep message names stable with the service-worker caller because there is no
@@ -222,6 +191,12 @@ chrome.runtime.onMessage.addListener((message: OffscreenIncomingMessage, _sender
     case "UPLOAD_TO_GOOGLE_DRIVE":
       // UPLOAD_TO_GOOGLE_DRIVE is a legacy alias; storageProvider in data selects backend.
       uploadRecordingPackage(message.data as unknown as StorageUploadData)
+        .then((result) => sendResponse(result))
+        .catch((error: Error) => sendResponse({ ok: false, error: error.message }));
+      return true;
+
+    case "UPLOAD_SCREENSHOT_PACKAGE":
+      uploadScreenshotPackage(message.data as unknown as ScreenshotUploadData)
         .then((result) => sendResponse(result))
         .catch((error: Error) => sendResponse({ ok: false, error: error.message }));
       return true;
@@ -471,207 +446,165 @@ function createBlobFromDataUrl(dataUrl: string | null | undefined): Blob | null 
   return new Blob([decodeURIComponent(payload)], { type: mimeType });
 }
 
-function makeCrc32Table(): Uint32Array {
-  const table = new Uint32Array(256);
-  for (let i = 0; i < table.length; i += 1) {
-    let value = i;
-    for (let bit = 0; bit < 8; bit += 1) {
-      value = value & 1 ? 0xedb88320 ^ (value >>> 1) : value >>> 1;
-    }
-    table[i] = value >>> 0;
-  }
-  return table;
+export interface ScreenshotUploadData {
+  authToken: string;
+  storageProvider?: StorageProviderId;
+  targetFolderPath?: string[];
+  targetFolderId?: string | null;
+  zipPassword?: string | null;
+  url?: string;
+  /** Screenshots with their raw image bytes as base64 data URLs. */
+  screenshots: Array<{ screenshot: Screenshot; imageDataUrl: string }>;
+  /** JSON artifacts the service worker already redacted, as strings. */
+  artifacts?: Partial<Record<string, string>>;
 }
 
-const CRC32_TABLE = makeCrc32Table();
-
-function calculateCrc32(bytes: Uint8Array): number {
-  let crc = 0xffffffff;
-  for (const byte of bytes) {
-    crc = updateCrc32Value(crc, byte);
-  }
-  return (crc ^ 0xffffffff) >>> 0;
-}
-
-function updateCrc32Value(crc: number, byte: number): number {
-  return (CRC32_TABLE[(crc ^ byte) & 0xff] ^ (crc >>> 8)) >>> 0;
-}
-
-function writeUint16(view: DataView, offset: number, value: number): void {
-  view.setUint16(offset, value, true);
-}
-
-function writeUint32(view: DataView, offset: number, value: number): void {
-  view.setUint32(offset, value >>> 0, true);
-}
-
-function createZipTimestamp(date: Date): { time: number; date: number } {
-  const year = Math.max(1980, date.getFullYear());
-  const time =
-    (date.getHours() << 11) | (date.getMinutes() << 5) | Math.floor(date.getSeconds() / 2);
-  const dosDate = ((year - 1980) << 9) | ((date.getMonth() + 1) << 5) | date.getDate();
-  return { time, date: dosDate };
-}
-
-function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
-  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
-}
-
-function createZipCryptoKeys(password: string): [number, number, number] {
-  const keys: [number, number, number] = [0x12345678, 0x23456789, 0x34567890];
-  for (const byte of new TextEncoder().encode(password)) {
-    updateZipCryptoKeys(keys, byte);
-  }
-  return keys;
-}
-
-function updateZipCryptoKeys(keys: [number, number, number], byte: number): void {
-  keys[0] = updateCrc32Value(keys[0], byte);
-  keys[1] = (Math.imul((keys[1] + (keys[0] & 0xff)) >>> 0, 134775813) + 1) >>> 0;
-  keys[2] = updateCrc32Value(keys[2], keys[1] >>> 24);
-}
-
-function getZipCryptoByte(keys: [number, number, number]): number {
-  const temp = (keys[2] | 2) >>> 0;
-  return (Math.imul(temp, temp ^ 1) >>> 8) & 0xff;
-}
-
-function encryptZipCryptoByte(keys: [number, number, number], plainByte: number): number {
-  const encryptedByte = plainByte ^ getZipCryptoByte(keys);
-  updateZipCryptoKeys(keys, plainByte);
-  return encryptedByte;
-}
-
-function createZipEncryptedPayload(bytes: Uint8Array, password: string, crc32: number): Uint8Array {
-  if (!globalThis.crypto?.getRandomValues) {
-    throw new Error("Browser crypto is not available for password-protected ZIP packages.");
+/**
+ * Uploads a screenshot report: annotated images, no video.
+ *
+ * Deliberately a separate entry point from `uploadRecordingPackage` rather than
+ * a flag on it. That function's whole shape — session snapshots, WebM seek
+ * repair, byte-split video parts, three-step progress — is about media, and
+ * none of it applies here.
+ */
+async function uploadScreenshotPackage(data: ScreenshotUploadData): Promise<{
+  ok: boolean;
+  recordingUrl?: string;
+  folderId?: string;
+  indexFileId?: string;
+  targetFolderId?: string | null;
+  error?: string;
+}> {
+  if (!Array.isArray(data.screenshots) || data.screenshots.length === 0) {
+    return { ok: false, error: "No screenshots to upload." };
   }
 
-  const keys = createZipCryptoKeys(password);
-  const header = globalThis.crypto.getRandomValues(new Uint8Array(ZIP_CRYPTO_HEADER_BYTES));
-  header[ZIP_CRYPTO_HEADER_BYTES - 1] = (crc32 >>> 24) & 0xff;
-  const encrypted = new Uint8Array(header.length + bytes.length);
-
-  for (let index = 0; index < header.length; index += 1) {
-    encrypted[index] = encryptZipCryptoByte(keys, header[index]);
-  }
-  for (let index = 0; index < bytes.length; index += 1) {
-    encrypted[header.length + index] = encryptZipCryptoByte(keys, bytes[index]);
-  }
-
-  return encrypted;
-}
-
-async function deflateRawBytes(bytes: Uint8Array): Promise<Uint8Array | null> {
-  const CompressionStreamCtor = globalThis.CompressionStream;
-  if (typeof CompressionStreamCtor !== "function") {
-    return null;
-  }
+  const storageProvider: StorageProviderId =
+    data.storageProvider === "dropbox" ? "dropbox" : "google-drive";
+  const now = new Date();
+  const packagedAt = now.toISOString();
+  const zipFilename = `gn-tracing-${packagedAt.replace(/[:.]/g, "-").slice(0, 19)}.zip`;
 
   try {
-    const stream = new Blob([toArrayBuffer(bytes)])
-      .stream()
-      .pipeThrough(new CompressionStreamCtor("deflate-raw"));
-    return new Uint8Array(await new Response(stream).arrayBuffer());
-  } catch {
-    return null;
-  }
-}
+    const { makeShareable, resolveFolderPath, uploadFile } = createStorageIo(
+      storageProvider,
+      data.authToken,
+    );
+    const targetFolderId = await resolveFolderPath(data.targetFolderPath, data.targetFolderId);
 
-function shouldCompressZipEntry(name: string): boolean {
-  return /\.(json|txt|csv|xml|html|css|js|map|svg)$/i.test(name);
-}
-
-// Write a dependency-free ZIP package: already-compressed media stays stored,
-// while JSON/text artifacts use browser DEFLATE when that reduces payload size.
-// Passwords use traditional ZIP entry encryption so downloaded archives prompt
-// for the password in common unzip tools.
-async function createZipBlob(
-  entries: Array<{ name: string; blob: Blob }>,
-  modifiedAt = new Date(),
-  password = "",
-): Promise<Blob> {
-  const encoder = new TextEncoder();
-  const chunks: BlobPart[] = [];
-  const centralDirectory: ArrayBuffer[] = [];
-  const timestamp = createZipTimestamp(modifiedAt);
-  const shouldEncrypt = password.length > 0;
-  let offset = 0;
-
-  for (const entry of entries) {
-    const safeName = entry.name.replace(/^\/+/, "");
-    if (!safeName || safeName.includes("..")) {
-      throw new Error(`Invalid zip entry name: ${entry.name}`);
+    const screenshots: ScreenshotInput[] = [];
+    for (const item of data.screenshots) {
+      const blob = createBlobFromDataUrl(item.imageDataUrl);
+      if (!blob) {
+        return { ok: false, error: `Screenshot ${item.screenshot.id} has no image data.` };
+      }
+      screenshots.push({
+        screenshot: item.screenshot,
+        imageBytes: new Uint8Array(await blob.arrayBuffer()),
+        imageMimeType: blob.type || "image/jpeg",
+      });
     }
 
-    const nameBytes = encoder.encode(safeName);
-    const bytes = new Uint8Array(await entry.blob.arrayBuffer());
-    const crc32 = calculateCrc32(bytes);
-    const compressedBytes = shouldCompressZipEntry(safeName) ? await deflateRawBytes(bytes) : null;
-    // ZIP compression is lossless, but tiny files can grow after DEFLATE headers.
-    // Store those entries so every package is at least as small as the old path.
-    const payloadBytes =
-      compressedBytes && compressedBytes.byteLength < bytes.byteLength ? compressedBytes : bytes;
-    const compressionMethod = payloadBytes === bytes ? ZIP_METHOD_STORE : ZIP_METHOD_DEFLATE;
-    const payload = shouldEncrypt
-      ? createZipEncryptedPayload(payloadBytes, password, crc32)
-      : payloadBytes;
-    const flags = ZIP_FLAG_UTF8 | (shouldEncrypt ? ZIP_FLAG_ENCRYPTED : 0);
-    const localHeader = new ArrayBuffer(30 + nameBytes.length);
-    const localView = new DataView(localHeader);
+    const encoder = new TextEncoder();
+    const artifacts: Partial<Record<AttachableArtifactId, Uint8Array>> = {};
+    for (const [key, value] of Object.entries(data.artifacts ?? {})) {
+      if (typeof value === "string" && value) {
+        artifacts[key as AttachableArtifactId] = encoder.encode(value);
+      }
+    }
 
-    writeUint32(localView, 0, ZIP_LOCAL_FILE_HEADER_SIGNATURE);
-    writeUint16(localView, 4, 20);
-    writeUint16(localView, 6, flags);
-    writeUint16(localView, 8, compressionMethod);
-    writeUint16(localView, 10, timestamp.time);
-    writeUint16(localView, 12, timestamp.date);
-    writeUint32(localView, 14, crc32);
-    writeUint32(localView, 18, payload.length);
-    writeUint32(localView, 22, bytes.length);
-    writeUint16(localView, 26, nameBytes.length);
-    writeUint16(localView, 28, 0);
-    new Uint8Array(localHeader, 30).set(nameBytes);
-    chunks.push(localHeader, toArrayBuffer(payload));
+    const built = await buildScreenshotPackage({
+      screenshots,
+      packagedAt,
+      zipFilename,
+      url: data.url,
+      storage: { provider: storageProvider, folderId: targetFolderId },
+      artifacts,
+      password: typeof data.zipPassword === "string" ? data.zipPassword : "",
+      modifiedAt: now,
+    });
 
-    const centralHeader = new ArrayBuffer(46 + nameBytes.length);
-    const centralView = new DataView(centralHeader);
-    writeUint32(centralView, 0, ZIP_CENTRAL_DIRECTORY_SIGNATURE);
-    writeUint16(centralView, 4, 20);
-    writeUint16(centralView, 6, 20);
-    writeUint16(centralView, 8, flags);
-    writeUint16(centralView, 10, compressionMethod);
-    writeUint16(centralView, 12, timestamp.time);
-    writeUint16(centralView, 14, timestamp.date);
-    writeUint32(centralView, 16, crc32);
-    writeUint32(centralView, 20, payload.length);
-    writeUint32(centralView, 24, bytes.length);
-    writeUint16(centralView, 28, nameBytes.length);
-    writeUint16(centralView, 30, 0);
-    writeUint16(centralView, 32, 0);
-    writeUint16(centralView, 34, 0);
-    writeUint16(centralView, 36, 0);
-    writeUint32(centralView, 38, 0);
-    writeUint32(centralView, 42, offset);
-    new Uint8Array(centralHeader, 46).set(nameBytes);
-    centralDirectory.push(centralHeader);
+    const zipBlob = new Blob(built.chunks as BlobPart[], { type: "application/zip" });
+    const zipFileId = await uploadFile(zipFilename, zipBlob, targetFolderId);
+    const shared = await makeShareable(zipFileId);
 
-    offset += localHeader.byteLength + payload.length;
+    return {
+      ok: true,
+      recordingUrl: buildExternalPlayerUrl(shared.replayId || zipFileId, storageProvider),
+      folderId: targetFolderId || undefined,
+      indexFileId: shared.replayId || zipFileId,
+      targetFolderId,
+    };
+  } catch (error) {
+    console.error(`[${storageProvider} Screenshot Upload] Error:`, error);
+    return { ok: false, error: (error as Error).message };
+  }
+}
+
+interface StorageIo {
+  makeShareable: (fileId: string) => Promise<{ replayId: string }>;
+  resolveFolderPath: (
+    folderPath: string[] | undefined,
+    parentFolderId?: string | null,
+  ) => Promise<string | null>;
+  uploadFile: (
+    filename: string,
+    blob: Blob,
+    parentId: string | null,
+    onProgress?: (loaded: number, total: number) => void,
+  ) => Promise<string>;
+}
+
+/**
+ * The provider-specific half of an upload, behind one interface.
+ *
+ * Extracted when screenshot packages arrived: they need the same folder
+ * resolution, upload, and public-share steps as a recording, and a second copy
+ * of this switch is a second place for a Dropbox path-vs-id mistake to hide.
+ */
+function createStorageIo(storageProvider: StorageProviderId, authToken: string): StorageIo {
+  if (storageProvider === "dropbox") {
+    return {
+      makeShareable: async (path: string) => {
+        // Canonical Dropbox replay id = shared-link path+rlkey (not file id).
+        const shared = await makeDropboxPublicReadable(authToken, path);
+        return { replayId: shared.replayId };
+      },
+      resolveFolderPath: async (folderPath) => resolveDropboxFolderPath(authToken, folderPath),
+      uploadFile: async (filename, blob, parentId, onProgress) => {
+        const folderPath =
+          typeof parentId === "string" && parentId ? parentId.replace(/\/+$/, "") : "";
+        const absolutePath = `${folderPath}/${filename}`.replace(/\/+/g, "/");
+        const path = absolutePath.startsWith("/") ? absolutePath : `/${absolutePath}`;
+        const uploaded = await uploadDropboxFile({
+          authToken,
+          path,
+          blob,
+          sessionThresholdBytes: MAX_DROPBOX_SIMPLE_UPLOAD_BYTES,
+          onProgress: (p) => onProgress?.(p.loadedBytes, p.totalBytes),
+        });
+        return uploaded.path;
+      },
+    };
   }
 
-  const centralDirectorySize = centralDirectory.reduce((sum, part) => sum + part.byteLength, 0);
-  const endRecord = new ArrayBuffer(22);
-  const endView = new DataView(endRecord);
-  writeUint32(endView, 0, ZIP_END_OF_CENTRAL_DIRECTORY_SIGNATURE);
-  writeUint16(endView, 4, 0);
-  writeUint16(endView, 6, 0);
-  writeUint16(endView, 8, entries.length);
-  writeUint16(endView, 10, entries.length);
-  writeUint32(endView, 12, centralDirectorySize);
-  writeUint32(endView, 16, offset);
-  writeUint16(endView, 20, 0);
-
-  return new Blob([...chunks, ...centralDirectory, endRecord], { type: "application/zip" });
+  return {
+    makeShareable: async (fileId: string) => {
+      await makeGoogleDrivePublicReadable(authToken, fileId);
+      return { replayId: fileId };
+    },
+    resolveFolderPath: (folderPath, parentFolderId) =>
+      resolveGoogleDriveFolderPath(authToken, folderPath, parentFolderId),
+    uploadFile: async (filename, blob, parentId, onProgress) =>
+      uploadGoogleDriveFile({
+        authToken,
+        filename,
+        blob,
+        parentId,
+        resumableThresholdBytes: MAX_DRIVE_UPLOAD_BYTES,
+        onProgress: (p) => onProgress?.(p.loadedBytes, p.totalBytes),
+      }),
+  };
 }
 
 async function uploadRecordingPackage(data: StorageUploadData): Promise<{
@@ -701,58 +634,10 @@ async function uploadRecordingPackage(data: StorageUploadData): Promise<{
     requestedProvider === "dropbox" ? "dropbox" : "google-drive";
 
   try {
-    type ShareResult = { replayId: string };
-    let makeShareable: (fileId: string) => Promise<ShareResult>;
-    let resolveFolderPath: (
-      folderPath: string[] | undefined,
-      parentFolderId?: string | null,
-    ) => Promise<string | null>;
-    let uploadFile: (
-      filename: string,
-      blob: Blob,
-      parentId: string | null,
-      onProgress?: (loaded: number, total: number) => void,
-    ) => Promise<string>;
-
-    if (storageProvider === "dropbox") {
-      makeShareable = async (path: string) => {
-        // Canonical Dropbox replay id = shared-link path+rlkey (not file id).
-        const shared = await makeDropboxPublicReadable(data.authToken, path);
-        return { replayId: shared.replayId };
-      };
-      resolveFolderPath = async (folderPath) =>
-        resolveDropboxFolderPath(data.authToken, folderPath);
-      uploadFile = async (filename, blob, parentId, onProgress) => {
-        const folderPath =
-          typeof parentId === "string" && parentId ? parentId.replace(/\/+$/, "") : "";
-        const absolutePath = `${folderPath}/${filename}`.replace(/\/+/g, "/");
-        const path = absolutePath.startsWith("/") ? absolutePath : `/${absolutePath}`;
-        const uploaded = await uploadDropboxFile({
-          authToken: data.authToken,
-          path,
-          blob,
-          sessionThresholdBytes: MAX_DROPBOX_SIMPLE_UPLOAD_BYTES,
-          onProgress: (p) => onProgress?.(p.loadedBytes, p.totalBytes),
-        });
-        return uploaded.path;
-      };
-    } else {
-      makeShareable = async (fileId: string) => {
-        await makeGoogleDrivePublicReadable(data.authToken, fileId);
-        return { replayId: fileId };
-      };
-      resolveFolderPath = (folderPath, parentFolderId) =>
-        resolveGoogleDriveFolderPath(data.authToken, folderPath, parentFolderId);
-      uploadFile = async (filename, blob, parentId, onProgress) =>
-        uploadGoogleDriveFile({
-          authToken: data.authToken,
-          filename,
-          blob,
-          parentId,
-          resumableThresholdBytes: MAX_DRIVE_UPLOAD_BYTES,
-          onProgress: (p) => onProgress?.(p.loadedBytes, p.totalBytes),
-        });
-    }
+    const { makeShareable, resolveFolderPath, uploadFile } = createStorageIo(
+      storageProvider,
+      data.authToken,
+    );
 
     // MediaRecorder WebM often omits Duration/Cues, so browsers cannot random-seek
     // until the file has been progressively demuxed. Rebuild seek metadata on the
@@ -884,141 +769,99 @@ async function uploadRecordingPackage(data: StorageUploadData): Promise<{
       ? createBlobFromDataUrl(data.screenshotDataUrl)
       : null;
 
-    const artifacts: RecordingManifest["artifacts"] = {
-      metadata: "metadata.json",
-      ...(reportBlob ? { report: "report.json" } : {}),
-      ...(userEventsBlob ? { events: "events.json" } : {}),
-      ...(drawingBlob ? { drawing: "drawing.json" } : {}),
-      ...(privacyBlob ? { privacy: "privacy.json" } : {}),
-      ...(diagnosticsBlob ? { diagnostics: "diagnostics.json" } : {}),
-      ...(screenshotBlob ? { screenshot: "screenshot.jpg" } : {}),
-      ...(consoleBlob ? { console: "console.json" } : {}),
-      ...(networkBlob ? { network: "network.json" } : {}),
-      ...(websocketBlob ? { websocket: "websocket.json" } : {}),
-      ...(storageBlob ? { storage: "storage.json" } : {}),
-      ...(domBlob ? { dom: "dom.json" } : {}),
+    // The package layout, index documents, and ZIP container all come from
+    // `replay-core/write`, which is also what the browser SDK writes with. This
+    // document only supplies the bytes and the storage-provider specifics.
+    const packagedAt = new Date().toISOString();
+    const artifactBlobs: Partial<Record<AttachableArtifactId, Blob | null>> = {
+      console: consoleBlob,
+      network: networkBlob,
+      websocket: websocketBlob,
+      report: reportBlob,
+      events: userEventsBlob,
+      drawing: drawingBlob,
+      privacy: privacyBlob,
+      diagnostics: diagnosticsBlob,
+      storage: storageBlob,
+      dom: domBlob,
+      screenshot: screenshotBlob,
     };
-    const videoDescriptors: DriveFileDescriptor[] = videoParts.map((part, index) => ({
-      id: `video.part-${String(index).padStart(3, "0")}.webm`,
-      name: `video.part-${String(index).padStart(3, "0")}.webm`,
-      size: part.size,
-      mimeType: snapshot.mimeType,
-    }));
-    const metadataBlob = new Blob(
-      [
-        JSON.stringify({
-          timestamp: new Date().toISOString(),
-          duration: data.duration,
-          url: data.url,
-          startTime: data.startTime,
-          extension: "gn-tracing",
-          version: "1.0.0",
-          storage: {
-            provider: storageProvider,
-            folderId: targetFolderId,
-            package: zipFilename,
-          },
-          video: {
-            mimeType: snapshot.mimeType,
-            totalBytes: packagedVideoBlob.size,
-            partCount: videoParts.length,
-          },
-        }),
-      ],
-      { type: "application/json" },
-    );
-    const manifest: RecordingManifest = {
-      schemaVersion: 1,
-      folderId: targetFolderId,
-      video: {
-        mimeType: snapshot.mimeType,
-        totalBytes: packagedVideoBlob.size,
-        parts: videoDescriptors.map((part) => ({
-          name: part.name,
-          size: part.size || 0,
-        })),
-      },
-      artifacts,
-    };
-    const manifestBlob = new Blob([JSON.stringify(manifest)], { type: "application/json" });
-    const recordingIndex = {
-      schemaVersion: 2,
-      folderId: targetFolderId,
-      package: {
-        filename: zipFilename,
-        format: "zip",
-      },
-      manifestPath: "manifest.json",
-      metadataPath: "metadata.json",
-      artifacts: {
-        ...(reportBlob ? { reportPath: "report.json" } : {}),
-        ...(userEventsBlob ? { eventsPath: "events.json" } : {}),
-        ...(drawingBlob ? { drawingPath: "drawing.json" } : {}),
-        ...(privacyBlob ? { privacyPath: "privacy.json" } : {}),
-        ...(diagnosticsBlob ? { diagnosticsPath: "diagnostics.json" } : {}),
-        ...(screenshotBlob ? { screenshotPath: "screenshot.jpg" } : {}),
-        ...(consoleBlob ? { consolePath: "console.json" } : {}),
-        ...(networkBlob ? { networkPath: "network.json" } : {}),
-        ...(websocketBlob ? { websocketPath: "websocket.json" } : {}),
-        ...(storageBlob ? { storagePath: "storage.json" } : {}),
-        ...(domBlob ? { domPath: "dom.json" } : {}),
-      },
-      video: {
-        mimeType: snapshot.mimeType,
-        totalBytes: packagedVideoBlob.size,
-        partPaths: videoDescriptors.map((part) => part.name),
-      },
-    };
-    const indexBlob = new Blob([JSON.stringify(recordingIndex)], { type: "application/json" });
-    const zipEntries: Array<{ name: string; blob: Blob }> = [
-      { name: "recording-index.json", blob: indexBlob },
-      { name: "manifest.json", blob: manifestBlob },
-      { name: "metadata.json", blob: metadataBlob },
-      ...videoParts.map((blob, index) => ({
-        name: `video.part-${String(index).padStart(3, "0")}.webm`,
-        blob,
-      })),
-    ];
 
-    if (consoleBlob) {
-      zipEntries.push({ name: "console.json", blob: consoleBlob });
+    const artifactBytes: Partial<Record<AttachableArtifactId, Uint8Array>> = {};
+    for (const [id, blob] of Object.entries(artifactBlobs) as Array<
+      [AttachableArtifactId, Blob | null]
+    >) {
+      if (blob) {
+        artifactBytes[id] = new Uint8Array(await blob.arrayBuffer());
+      }
     }
-    if (networkBlob) {
-      zipEntries.push({ name: "network.json", blob: networkBlob });
-    }
-    if (websocketBlob) {
-      zipEntries.push({ name: "websocket.json", blob: websocketBlob });
-    }
-    if (reportBlob) {
-      zipEntries.push({ name: "report.json", blob: reportBlob });
-    }
-    if (userEventsBlob) {
-      zipEntries.push({ name: "events.json", blob: userEventsBlob });
-    }
-    if (drawingBlob) {
-      zipEntries.push({ name: "drawing.json", blob: drawingBlob });
-    }
-    if (privacyBlob) {
-      zipEntries.push({ name: "privacy.json", blob: privacyBlob });
-    }
-    if (diagnosticsBlob) {
-      zipEntries.push({ name: "diagnostics.json", blob: diagnosticsBlob });
-    }
-    if (storageBlob) {
-      zipEntries.push({ name: "storage.json", blob: storageBlob });
-    }
-    if (domBlob) {
-      zipEntries.push({ name: "dom.json", blob: domBlob });
-    }
-    if (screenshotBlob) {
-      zipEntries.push({ name: "screenshot.jpg", blob: screenshotBlob });
+
+    const metadataPreview: PackageMetadata = {
+      timestamp: packagedAt,
+      duration: data.duration,
+      url: data.url,
+      startTime: data.startTime,
+      extension: "gn-tracing",
+      version: "1.0.0",
+      producer: "extension",
+      capabilities: EXTENSION_CAPABILITIES,
+      storage: {
+        provider: storageProvider,
+        folderId: targetFolderId,
+        package: zipFilename,
+      },
+      video: {
+        mimeType: snapshot.mimeType,
+        totalBytes: packagedVideoBlob.size,
+        partCount: videoParts.length,
+      },
+    };
+
+    // Built before the package so it can be written ahead of the video parts.
+    const agentSummaryBlob = await createAgentSummaryBlob({
+      metadata: metadataPreview,
+      consoleBlob,
+      networkBlob,
+      websocketBlob,
+      eventsBlob: userEventsBlob,
+      privacyBlob,
+      reportBlob,
+      availableArtifacts: ["metadata", ...Object.keys(artifactBytes)],
+      generatedAt: packagedAt,
+    });
+    if (agentSummaryBlob) {
+      artifactBytes.agentSummary = new Uint8Array(await agentSummaryBlob.arrayBuffer());
     }
 
     const zipPassword = typeof data.zipPassword === "string" ? data.zipPassword : "";
     if (zipPassword) {
       emitProgress("Protecting recording zip...", true);
     }
-    const zipBlob = await createZipBlob(zipEntries, now, zipPassword);
+
+    const built = await buildRecordingPackage({
+      producer: "extension",
+      capabilities: EXTENSION_CAPABILITIES,
+      packagedAt,
+      zipFilename,
+      duration: data.duration,
+      url: data.url,
+      startTime: data.startTime,
+      storage: { provider: storageProvider, folderId: targetFolderId },
+      video: {
+        mimeType: snapshot.mimeType,
+        totalBytes: packagedVideoBlob.size,
+        parts: await Promise.all(
+          videoParts.map(async (part) => ({ bytes: new Uint8Array(await part.arrayBuffer()) })),
+        ),
+      },
+      artifacts: artifactBytes,
+      password: zipPassword,
+      modifiedAt: now,
+    });
+
+    // Kept as a Blob rather than one contiguous buffer: a package is mostly
+    // video, and the upload paths stream from a Blob anyway.
+    const zipBlob = new Blob(built.chunks as BlobPart[], { type: "application/zip" });
     totalUploadBytes = zipBlob.size;
     completedSteps += 1;
     uploadedBytes = 0;

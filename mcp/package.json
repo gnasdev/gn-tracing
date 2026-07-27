@@ -1,0 +1,55 @@
+{
+  "name": "gn-tracing-mcp",
+  "version": "1.0.0",
+  "mcpName": "io.github.gnasdev/gn-tracing",
+  "description": "MCP server that lets a coding agent read a GN Tracing browser recording — console errors with source-mapped stacks, failed requests, and the user timeline — straight from a replay link.",
+  "license": "GPL-3.0-or-later",
+  "author": "gnasdev",
+  "homepage": "https://github.com/gnasdev/gn-tracing/blob/main/mcp/README.md",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gnasdev/gn-tracing.git",
+    "directory": "mcp"
+  },
+  "bugs": {
+    "url": "https://github.com/gnasdev/gn-tracing/issues"
+  },
+  "keywords": [
+    "mcp",
+    "modelcontextprotocol",
+    "mcp-server",
+    "debugging",
+    "session-replay",
+    "browser-recording",
+    "root-cause-analysis",
+    "source-maps",
+    "claude",
+    "ai-agent"
+  ],
+  "type": "module",
+  "bin": {
+    "gn-tracing-mcp": "dist/gn-tracing-mcp.mjs"
+  },
+  "files": [
+    "dist/gn-tracing-mcp.mjs",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "typecheck": "tsc --noEmit",
+    "start": "node dist/gn-tracing-mcp.mjs",
+    "prepublishOnly": "node build.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.1",
+    "esbuild": "^0.28.1",
+    "typescript": "^5.9.3"
+  }
+}

@@ -153,6 +153,65 @@ tasks:
     cmds:
       - ./deploy.sh
 
+  core:typecheck:
+    desc: Type-check the shared replay-core package.
+    dir: packages/replay-core
+    cmds:
+      - npx tsc --noEmit
+
+  sdk:typecheck:
+    desc: Type-check the in-page browser SDK.
+    dir: packages/sdk
+    cmds:
+      - npx tsc --noEmit
+
+  mcp:build:
+    desc: >-
+      Bundle the local MCP server into mcp/dist/gn-tracing-mcp.mjs
+      (required before pointing an MCP client at it).
+    dir: mcp
+    cmds:
+      - npm exec -- node build.mjs
+
+  mcp:typecheck:
+    desc: Run MCP server TypeScript checks.
+    dir: mcp
+    cmds:
+      - npm exec -- tsc --noEmit
+
+  agent:sync:
+    desc: >-
+      Mirror the published plugin skills (plugins/*/skills) into the git-ignored
+      .claude/skills and .agents/skills directories. Run after editing a skill.
+    cmds:
+      - node scripts/sync-agent-assets.mjs
+
+  mcp:check:
+    desc: >-
+      Verify the publishable agent artifacts agree (npm package, server.json,
+      plugin manifest) and that no plugin file is git-ignored.
+    cmds:
+      - node scripts/check-mcp-release.mjs
+
+  mcp:pack:
+    desc: >-
+      Build and pack the npm tarball exactly as `npm publish` would, for
+      inspecting the release before tagging.
+    dir: mcp
+    cmds:
+      - npm exec -- node build.mjs
+      - npm pack --dry-run
+
+  typecheck:all:
+    desc: Type-check every context (root, replay-core, SDK, MCP, player, worker).
+    cmds:
+      - task: typecheck
+      - task: core:typecheck
+      - task: sdk:typecheck
+      - task: mcp:typecheck
+      - task: player:typecheck
+      - task: worker:typecheck
+
   build:all:
     desc: Build the extension and standalone player with development settings.
     cmds:

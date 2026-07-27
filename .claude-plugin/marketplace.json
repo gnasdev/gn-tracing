@@ -1,0 +1,35 @@
+{
+  "name": "gn-tracing",
+  "owner": {
+    "name": "gnasdev",
+    "url": "https://github.com/gnasdev"
+  },
+  "metadata": {
+    "description": "Debug from browser recordings: GN Tracing skills and MCP servers for coding agents.",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "gn-tracing",
+      "source": "./plugins/gn-tracing",
+      "description": "Paste a GN Tracing replay link or annotated screenshot report and trace the failure back to a file and line in your codebase. Bundles the gn-tracing MCP server with the gn-tracing-replay and gn-tracing-screenshot-report skills.",
+      "version": "1.0.0",
+      "author": {
+        "name": "gnasdev",
+        "url": "https://github.com/gnasdev"
+      },
+      "homepage": "https://github.com/gnasdev/gn-tracing/blob/main/mcp/README.md",
+      "license": "GPL-3.0-or-later",
+      "keywords": [
+        "debugging",
+        "session-replay",
+        "browser",
+        "root-cause",
+        "source-maps",
+        "screenshot",
+        "annotation",
+        "mcp"
+      ]
+    }
+  ]
+}

@@ -11,6 +11,7 @@
     "src/storage-auth/storage-auth.ts",
     "src/history/history.ts",
     "src/settings/settings.ts",
+    "src/shared/agent-report.ts",
     "scripts/*.mjs"
   ],
   "project": ["src/**/*.ts", "scripts/**/*.mjs"],

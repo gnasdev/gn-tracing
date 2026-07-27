@@ -27,6 +27,7 @@ import {
   normalizeFeedbackDiagnostics,
   validateFeedbackMessage,
 } from "../../src/shared/feedback-format";
+import { handleMcpRequest, isMcpEnabled, isMcpPath, mcpCorsHeaders } from "./mcp-route";
 
 // Re-export formatters for worker unit tests (same functions as extension shared).
 export { buildFeedbackIssueTitle, formatFeedbackIssueBody };
@@ -76,6 +77,10 @@ export interface Env {
   GITHUB_REPO_NAME?: string;
   /** Comma-separated labels (default: feedback). Missing labels are retried without. */
   GITHUB_FEEDBACK_LABELS?: string;
+  /** Set to "false" to disable the remote MCP endpoint (`POST /mcp`). */
+  MCP_ENABLED?: string;
+  /** Player origin whose /api/* proxies stream recording package bytes. */
+  PLAYER_ORIGIN?: string;
 }
 
 interface ProviderConfig {
@@ -562,6 +567,7 @@ function healthBody(env: Env): Record<string, unknown> {
       dropbox: Boolean(env.DROPBOX_CLIENT_ID && env.DROPBOX_CLIENT_SECRET),
     },
     feedback: Boolean((env.GITHUB_FEEDBACK_TOKEN ?? "").trim()),
+    mcp: isMcpEnabled(env),
   };
 }
 
@@ -570,6 +576,27 @@ export default {
     const url = new URL(request.url);
     const origin = request.headers.get("Origin");
     const feedbackRoute = isFeedbackPath(url.pathname);
+    const mcpRoute = isMcpPath(url.pathname);
+
+    // The MCP endpoint owns its own CORS and method rules: it serves arbitrary
+    // MCP clients rather than the extension, so the OAuth origin allow-list
+    // below must not apply to it.
+    if (mcpRoute) {
+      if (request.method === "OPTIONS") {
+        return new Response(null, { status: 204, headers: mcpCorsHeaders() });
+      }
+      if (request.method !== "POST") {
+        return new Response(
+          JSON.stringify({
+            jsonrpc: "2.0",
+            id: null,
+            error: { code: -32600, message: "Use POST with a JSON-RPC message." },
+          }),
+          { status: 405, headers: { "Content-Type": "application/json", ...mcpCorsHeaders() } },
+        );
+      }
+      return handleMcpRequest(request, env);
+    }
 
     if (request.method === "GET" && url.pathname === "/health") {
       return jsonResponse(healthBody(env), 200, origin, env, { feedback: true });
@@ -625,7 +652,8 @@ export default {
       return jsonResponse(
         {
           error: "not_found",
-          error_description: "Unknown endpoint. Use /token (Google), /token/dropbox, or /feedback.",
+          error_description:
+            "Unknown endpoint. Use /token (Google), /token/dropbox, /feedback, or /mcp.",
         },
         404,
         origin,

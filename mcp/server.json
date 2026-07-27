@@ -1,0 +1,40 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.gnasdev/gn-tracing",
+  "title": "GN Tracing",
+  "description": "Read a GN Tracing browser recording from a replay link: console errors with source-mapped stacks, failed network requests, WebSocket activity, and the user-event timeline, so an agent can trace a bug back to a file and line in the codebase.",
+  "version": "1.0.0",
+  "websiteUrl": "https://tracing.gnas.dev",
+  "repository": {
+    "url": "https://github.com/gnasdev/gn-tracing",
+    "source": "github",
+    "subfolder": "mcp"
+  },
+  "packages": [
+    {
+      "registryType": "npm",
+      "registryBaseUrl": "https://registry.npmjs.org",
+      "identifier": "gn-tracing-mcp",
+      "version": "1.0.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "packageArguments": [
+        {
+          "type": "named",
+          "name": "--allow-dir",
+          "description": "Directory that downloaded recording .zip packages may be read from. Repeatable. Local file reading is disabled unless this is given; hosted replay links need no arguments.",
+          "isRequired": false,
+          "isRepeated": true,
+          "format": "filepath"
+        }
+      ]
+    }
+  ],
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://gn-tracing-oauth-proxy.cors-ngosangns.workers.dev/mcp"
+    }
+  ]
+}

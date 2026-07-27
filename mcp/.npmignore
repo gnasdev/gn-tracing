@@ -1,0 +1,7 @@
+# Without this file npm falls back to the repository .gitignore, which ignores
+# `**/dist/` — that would publish a package with no binary in it.
+# `files` in package.json is the real allowlist; this only stops that fallback.
+src/
+build.mjs
+tsconfig.json
+node_modules/

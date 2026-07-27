@@ -11,11 +11,22 @@ This guide is for contributors working on GN Tracing. The main [README](./README
 - `src/drive-auth/`: Google Drive auth page opened in a normal tab
 - `src/settings/`: Settings page (storage provider, folder, privacy, capture profile)
 - `src/history/`: upload history page
+- `src/annotate/`: screenshot annotation editor page (state model + page wiring)
 - `src/shared/`: storage provider URL helpers, cloud API helpers, player URL, history helpers
-- `src/types/`: shared message and recording contracts
-- `player/`: player assets used by the extension build
+- `src/types/`: extension message contracts; recording and privacy models re-export from `packages/replay-core/src/schema/`
+- `player/`: player assets used by the extension build. `core-entry.ts` is the single bundle (`window.gnCore`) through which the unbundled `player.js` reaches typed shared code
 - `player-standalone/`: hosted replay player app + per-provider download proxies
-- `worker/`: optional Google OAuth token-exchange Worker (secret injection)
+- `worker/`: optional Google OAuth token-exchange Worker (secret injection) + remote MCP route (`POST /mcp`)
+- `packages/replay-core/`: the recording format itself, shared by every producer and reader
+  - `schema/`: artifact taxonomy, capture models, privacy settings — the single source of truth
+  - `write/`: ZIP writer, package builder, `agent-summary.json` builder
+  - `redact/`: the privacy policy every producer applies before buffering
+  - `capture/`: in-page instrumentation (`console`/`fetch`/XHR/`WebSocket`), DOM snapshots, and the instant-replay rolling buffer — all free of `chrome.*`
+  - `annotate/`: screenshot annotation model, SVG renderer, prose descriptions, and the redaction baker
+  - reading: `zip-reader`, `artifacts`, `query`, `views`, `summarize`, `report`
+- `packages/sdk/`: in-page recorder for browsers that cannot run the extension (all mobile). Writes the same package format with `producer: "sdk"` and a narrower `capabilities` list
+- `plugins/gn-tracing/`: the published Claude Code plugin (investigation skill + MCP server declaration), catalogued by `.claude-plugin/marketplace.json`
+- `mcp/`: the `gn-tracing-mcp` npm package and its `server.json` registry manifest
 - `dist/`: generated unpacked extension output
 - `docs/`: architecture, module, compliance, and sync notes
 
@@ -74,7 +85,30 @@ task dist:all       # Production build for extension and player
 task dev            # Full local stack: extension watch + player (Vite proxies) + multi-issuer Worker (:8787 OAuth + /feedback)
 task worker:dev     # Local Worker only (also included in `task dev`)
 task worker:sync-dev-vars  # Sync worker/.dev.vars from root .env (run automatically by task dev / worker:dev)
+task typecheck:all  # Type-check every context (root, replay-core, SDK, MCP, player, worker)
 ```
+
+Agent integration:
+
+```bash
+task mcp:build      # Bundle the local MCP server into mcp/dist/gn-tracing-mcp.mjs
+task mcp:typecheck  # Type-check mcp/
+task mcp:check      # Verify the npm package, server.json, and plugin manifests agree
+task mcp:pack       # Build and inspect the npm tarball without publishing
+task core:typecheck # Type-check packages/replay-core
+task sdk:typecheck  # Type-check packages/sdk
+task agent:sync     # Mirror plugins/*/skills into .claude/skills and .agents/skills
+```
+
+Releasing the MCP server (npm + MCP Registry) is automated: bump `mcp/package.json` and both version
+fields in `mcp/server.json`, then push a `mcp-v<version>` tag. See
+[docs/modules/agent-integration.md](./docs/modules/agent-integration.md#phát-hành) for the one-time setup.
+
+See [docs/modules/agent-integration.md](./docs/modules/agent-integration.md) for the MCP tool surface, the
+`agent-summary.json` artifact, and the `gn-tracing-replay` skill. The skill is edited in
+`plugins/gn-tracing/skills/` — that directory is what ships to users — and mirrored into `.claude/`
+and `.agents/` by `task agent:sync`. Those two are git-ignored, so editing them directly loses the
+change and ships nothing.
 
 Standalone player:
 

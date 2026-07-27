@@ -2,6 +2,7 @@
  * Main extension service worker for recording, state, upload, and message routing.
  */
 
+import type { Screenshot } from "../../packages/replay-core/src/schema/annotation";
 import { DEFAULT_DRAW_COLOR, normalizeDrawColor } from "../shared/drawing";
 import {
   buildRecordingPrivacySummary,
@@ -63,8 +64,20 @@ import {
 } from "./capture-environment";
 import { CdpManager } from "./cdp-manager";
 import { submitFeedback } from "./feedback-submit";
+import {
+  createRegistrationDeps,
+  syncInstantReplayRegistration,
+} from "./instant-replay-registration";
 import { registerMessageListeners } from "./message-router";
 import { RecorderManager } from "./recorder-manager";
+import {
+  captureScreenshotForAnnotation,
+  clearPendingScreenshot,
+  mergeAnnotatedScreenshot,
+  type PendingScreenshot,
+  readPendingScreenshot,
+  writePendingScreenshot,
+} from "./screenshot-report";
 import type { ProviderFolderSettings, UploadSettingsStore } from "./settings-store";
 import {
   DEFAULT_PRIVACY_REDACTION_SETTINGS,
@@ -601,14 +614,33 @@ async function syncRuntimeState(): Promise<void> {
   await saveStateToStorage();
 }
 
+/**
+ * Reconciles the instant-replay content script with the stored setting.
+ *
+ * Runs on every worker start because registration survives worker eviction but
+ * the setting is the source of truth: a script left registered after the user
+ * switched the feature off would keep snapshotting their browsing.
+ */
+async function syncInstantReplayFromSettings(): Promise<void> {
+  try {
+    const settings = await getUploadSettings();
+    await syncInstantReplayRegistration(settings.instantReplayEnabled, createRegistrationDeps());
+  } catch (error) {
+    console.warn("[GN Tracing] Could not reconcile instant replay registration:", error);
+  }
+}
+
 void syncRuntimeState();
+void syncInstantReplayFromSettings();
 
 chrome.runtime.onStartup.addListener(() => {
   void syncRuntimeState();
+  void syncInstantReplayFromSettings();
 });
 
 chrome.runtime.onInstalled.addListener(() => {
   void syncRuntimeState();
+  void syncInstantReplayFromSettings();
 });
 
 chrome.alarms.onAlarm.addListener((alarm) => {
@@ -703,6 +735,13 @@ registerMessageListeners({
   getUploadArtifactChunk: (data) => getUploadArtifactChunk(sessionArtifacts, data),
   patchUploadProgress,
   submitFeedback,
+  captureScreenshot: handleCaptureScreenshot,
+  getPendingScreenshot: handleGetPendingScreenshot,
+  discardPendingScreenshot: async () => {
+    await clearPendingScreenshot();
+    return { ok: true };
+  },
+  saveAnnotatedScreenshot: handleSaveAnnotatedScreenshot,
 });
 
 /**
@@ -2175,6 +2214,10 @@ async function updateUploadSettingsFromMessage(
       data?.redactDomTextContent,
       existingSettings.redactDomTextContent,
     ),
+    instantReplayEnabled: normalizeBoolean(
+      data?.instantReplayEnabled,
+      existingSettings.instantReplayEnabled,
+    ),
     // Capture mechanism is profile-independent; default to stored value, fall back to "cdp" (R9.1).
     captureMode: normalizeEnum<CaptureMode>(
       data?.captureMode,
@@ -2188,12 +2231,27 @@ async function updateUploadSettingsFromMessage(
     settings.captureStorage = true;
     settings.captureDomSnapshots = true;
   }
+  // Registration follows the setting, and the permission prompt happens here
+  // rather than at capture time — the user is at the keyboard now, and a prompt
+  // that appears mid-bug-report is a prompt that gets dismissed.
+  const registration = await syncInstantReplayRegistration(
+    settings.instantReplayEnabled,
+    createRegistrationDeps(),
+  ).catch((error: Error) => ({ ok: false as const, error: error.message }));
+
+  if (!registration.ok) {
+    // The user said yes but the browser said no. Persist the honest state
+    // rather than a checkbox that claims a feature which is not running.
+    settings.instantReplayEnabled = false;
+  }
+
   await saveUploadSettings(settings);
   await saveStateToStorage();
 
   return {
     ok: true,
     settings: getSettingsSnapshot(settings),
+    ...(registration.ok ? {} : { message: registration.error }),
   };
 }
 
@@ -2363,4 +2421,169 @@ async function runSessionUpload(sessionId: string, authToken: string): Promise<v
   } finally {
     notifyPopupStateUpdated(await saveStateToStorage());
   }
+}
+
+// ===== Screenshot reports =====
+//
+// A separate, lighter path from the recording flow: capture the visible tab,
+// let the reporter draw on it, then package and upload without any video. Most
+// bug reports are "this looks wrong, here", and making that require a full
+// recording costs the reporter time and the reader a video to scrub through.
+
+async function handleCaptureScreenshot(tabId: number | undefined): Promise<MessageResponse> {
+  const targetTabId =
+    typeof tabId === "number"
+      ? tabId
+      : (await chrome.tabs.query({ active: true, currentWindow: true }))[0]?.id;
+
+  if (typeof targetTabId !== "number") {
+    return { ok: false, error: "Open a browser tab before capturing a screenshot." };
+  }
+
+  const result = await captureScreenshotForAnnotation(targetTabId, {
+    captureVisibleTab: (windowId) =>
+      chrome.tabs.captureVisibleTab(windowId, { format: "jpeg", quality: 85 }),
+    getTab: (id) => chrome.tabs.get(id),
+    getViewport: async (id) => {
+      // The image is device-pixel sized; annotations are placed in CSS pixels,
+      // so the page's own measurements are what the editor needs.
+      const [injected] = await chrome.scripting.executeScript({
+        target: { tabId: id },
+        func: () => ({
+          width: window.innerWidth,
+          height: window.innerHeight,
+          devicePixelRatio: window.devicePixelRatio,
+        }),
+      });
+      return (injected?.result as { width: number; height: number } | undefined) ?? null;
+    },
+    setPending: writePendingScreenshot,
+    openEditor: async () => {
+      await chrome.tabs.create({ url: chrome.runtime.getURL("annotate/annotate.html") });
+    },
+  });
+
+  return result.ok ? { ok: true } : { ok: false, error: result.error };
+}
+
+async function handleGetPendingScreenshot(): Promise<
+  MessageResponse & { screenshot?: PendingScreenshot }
+> {
+  const pending = await readPendingScreenshot();
+  return pending
+    ? { ok: true, screenshot: pending }
+    : { ok: false, error: "No screenshot is waiting to be annotated." };
+}
+
+/**
+ * Pulls whatever the instant-replay buffer holds in the reported tab.
+ *
+ * Best effort throughout: the content script may not be registered, the tab may
+ * have navigated, or the recorder may have disabled itself on a heavy page. A
+ * screenshot report without pre-bug history is still a useful report, so none
+ * of those failures stop the upload — they just leave the artifact out.
+ */
+async function collectInstantReplay(tabId: number | undefined): Promise<string | null> {
+  if (typeof tabId !== "number") {
+    return null;
+  }
+  try {
+    const response = (await chrome.tabs.sendMessage(tabId, {
+      action: "COLLECT_INSTANT_REPLAY",
+    })) as { ok?: boolean; artifact?: unknown } | undefined;
+
+    return response?.ok && response.artifact ? JSON.stringify(response.artifact) : null;
+  } catch {
+    return null;
+  }
+}
+
+async function handleSaveAnnotatedScreenshot(
+  data: Record<string, unknown> | undefined,
+): Promise<MessageResponse> {
+  const pending = await readPendingScreenshot();
+  if (!pending) {
+    return { ok: false, error: "This screenshot is no longer available." };
+  }
+
+  const annotated = data?.screenshot as Screenshot | undefined;
+  if (!annotated || typeof annotated !== "object") {
+    return { ok: false, error: "No annotations were supplied." };
+  }
+
+  const settings = await getUploadSettings();
+  const resolved = requireRegisteredStorageProvider(settings.activeStorageProvider);
+  if (!resolved.ok) {
+    return { ok: false, error: resolved.error };
+  }
+  const authToken = await resolved.provider.getAuthToken();
+  if (!authToken) {
+    return {
+      ok: false,
+      error: `Not connected to ${providerDisplayName(resolved.provider.id)}. Please connect first.`,
+    };
+  }
+
+  const storageProviderId = resolveRegisteredUploadProviderId(settings.activeStorageProvider);
+  const targetFolderId =
+    storageProviderId === "dropbox"
+      ? settings.folderPath.length > 0
+        ? `/${settings.folderPath.join("/")}`
+        : null
+      : settings.folderId;
+
+  const merged = mergeAnnotatedScreenshot(pending, annotated);
+  const instantReplay = settings.instantReplayEnabled
+    ? await collectInstantReplay(pending.tabId)
+    : null;
+
+  try {
+    await ensureOffscreenDocumentForPackaging();
+    const result = (await chrome.runtime.sendMessage({
+      target: "offscreen",
+      type: "UPLOAD_SCREENSHOT_PACKAGE",
+      data: {
+        authToken,
+        storageProvider: storageProviderId,
+        targetFolderId,
+        targetFolderPath: settings.folderPath,
+        zipPassword: settings.zipPassword || null,
+        url: merged.screenshot.url,
+        screenshots: [{ screenshot: merged.screenshot, imageDataUrl: merged.imageDataUrl }],
+        artifacts: instantReplay ? { instantReplay } : {},
+      },
+    })) as MessageResponse & Partial<UploadSuccessResult>;
+
+    if (!result?.ok) {
+      return { ok: false, error: result?.error || "Screenshot upload failed." };
+    }
+
+    // The capture is a picture of the user's screen; it has no reason to
+    // outlive the report it belongs to.
+    await clearPendingScreenshot();
+    await closeOffscreenDocumentIfIdle();
+
+    return { ok: true, recordingUrl: normalizeRecordingUrl(result.recordingUrl) ?? undefined };
+  } catch (error) {
+    return { ok: false, error: (error as Error).message };
+  }
+}
+
+/**
+ * The packaging path needs the offscreen document for `OffscreenCanvas`, which
+ * an MV3 service worker does not have — and destroying redacted pixels is not
+ * optional, so there is no fallback.
+ */
+async function ensureOffscreenDocumentForPackaging(): Promise<void> {
+  const contexts = await chrome.runtime.getContexts({
+    contextTypes: [chrome.runtime.ContextType.OFFSCREEN_DOCUMENT],
+  });
+  if (contexts.length > 0) {
+    return;
+  }
+  await chrome.offscreen.createDocument({
+    url: "offscreen/offscreen.html",
+    reasons: [chrome.offscreen.Reason.BLOBS],
+    justification: "Redacting and packaging an annotated screenshot report",
+  });
 }

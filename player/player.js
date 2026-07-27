@@ -43,11 +43,12 @@
   const ZIP_FLAG_ENCRYPTED = 0x0001;
   const PROGRESS_END_SNAP_MS = 1000;
   /**
-   * Single seek/duration source: vendored src/shared/player-timeline-seek.ts
-   * (`npm run vendor:player-timeline-seek` → window.gnPlayerTimelineSeek).
-   * After package bytes are in memory, Drive and Dropbox share this path.
+   * Single seek/duration source: src/shared/player-timeline-seek.ts, reaching
+   * the player through the one core bundle (`npm run vendor:player-core` →
+   * window.gnCore). After package bytes are in memory, Drive and Dropbox share
+   * this path.
    */
-  const TimelineSeek = globalThis.gnPlayerTimelineSeek;
+  const TimelineSeek = globalThis.gnCore?.timelineSeek;
   const SEEK_MAX_RETRIES = 3;
   const ZIP_CRYPTO_HEADER_BYTES = 12;
   const DYNAMIC_ROUTE_EXTENSIONS = new Set([".html", ".htm", ".php", ".asp", ".aspx", ".jsp"]);
@@ -89,6 +90,16 @@
       "tabs.network": "Network",
       "tabs.storage": "Storage",
       "tabs.elements": "Elements",
+      "tabs.screenshots": "Screenshots",
+      "screenshots.aria": "Annotated screenshots",
+      "screenshots.sourceImage": "captured image",
+      "screenshots.sourceDom": "re-rendered DOM snapshot",
+      "screenshots.domSnapshot":
+        "This screenshot is a DOM snapshot the in-page SDK recorded, not a captured image. Open the Elements tab to inspect it.",
+      "screenshots.imageMissing": "The image for this screenshot is not in the package.",
+      "screenshots.instantReplay": "Instant replay (before the report)",
+      "screenshots.instantReplayMeta":
+        "{frames} frames covering {seconds}s before the report ({dropped} dropped to stay inside the buffer).",
       "report.openPage": "Open recorded page",
       "report.screenshotAlt": "Recording screenshot",
       "console.search": "Search console",
@@ -247,6 +258,13 @@
       "detail.copyResponse": "Copy Response",
       "detail.copyCurlResponse": "Copy cURL + Response",
       "detail.copied": "Copied!",
+      "agentReport.button": "Copy for AI",
+      "agentReport.copied": "Recording report copied for AI",
+      "agentReport.failed": "Could not copy the report",
+      "agentReport.unavailable": "The report builder is not loaded",
+      "noVideo.title": "This recording has no video",
+      "noVideo.hint":
+        "It was captured by the in-page SDK, which records console, network, and WebSocket activity without a screen recording.",
       "loading.unlocked": "Loading unlocked recording...",
       "password.enterRequired": "Enter the recording password.",
       "password.unlockFailed": "Failed to unlock recording package.",
@@ -315,6 +333,16 @@
       "tabs.network": "Network",
       "tabs.storage": "Storage",
       "tabs.elements": "Elements",
+      "tabs.screenshots": "Ảnh màn hình",
+      "screenshots.aria": "Ảnh màn hình có chú thích",
+      "screenshots.sourceImage": "ảnh chụp thật",
+      "screenshots.sourceDom": "dựng lại từ ảnh chụp DOM",
+      "screenshots.domSnapshot":
+        "Ảnh này là ảnh chụp DOM do SDK trong trang ghi lại, không phải ảnh chụp màn hình thật. Mở tab Elements để xem chi tiết.",
+      "screenshots.imageMissing": "Gói không chứa ảnh cho mục này.",
+      "screenshots.instantReplay": "Instant replay (trước khi báo cáo)",
+      "screenshots.instantReplayMeta":
+        "{frames} khung hình bao phủ {seconds}s trước lúc báo cáo ({dropped} khung bị bỏ để vừa bộ đệm).",
       "report.openPage": "Mở trang đã ghi",
       "report.screenshotAlt": "Ảnh chụp bản ghi",
       "console.search": "Tìm trong console",
@@ -470,6 +498,13 @@
       "detail.copyResponse": "Sao chép Response",
       "detail.copyCurlResponse": "Sao chép cURL + Response",
       "detail.copied": "Đã sao chép!",
+      "agentReport.button": "Sao chép cho AI",
+      "agentReport.copied": "Đã sao chép báo cáo bản ghi cho AI",
+      "agentReport.failed": "Không sao chép được báo cáo",
+      "agentReport.unavailable": "Chưa tải được bộ tạo báo cáo",
+      "noVideo.title": "Bản ghi này không có video",
+      "noVideo.hint":
+        "Bản ghi được tạo bởi SDK nhúng trong trang, ghi lại console, network và WebSocket mà không quay màn hình.",
       "loading.unlocked": "Đang tải bản ghi đã mở khóa...",
       "password.enterRequired": "Nhập mật khẩu bản ghi.",
       "password.unlockFailed": "Không mở khóa được gói bản ghi.",
@@ -1077,6 +1112,10 @@
   let webSocketLogs = [];
   let storageArtifact = null;
   let domArtifact = null;
+  let screenshotsArtifact = null;
+  /** Object URLs for screenshot images, revoked when a new recording loads. */
+  const screenshotObjectUrls = [];
+  let instantReplayArtifact = null;
   // Track which snapshot each time-synced panel is currently showing, so the
   // panels only re-render when the active (by-playback-time) snapshot changes.
   let storageActiveKey = "";
@@ -1259,6 +1298,9 @@
     elements.storageViewer = document.getElementById("storage-viewer");
     elements.storageContent = document.getElementById("storage-content");
     elements.elementsTab = document.getElementById("elements-tab");
+    elements.screenshotsTab = document.getElementById("screenshots-tab");
+    elements.screenshotsViewer = document.getElementById("screenshots-viewer");
+    elements.screenshotsContent = document.getElementById("screenshots-content");
     elements.elementsViewer = document.getElementById("elements-viewer");
     elements.elementsSnapshotSelect = document.getElementById("elements-snapshot-select");
     elements.elementsTree = document.getElementById("elements-tree");
@@ -1883,6 +1925,7 @@
     const isNetwork = tabName === "network";
     const isStorage = tabName === "storage";
     const isElements = tabName === "elements";
+    const isScreenshots = tabName === "screenshots";
 
     elements.reportTab?.classList.toggle("active", isReport);
     elements.activityTab?.classList.toggle("active", isActivity);
@@ -1890,12 +1933,14 @@
     elements.networkTab.classList.toggle("active", isNetwork);
     elements.storageTab?.classList.toggle("active", isStorage);
     elements.elementsTab?.classList.toggle("active", isElements);
+    elements.screenshotsTab?.classList.toggle("active", isScreenshots);
     elements.reportViewer?.classList.toggle("hidden", !isReport);
     elements.activityViewer?.classList.toggle("hidden", !isActivity);
     elements.consoleViewer.classList.toggle("hidden", !isConsole);
     elements.networkViewer.classList.toggle("hidden", !isNetwork);
     elements.storageViewer?.classList.toggle("hidden", !isStorage);
     elements.elementsViewer?.classList.toggle("hidden", !isElements);
+    elements.screenshotsViewer?.classList.toggle("hidden", !isScreenshots);
 
     activeLogsTab = tabName;
     if (isConsole && consolePanelDirty) {
@@ -2175,6 +2220,181 @@
     }
 
     container.innerHTML = renderDomNodeFallback(rootNode);
+  }
+
+  /**
+   * Render the Screenshots tab.
+   *
+   * Two kinds of screenshot end up here and they are not interchangeable: an
+   * extension capture is a real image entry in the package, while an SDK
+   * capture is a DOM snapshot the player has to re-render. The second is
+   * labelled as such rather than dressed up as a photograph — a reader
+   * comparing a "screenshot" against production needs to know that canvas
+   * contents and cross-origin frames were never in it.
+   *
+   * Annotations are drawn by the shared renderer in `window.gnCore`, the same
+   * one the extension's editor previews with, so an arrow lands where the
+   * reporter put it.
+   */
+  function renderScreenshotsTab() {
+    const shots = Array.isArray(screenshotsArtifact?.screenshots)
+      ? screenshotsArtifact.screenshots
+      : [];
+    const hasShots = shots.length > 0;
+
+    elements.screenshotsTab?.classList.toggle("hidden", !hasShots);
+
+    if (!hasShots) {
+      if (elements.screenshotsTab?.classList.contains("active")) {
+        showLogsTab("console");
+      }
+      if (elements.screenshotsContent) {
+        elements.screenshotsContent.innerHTML = "";
+      }
+      return;
+    }
+
+    const container = elements.screenshotsContent;
+    if (!container) return;
+    container.replaceChildren();
+
+    for (const shot of shots) {
+      container.append(buildScreenshotCard(shot));
+    }
+
+    if (instantReplayArtifact) {
+      container.append(buildInstantReplayCard(instantReplayArtifact));
+    }
+  }
+
+  /** @param {any} shot */
+  function buildScreenshotCard(shot) {
+    const card = document.createElement("section");
+    card.className = "screenshot-card";
+
+    if (shot.caption) {
+      const caption = document.createElement("p");
+      caption.className = "screenshot-caption";
+      caption.textContent = shot.caption;
+      card.append(caption);
+    }
+
+    const figure = document.createElement("div");
+    figure.className = "screenshot-figure";
+
+    const viewport = shot.viewport || { width: 1280, height: 800 };
+    figure.style.aspectRatio = `${viewport.width} / ${viewport.height}`;
+
+    if (shot.source?.kind === "image") {
+      const blob = recordingFiles?.packageEntries
+        ? getPackageEntry(recordingFiles.packageEntries, shot.source.path, false)
+        : null;
+      if (blob) {
+        const img = document.createElement("img");
+        img.className = "screenshot-image";
+        img.alt = shot.caption || "Annotated screenshot";
+        img.src = URL.createObjectURL(blob);
+        screenshotObjectUrls.push(img.src);
+        figure.append(img);
+      } else {
+        figure.append(buildScreenshotPlaceholder(t("screenshots.imageMissing")));
+      }
+    } else {
+      // A DOM-snapshot screenshot: say so plainly instead of rendering an
+      // approximation that looks like a capture.
+      figure.append(buildScreenshotPlaceholder(t("screenshots.domSnapshot")));
+    }
+
+    const overlayApi = globalThis.gnCore?.annotate;
+    if (overlayApi && Array.isArray(shot.annotations) && shot.annotations.length > 0) {
+      const overlay = document.createElement("div");
+      overlay.className = "screenshot-overlay";
+      overlay.setAttribute("aria-hidden", "true");
+      overlay.innerHTML = overlayApi.renderScreenshotOverlaySvg(shot);
+      figure.append(overlay);
+    }
+
+    card.append(figure);
+
+    const meta = document.createElement("p");
+    meta.className = "screenshot-meta";
+    meta.textContent = [
+      shot.url || "",
+      `${viewport.width}\u00d7${viewport.height}`,
+      shot.source?.kind === "image" ? t("screenshots.sourceImage") : t("screenshots.sourceDom"),
+    ]
+      .filter(Boolean)
+      .join(" \u2022 ");
+    card.append(meta);
+
+    const described = globalThis.gnCore?.annotate?.describeAnnotation;
+    if (described && Array.isArray(shot.annotations) && shot.annotations.length > 0) {
+      const list = document.createElement("ul");
+      list.className = "screenshot-annotation-list";
+      for (const annotation of shot.annotations) {
+        const item = document.createElement("li");
+        item.textContent = described(annotation);
+        if (annotation.type === "redact") {
+          item.className = "is-redaction";
+        }
+        list.append(item);
+      }
+      card.append(list);
+    }
+
+    return card;
+  }
+
+  /** @param {string} message */
+  function buildScreenshotPlaceholder(message) {
+    const placeholder = document.createElement("div");
+    placeholder.className = "screenshot-placeholder";
+    placeholder.textContent = message;
+    return placeholder;
+  }
+
+  /**
+   * Summarises the pre-bug buffer.
+   *
+   * `coveredMs` is shown rather than `windowMs` because those differ whenever
+   * the producer's byte cap evicted frames first, and a reader told "30s" while
+   * looking at 4 seconds of history would draw the wrong conclusions about what
+   * is missing.
+   *
+   * @param {any} artifact
+   */
+  function buildInstantReplayCard(artifact) {
+    const card = document.createElement("section");
+    card.className = "screenshot-card instant-replay-card";
+
+    const title = document.createElement("h3");
+    title.className = "screenshot-caption";
+    title.textContent = t("screenshots.instantReplay");
+    card.append(title);
+
+    const frames = Array.isArray(artifact.frames) ? artifact.frames : [];
+    const summary = document.createElement("p");
+    summary.className = "screenshot-meta";
+    summary.textContent = t("screenshots.instantReplayMeta", {
+      frames: String(frames.length),
+      seconds: (Math.round((artifact.coveredMs || 0) / 100) / 10).toFixed(1),
+      dropped: String(artifact.droppedFrames || 0),
+    });
+    card.append(summary);
+
+    if (frames.length > 0) {
+      const list = document.createElement("ol");
+      list.className = "screenshot-annotation-list";
+      for (const frame of frames) {
+        const item = document.createElement("li");
+        const offset = (Math.round((frame.relativeMs || 0) / 100) / 10).toFixed(1);
+        item.textContent = `+${offset}s \u2014 ${frame.documentUrl || ""}`;
+        list.append(item);
+      }
+      card.append(list);
+    }
+
+    return card;
   }
 
   // Render the Elements tab: hide when there is no DOM artifact/snapshot
@@ -4374,6 +4594,19 @@
     return preview.trimStart().startsWith("<");
   }
 
+  /**
+   * Toggle the no-video presentation. Console, network, WebSocket, storage, and
+   * the event timeline all still work — only the media surface is absent.
+   * @param {boolean} hasNoVideo
+   */
+  function applyNoVideoPresentation(hasNoVideo) {
+    document.body.classList.toggle("no-video", hasNoVideo);
+    const notice = document.getElementById("no-video-notice");
+    if (notice) {
+      notice.classList.toggle("hidden", !hasNoVideo);
+    }
+  }
+
   async function parseJsonBlob(blob, label) {
     try {
       return JSON.parse(await blob.text());
@@ -4851,6 +5084,10 @@
       indexJson?.artifacts?.screenshotPath || manifestJson?.artifacts?.screenshot;
     const storagePath = indexJson?.artifacts?.storagePath || manifestJson?.artifacts?.storage;
     const domPath = indexJson?.artifacts?.domPath || manifestJson?.artifacts?.dom;
+    const screenshotsPath =
+      indexJson?.artifacts?.screenshotsPath || manifestJson?.artifacts?.screenshots;
+    const instantReplayPath =
+      indexJson?.artifacts?.instantReplayPath || manifestJson?.artifacts?.instantReplay;
     const reportEntry = reportPath ? getPackageEntry(entries, reportPath, false) : null;
     const eventsEntry = eventsPath ? getPackageEntry(entries, eventsPath, false) : null;
     const drawingEntry = drawingPath ? getPackageEntry(entries, drawingPath, false) : null;
@@ -4861,6 +5098,12 @@
     const screenshotEntry = screenshotPath ? getPackageEntry(entries, screenshotPath, false) : null;
     const storageEntry = storagePath ? getPackageEntry(entries, storagePath, false) : null;
     const domEntry = domPath ? getPackageEntry(entries, domPath, false) : null;
+    const screenshotsEntry = screenshotsPath
+      ? getPackageEntry(entries, screenshotsPath, false)
+      : null;
+    const instantReplayEntry = instantReplayPath
+      ? getPackageEntry(entries, instantReplayPath, false)
+      : null;
 
     const resolved = {
       packageId: indexId,
@@ -4879,14 +5122,35 @@
       websocket: websocketEntry ? { blob: websocketEntry } : null,
       storage: storageEntry ? { blob: storageEntry } : null,
       dom: domEntry ? { blob: domEntry } : null,
+      screenshots: screenshotsEntry ? { blob: screenshotsEntry } : null,
+      instantReplay: instantReplayEntry ? { blob: instantReplayEntry } : null,
+      // Screenshot images live at their own paths under `screenshots/`, so the
+      // viewer resolves them from the entry map rather than from a fixed name.
+      packageEntries: entries,
       videoParts: videoPartPaths.map((path) => ({
         name: path,
         blob: getPackageEntry(entries, path),
       })),
     };
 
-    if (!resolved.metadata || resolved.videoParts.length === 0) {
-      throw new Error("Invalid recording package. Missing metadata or video parts.");
+    if (!resolved.metadata) {
+      throw new Error("Invalid recording package. Missing metadata.");
+    }
+
+    // Video is no longer universal: the in-page SDK cannot capture a tab, so it
+    // writes packages with console/network/websocket and no video at all. Only
+    // treat missing parts as corruption when the producer claims it captured
+    // video — otherwise a valid SDK recording would be rejected as malformed.
+    if (resolved.videoParts.length === 0) {
+      const metadataJson = await parseJsonBlob(resolved.metadata.blob, "metadata.json").catch(
+        () => null,
+      );
+      const claimsVideo = globalThis.gnCore?.capabilities
+        ? globalThis.gnCore.capabilities.hasCapability(metadataJson || {}, "video")
+        : true;
+      if (claimsVideo) {
+        throw new Error("Invalid recording package. Missing video parts.");
+      }
     }
 
     return resolved;
@@ -5193,6 +5457,12 @@
       if (recordingFiles.dom) {
         registerLoadingEntry("dom", "dom.json", "other");
       }
+      if (recordingFiles.screenshots) {
+        registerLoadingEntry("screenshots", "screenshots.json", "other");
+      }
+      if (recordingFiles.instantReplay) {
+        registerLoadingEntry("instantReplay", "instant-replay.json", "other");
+      }
 
       // Load metadata first (needed for processing other data)
       const metadataJson = await loadJsonDescriptor(recordingFiles.metadata, "metadata.json", {
@@ -5207,6 +5477,10 @@
       pendingSeekTimeMs = null;
       pendingSeekRetryCount = 0;
       currentTimeMs = 0;
+      // A recording with no video is a valid SDK recording, not a broken one:
+      // swap the player for an explanation and drop the transport controls
+      // rather than leaving a dead black box behind them.
+      applyNoVideoPresentation(recordingFiles.videoParts.length === 0);
       setExpectedVideoBytes(metadata.video?.totalBytes || 0);
       const videoMimeType =
         recordingFiles.manifest?.video?.mimeType || metadata.video?.mimeType || "video/webm";
@@ -5507,10 +5781,35 @@
               domArtifact = domJson;
             })
           : Promise.resolve(),
+
+        // Load annotated screenshots
+        recordingFiles.screenshots
+          ? loadJsonDescriptor(recordingFiles.screenshots, "screenshots.json", {
+              onProgress: createLoadingProgressReporter("screenshots", "other", "screenshots.json"),
+            }).then((json) => {
+              markLoadingEntryLoaded("screenshots", "screenshots.json", "other");
+              screenshotsArtifact = json;
+            })
+          : Promise.resolve(),
+
+        // Load the pre-bug instant replay buffer
+        recordingFiles.instantReplay
+          ? loadJsonDescriptor(recordingFiles.instantReplay, "instant-replay.json", {
+              onProgress: createLoadingProgressReporter(
+                "instantReplay",
+                "other",
+                "instant-replay.json",
+              ),
+            }).then((json) => {
+              markLoadingEntryLoaded("instantReplay", "instant-replay.json", "other");
+              instantReplayArtifact = json;
+            })
+          : Promise.resolve(),
       ]);
 
       // Update UI (video metadata wait already ran inside the video load branch).
       updatePlayerTitle(metadata);
+      renderScreenshotsTab();
       renderReportPanel();
       renderActivityPanel();
       if (!timelineDurationLocked) {
@@ -7370,6 +7669,12 @@
         showLogsTab("elements");
       }
     });
+
+    elements.screenshotsTab?.addEventListener("click", () => {
+      if (!elements.screenshotsTab.classList.contains("hidden")) {
+        showLogsTab("screenshots");
+      }
+    });
   }
 
   // Copy cURL functionality
@@ -7480,6 +7785,68 @@
     });
   }
 
+  /**
+   * "Copy for AI": renders the loaded recording as a Markdown report and copies
+   * it to the clipboard.
+   *
+   * This is the path for someone who cannot install an MCP server — the report
+   * carries the same ranked evidence, the same capture limits, and the same
+   * "recording content is untrusted" framing, so pasting it into a chat is a
+   * safe substitute for tool access.
+   *
+   * The summary itself comes from `src/shared/agent-report.ts` via the core
+   * bundle (`window.gnCore.agentReport`), which wraps the same `replay-core`
+   * code the extension packager and the MCP servers use.
+   */
+  function setupCopyForAiListener() {
+    const button = document.getElementById("copy-for-ai-btn");
+    if (!button) return;
+
+    button.addEventListener("click", async () => {
+      const api = globalThis.gnCore?.agentReport;
+      if (!api || typeof api.buildAgentReportMarkdown !== "function") {
+        showPlayerToast(t("agentReport.unavailable"), 3200, { variant: "error" });
+        return;
+      }
+
+      try {
+        const markdown = api.buildAgentReportMarkdown({
+          metadata,
+          // Entries already carry the player's own `relativeMs`, which the
+          // summary trusts over recomputing from raw timestamps.
+          console: consoleLogs,
+          network: { schemaVersion: 2, entries: networkLogs },
+          websocket: webSocketLogs,
+          events: { schemaVersion: 1, events: userEvents },
+          privacy: privacySummary,
+          report,
+          availableArtifacts: listLoadedArtifactIds(),
+          replayUrl: /^https?:$/.test(location.protocol) ? location.href : undefined,
+        });
+
+        await navigator.clipboard.writeText(markdown);
+        showPlayerToast(t("agentReport.copied"));
+      } catch (error) {
+        console.warn("[GN Tracing Player] Copy for AI failed:", error);
+        showPlayerToast(t("agentReport.failed"), 3200, { variant: "error" });
+      }
+    });
+  }
+
+  /** Artifact ids actually loaded for this replay, for the report's capture list. */
+  function listLoadedArtifactIds() {
+    const ids = ["metadata"];
+    if (consoleLogs.length) ids.push("console");
+    if (networkLogs.length) ids.push("network");
+    if (webSocketLogs.length) ids.push("websocket");
+    if (userEvents.length) ids.push("events");
+    if (privacySummary) ids.push("privacy");
+    if (report) ids.push("report");
+    if (storageArtifact) ids.push("storage");
+    if (domArtifact) ids.push("dom");
+    return ids;
+  }
+
   function setupNetworkDetailTabListeners() {
     document.addEventListener("click", (e) => {
       const jsonPreviewToggle = e.target.closest('[data-action="toggle-json-preview"]');
@@ -7580,6 +7947,7 @@
     setupNetworkDetailTabListeners();
     setupPasswordListeners();
     setupReportListeners();
+    setupCopyForAiListener();
 
     // Theme preference: system → light → dark (cycle). data-theme is always light|dark for CSS.
     const themeToggleBtn = document.getElementById("theme-toggle-btn");

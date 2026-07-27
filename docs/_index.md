@@ -27,6 +27,7 @@ related:
 - [modules/oauth-token-proxy.md](./modules/oauth-token-proxy.md) — multi-issuer OAuth token Worker (Google + Dropbox)
 - [modules/privacy-and-redaction.md](./modules/privacy-and-redaction.md)
 - [modules/replay-player.md](./modules/replay-player.md)
+- [modules/agent-integration.md](./modules/agent-integration.md) — MCP servers, `agent-summary.json`, the `gn-tracing-replay` skill
 - [features/extension-surfaces.md](./features/extension-surfaces.md)
 - [features/release-and-update-checks.md](./features/release-and-update-checks.md)
 - [compliance/_summary.md](./compliance/_summary.md)
@@ -39,6 +40,7 @@ related:
 
 - [specs/planning/domain-project-aspects.md](./specs/planning/domain-project-aspects.md)
 - [specs/planning/multi-cloud-storage-providers.md](./specs/planning/multi-cloud-storage-providers.md) — P0–P3 multi-cloud plan (implemented)
+- [specs/planning/mcp-skill-agent-friendly.md](./specs/planning/mcp-skill-agent-friendly.md) — P0–P4 MCP (core + stdio + remote), skill, agent-friendly artifact plan (planned)
 
 ## Dependency Map
 
@@ -56,6 +58,10 @@ related:
   shared by: service worker, CDP collector, storage manager, content script, Settings, replay player, compliance docs
 - `replay-player`
   consumes: zip package artifacts, source-map-enriched console/network data, privacy summaries, report/events/screenshot artifacts, and provider-aware proxy downloads
+- `agent-integration`
+  reads: `shared/data-models`, `privacy-and-redaction`, `replay-player`
+  owns: `packages/replay-core` (zip reader, agent summary, bounded queries), the local stdio MCP server, the Worker `POST /mcp` route, the packaged `agent-summary.json` artifact, and the `gn-tracing-replay` skill
+  consumes: recording package artifacts emitted by `recording-runtime`
 - `extension-surfaces`
   reads: `shared/data-models`, `recording-runtime`, `drive-and-player`, `privacy-and-redaction`
   owns: popup commands, Settings controls (storage provider + folder), auth page state, and local upload-history rendering

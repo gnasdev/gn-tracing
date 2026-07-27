@@ -9,6 +9,8 @@ It captures:
 - network requests and responses
 - WebSocket activity
 - optional storage snapshots (localStorage, sessionStorage, cookies) and static DOM snapshots
+- annotated screenshots — capture a page, draw arrows, boxes and notes on it, and redact anything private
+- optional instant replay: a rolling buffer of the seconds *before* a bug, so it need not be reproduced
 - an optional upload to your cloud storage (Google Drive or Dropbox) with a replay link
 
 ## Screenshots
@@ -68,6 +70,59 @@ GN Tracing is distributed as a packaged release from this repository.
 Uploaded sessions open in the hosted player at [tracing.gnas.dev](https://tracing.gnas.dev/).
 
 The player lets you review the video together with console, network, and WebSocket data. You can search, filter, inspect request details, copy cURL, and copy available response content.
+
+## Use it with a coding agent
+
+A replay link is evidence an AI agent can read. Point one at your codebase and it can trace the
+failure to a file and line, because console stacks are already mapped back to original sources.
+
+Install into your project — this adds the MCP server **and** the investigation skill:
+
+```bash
+/plugin marketplace add gnasdev/gn-tracing
+/plugin install gn-tracing@gn-tracing
+```
+
+Or add just the MCP server to any client:
+
+```bash
+claude mcp add gn-tracing -- npx -y gn-tracing-mcp
+```
+
+Then paste a replay link and ask what went wrong:
+
+```text
+https://tracing.gnas.dev/gdrive/1AbCd… — checkout breaks when applying a coupon
+```
+
+The agent reads the ranked summary, finds the first distinct error and the request that failed just
+before it, and opens the matching file in your repository. A recording is mostly video, and none of it
+is downloaded — only the JSON artifacts the agent actually asks for.
+
+Other clients (Cursor, Windsurf, Codex, Claude Desktop), the no-install hosted endpoint, and the
+`--allow-dir` flag for downloaded `.zip` packages are covered in
+[mcp/README.md](./mcp/README.md).
+
+## Screenshot Reports
+
+Not every bug needs a video. Click `Screenshot` in the popup to capture the current tab and open the
+annotation editor: arrows, boxes, circles, freehand, notes, highlight, and redaction. Saving packages
+it and uploads it like any other recording, so the same replay link, MCP tools, and agent skills work.
+
+**Redaction destroys pixels.** A redacted region is pixelated in the stored image before the package is
+written — it is not an overlay the viewer draws. Nobody who opens the zip can recover it, which is the
+only version of "redacted" worth having.
+
+## Instant Replay (opt-in)
+
+With instant replay on, GN Tracing keeps a short rolling buffer of DOM snapshots for the pages you
+browse, so a screenshot report can include what the page looked like before the bug — no reproduction
+needed.
+
+It is off by default and turning it on asks for permission to run on every site, because it is the one
+capture that observes pages you have not asked to record. Nothing leaves the browser until you file a
+report, the buffer is discarded every two minutes, and it disables itself on pages too heavy to
+snapshot without slowing them down.
 
 ## Privacy Controls
 

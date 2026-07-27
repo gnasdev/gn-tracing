@@ -4,7 +4,7 @@
  * Single behavioral source of truth:
  * - Unit tests import this module directly.
  * - Browser player loads the vendored IIFE (`player/vendor/player-timeline-seek/`)
- *   built by `npm run vendor:player-timeline-seek` as `globalThis.gnPlayerTimelineSeek`.
+ *   built by `npm run vendor:player-core` as `globalThis.gnCore.timelineSeek`.
  *
  * After package bytes are in memory, Drive and Dropbox share this contract —
  * provider only affects download, not timeline math.

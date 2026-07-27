@@ -6,7 +6,9 @@ status: active
 tags: ["data-models", "messages", "recording"]
 source_paths:
   - "src/types/messages.ts"
-  - "src/types/recording.ts"
+  - "packages/replay-core/src/schema/capture.ts"
+  - "packages/replay-core/src/schema/package.ts"
+  - "packages/replay-core/src/write/package-writer.ts"
 related:
   - "./api-conventions.md"
   - "../modules/recording-runtime.md"
@@ -22,7 +24,7 @@ related:
 
 - Trạng thái: active
 - Phạm vi: message envelopes, recording state, upload state, capture payloads, and replay storage semantics
-- Nguồn code: `src/types/messages.ts`, `src/types/recording.ts`
+- Nguồn code: `src/types/messages.ts`, `packages/replay-core/src/schema/`, `packages/replay-core/src/write/`
 - Tuân thủ: Không áp dụng
 - Links: [API Conventions](./api-conventions.md), [Recording Runtime](../modules/recording-runtime.md), [Drive And Player](../modules/drive-and-player.md), [Privacy And Redaction](../modules/privacy-and-redaction.md), [Replay Player](../modules/replay-player.md), [Extension Surfaces](../features/extension-surfaces.md)
 
@@ -107,10 +109,32 @@ The current replay package is one Google Drive zip file identified by the replay
   optional privacy profile, artifact flags, redaction counts, and known limitations
 - `diagnostics.json`
   optional source-map load outcomes and failure reasons
+- `agent-summary.json`
+  optional bounded, ranked summary for coding agents: session/environment context, counts, deduplicated top errors with source-mapped origins, failed and slow requests, WebSocket totals, the user timeline, privacy limits, and a `truncation` map recording what each capped list omitted. Written by `src/offscreen/agent-summary.ts` via `buildAgentSummary` in `packages/replay-core`, which is also what MCP readers run for packages recorded before this artifact existed. Skipped (not an error) when the source artifacts are too large to re-parse during upload.
 - `screenshot.jpg`
-  optional visible-tab screenshot captured at stop time
+  optional visible-tab screenshot captured at stop time (legacy single auto-capture)
+- `screenshots.json`
+  optional annotated screenshot set: each entry carries the captured viewport, the reporter's caption, and a list of annotations (arrow, box, ellipse, freehand, note, highlight, redact) in coordinates normalised to 0..1 against that viewport. Images live at their own paths under `screenshots/`; an SDK-produced entry instead references a `dom.json` snapshot index because the SDK cannot rasterise a page. **`redact` regions are destroyed in the stored image before packaging** — a package must never ship one with `applied: "pending"`
+- `instant-replay.json`
+  optional rolling DOM buffer covering the seconds before the report, so a bug need not be reproduced. `windowMs` is what the buffer was configured to hold and `coveredMs` is what it actually held; the two differ whenever the producer's byte cap evicted frames first, and readers must reason about `coveredMs`
 
 JSON/text entries may be DEFLATE-compressed inside the zip when compression reduces size. Media/image entries stay stored. Password-protected packages keep the same artifact shape but encrypt entry payloads with the configured ZIP password.
+
+## Producers And Capabilities
+
+Hai producer cùng ghi ra định dạng này, và cùng đi qua `packages/replay-core/src/write/`:
+
+| Producer | `metadata.producer` | Ghi bằng | Thiếu gì |
+| --- | --- | --- | --- |
+| Extension | `"extension"` | CDP + `tabCapture` | — |
+| Extension screenshot report | `"extension"` | `captureVisibleTab` + annotation editor | video |
+| Browser SDK (`packages/sdk/`) | `"sdk"` | monkey-patch trong trang | video, ảnh raster, chi tiết cross-origin, cookie khác domain, source map |
+
+`metadata.capabilities` liệt kê những gì producer **có thể** bắt, và reader phải rẽ nhánh theo đó chứ không theo sự hiện diện của artifact: một `console.json` vắng mặt vì phiên im lặng khác hẳn vắng mặt vì producer không bắt được console. Package ghi trước khi trường này tồn tại không có `capabilities`; `resolveCapabilities()` coi chúng là `EXTENSION_CAPABILITIES` vì khi đó chỉ có extension.
+
+Điều này cho phép một package hợp lệ **không có** `video.part-*.webm`. Player kiểm tra `hasCapability(metadata, "video")` trước khi coi việc thiếu video là hỏng gói.
+
+Ràng buộc này được kiểm bằng `test/conformance.test.ts`: mọi producer phải qua cùng một bộ assertion trong `packages/replay-core/src/testing/conformance.ts`, và bộ đó chấm điểm bằng chính reader đang ship.
 
 ## Storage Semantics
 

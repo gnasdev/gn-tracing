@@ -144,6 +144,17 @@
           >
             <i class="ph ph-chat-circle-dots" aria-hidden="true"></i>
           </button>
+          <button
+            type="button"
+            id="copy-for-ai-btn"
+            class="control-btn"
+            data-i18n-aria="agentReport.button"
+            data-i18n-title="agentReport.button"
+            aria-label="Copy for AI"
+            title="Copy for AI"
+          >
+            <i class="ph ph-robot" aria-hidden="true"></i>
+          </button>
           <button id="lang-toggle-btn" class="control-btn player-lang-toggle" type="button" aria-label="Switch language">VI</button>
           <button id="theme-toggle-btn" class="control-btn" type="button" aria-label="Theme: System" title="Theme: System (follows OS). Click to cycle System → Light → Dark.">
             <i id="theme-toggle-icon" class="ph ph-desktop" aria-hidden="true"></i>
@@ -365,8 +376,10 @@
   <script src="/vendor/luna/luna-json-editor.js"></script>
   <!-- MediaRecorder WebM seek fix (cues rewrite). Same API as src/shared/webm-seek-fix.ts. -->
   <script src="/vendor/webm-seek-fix/webm-seek-fix.iife.js"></script>
-  <!-- Pure timeline seek/duration helpers (src/shared/player-timeline-seek.ts). -->
-  <script src="/vendor/player-timeline-seek/player-timeline-seek.iife.js"></script>
+  <!-- Typed shared code (schema, capabilities, timeline seek, "Copy for AI").
+       Single bundle built from player/core-entry.ts by
+       `npm run vendor:player-core`; exposes window.gnCore. -->
+  <script src="/vendor/gn-core/gn-core.iife.js"></script>
   <script type="module" src="/src/main.ts"></script>
 </body>
 </html>

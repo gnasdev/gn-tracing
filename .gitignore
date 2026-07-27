@@ -31,6 +31,9 @@ token.json
 graphify-out/
 .codebaxing/
 .mcp.json
+# ...except the one inside a distributed plugin: it IS the plugin's MCP server
+# declaration, and without it an installed plugin has no tools at all.
+!plugins/*/.mcp.json
 .claude/
 .codex/
 .agents/
