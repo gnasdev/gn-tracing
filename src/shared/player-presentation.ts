@@ -53,6 +53,11 @@ export interface PresentationPlan {
    * True for no-video packages that have DOM/IR frames and no annotated stills.
    */
   showDomStage: boolean;
+  /**
+   * Show the annotated still viewport in the media column (zoom/rotate chrome).
+   * Mutually exclusive with video and DOM stage as the primary surface.
+   */
+  showStillStage: boolean;
   showLayoutSplitter: boolean;
   showConsoleTab: boolean;
   showNetworkTab: boolean;
@@ -63,18 +68,20 @@ export interface PresentationPlan {
   showElementsTab: boolean;
   /**
    * Which no-video copy to show when the video section is visible without media.
-   * Screenshot mode hides the section entirely, so this is mainly for sdk-logs.
+   * Still-primary and recording shells use "none"; sdk-logs uses the SDK notice.
    */
   noVideoNotice: "none" | "sdk" | "screenshot";
 }
 
-function withDomStage(
-  plan: Omit<PresentationPlan, "showDomStage">,
+function withMediaStages(
+  plan: Omit<PresentationPlan, "showDomStage" | "showStillStage">,
   evidence: PresentationEvidence,
 ): PresentationPlan {
-  // Video owns the media column. Annotated stills stay primary when present.
-  const showDomStage = !evidence.hasVideo && evidence.hasDom && evidence.screenshotCount === 0;
-  return { ...plan, showDomStage };
+  // Only one primary surface: video wins; else stills; else DOM lookback.
+  const showStillStage = !evidence.hasVideo && evidence.screenshotCount > 0;
+  const showDomStage =
+    !evidence.hasVideo && !showStillStage && evidence.hasDom && evidence.screenshotCount === 0;
+  return { ...plan, showDomStage, showStillStage };
 }
 
 function hasLogEvidence(evidence: PresentationEvidence): boolean {
@@ -96,8 +103,10 @@ function defaultTabForDomLookback(evidence: PresentationEvidence): PresentationP
   if (evidence.hasDom && evidence.screenshotCount === 0) {
     return "elements";
   }
+  // Still-primary packages show the image in the media column; Report holds
+  // caption/annotations (not a second Screenshots tab with the same image).
   if (evidence.screenshotCount > 0) {
-    return "screenshots";
+    return "report";
   }
   return "console";
 }
@@ -110,7 +119,7 @@ export function resolvePresentationMode(evidence: PresentationEvidence): Present
   const hasLogs = hasLogEvidence(evidence);
 
   if (evidence.hasVideo) {
-    return withDomStage(
+    return withMediaStages(
       {
         mode: "recording",
         defaultTab: evidence.hasReportContent
@@ -141,32 +150,36 @@ export function resolvePresentationMode(evidence: PresentationEvidence): Present
     // screenshot reports still hide empty log tabs.
     const hasConsoleData = evidence.consoleCount > 0 || irLookback;
     const hasNetworkData = evidence.networkCount > 0 || evidence.websocketCount > 0 || irLookback;
-    // When DOM stage is primary (no stills), keep the media column visible for the scrubber.
-    const domStagePrimary = evidence.hasDom && evidence.screenshotCount === 0;
     // Prefer Console when IR lookback actually captured log rows.
     const defaultTab =
       irLookback && evidence.consoleCount > 0 ? "console" : defaultTabForDomLookback(evidence);
-    return withDomStage(
+    // Still-primary packages use the record-like media column (still stage).
+    // DOM-only lookback also keeps the media column for the scrubber.
+    const mediaColumn = hasScreenshots || evidence.hasDom;
+    // When still is primary, the Screenshots tab would only re-show the same
+    // image — hide it and surface Report for caption/annotations instead.
+    const stillPrimary = hasScreenshots && !evidence.hasVideo;
+    return withMediaStages(
       {
         mode: "screenshot",
         defaultTab,
-        showVideoSection: domStagePrimary,
-        showLayoutSplitter: domStagePrimary,
+        showVideoSection: mediaColumn,
+        showLayoutSplitter: mediaColumn,
         showConsoleTab: hasConsoleData,
         showNetworkTab: hasNetworkData,
-        showScreenshotsTab: hasScreenshots,
-        showReportTab: evidence.hasReportContent,
+        showScreenshotsTab: hasScreenshots && !stillPrimary,
+        showReportTab: evidence.hasReportContent || stillPrimary,
         showActivityTab: evidence.activityCount > 0,
         showStorageTab: evidence.hasStorage,
         showElementsTab: evidence.hasDom,
-        noVideoNotice: domStagePrimary ? "none" : "screenshot",
+        noVideoNotice: "none",
       },
       evidence,
     );
   }
 
   if (hasLogs) {
-    return withDomStage(
+    return withMediaStages(
       {
         mode: "sdk-logs",
         defaultTab:
@@ -196,7 +209,7 @@ export function resolvePresentationMode(evidence: PresentationEvidence): Present
     );
   }
 
-  return withDomStage(
+  return withMediaStages(
     {
       mode: "empty-evidence",
       defaultTab: evidence.hasReportContent ? "report" : "console",

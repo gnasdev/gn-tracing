@@ -28,6 +28,7 @@ var gnCore = (() => {
     instantReplay: () => instantReplay,
     network: () => network,
     presentation: () => presentation,
+    stillViewer: () => stillViewer,
     summary: () => summary,
     timelineSeek: () => timelineSeek
   });
@@ -441,10 +442,7 @@ var gnCore = (() => {
     const trimmed = bodyHtml.trim();
     if (/^<html[\s>]/i.test(trimmed)) {
       if (/<head[\s>]/i.test(trimmed)) {
-        return trimmed.replace(
-          /<head([^>]*)>/i,
-          `<head$1>${csp}${baseTag}<title>${title}</title>`
-        );
+        return trimmed.replace(/<head([^>]*)>/i, `<head$1>${csp}${baseTag}<title>${title}</title>`);
       }
       return trimmed.replace(
         /^<html([^>]*)>/i,
@@ -1050,6 +1048,40 @@ var gnCore = (() => {
     });
   }
 
+  // src/shared/instant-replay-policy.ts
+  function hasInstantReplayFrames(artifact) {
+    return Boolean(artifact && Array.isArray(artifact.frames) && artifact.frames.length > 0);
+  }
+  function mapInstantReplayToDomArtifact(artifact) {
+    const snapshots = artifact.frames.map(
+      (frame, index) => frameToDomSnapshot(frame, index)
+    );
+    return { schemaVersion: 1, snapshots };
+  }
+  function frameToDomSnapshot(frame, index) {
+    const seconds = Math.round((frame.relativeMs || 0) / 100) / 10;
+    return {
+      label: `instant-replay:+${seconds}s`,
+      capturedAt: frame.capturedAt,
+      documentUrl: frame.documentUrl || "",
+      root: frame.root ?? { nodeType: 9, nodeName: "#document" }
+    };
+  }
+  function resolveDomArtifactForPlayer(input) {
+    const fromIr = hasInstantReplayFrames(input.instantReplay) ? mapInstantReplayToDomArtifact(input.instantReplay) : null;
+    const fromDom = input.dom && Array.isArray(input.dom.snapshots) && input.dom.snapshots.length > 0 ? input.dom : null;
+    if (fromIr && fromDom) {
+      return {
+        schemaVersion: 1,
+        snapshots: [...fromIr.snapshots, ...fromDom.snapshots]
+      };
+    }
+    return fromIr ?? fromDom;
+  }
+  function packageHasInspectableDom(input) {
+    return resolveDomArtifactForPlayer(input) !== null;
+  }
+
   // src/shared/network-filter-type.ts
   var DYNAMIC_ROUTE_EXTENSIONS = /* @__PURE__ */ new Set([".html", ".htm", ".php", ".asp", ".aspx", ".jsp"]);
   var CANONICAL_TYPE_MAP = {
@@ -1177,9 +1209,10 @@ var gnCore = (() => {
   }
 
   // src/shared/player-presentation.ts
-  function withDomStage(plan, evidence) {
-    const showDomStage = !evidence.hasVideo && evidence.hasDom && evidence.screenshotCount === 0;
-    return { ...plan, showDomStage };
+  function withMediaStages(plan, evidence) {
+    const showStillStage = !evidence.hasVideo && evidence.screenshotCount > 0;
+    const showDomStage = !evidence.hasVideo && !showStillStage && evidence.hasDom && evidence.screenshotCount === 0;
+    return { ...plan, showDomStage, showStillStage };
   }
   function hasLogEvidence(evidence) {
     return evidence.consoleCount > 0 || evidence.networkCount > 0 || evidence.websocketCount > 0 || evidence.activityCount > 0 || evidence.hasStorage || evidence.hasDom;
@@ -1189,7 +1222,7 @@ var gnCore = (() => {
       return "elements";
     }
     if (evidence.screenshotCount > 0) {
-      return "screenshots";
+      return "report";
     }
     return "console";
   }
@@ -1197,7 +1230,7 @@ var gnCore = (() => {
     const hasScreenshots = evidence.screenshotCount > 0;
     const hasLogs = hasLogEvidence(evidence);
     if (evidence.hasVideo) {
-      return withDomStage(
+      return withMediaStages(
         {
           mode: "recording",
           defaultTab: evidence.hasReportContent ? "report" : evidence.activityCount > 0 ? "activity" : "console",
@@ -1220,28 +1253,29 @@ var gnCore = (() => {
       const irLookback = Boolean(evidence.hasInstantReplay);
       const hasConsoleData = evidence.consoleCount > 0 || irLookback;
       const hasNetworkData = evidence.networkCount > 0 || evidence.websocketCount > 0 || irLookback;
-      const domStagePrimary = evidence.hasDom && evidence.screenshotCount === 0;
       const defaultTab = irLookback && evidence.consoleCount > 0 ? "console" : defaultTabForDomLookback(evidence);
-      return withDomStage(
+      const mediaColumn = hasScreenshots || evidence.hasDom;
+      const stillPrimary = hasScreenshots && !evidence.hasVideo;
+      return withMediaStages(
         {
           mode: "screenshot",
           defaultTab,
-          showVideoSection: domStagePrimary,
-          showLayoutSplitter: domStagePrimary,
+          showVideoSection: mediaColumn,
+          showLayoutSplitter: mediaColumn,
           showConsoleTab: hasConsoleData,
           showNetworkTab: hasNetworkData,
-          showScreenshotsTab: hasScreenshots,
-          showReportTab: evidence.hasReportContent,
+          showScreenshotsTab: hasScreenshots && !stillPrimary,
+          showReportTab: evidence.hasReportContent || stillPrimary,
           showActivityTab: evidence.activityCount > 0,
           showStorageTab: evidence.hasStorage,
           showElementsTab: evidence.hasDom,
-          noVideoNotice: domStagePrimary ? "none" : "screenshot"
+          noVideoNotice: "none"
         },
         evidence
       );
     }
     if (hasLogs) {
-      return withDomStage(
+      return withMediaStages(
         {
           mode: "sdk-logs",
           defaultTab: evidence.consoleCount > 0 ? "console" : evidence.networkCount > 0 || evidence.websocketCount > 0 ? "network" : evidence.hasStorage ? "storage" : evidence.hasDom ? "elements" : evidence.activityCount > 0 ? "activity" : "console",
@@ -1259,7 +1293,7 @@ var gnCore = (() => {
         evidence
       );
     }
-    return withDomStage(
+    return withMediaStages(
       {
         mode: "empty-evidence",
         defaultTab: evidence.hasReportContent ? "report" : "console",
@@ -1278,38 +1312,80 @@ var gnCore = (() => {
     );
   }
 
-  // src/shared/instant-replay-policy.ts
-  function hasInstantReplayFrames(artifact) {
-    return Boolean(artifact && Array.isArray(artifact.frames) && artifact.frames.length > 0);
-  }
-  function mapInstantReplayToDomArtifact(artifact) {
-    const snapshots = artifact.frames.map(
-      (frame, index) => frameToDomSnapshot(frame, index)
-    );
-    return { schemaVersion: 1, snapshots };
-  }
-  function frameToDomSnapshot(frame, index) {
-    const seconds = Math.round((frame.relativeMs || 0) / 100) / 10;
+  // src/shared/still-viewer-transform.ts
+  var STILL_ZOOM_MIN = 0.25;
+  var STILL_ZOOM_MAX = 4;
+  var STILL_ZOOM_STEP = 0.25;
+  function createStillViewerTransform(overrides = {}) {
     return {
-      label: `instant-replay:+${seconds}s`,
-      capturedAt: frame.capturedAt,
-      documentUrl: frame.documentUrl || "",
-      root: frame.root ?? { nodeType: 9, nodeName: "#document" }
+      scale: 1,
+      rotationDeg: 0,
+      panX: 0,
+      panY: 0,
+      fitMode: true,
+      ...overrides
     };
   }
-  function resolveDomArtifactForPlayer(input) {
-    const fromIr = hasInstantReplayFrames(input.instantReplay) ? mapInstantReplayToDomArtifact(input.instantReplay) : null;
-    const fromDom = input.dom && Array.isArray(input.dom.snapshots) && input.dom.snapshots.length > 0 ? input.dom : null;
-    if (fromIr && fromDom) {
-      return {
-        schemaVersion: 1,
-        snapshots: [...fromIr.snapshots, ...fromDom.snapshots]
-      };
+  function clampStillZoom(scale) {
+    if (!Number.isFinite(scale)) {
+      return 1;
     }
-    return fromIr ?? fromDom;
+    return Math.min(STILL_ZOOM_MAX, Math.max(STILL_ZOOM_MIN, scale));
   }
-  function packageHasInspectableDom(input) {
-    return resolveDomArtifactForPlayer(input) !== null;
+  function zoomInStill(scale) {
+    const current = clampStillZoom(scale);
+    const stepped = Math.ceil(current / STILL_ZOOM_STEP - 1e-9) * STILL_ZOOM_STEP;
+    const next = stepped <= current + 1e-9 ? stepped + STILL_ZOOM_STEP : stepped;
+    return clampStillZoom(next);
+  }
+  function zoomOutStill(scale) {
+    const current = clampStillZoom(scale);
+    const stepped = Math.floor(current / STILL_ZOOM_STEP + 1e-9) * STILL_ZOOM_STEP;
+    const next = stepped >= current - 1e-9 ? stepped - STILL_ZOOM_STEP : stepped;
+    return clampStillZoom(next);
+  }
+  function rotateStillCw(rotationDeg) {
+    const normalized = (Math.round(rotationDeg / 90) % 4 + 4) % 4;
+    const next = (normalized + 1) % 4 * 90;
+    return next;
+  }
+  function resetStillViewerTransform(current = createStillViewerTransform()) {
+    return {
+      ...current,
+      scale: 1,
+      rotationDeg: 0,
+      panX: 0,
+      panY: 0,
+      fitMode: true
+    };
+  }
+  function panStillViewer(current, deltaX, deltaY) {
+    if (current.fitMode && current.scale <= 1 + 1e-9) {
+      return current;
+    }
+    return {
+      ...current,
+      panX: current.panX + deltaX,
+      panY: current.panY + deltaY
+    };
+  }
+  function stillViewerCssTransform(transform) {
+    const scale = clampStillZoom(transform.scale);
+    const rot = transform.rotationDeg;
+    return `translate(${transform.panX}px, ${transform.panY}px) rotate(${rot}deg) scale(${scale})`;
+  }
+  function stillZoomPercentLabel(scale) {
+    return String(Math.round(clampStillZoom(scale) * 100));
+  }
+  function stillFigureAspectFromViewport(viewport) {
+    const width = Number(viewport?.width) > 0 ? Number(viewport?.width) : 1280;
+    const height = Number(viewport?.height) > 0 ? Number(viewport?.height) : 800;
+    return {
+      width,
+      height,
+      aspectRatio: `${width} / ${height}`,
+      stillAspect: width / height
+    };
   }
 
   // src/shared/player-timeline-seek.ts
@@ -1394,6 +1470,21 @@ var gnCore = (() => {
     resolveTimelineDurationMs
   };
   var presentation = { resolvePresentationMode };
+  var stillViewer = {
+    STILL_ZOOM_MIN,
+    STILL_ZOOM_MAX,
+    STILL_ZOOM_STEP,
+    clampStillZoom,
+    createStillViewerTransform,
+    zoomInStill,
+    zoomOutStill,
+    rotateStillCw,
+    resetStillViewerTransform,
+    panStillViewer,
+    stillViewerCssTransform,
+    stillZoomPercentLabel,
+    stillFigureAspectFromViewport
+  };
   var instantReplay = {
     mapInstantReplayToDomArtifact,
     packageHasInspectableDom,

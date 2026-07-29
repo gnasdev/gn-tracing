@@ -1657,8 +1657,9 @@ async function captureInstantReplayNow(): Promise<void> {
       return;
     }
 
-    // Editor tab opens for annotate → save → upload (same path as Screenshot).
-    window.close();
+    // Annotate still → save → upload. Open editor from the popup click so the
+    // tab is not lost if the service-worker open raced with popup teardown.
+    await openAnnotateEditorAfterCapture();
   } catch (error) {
     showError((error as Error).message || t("instantReplay.captureFailed"));
   } finally {
@@ -1674,6 +1675,31 @@ async function captureInstantReplayNow(): Promise<void> {
       recordingActive: Boolean(latestPopupState?.recording?.isRecording),
     });
   }
+}
+
+/**
+ * After CAPTURE_SCREENSHOT / CAPTURE_INSTANT_REPLAY, ensure the annotate tab
+ * is open, then close the popup. The service worker usually opened it already;
+ * if that tab was lost with popup lifecycle, open one from this click.
+ */
+async function openAnnotateEditorAfterCapture(): Promise<void> {
+  const editorUrl = chrome.runtime.getURL("annotate/annotate.html");
+  const OPENED_AT_KEY = "gn_tracing_annotate_opened_at";
+  try {
+    const stored = await chrome.storage.session.get(OPENED_AT_KEY);
+    const openedAt = stored?.[OPENED_AT_KEY];
+    const recentlyOpened = typeof openedAt === "number" && Date.now() - openedAt < 8_000;
+    if (!recentlyOpened) {
+      await chrome.tabs.create({ url: editorUrl, active: true });
+    }
+  } catch {
+    try {
+      await chrome.tabs.create({ url: editorUrl, active: true });
+    } catch {
+      // SW may still have opened the editor; closing the popup is fine either way.
+    }
+  }
+  window.close();
 }
 
 function renderSessions(sessions: RecordingSessionSummary[] | undefined): void {
@@ -2859,9 +2885,8 @@ drawToggleBtn.addEventListener("click", async () => {
 });
 
 /**
- * Screenshot reports open their own editor tab, so the popup closes right
- * after: leaving it open behind a newly focused tab just makes the user
- * dismiss it.
+ * Screenshot reports open the annotate editor, then the popup closes so it
+ * does not sit behind the focused editor tab.
  */
 screenshotBtn.addEventListener("click", async () => {
   screenshotBtn.disabled = true;
@@ -2876,7 +2901,7 @@ screenshotBtn.addEventListener("click", async () => {
       showError(result?.error || t("messages.screenshotFailed"));
       return;
     }
-    window.close();
+    await openAnnotateEditorAfterCapture();
   } catch (error) {
     showError((error as Error).message);
   } finally {

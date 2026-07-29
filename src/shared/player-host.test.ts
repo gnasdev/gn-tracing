@@ -4,7 +4,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 describe("resolveReplayOpenUrl", () => {
-  it("returns the recording URL unchanged (OneDrive rewrite removed)", async () => {
+  afterEach(() => {
+    vi.resetModules();
+  });
+
+  it("returns the recording URL unchanged outside rewrite when not production host", async () => {
     const { resolveReplayOpenUrl } = await import("./player-host");
     const url = "http://localhost:5176/gdrive/abc123";
     expect(resolveReplayOpenUrl(url)).toBe(url);
@@ -35,5 +39,53 @@ describe("buildExternalPlayerUrl", () => {
     const url = buildExternalPlayerUrl("");
     expect(url.endsWith("/")).toBe(true);
     expect(url.includes("/gdrive/")).toBe(false);
+  });
+});
+
+describe("resolvePlayerHostUrl", () => {
+  it("prefers configured host when set", async () => {
+    const { resolvePlayerHostUrl } = await import("./player-host");
+    expect(resolvePlayerHostUrl("http://127.0.0.1:5176", "production", 5176)).toBe(
+      "http://127.0.0.1:5176/",
+    );
+  });
+
+  it("uses localhost for development when host is empty", async () => {
+    const { resolvePlayerHostUrl } = await import("./player-host");
+    expect(resolvePlayerHostUrl("", "development", 5176)).toBe("http://localhost:5176/");
+    expect(resolvePlayerHostUrl("", "dev", 4000)).toBe("http://localhost:4000/");
+  });
+
+  it("uses production host for production when host is empty", async () => {
+    const { resolvePlayerHostUrl } = await import("./player-host");
+    expect(resolvePlayerHostUrl("", "production", 5176)).toBe("https://tracing.gnas.dev/");
+  });
+});
+
+describe("rewritePlayerHostForDevelopment", () => {
+  it("rewrites tracing.gnas.dev to the local player host", async () => {
+    const { rewritePlayerHostForDevelopment } = await import("./player-host");
+    expect(
+      rewritePlayerHostForDevelopment(
+        "https://tracing.gnas.dev/gdrive/file123",
+        "http://localhost:5176/",
+      ),
+    ).toBe("http://localhost:5176/gdrive/file123");
+  });
+
+  it("rewrites pages.dev production alias too", async () => {
+    const { rewritePlayerHostForDevelopment } = await import("./player-host");
+    expect(
+      rewritePlayerHostForDevelopment(
+        "https://gn-tracing-player.pages.dev/dropbox/x",
+        "http://localhost:5176/",
+      ),
+    ).toBe("http://localhost:5176/dropbox/x");
+  });
+
+  it("leaves non-production hosts unchanged", async () => {
+    const { rewritePlayerHostForDevelopment } = await import("./player-host");
+    const url = "http://localhost:5176/gdrive/abc";
+    expect(rewritePlayerHostForDevelopment(url, "http://localhost:5176/")).toBe(url);
   });
 });

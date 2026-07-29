@@ -50,6 +50,16 @@ const chromeExtensionId = getConfigValue(
   chromeExtensionPublicKey ? getChromeExtensionId(chromeExtensionPublicKey) : "",
 );
 const playerLocalPort = getConfigValue("PLAYER_LOCAL_PORT", "5176");
+// Replay host baked into the extension (Instant Replay / screenshot / Record upload links).
+// Dev never falls back to PLAYER_HOST_URL (often production in .env) so local
+// builds always open the Vite player unless PLAYER_HOST_URL_DEV is set.
+const DEFAULT_PRODUCTION_PLAYER_HOST_URL = "https://tracing.gnas.dev/";
+const DEFAULT_DEV_PLAYER_HOST_URL = `http://localhost:${playerLocalPort}/`;
+const playerHostUrl = normalizePlayerHostUrl(
+  isProductionBuild
+    ? getConfigValue("PLAYER_HOST_URL", DEFAULT_PRODUCTION_PLAYER_HOST_URL)
+    : getConfigValue("PLAYER_HOST_URL_DEV", DEFAULT_DEV_PLAYER_HOST_URL),
+);
 const STATIC_ASSET_ENTRIES = [
   { type: "text", src: "popup/popup.html", dest: "dist/popup/popup.html" },
   { type: "file", src: "popup/popup.css", dest: "dist/popup/popup.css" },
@@ -89,6 +99,7 @@ const commonOptions = {
     __DROPBOX_TOKEN_PROXY_URL__: JSON.stringify(dropboxTokenProxyUrl),
     __FEEDBACK_PROXY_URL__: JSON.stringify(feedbackProxyUrl),
     __PLAYER_LOCAL_PORT__: JSON.stringify(playerLocalPort),
+    __PLAYER_HOST_URL__: JSON.stringify(playerHostUrl),
   },
 };
 
@@ -228,6 +239,22 @@ function normalizeAppEnv(value) {
   return normalized || "production";
 }
 
+/** Ensure player host is an absolute URL ending with `/`. */
+function normalizePlayerHostUrl(value) {
+  const raw = String(value || "")
+    .trim()
+    .replace(/\/+$/, "");
+  if (!raw) {
+    return isProductionBuild ? DEFAULT_PRODUCTION_PLAYER_HOST_URL : DEFAULT_DEV_PLAYER_HOST_URL;
+  }
+  try {
+    const url = new URL(raw.includes("://") ? raw : `https://${raw}`);
+    return `${url.origin}${url.pathname === "/" ? "" : url.pathname.replace(/\/+$/, "")}/`;
+  } catch {
+    return isProductionBuild ? DEFAULT_PRODUCTION_PLAYER_HOST_URL : DEFAULT_DEV_PLAYER_HOST_URL;
+  }
+}
+
 function getCliArgValue(flagName) {
   for (let i = 0; i < process.argv.length; i += 1) {
     const arg = process.argv[i];
@@ -297,6 +324,13 @@ function generateManifest(outputPath) {
 // Google. Direct-to-Google only works for public/installed OAuth clients; a
 // "Web application" client requires the Worker or Google returns
 // "client_secret is missing".
+function logPlayerHostStatus() {
+  console.log(
+    `✓ Replay player host (${appEnv}): ${playerHostUrl}` +
+      (isProductionBuild ? "" : " — Instant Replay / uploads open the local player"),
+  );
+}
+
 function logTokenProxyStatus() {
   if (googleTokenProxyUrl) {
     console.log(`✓ OAuth token exchange routed through Worker: ${googleTokenProxyUrl}`);
@@ -346,6 +380,7 @@ function addTokenProxyHostPermission(manifest) {
 
 async function build() {
   logTokenProxyStatus();
+  logPlayerHostStatus();
 
   if (!watch) {
     fs.rmSync(path.resolve(__dirname, "dist"), { recursive: true, force: true });

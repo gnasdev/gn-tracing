@@ -6,13 +6,13 @@
  * them a minute and costs the reader a video to scrub. Jam separates the two
  * for the same reason.
  *
- * The pending capture lives in `chrome.storage.session` rather than in a module
- * variable because an MV3 service worker is evicted between the click that
- * captures and the click that saves — the editor page outlives the worker that
- * opened it.
+ * The annotate still lives in `chrome.storage.session` (small). Instant Replay
+ * freeze (DOM lookback + evidence) lives in IndexedDB because session quota is
+ * ~10MB and a full IR window can exceed that. Session/IDB outlive the MV3
+ * service worker between capture and save.
  *
- * Instant Replay reuses the same annotate path: it freezes lookback at capture
- * time, parks a kind-discriminated pending payload, and only packages on save.
+ * Instant Replay reuses the same annotate path: freeze lookback at capture,
+ * park still + freeze, open the editor, package only on Save.
  */
 
 import type { InstantReplayEvidenceBundle } from "../../packages/replay-core/src/capture/instant-replay-evidence";
@@ -21,8 +21,19 @@ import type {
   Screenshot,
 } from "../../packages/replay-core/src/schema/annotation";
 import { hasInstantReplayFrames } from "../shared/instant-replay-policy";
+import {
+  clearPendingIrFreeze,
+  getPendingIrFreeze,
+  putPendingIrFreeze,
+} from "./pending-ir-freeze-idb";
 
-const PENDING_KEY = "gn_tracing_pending_screenshot";
+/** Parked still + metadata for the annotate editor (and save handshake). */
+export const PENDING_SCREENSHOT_KEY = "gn_tracing_pending_screenshot";
+const PENDING_KEY = PENDING_SCREENSHOT_KEY;
+/** Legacy session key — cleared on write/clear so old large freezes free quota. */
+const LEGACY_PENDING_IR_FREEZE_KEY = "gn_tracing_pending_ir_freeze";
+/** Set when the SW opens annotate so the popup can avoid a second tab. */
+export const ANNOTATE_OPENED_AT_KEY = "gn_tracing_annotate_opened_at";
 
 /** Matches the recording path's own screenshot ceiling. */
 export const MAX_SCREENSHOT_DATA_URL_CHARS = 1536 * 1024;
@@ -368,32 +379,204 @@ export async function captureScreenshotForAnnotation(
   return { ok: true, id: validated.id };
 }
 
-/** Reads the parked capture, or null when missing/invalid. */
+/** Still + kind for the annotate editor (no frozen IR lookback). */
+export type AnnotatePendingView = PendingCaptureBase & {
+  kind: PendingCapture["kind"];
+};
+
+/**
+ * Still-only view of a parked capture for the annotate editor.
+ * Omits multi-MB frozen IR lookback (loaded only on save).
+ */
+export function toAnnotatePendingView(pending: PendingCapture): AnnotatePendingView {
+  return {
+    id: pending.id,
+    imageDataUrl: pending.imageDataUrl,
+    capturedAt: pending.capturedAt,
+    url: pending.url,
+    title: pending.title,
+    viewport: pending.viewport,
+    tabId: pending.tabId,
+    kind: pending.kind,
+  };
+}
+
+/**
+ * Parse the parked still for the annotate page.
+ * Accepts IR still meta without freeze — freeze is only required on save.
+ */
+export function parsePendingStillView(value: unknown): AnnotatePendingView | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const raw = value as Record<string, unknown>;
+  if (typeof raw.id !== "string" || typeof raw.imageDataUrl !== "string") {
+    return null;
+  }
+  if (typeof raw.capturedAt !== "number" || typeof raw.tabId !== "number") {
+    return null;
+  }
+  if (!raw.imageDataUrl.startsWith("data:image/")) {
+    return null;
+  }
+  const viewport = raw.viewport;
+  if (!viewport || typeof viewport !== "object") {
+    return null;
+  }
+  const vp = viewport as { width?: unknown; height?: unknown; devicePixelRatio?: unknown };
+  if (typeof vp.width !== "number" || typeof vp.height !== "number") {
+    return null;
+  }
+  if (vp.width <= 0 || vp.height <= 0) {
+    return null;
+  }
+
+  const base: PendingCaptureBase = {
+    id: raw.id,
+    imageDataUrl: raw.imageDataUrl,
+    capturedAt: raw.capturedAt,
+    url: typeof raw.url === "string" ? raw.url : undefined,
+    title: typeof raw.title === "string" ? raw.title : undefined,
+    viewport: {
+      width: vp.width,
+      height: vp.height,
+      devicePixelRatio: typeof vp.devicePixelRatio === "number" ? vp.devicePixelRatio : undefined,
+    },
+    tabId: raw.tabId,
+  };
+
+  if (raw.kind === "instant-replay") {
+    return { ...base, kind: "instant-replay" };
+  }
+  if (raw.kind === "screenshot" || raw.kind == null) {
+    return { ...base, kind: "screenshot" };
+  }
+  return null;
+}
+
+/**
+ * Read only the still for the annotate editor.
+ * Does not touch the IR freeze key — so a large/corrupt freeze cannot blank the image.
+ */
+export async function readPendingStillForAnnotate(): Promise<AnnotatePendingView | null> {
+  const stored = await chrome.storage.session.get(PENDING_KEY);
+  return parsePendingStillView(stored?.[PENDING_KEY]);
+}
+
+/** Reads the full parked capture (reassembles IR freeze from IndexedDB), or null. */
 export async function readPendingScreenshot(): Promise<PendingCapture | null> {
   const stored = await chrome.storage.session.get(PENDING_KEY);
-  return parsePendingCapture(stored?.[PENDING_KEY]);
+  const raw = stored?.[PENDING_KEY];
+  if (!raw) {
+    return null;
+  }
+
+  // Legacy: freeze embedded on the same session object.
+  const direct = parsePendingCapture(raw);
+  if (direct) {
+    return direct;
+  }
+
+  // Still in session + freeze in IndexedDB (current layout).
+  const still = parsePendingStillView(raw);
+  if (still?.kind === "instant-replay") {
+    const freeze = await getPendingIrFreeze(still.id);
+    if (freeze) {
+      return parsePendingCapture({
+        ...still,
+        kind: "instant-replay",
+        frozenInstantReplay: freeze,
+      });
+    }
+  }
+
+  return null;
 }
 
 /**
  * Parks a validated capture. Throws on storage failure so callers can avoid
  * opening the editor.
+ *
+ * Still → session storage (small). IR freeze → IndexedDB (can exceed session quota).
  */
 export async function writePendingScreenshot(pending: PendingCapture): Promise<void> {
   const validated = parsePendingCapture(pending);
   if (!validated) {
     throw new Error("Invalid pending capture payload.");
   }
+
+  // Drop any legacy multi-MB freeze left in session from older builds.
+  await chrome.storage.session.remove(LEGACY_PENDING_IR_FREEZE_KEY);
+
+  if (validated.kind === "instant-replay") {
+    const stillMeta = toAnnotatePendingView(validated);
+    await chrome.storage.session.set({ [PENDING_KEY]: stillMeta });
+    try {
+      await putPendingIrFreeze(validated.id, validated.frozenInstantReplay);
+    } catch (error) {
+      await chrome.storage.session.remove([PENDING_KEY, ANNOTATE_OPENED_AT_KEY]);
+      await clearPendingIrFreeze(validated.id).catch(() => undefined);
+      throw new Error(`Could not store Instant Replay lookback for annotation: ${describe(error)}`);
+    }
+    return;
+  }
+
   await chrome.storage.session.set({ [PENDING_KEY]: validated });
+  await clearPendingIrFreeze().catch(() => undefined);
 }
 
 /**
- * Clears the parked capture.
+ * Clears the parked capture (still + IR freeze).
  *
  * Always called after a save or a discard: the image is a picture of the user's
  * screen and there is no reason for it to outlive the report it belongs to.
  */
 export async function clearPendingScreenshot(): Promise<void> {
-  await chrome.storage.session.remove(PENDING_KEY);
+  let pendingId: string | undefined;
+  try {
+    const stored = await chrome.storage.session.get(PENDING_KEY);
+    const still = parsePendingStillView(stored?.[PENDING_KEY]);
+    pendingId = still?.id;
+  } catch {
+    // Best-effort id lookup before wipe.
+  }
+
+  await chrome.storage.session.remove([
+    PENDING_KEY,
+    LEGACY_PENDING_IR_FREEZE_KEY,
+    ANNOTATE_OPENED_AT_KEY,
+  ]);
+  if (pendingId) {
+    await clearPendingIrFreeze(pendingId).catch(() => undefined);
+  } else {
+    await clearPendingIrFreeze().catch(() => undefined);
+  }
+}
+
+/** Opens the annotate editor tab and records a short-lived "opened" marker. */
+export async function openAnnotateEditorTab(
+  createTab: (url: string) => Promise<{ windowId?: number } | undefined> = async (url) =>
+    chrome.tabs.create({ url, active: true }),
+  focusWindow: (windowId: number) => Promise<unknown> = (windowId) =>
+    chrome.windows.update(windowId, { focused: true }),
+  markOpened: () => Promise<void> = async () => {
+    await chrome.storage.session.set({ [ANNOTATE_OPENED_AT_KEY]: Date.now() });
+  },
+  getEditorUrl: () => string = () => chrome.runtime.getURL("annotate/annotate.html"),
+): Promise<void> {
+  const tab = await createTab(getEditorUrl());
+  if (typeof tab?.windowId === "number") {
+    try {
+      await focusWindow(tab.windowId);
+    } catch {
+      // Focusing is best-effort; the tab itself is what matters.
+    }
+  }
+  try {
+    await markOpened();
+  } catch {
+    // Marker is only for popup dedupe; the editor tab is already open.
+  }
 }
 
 /**

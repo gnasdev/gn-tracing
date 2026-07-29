@@ -35,6 +35,7 @@ const ANNOTATE_COPY = {
     ready: "Draw on the screenshot, then save.",
     readyIr: "Annotate this Instant Replay still, then save to upload the lookback package.",
     noPending: "No screenshot is waiting to be annotated.",
+    imageLoadFailed: "Could not display the captured image. Capture again.",
     uploadFailed: "Upload failed.",
     titleScreenshot: "Annotate screenshot",
     titleIr: "Annotate Instant Replay",
@@ -47,6 +48,7 @@ const ANNOTATE_COPY = {
     ready: "Vẽ trên ảnh chụp, rồi lưu.",
     readyIr: "Chú thích ảnh Instant Replay này, rồi lưu để upload gói lookback.",
     noPending: "Không có ảnh chụp nào đang chờ chú thích.",
+    imageLoadFailed: "Không hiển thị được ảnh đã chụp. Hãy capture lại.",
     uploadFailed: "Tải lên thất bại.",
     titleScreenshot: "Chú thích ảnh chụp",
     titleIr: "Chú thích Instant Replay",
@@ -71,6 +73,51 @@ interface PendingScreenshot {
   title?: string;
   viewport: { width: number; height: number; devicePixelRatio?: number };
   kind?: "screenshot" | "instant-replay";
+}
+
+/** Must match `PENDING_SCREENSHOT_KEY` in screenshot-report.ts */
+const PENDING_SCREENSHOT_KEY = "gn_tracing_pending_screenshot";
+
+function parseStillFromStorage(value: unknown): PendingScreenshot | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const raw = value as Record<string, unknown>;
+  if (typeof raw.id !== "string" || typeof raw.imageDataUrl !== "string") {
+    return null;
+  }
+  if (!raw.imageDataUrl.startsWith("data:image/")) {
+    return null;
+  }
+  if (typeof raw.capturedAt !== "number") {
+    return null;
+  }
+  const viewport = raw.viewport;
+  if (!viewport || typeof viewport !== "object") {
+    return null;
+  }
+  const vp = viewport as { width?: unknown; height?: unknown; devicePixelRatio?: unknown };
+  if (
+    typeof vp.width !== "number" ||
+    typeof vp.height !== "number" ||
+    vp.width <= 0 ||
+    vp.height <= 0
+  ) {
+    return null;
+  }
+  return {
+    id: raw.id,
+    imageDataUrl: raw.imageDataUrl,
+    capturedAt: raw.capturedAt,
+    url: typeof raw.url === "string" ? raw.url : undefined,
+    title: typeof raw.title === "string" ? raw.title : undefined,
+    viewport: {
+      width: vp.width,
+      height: vp.height,
+      devicePixelRatio: typeof vp.devicePixelRatio === "number" ? vp.devicePixelRatio : undefined,
+    },
+    kind: raw.kind === "instant-replay" ? "instant-replay" : "screenshot",
+  };
 }
 
 const TOOL_SHORTCUTS: Record<string, EditorTool> = {
@@ -368,20 +415,54 @@ const TOOL_SHORTCUTS: Record<string, EditorTool> = {
     }
   });
 
-  async function load(): Promise<void> {
-    const response = (await chrome.runtime.sendMessage({
-      action: "GET_PENDING_SCREENSHOT",
-    })) as { ok: boolean; screenshot?: PendingScreenshot; error?: string };
+  async function loadStill(): Promise<PendingScreenshot | null> {
+    // Prefer session storage: avoids pushing a large data URL through the
+    // extension message channel (which can fail and leave a blank editor).
+    try {
+      const stored = await chrome.storage.session.get(PENDING_SCREENSHOT_KEY);
+      const fromStorage = parseStillFromStorage(stored?.[PENDING_SCREENSHOT_KEY]);
+      if (fromStorage) {
+        return fromStorage;
+      }
+    } catch {
+      // Fall through to the service-worker message path.
+    }
 
-    if (!response?.ok || !response.screenshot) {
+    try {
+      const response = (await chrome.runtime.sendMessage({
+        action: "GET_PENDING_SCREENSHOT",
+      })) as { ok: boolean; screenshot?: PendingScreenshot; error?: string };
+      if (response?.ok && response.screenshot) {
+        return parseStillFromStorage(response.screenshot) ?? response.screenshot;
+      }
       setStatus(response?.error || annotateT("noPending"), true);
+    } catch (error) {
+      setStatus((error as Error).message || annotateT("noPending"), true);
+    }
+    return null;
+  }
+
+  async function load(): Promise<void> {
+    const still = await loadStill();
+    if (!still) {
+      elements.save.disabled = true;
+      if (!elements.status.textContent) {
+        setStatus(annotateT("noPending"), true);
+      }
+      return;
+    }
+
+    pending = still;
+    const isInstantReplay = pending.kind === "instant-replay";
+    if (
+      typeof pending.imageDataUrl !== "string" ||
+      !pending.imageDataUrl.startsWith("data:image/")
+    ) {
+      setStatus(annotateT("imageLoadFailed"), true);
       elements.save.disabled = true;
       return;
     }
 
-    pending = response.screenshot;
-    const isInstantReplay = pending.kind === "instant-replay";
-    elements.image.src = pending.imageDataUrl;
     elements.wrap.style.aspectRatio = `${pending.viewport.width} / ${pending.viewport.height}`;
     if (isInstantReplay && !elements.caption.value.trim()) {
       elements.caption.value = annotateT("defaultCaptionIr");
@@ -394,6 +475,42 @@ const TOOL_SHORTCUTS: Record<string, EditorTool> = {
     document.title = isInstantReplay
       ? `${annotateT("titleIr")} — GN Tracing`
       : `${annotateT("titleScreenshot")} — GN Tracing`;
+
+    await new Promise<void>((resolve) => {
+      let settled = false;
+      const finish = (): void => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        elements.image.removeEventListener("load", onLoad);
+        elements.image.removeEventListener("error", onError);
+        resolve();
+      };
+      const onLoad = (): void => {
+        finish();
+      };
+      const onError = (): void => {
+        pending = null;
+        setStatus(annotateT("imageLoadFailed"), true);
+        elements.save.disabled = true;
+        finish();
+      };
+      elements.image.addEventListener("load", onLoad);
+      elements.image.addEventListener("error", onError);
+      elements.image.src = still.imageDataUrl;
+      // Cached data URLs may already be complete before listeners attach.
+      if (elements.image.complete && elements.image.naturalWidth > 0) {
+        onLoad();
+      } else if (elements.image.complete && elements.image.naturalWidth === 0) {
+        onError();
+      }
+    });
+
+    if (!pending) {
+      return;
+    }
+
     selectTool("select");
     render();
     setStatus(annotateT(isInstantReplay ? "readyIr" : "ready"));

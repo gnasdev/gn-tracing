@@ -23,6 +23,8 @@ describe("resolvePresentationMode", () => {
     });
     expect(plan.mode).toBe("recording");
     expect(plan.showVideoSection).toBe(true);
+    expect(plan.showStillStage).toBe(false);
+    expect(plan.showDomStage).toBe(false);
     expect(plan.showLayoutSplitter).toBe(true);
     expect(plan.showConsoleTab).toBe(true);
     expect(plan.showNetworkTab).toBe(true);
@@ -30,19 +32,23 @@ describe("resolvePresentationMode", () => {
     expect(plan.noVideoNotice).toBe("none");
   });
 
-  it("uses screenshot mode for annotated stills without video", () => {
+  it("uses still media column for annotated stills without video", () => {
     const plan = resolvePresentationMode({
       ...empty,
       screenshotCount: 1,
     });
     expect(plan.mode).toBe("screenshot");
-    expect(plan.defaultTab).toBe("screenshots");
-    expect(plan.showVideoSection).toBe(false);
-    expect(plan.showLayoutSplitter).toBe(false);
+    // Image is in the media column; Report tab for caption/annotations.
+    expect(plan.defaultTab).toBe("report");
+    expect(plan.showVideoSection).toBe(true);
+    expect(plan.showStillStage).toBe(true);
+    expect(plan.showDomStage).toBe(false);
+    expect(plan.showLayoutSplitter).toBe(true);
     expect(plan.showConsoleTab).toBe(false);
     expect(plan.showNetworkTab).toBe(false);
-    expect(plan.showScreenshotsTab).toBe(true);
-    expect(plan.noVideoNotice).toBe("screenshot");
+    expect(plan.showScreenshotsTab).toBe(false);
+    expect(plan.showReportTab).toBe(true);
+    expect(plan.noVideoNotice).toBe("none");
   });
 
   it("surfaces console/network on screenshot packages only when data exists", () => {
@@ -53,9 +59,12 @@ describe("resolvePresentationMode", () => {
       networkCount: 1,
     });
     expect(plan.mode).toBe("screenshot");
+    expect(plan.showStillStage).toBe(true);
     expect(plan.showConsoleTab).toBe(true);
     expect(plan.showNetworkTab).toBe(true);
-    expect(plan.defaultTab).toBe("screenshots");
+    expect(plan.defaultTab).toBe("report");
+    expect(plan.showScreenshotsTab).toBe(false);
+    expect(plan.showReportTab).toBe(true);
   });
 
   it("uses sdk-logs mode when there is no video but log evidence exists", () => {
@@ -66,27 +75,31 @@ describe("resolvePresentationMode", () => {
     });
     expect(plan.mode).toBe("sdk-logs");
     expect(plan.showVideoSection).toBe(true);
+    expect(plan.showStillStage).toBe(false);
     expect(plan.noVideoNotice).toBe("sdk");
     expect(plan.defaultTab).toBe("console");
     expect(plan.showConsoleTab).toBe(true);
     expect(plan.showNetworkTab).toBe(true);
   });
 
-  it("prefers screenshots over sdk-logs when both stills and logs exist without video", () => {
+  it("prefers still shell over sdk-logs when both stills and logs exist without video", () => {
     const plan = resolvePresentationMode({
       ...empty,
       screenshotCount: 1,
       consoleCount: 4,
     });
     expect(plan.mode).toBe("screenshot");
-    expect(plan.defaultTab).toBe("screenshots");
+    expect(plan.showStillStage).toBe(true);
+    expect(plan.defaultTab).toBe("report");
     expect(plan.showConsoleTab).toBe(true);
+    expect(plan.showScreenshotsTab).toBe(false);
   });
 
   it("falls back to empty-evidence when nothing usable is present", () => {
     const plan = resolvePresentationMode(empty);
     expect(plan.mode).toBe("empty-evidence");
     expect(plan.showVideoSection).toBe(false);
+    expect(plan.showStillStage).toBe(false);
     expect(plan.showScreenshotsTab).toBe(false);
   });
 
@@ -97,6 +110,7 @@ describe("resolvePresentationMode", () => {
       screenshotCount: 1,
     });
     expect(plan.mode).toBe("recording");
+    expect(plan.showStillStage).toBe(false);
     expect(plan.showScreenshotsTab).toBe(true);
   });
 
@@ -109,6 +123,7 @@ describe("resolvePresentationMode", () => {
     expect(plan.defaultTab).toBe("elements");
     expect(plan.showElementsTab).toBe(true);
     expect(plan.showScreenshotsTab).toBe(false);
+    expect(plan.showStillStage).toBe(false);
     // Media column hosts the DOM scrubber stage.
     expect(plan.showVideoSection).toBe(true);
     expect(plan.showDomStage).toBe(true);
@@ -137,13 +152,34 @@ describe("resolvePresentationMode", () => {
     expect(withLogs.defaultTab).toBe("console");
   });
 
-  it("keeps video primary and hides DOM stage when video is present", () => {
+  it("IR with still uses still stage and keeps console/network when IR flag set", () => {
+    const plan = resolvePresentationMode({
+      ...empty,
+      screenshotCount: 1,
+      hasDom: true,
+      hasInstantReplay: true,
+      consoleCount: 0,
+      networkCount: 0,
+    });
+    expect(plan.mode).toBe("screenshot");
+    expect(plan.showVideoSection).toBe(true);
+    expect(plan.showStillStage).toBe(true);
+    expect(plan.showDomStage).toBe(false);
+    expect(plan.showLayoutSplitter).toBe(true);
+    expect(plan.showConsoleTab).toBe(true);
+    expect(plan.showNetworkTab).toBe(true);
+    expect(plan.showElementsTab).toBe(true);
+  });
+
+  it("keeps video primary and hides DOM/still stages when video is present", () => {
     const plan = resolvePresentationMode({
       ...empty,
       hasVideo: true,
       hasDom: true,
+      screenshotCount: 1,
     });
     expect(plan.showDomStage).toBe(false);
+    expect(plan.showStillStage).toBe(false);
     expect(plan.showVideoSection).toBe(true);
   });
 
@@ -154,7 +190,9 @@ describe("resolvePresentationMode", () => {
       hasDom: true,
     });
     expect(plan.showDomStage).toBe(false);
-    expect(plan.showScreenshotsTab).toBe(true);
-    expect(plan.defaultTab).toBe("screenshots");
+    expect(plan.showStillStage).toBe(true);
+    expect(plan.showScreenshotsTab).toBe(false);
+    expect(plan.showReportTab).toBe(true);
+    expect(plan.defaultTab).toBe("report");
   });
 });

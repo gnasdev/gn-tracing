@@ -216,6 +216,79 @@
             <canvas id="drawing-overlay" class="drawing-overlay" aria-hidden="true"></canvas>
           </div>
 
+          <!-- Annotated still viewport (screenshot report / Instant Replay; no video). -->
+          <div id="still-stage" class="still-stage hidden" aria-label="Annotated still" data-i18n-aria="stillStage.aria">
+            <div id="still-viewport" class="still-viewport">
+              <div id="still-transform" class="still-transform">
+                <!-- Figure is sized to shot.viewport aspect so SVG overlay maps 0..1 coords to the image, not the full viewport. -->
+                <div id="still-figure" class="still-figure">
+                  <img id="still-image" class="still-image" alt="" draggable="false">
+                  <div id="still-overlay" class="still-overlay" aria-hidden="true"></div>
+                </div>
+              </div>
+            </div>
+            <div class="still-toolbar" role="toolbar" aria-label="Still viewer controls" data-i18n-aria="stillStage.toolbarAria">
+              <button type="button" id="still-zoom-out-btn" class="control-btn" title="Zoom out" data-i18n-title="stillStage.zoomOut" aria-label="Zoom out" data-i18n-aria="stillStage.zoomOut">
+                <i class="ph ph-magnifying-glass-minus" aria-hidden="true"></i>
+              </button>
+              <button type="button" id="still-zoom-in-btn" class="control-btn" title="Zoom in" data-i18n-title="stillStage.zoomIn" aria-label="Zoom in" data-i18n-aria="stillStage.zoomIn">
+                <i class="ph ph-magnifying-glass-plus" aria-hidden="true"></i>
+              </button>
+              <span id="still-zoom-label" class="still-zoom-label" aria-live="polite">100%</span>
+              <button type="button" id="still-rotate-btn" class="control-btn" title="Rotate 90°" data-i18n-title="stillStage.rotate" aria-label="Rotate 90 degrees" data-i18n-aria="stillStage.rotate">
+                <i class="ph ph-arrow-clockwise" aria-hidden="true"></i>
+              </button>
+              <button type="button" id="still-prev-btn" class="control-btn still-shot-nav" title="Previous still" data-i18n-title="screenshots.prev" aria-label="Previous still" data-i18n-aria="screenshots.prev" disabled>
+                <i class="ph ph-caret-left" aria-hidden="true"></i>
+              </button>
+              <span id="still-shot-label" class="still-shot-label still-shot-nav">1 / 1</span>
+              <button type="button" id="still-next-btn" class="control-btn still-shot-nav" title="Next still" data-i18n-title="screenshots.next" aria-label="Next still" data-i18n-aria="screenshots.next" disabled>
+                <i class="ph ph-caret-right" aria-hidden="true"></i>
+              </button>
+              <div
+                class="layout-control-group still-layout-control-group"
+                aria-label="Player layout controls"
+                data-i18n-aria="controls.layoutGroup"
+              >
+                <button
+                  type="button"
+                  id="still-layout-horizontal-btn"
+                  class="control-btn layout-btn active"
+                  title="Horizontal layout"
+                  data-i18n-title="controls.layoutHorizontal"
+                  aria-pressed="true"
+                >
+                  <i class="ph ph-columns" aria-hidden="true"></i>
+                </button>
+                <button
+                  type="button"
+                  id="still-layout-vertical-btn"
+                  class="control-btn layout-btn"
+                  title="Vertical layout"
+                  data-i18n-title="controls.layoutVertical"
+                  aria-pressed="false"
+                >
+                  <i class="ph ph-rows" aria-hidden="true"></i>
+                </button>
+                <button
+                  type="button"
+                  id="still-fullscreen-btn"
+                  class="control-btn"
+                  title="Expand still in tab"
+                  data-i18n-title="controls.expandVideo"
+                  aria-pressed="false"
+                >
+                  <i id="still-fullscreen-enter-icon" class="ph ph-arrows-out-simple" aria-hidden="true"></i>
+                  <i id="still-fullscreen-exit-icon" class="ph ph-arrows-in-simple hidden" aria-hidden="true"></i>
+                </button>
+              </div>
+            </div>
+            <div id="still-caption-row" class="still-caption-row hidden">
+              <p id="still-caption" class="still-caption"></p>
+              <a id="still-url" class="still-url" href="#" target="_blank" rel="noopener noreferrer" hidden aria-label="Open page" data-i18n-aria="screenshots.openPage">Open page</a>
+            </div>
+          </div>
+
           <div class="video-controls">
             <button type="button" id="play-pause-btn" class="control-btn" title="Play/Pause (Space)" data-i18n-title="controls.playPause">
               <i id="play-icon" class="ph ph-play-circle"></i>

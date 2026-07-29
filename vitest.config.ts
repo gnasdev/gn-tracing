@@ -37,6 +37,8 @@ export default defineConfig({
     __FEEDBACK_PROXY_URL__: JSON.stringify("http://localhost:8787/feedback"),
 
     __PLAYER_LOCAL_PORT__: JSON.stringify("5176"),
+    // Empty → player-host falls back by __APP_ENV__ (test → production host).
+    __PLAYER_HOST_URL__: JSON.stringify(""),
   },
   test: {
     ...sharedTestConfig,

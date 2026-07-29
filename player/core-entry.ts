@@ -60,6 +60,23 @@ import {
   resolveTimelineDurationMs,
   SEEK_COMMIT_TOLERANCE_MS,
 } from "../src/shared/player-timeline-seek";
+import {
+  clampStillZoom,
+  createStillViewerTransform,
+  panStillViewer,
+  resetStillViewerTransform,
+  rotateStillCw,
+  STILL_ZOOM_MAX,
+  STILL_ZOOM_MIN,
+  STILL_ZOOM_STEP,
+  type StillRotationDeg,
+  type StillViewerTransform,
+  stillFigureAspectFromViewport,
+  stillViewerCssTransform,
+  stillZoomPercentLabel,
+  zoomInStill,
+  zoomOutStill,
+} from "../src/shared/still-viewer-transform";
 
 export type {
   NetworkFilterBucket,
@@ -71,6 +88,8 @@ export type {
   PresentationMode,
   PresentationPlan,
   RecordingCapability,
+  StillRotationDeg,
+  StillViewerTransform,
 };
 
 /** "Copy for AI" — the player's Markdown export of a recording. */
@@ -87,6 +106,23 @@ export const timelineSeek = {
 
 /** Which shell to show for recording vs screenshot vs SDK packages. */
 export const presentation = { resolvePresentationMode };
+
+/** Zoom / rotate / pan math for the no-video still media stage. */
+export const stillViewer = {
+  STILL_ZOOM_MIN,
+  STILL_ZOOM_MAX,
+  STILL_ZOOM_STEP,
+  clampStillZoom,
+  createStillViewerTransform,
+  zoomInStill,
+  zoomOutStill,
+  rotateStillCw,
+  resetStillViewerTransform,
+  panStillViewer,
+  stillViewerCssTransform,
+  stillZoomPercentLabel,
+  stillFigureAspectFromViewport,
+};
 
 /** Instant Replay lookback → Elements DOM snapshots (and related helpers). */
 export const instantReplay = {

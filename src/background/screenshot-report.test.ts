@@ -17,9 +17,12 @@ import {
   captureScreenshotForAnnotation,
   defaultCaptionForPending,
   mergeAnnotatedScreenshot,
+  openAnnotateEditorTab,
   type PendingCapture,
   parsePendingCapture,
+  parsePendingStillView,
   resolveInstantReplayForSave,
+  toAnnotatePendingView,
 } from "./screenshot-report";
 
 const TINY_PNG = "data:image/png;base64,iVBORw0KGgo=";
@@ -262,6 +265,70 @@ describe("resolveInstantReplayForSave", () => {
     if (resolved.mode === "attach") {
       expect(resolved.required).toBe(false);
     }
+  });
+});
+
+describe("toAnnotatePendingView", () => {
+  it("strips frozen IR so the editor message stays small", () => {
+    const pending = buildInstantReplayPending(
+      {
+        id: "ir-1",
+        imageDataUrl: TINY_PNG,
+        capturedAt: 1,
+        tabId: 1,
+        viewport: { width: 1, height: 1 },
+      },
+      { artifact: sampleIrArtifact, evidence: null },
+    );
+    const view = toAnnotatePendingView(pending);
+    expect(view.kind).toBe("instant-replay");
+    expect(view.imageDataUrl).toBe(TINY_PNG);
+    expect(view).not.toHaveProperty("frozenInstantReplay");
+  });
+});
+
+describe("parsePendingStillView", () => {
+  it("accepts IR still without freeze so the editor can show the image", () => {
+    const view = parsePendingStillView({
+      kind: "instant-replay",
+      id: "ir-1",
+      imageDataUrl: TINY_PNG,
+      capturedAt: 1,
+      tabId: 2,
+      viewport: { width: 10, height: 10 },
+    });
+    expect(view?.kind).toBe("instant-replay");
+    expect(view?.imageDataUrl).toBe(TINY_PNG);
+  });
+
+  it("rejects non-image payloads", () => {
+    expect(
+      parsePendingStillView({
+        kind: "screenshot",
+        id: "shot-1",
+        imageDataUrl: "not-an-image",
+        capturedAt: 1,
+        tabId: 2,
+        viewport: { width: 10, height: 10 },
+      }),
+    ).toBeNull();
+  });
+});
+
+describe("openAnnotateEditorTab", () => {
+  it("creates an active editor tab and marks opened", async () => {
+    const createTab = vi.fn(async () => ({ windowId: 3 }));
+    const focusWindow = vi.fn(async () => undefined);
+    const markOpened = vi.fn(async () => undefined);
+    await openAnnotateEditorTab(
+      createTab,
+      focusWindow,
+      markOpened,
+      () => "chrome-extension://x/annotate/annotate.html",
+    );
+    expect(createTab).toHaveBeenCalledWith("chrome-extension://x/annotate/annotate.html");
+    expect(focusWindow).toHaveBeenCalledWith(3);
+    expect(markOpened).toHaveBeenCalled();
   });
 });
 

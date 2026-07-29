@@ -1420,7 +1420,8 @@ body:has(#player-state:not(.hidden)) .player-lang-toggle--global {
 }
 
 .layout-btn.active,
-#video-fullscreen-btn.active {
+#video-fullscreen-btn.active,
+#still-fullscreen-btn.active {
   background: var(--bg-card-hover);
   color: var(--accent);
 }
@@ -2975,8 +2976,22 @@ body:has(#player-state:not(.hidden)) .player-lang-toggle--global {
 
   /* The resize splitter and layout toggle are meaningless when locked vertical. */
   .layout-splitter,
-  .layout-control-group {
+  .layout-control-group,
+  .still-layout-sep {
     display: none;
+  }
+
+  /* Still media: give the image a readable height when stacked on small screens. */
+  body.presentation-still-media .still-viewport,
+  #player-state.presentation-still-media .still-viewport {
+    min-height: min(52vh, 420px);
+    max-height: 70vh;
+  }
+
+  body.presentation-still-media .video-section,
+  #player-state.presentation-still-media .video-section {
+    flex: 0 0 auto;
+    max-height: none;
   }
 }
 
@@ -2990,47 +3005,29 @@ body.no-video .video-controls {
 }
 
 /*
- * Screenshot-report presentation: annotated stills are the product, not a
- * side tab beside an empty video column. Collapse the media pane and let the
- * screenshots viewer own the layout.
+ * Empty-evidence: no media column. Still-primary packages keep the record-like
+ * two-column shell (video-section hosts #still-stage).
  */
-/*
- * Horizontal layout pins .logs-panel to grid-column: 3. If we only collapse
- * template columns to 1fr without resetting that placement, the panel sits in
- * an implicit third column and the stage looks right-aligned in a void.
- */
-body.presentation-screenshot .main-layout,
-#player-state.presentation-screenshot .main-layout,
 body.presentation-empty .main-layout,
 #player-state.presentation-empty .main-layout,
-.player-container[data-layout-mode="horizontal"].presentation-screenshot .main-layout,
-.player-container[data-layout-mode="vertical"].presentation-screenshot .main-layout,
 .player-container[data-layout-mode="horizontal"].presentation-empty .main-layout,
 .player-container[data-layout-mode="vertical"].presentation-empty .main-layout {
   grid-template-columns: minmax(0, 1fr) !important;
   grid-template-rows: minmax(0, 1fr) !important;
 }
 
-body.presentation-screenshot .video-section,
-#player-state.presentation-screenshot .video-section,
 body.presentation-empty .video-section,
 #player-state.presentation-empty .video-section {
   display: none !important;
 }
 
-body.presentation-screenshot .layout-splitter,
-#player-state.presentation-screenshot .layout-splitter,
 body.presentation-empty .layout-splitter,
 #player-state.presentation-empty .layout-splitter {
   display: none !important;
 }
 
-body.presentation-screenshot .logs-panel,
-#player-state.presentation-screenshot .logs-panel,
 body.presentation-empty .logs-panel,
 #player-state.presentation-empty .logs-panel,
-.player-container[data-layout-mode="horizontal"].presentation-screenshot .logs-panel,
-.player-container[data-layout-mode="vertical"].presentation-screenshot .logs-panel,
 .player-container[data-layout-mode="horizontal"].presentation-empty .logs-panel,
 .player-container[data-layout-mode="vertical"].presentation-empty .logs-panel {
   grid-column: 1 / -1 !important;
@@ -3041,21 +3038,23 @@ body.presentation-empty .logs-panel,
   flex: 1 1 auto;
 }
 
-body.presentation-screenshot .screenshots-viewer,
-#player-state.presentation-screenshot .screenshots-viewer {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
+/* Still-primary media: hide raw video chrome; show still stage. */
+body.presentation-still-media .video-container,
+body.presentation-still-media .video-controls,
+#player-state.presentation-still-media .video-container,
+#player-state.presentation-still-media .video-controls {
+  display: none !important;
 }
 
-body.presentation-screenshot .screenshots-content,
-#player-state.presentation-screenshot .screenshots-content {
-  flex: 1 1 auto;
-  max-width: min(1120px, 100%);
-  margin: 0 auto;
-  width: 100%;
-  padding: 20px 20px 32px;
-  overflow: auto;
+body.presentation-still-media .still-stage,
+#player-state.presentation-still-media .still-stage {
+  /* Override .hidden { display: none !important } when still-primary. */
+  display: flex !important;
+}
+
+body.presentation-still-media .dom-stage:not(.hidden),
+#player-state.presentation-still-media .dom-stage:not(.hidden) {
+  display: none !important;
 }
 
 body.presentation-screenshot .tab-bar.hidden,
@@ -3063,13 +3062,167 @@ body.presentation-screenshot .tab-bar.hidden,
   display: none !important;
 }
 
-body.presentation-screenshot .screenshot-card,
-#player-state.presentation-screenshot .screenshot-card {
-  padding: 0;
-  border: none;
-  border-radius: 0;
-  background: transparent;
-  gap: 14px;
+/* ===== Still stage (annotated image in media column) =====
+ * Shares the same main-layout grid as recording: columns when
+ * data-layout-mode=horizontal, rows when vertical; small screens force stack
+ * via the max-width:720px rules above.
+ */
+.still-stage {
+  display: none;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  background: var(--bg-base, #0f1115);
+}
+
+/* Fill the media cell in both split orientations. */
+.player-container[data-layout-mode="horizontal"] .still-stage,
+.player-container[data-layout-mode="vertical"] .still-stage {
+  min-height: 0;
+}
+
+.player-container[data-layout-mode="vertical"] .still-viewport {
+  min-height: 200px;
+}
+
+.still-viewport {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  cursor: grab;
+  background:
+    repeating-conic-gradient(var(--bg-surface, #1a1d24) 0% 25%, var(--bg-base, #0f1115) 0% 50%) 50%
+    / 16px 16px;
+}
+
+.still-viewport.is-panning {
+  cursor: grabbing;
+}
+
+.still-transform {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform-origin: center center;
+  will-change: transform;
+}
+
+/*
+ * Aspect box matching shot.viewport (set in JS). Image uses contain (letterbox
+ * if needed); overlay is inset:0 on the same figure so annotation 0..1 coords
+ * stay aligned with the image box (same geometry idea as Screenshots tab).
+ */
+.still-figure {
+  position: relative;
+  max-width: 100%;
+  max-height: 100%;
+  width: min(100%, calc(100% * var(--still-aspect, 1.6)));
+  height: auto;
+  aspect-ratio: var(--still-aspect, 16 / 10);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+  flex: 0 1 auto;
+  background: var(--bg-base, #0f1115);
+}
+
+.still-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  user-select: none;
+  pointer-events: none;
+}
+
+.still-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.still-overlay svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.still-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
+  background: var(--bg-surface, #161a22);
+  flex: 0 0 auto;
+}
+
+.still-layout-control-group {
+  margin-left: auto;
+}
+
+.still-toolbar .layout-btn.active {
+  color: var(--accent, #6ea8fe);
+}
+
+.still-zoom-label,
+.still-shot-label {
+  min-width: 3.25rem;
+  text-align: center;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary, #9aa3b2);
+}
+
+.still-toolbar-sep {
+  width: 1px;
+  height: 18px;
+  margin: 0 4px;
+  background: var(--border-subtle, rgba(255, 255, 255, 0.12));
+}
+
+.still-caption-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px 16px;
+  padding: 8px 12px 10px;
+  border-top: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.06));
+  background: var(--bg-surface, #161a22);
+}
+
+.still-caption-row.hidden {
+  display: none;
+}
+
+.still-caption {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-primary, #e8ecf1);
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.still-caption.is-placeholder {
+  color: var(--text-secondary, #9aa3b2);
+  font-style: italic;
+}
+
+.still-url {
+  font-size: 12px;
+  color: var(--accent, #6ea8fe);
+  text-decoration: none;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.still-url:hover {
+  text-decoration: underline;
 }
 
 body.presentation-screenshot .screenshot-figure,

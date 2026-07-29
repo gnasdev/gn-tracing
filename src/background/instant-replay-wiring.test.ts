@@ -89,7 +89,13 @@ describe("Instant Replay CDP wiring", () => {
     // IR capture freezes lookback + opens annotate; packaging runs on save.
     expect(swSource).toContain("buildInstantReplayPending");
     expect(swSource).toContain("createAnnotateCaptureDeps");
+    expect(swSource).toContain("openAnnotateEditorTab");
+    expect(swSource).toContain("readPendingStillForAnnotate");
     expect(swSource).toContain("resolveInstantReplayForSave");
+    // IR freeze parks in IndexedDB (not session) so lookback can exceed 10MB.
+    const reportSource = readFileSync(resolve(__dirname, "screenshot-report.ts"), "utf8");
+    expect(reportSource).toContain("putPendingIrFreeze");
+    expect(reportSource).toContain("getPendingIrFreeze");
     expect(swSource).toMatch(/artifacts:\s*screenshotArtifacts/);
     expect(swSource).toContain("createInstantReplayCdpHub");
     expect(swSource).toContain("irCdpHub");

@@ -85,8 +85,10 @@ import {
   clearPendingScreenshot,
   isInstantReplayPending,
   mergeAnnotatedScreenshot,
+  openAnnotateEditorTab,
   type PendingCapture,
   readPendingScreenshot,
+  readPendingStillForAnnotate,
   resolveInstantReplayForSave,
   writePendingScreenshot,
 } from "./screenshot-report";
@@ -2642,11 +2644,7 @@ function createAnnotateCaptureDeps(
       return (injected?.result as { width: number; height: number } | undefined) ?? null;
     },
     setPending: writePendingScreenshot,
-    openEditor: async () => {
-      await chrome.tabs.create({
-        url: chrome.runtime.getURL("annotate/annotate.html"),
-      });
-    },
+    openEditor: openAnnotateEditorTab,
     ...overrides,
   };
 }
@@ -2748,12 +2746,15 @@ async function handleCaptureScreenshot(tabId: number | undefined): Promise<Messa
 }
 
 async function handleGetPendingScreenshot(): Promise<
-  MessageResponse & { screenshot?: PendingCapture }
+  MessageResponse & { screenshot?: Awaited<ReturnType<typeof readPendingStillForAnnotate>> }
 > {
-  const pending = await readPendingScreenshot();
-  return pending
-    ? { ok: true, screenshot: pending }
-    : { ok: false, error: "No screenshot is waiting to be annotated." };
+  // Read still only — do not reassemble IR freeze. A large/corrupt freeze must
+  // not blank the editor image (freeze is loaded again on Save).
+  const still = await readPendingStillForAnnotate();
+  if (!still) {
+    return { ok: false, error: "No screenshot is waiting to be annotated." };
+  }
+  return { ok: true, screenshot: still };
 }
 
 async function handleSaveAnnotatedScreenshot(

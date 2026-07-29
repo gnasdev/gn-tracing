@@ -82,6 +82,8 @@
       "controls.layoutVertical": "Vertical layout",
       "controls.expandVideo": "Expand video in tab",
       "controls.exitExpandedVideo": "Exit expanded video",
+      "controls.expandStill": "Expand still in tab",
+      "controls.exitExpandedStill": "Exit expanded still",
       "controls.splitter": "Resize player and logs panels",
       "tabs.report": "Report",
       "tabs.activity": "Activity",
@@ -120,6 +122,12 @@
       "screenshots.prev": "Previous screenshot",
       "screenshots.next": "Next screenshot",
       "screenshots.annotationsHeading": "Annotations",
+      "stillStage.aria": "Annotated still",
+      "stillStage.toolbarAria": "Still viewer controls",
+      "stillStage.zoomIn": "Zoom in",
+      "stillStage.zoomOut": "Zoom out",
+      "stillStage.fit": "Fit image",
+      "stillStage.rotate": "Rotate 90°",
       "report.openPage": "Open recorded page",
       "report.screenshotAlt": "Recording screenshot",
       "console.search": "Search console",
@@ -355,6 +363,8 @@
       "controls.layoutVertical": "Bố cục dọc",
       "controls.expandVideo": "Phóng to video trong tab",
       "controls.exitExpandedVideo": "Thoát chế độ phóng to video",
+      "controls.expandStill": "Phóng to ảnh trong tab",
+      "controls.exitExpandedStill": "Thoát chế độ phóng to ảnh",
       "controls.splitter": "Đổi kích thước panel player và logs",
       "tabs.report": "Report",
       "tabs.activity": "Activity",
@@ -393,6 +403,12 @@
       "screenshots.prev": "Ảnh trước",
       "screenshots.next": "Ảnh sau",
       "screenshots.annotationsHeading": "Chú thích",
+      "stillStage.aria": "Ảnh chú thích",
+      "stillStage.toolbarAria": "Điều khiển xem ảnh",
+      "stillStage.zoomIn": "Phóng to",
+      "stillStage.zoomOut": "Thu nhỏ",
+      "stillStage.fit": "Vừa khung",
+      "stillStage.rotate": "Xoay 90°",
       "report.openPage": "Mở trang đã ghi",
       "report.screenshotAlt": "Ảnh chụp bản ghi",
       "console.search": "Tìm trong console",
@@ -1197,6 +1213,19 @@
   let domStageHydrateTimer = null;
   /** Active index when the Screenshots stage shows one of several shots. */
   let screenshotActiveIndex = 0;
+  /** @type {{ scale: number, rotationDeg: number, panX: number, panY: number, fitMode: boolean }} */
+  let stillViewerTransform = {
+    scale: 1,
+    rotationDeg: 0,
+    panX: 0,
+    panY: 0,
+    fitMode: true,
+  };
+  let stillPanActive = false;
+  let stillPanLastX = 0;
+  let stillPanLastY = 0;
+  /** @type {string | null} */
+  let stillStageObjectUrl = null;
   // Track which snapshot each time-synced panel is currently showing, so the
   // panels only re-render when the active (by-playback-time) snapshot changes.
   let storageActiveKey = "";
@@ -1395,6 +1424,29 @@
     elements.domStageTime = document.getElementById("dom-stage-time");
     elements.domStageUrl = document.getElementById("dom-stage-url");
 
+    // Still stage (annotated image in media column)
+    elements.stillStage = document.getElementById("still-stage");
+    elements.stillViewport = document.getElementById("still-viewport");
+    elements.stillTransform = document.getElementById("still-transform");
+    elements.stillFigure = document.getElementById("still-figure");
+    elements.stillImage = document.getElementById("still-image");
+    elements.stillOverlay = document.getElementById("still-overlay");
+    elements.stillZoomInBtn = document.getElementById("still-zoom-in-btn");
+    elements.stillZoomOutBtn = document.getElementById("still-zoom-out-btn");
+    elements.stillZoomLabel = document.getElementById("still-zoom-label");
+    elements.stillRotateBtn = document.getElementById("still-rotate-btn");
+    elements.stillPrevBtn = document.getElementById("still-prev-btn");
+    elements.stillNextBtn = document.getElementById("still-next-btn");
+    elements.stillShotLabel = document.getElementById("still-shot-label");
+    elements.stillCaptionRow = document.getElementById("still-caption-row");
+    elements.stillCaption = document.getElementById("still-caption");
+    elements.stillUrl = document.getElementById("still-url");
+    elements.stillLayoutHorizontalBtn = document.getElementById("still-layout-horizontal-btn");
+    elements.stillLayoutVerticalBtn = document.getElementById("still-layout-vertical-btn");
+    elements.stillFullscreenBtn = document.getElementById("still-fullscreen-btn");
+    elements.stillFullscreenEnterIcon = document.getElementById("still-fullscreen-enter-icon");
+    elements.stillFullscreenExitIcon = document.getElementById("still-fullscreen-exit-icon");
+
     // Console
     elements.consoleFilters = document.getElementById("console-filters");
     elements.consoleSearch = document.getElementById("console-search");
@@ -1452,13 +1504,25 @@
   }
 
   function updateFullscreenButton() {
-    elements.videoFullscreenBtn.classList.toggle("active", isVideoFullscreen);
-    elements.fullscreenEnterIcon.classList.toggle("hidden", isVideoFullscreen);
-    elements.fullscreenExitIcon.classList.toggle("hidden", !isVideoFullscreen);
-    elements.videoFullscreenBtn.title = isVideoFullscreen
-      ? t("controls.exitExpandedVideo")
-      : t("controls.expandVideo");
-    elements.videoFullscreenBtn.setAttribute("aria-pressed", String(isVideoFullscreen));
+    // Expand-in-tab (not browser Fullscreen API): hides header/logs so media fills the tab.
+    if (elements.videoFullscreenBtn) {
+      elements.videoFullscreenBtn.classList.toggle("active", isVideoFullscreen);
+      elements.fullscreenEnterIcon?.classList.toggle("hidden", isVideoFullscreen);
+      elements.fullscreenExitIcon?.classList.toggle("hidden", !isVideoFullscreen);
+      elements.videoFullscreenBtn.title = isVideoFullscreen
+        ? t("controls.exitExpandedVideo")
+        : t("controls.expandVideo");
+      elements.videoFullscreenBtn.setAttribute("aria-pressed", String(isVideoFullscreen));
+    }
+    if (elements.stillFullscreenBtn) {
+      elements.stillFullscreenBtn.classList.toggle("active", isVideoFullscreen);
+      elements.stillFullscreenEnterIcon?.classList.toggle("hidden", isVideoFullscreen);
+      elements.stillFullscreenExitIcon?.classList.toggle("hidden", !isVideoFullscreen);
+      elements.stillFullscreenBtn.title = isVideoFullscreen
+        ? t("controls.exitExpandedStill")
+        : t("controls.expandStill");
+      elements.stillFullscreenBtn.setAttribute("aria-pressed", String(isVideoFullscreen));
+    }
   }
 
   function formatBytes(bytes) {
@@ -1655,10 +1719,20 @@
       "aria-orientation",
       mode === "vertical" ? "horizontal" : "vertical",
     );
-    elements.layoutHorizontalBtn.classList.toggle("active", mode === "horizontal");
-    elements.layoutVerticalBtn.classList.toggle("active", mode === "vertical");
-    elements.layoutHorizontalBtn.setAttribute("aria-pressed", String(mode === "horizontal"));
-    elements.layoutVerticalBtn.setAttribute("aria-pressed", String(mode === "vertical"));
+    // Video chrome + still-toolbar layout toggles stay in sync.
+    const layoutButtons = [
+      [elements.layoutHorizontalBtn, elements.layoutVerticalBtn],
+      [elements.stillLayoutHorizontalBtn, elements.stillLayoutVerticalBtn],
+    ];
+    for (const [horizontalBtn, verticalBtn] of layoutButtons) {
+      if (!horizontalBtn || !verticalBtn) {
+        continue;
+      }
+      horizontalBtn.classList.toggle("active", mode === "horizontal");
+      verticalBtn.classList.toggle("active", mode === "vertical");
+      horizontalBtn.setAttribute("aria-pressed", String(mode === "horizontal"));
+      verticalBtn.setAttribute("aria-pressed", String(mode === "vertical"));
+    }
     elements.playerState.classList.toggle("is-video-fullscreen", isVideoFullscreen);
     updateFullscreenButton();
     window.requestAnimationFrame(updateVideoFit);
@@ -2573,6 +2647,21 @@
     }
   }
 
+  function isStillMediaPrimary() {
+    if (
+      document.body.classList.contains("presentation-still-media") ||
+      elements.playerState?.classList.contains("presentation-still-media")
+    ) {
+      return true;
+    }
+    // Before presentation classes are applied: stills + no video ⇒ still-primary.
+    const shots = screenshotsArtifact?.screenshots;
+    const hasStills = Array.isArray(shots) && shots.length > 0;
+    const hasVideo =
+      Array.isArray(recordingFiles?.videoParts) && recordingFiles.videoParts.length > 0;
+    return hasStills && !hasVideo;
+  }
+
   function renderScreenshotsTab() {
     const shots = Array.isArray(screenshotsArtifact?.screenshots)
       ? screenshotsArtifact.screenshots
@@ -2581,6 +2670,13 @@
     if (!container) return;
 
     revokeScreenshotObjectUrls();
+
+    // Still-primary packages already show the image in the media column — do
+    // not duplicate it under a Screenshots tab (tab is hidden in that mode).
+    if (isStillMediaPrimary()) {
+      container.replaceChildren();
+      return;
+    }
 
     if (shots.length === 0) {
       container.replaceChildren();
@@ -2614,6 +2710,336 @@
     container.append(stage);
   }
 
+  function getStillViewerApi() {
+    return globalThis.gnCore?.stillViewer || null;
+  }
+
+  function resetStillViewerState() {
+    const api = getStillViewerApi();
+    stillViewerTransform = api?.createStillViewerTransform
+      ? api.createStillViewerTransform()
+      : { scale: 1, rotationDeg: 0, panX: 0, panY: 0, fitMode: true };
+    applyStillViewerTransformToDom();
+  }
+
+  function applyStillViewerTransformToDom() {
+    const api = getStillViewerApi();
+    const el = elements.stillTransform;
+    if (!el) {
+      return;
+    }
+    const css = api?.stillViewerCssTransform
+      ? api.stillViewerCssTransform(stillViewerTransform)
+      : `translate(${stillViewerTransform.panX}px, ${stillViewerTransform.panY}px) rotate(${stillViewerTransform.rotationDeg}deg) scale(${stillViewerTransform.scale})`;
+    el.style.transform = css;
+    if (elements.stillZoomLabel) {
+      const pct = api?.stillZoomPercentLabel
+        ? api.stillZoomPercentLabel(stillViewerTransform.scale)
+        : String(Math.round(stillViewerTransform.scale * 100));
+      elements.stillZoomLabel.textContent = `${pct}%`;
+    }
+  }
+
+  function revokeStillStageObjectUrl() {
+    if (stillStageObjectUrl) {
+      try {
+        URL.revokeObjectURL(stillStageObjectUrl);
+      } catch {
+        // ignore
+      }
+      stillStageObjectUrl = null;
+    }
+  }
+
+  /**
+   * Resolve the image blob URL for a screenshot entry from the package zip.
+   * @param {any} shot
+   * @returns {{ objectUrl: string | null, isDomSnapshot: boolean, missing: boolean }}
+   */
+  function resolveScreenshotImageSource(shot) {
+    if (shot?.source?.kind === "image" && shot.source.path) {
+      const blob = recordingFiles?.packageEntries
+        ? getPackageEntry(recordingFiles.packageEntries, shot.source.path, false)
+        : null;
+      if (blob) {
+        const objectUrl = URL.createObjectURL(blob);
+        return { objectUrl, isDomSnapshot: false, missing: false };
+      }
+      return { objectUrl: null, isDomSnapshot: false, missing: true };
+    }
+    return { objectUrl: null, isDomSnapshot: true, missing: false };
+  }
+
+  /** Paint the media-column still stage from the active screenshot entry. */
+  function renderStillStage() {
+    if (!elements.stillStage || !elements.stillImage) {
+      return;
+    }
+    const shots = Array.isArray(screenshotsArtifact?.screenshots)
+      ? screenshotsArtifact.screenshots
+      : [];
+    if (shots.length === 0) {
+      revokeStillStageObjectUrl();
+      elements.stillImage.removeAttribute("src");
+      if (elements.stillOverlay) {
+        elements.stillOverlay.innerHTML = "";
+      }
+      return;
+    }
+    if (screenshotActiveIndex >= shots.length) {
+      screenshotActiveIndex = 0;
+    }
+    const shot = shots[screenshotActiveIndex];
+    const aspectApi = getStillViewerApi()?.stillFigureAspectFromViewport;
+    const aspect = aspectApi
+      ? aspectApi(shot.viewport)
+      : (() => {
+          const width = Number(shot.viewport?.width) > 0 ? Number(shot.viewport.width) : 1280;
+          const height = Number(shot.viewport?.height) > 0 ? Number(shot.viewport.height) : 800;
+          return {
+            width,
+            height,
+            aspectRatio: `${width} / ${height}`,
+            stillAspect: width / height,
+          };
+        })();
+    // Match Screenshots tab: figure aspect drives image + SVG overlay alignment.
+    if (elements.stillFigure) {
+      elements.stillFigure.style.aspectRatio = aspect.aspectRatio;
+      elements.stillFigure.style.setProperty("--still-aspect", String(aspect.stillAspect));
+    }
+
+    const source = resolveScreenshotImageSource(shot);
+    revokeStillStageObjectUrl();
+    if (source.objectUrl) {
+      stillStageObjectUrl = source.objectUrl;
+      elements.stillImage.src = source.objectUrl;
+      elements.stillImage.alt = shot.caption || shot.title || t("tabs.screenshots");
+      elements.stillImage.classList.remove("hidden");
+    } else {
+      elements.stillImage.removeAttribute("src");
+      elements.stillImage.alt = source.missing
+        ? t("screenshots.imageMissing")
+        : t("screenshots.domSnapshot");
+    }
+
+    if (elements.stillOverlay) {
+      const overlayApi = globalThis.gnCore?.annotate;
+      if (
+        overlayApi &&
+        !source.isDomSnapshot &&
+        !source.missing &&
+        Array.isArray(shot.annotations) &&
+        shot.annotations.length > 0
+      ) {
+        elements.stillOverlay.innerHTML = overlayApi.renderScreenshotOverlaySvg(shot);
+      } else {
+        elements.stillOverlay.innerHTML = "";
+      }
+    }
+
+    const multi = shots.length > 1;
+    for (const nav of document.querySelectorAll(".still-shot-nav")) {
+      nav.classList.toggle("hidden", !multi);
+    }
+    if (elements.stillPrevBtn) {
+      elements.stillPrevBtn.disabled = screenshotActiveIndex <= 0;
+    }
+    if (elements.stillNextBtn) {
+      elements.stillNextBtn.disabled = screenshotActiveIndex >= shots.length - 1;
+    }
+    if (elements.stillShotLabel) {
+      elements.stillShotLabel.textContent = t("screenshots.shotIndex", {
+        current: String(screenshotActiveIndex + 1),
+        total: String(shots.length),
+      });
+    }
+
+    const captionText = typeof shot.caption === "string" ? shot.caption.trim() : "";
+    if (elements.stillCaptionRow && elements.stillCaption) {
+      const hasUrl = typeof shot.url === "string" && shot.url.length > 0;
+      const showRow = Boolean(captionText || hasUrl);
+      elements.stillCaptionRow.classList.toggle("hidden", !showRow);
+      elements.stillCaption.textContent = captionText || t("screenshots.noCaption");
+      elements.stillCaption.classList.toggle("is-placeholder", !captionText);
+      if (elements.stillUrl) {
+        if (hasUrl) {
+          elements.stillUrl.hidden = false;
+          elements.stillUrl.href = shot.url;
+          elements.stillUrl.textContent = shot.url;
+        } else {
+          elements.stillUrl.hidden = true;
+          elements.stillUrl.removeAttribute("href");
+          elements.stillUrl.textContent = "";
+        }
+      }
+    }
+
+    applyStillViewerTransformToDom();
+  }
+
+  function stillZoomIn() {
+    const api = getStillViewerApi();
+    stillViewerTransform = {
+      ...stillViewerTransform,
+      scale: api?.zoomInStill
+        ? api.zoomInStill(stillViewerTransform.scale)
+        : Math.min(4, stillViewerTransform.scale + 0.25),
+      fitMode: false,
+    };
+    applyStillViewerTransformToDom();
+  }
+
+  function stillZoomOut() {
+    const api = getStillViewerApi();
+    stillViewerTransform = {
+      ...stillViewerTransform,
+      scale: api?.zoomOutStill
+        ? api.zoomOutStill(stillViewerTransform.scale)
+        : Math.max(0.25, stillViewerTransform.scale - 0.25),
+      fitMode: false,
+    };
+    applyStillViewerTransformToDom();
+  }
+
+  function stillFitReset() {
+    const api = getStillViewerApi();
+    stillViewerTransform = api?.resetStillViewerTransform
+      ? api.resetStillViewerTransform(stillViewerTransform)
+      : { scale: 1, rotationDeg: 0, panX: 0, panY: 0, fitMode: true };
+    applyStillViewerTransformToDom();
+  }
+
+  function stillRotate() {
+    const api = getStillViewerApi();
+    stillViewerTransform = {
+      ...stillViewerTransform,
+      rotationDeg: api?.rotateStillCw
+        ? api.rotateStillCw(stillViewerTransform.rotationDeg)
+        : (stillViewerTransform.rotationDeg + 90) % 360,
+    };
+    applyStillViewerTransformToDom();
+  }
+
+  function stillShowPrev() {
+    if (screenshotActiveIndex <= 0) {
+      return;
+    }
+    screenshotActiveIndex -= 1;
+    resetStillViewerState();
+    renderStillStage();
+    renderScreenshotsTab();
+  }
+
+  function stillShowNext() {
+    const shots = Array.isArray(screenshotsArtifact?.screenshots)
+      ? screenshotsArtifact.screenshots
+      : [];
+    if (screenshotActiveIndex >= shots.length - 1) {
+      return;
+    }
+    screenshotActiveIndex += 1;
+    resetStillViewerState();
+    renderStillStage();
+    renderScreenshotsTab();
+  }
+
+  function bindStillStageControls() {
+    elements.stillZoomInBtn?.addEventListener("click", () => {
+      stillZoomIn();
+    });
+    elements.stillZoomOutBtn?.addEventListener("click", () => {
+      stillZoomOut();
+    });
+    // Double-click zoom label resets fit (fit control removed — corners-out looked like fullscreen).
+    elements.stillZoomLabel?.addEventListener("dblclick", () => {
+      stillFitReset();
+    });
+    elements.stillRotateBtn?.addEventListener("click", () => {
+      stillRotate();
+    });
+    elements.stillPrevBtn?.addEventListener("click", () => {
+      stillShowPrev();
+    });
+    elements.stillNextBtn?.addEventListener("click", () => {
+      stillShowNext();
+    });
+    elements.stillLayoutHorizontalBtn?.addEventListener("click", () => {
+      setLayoutMode("horizontal");
+    });
+    elements.stillLayoutVerticalBtn?.addEventListener("click", () => {
+      setLayoutMode("vertical");
+    });
+    elements.stillFullscreenBtn?.addEventListener("click", () => {
+      toggleVideoFullscreen();
+    });
+
+    const viewport = elements.stillViewport;
+    if (!viewport) {
+      return;
+    }
+    viewport.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0) {
+        return;
+      }
+      if (stillViewerTransform.fitMode && stillViewerTransform.scale <= 1) {
+        return;
+      }
+      stillPanActive = true;
+      stillPanLastX = event.clientX;
+      stillPanLastY = event.clientY;
+      viewport.classList.add("is-panning");
+      viewport.setPointerCapture?.(event.pointerId);
+    });
+    viewport.addEventListener("pointermove", (event) => {
+      if (!stillPanActive) {
+        return;
+      }
+      const dx = event.clientX - stillPanLastX;
+      const dy = event.clientY - stillPanLastY;
+      stillPanLastX = event.clientX;
+      stillPanLastY = event.clientY;
+      const api = getStillViewerApi();
+      stillViewerTransform = api?.panStillViewer
+        ? api.panStillViewer(stillViewerTransform, dx, dy)
+        : {
+            ...stillViewerTransform,
+            panX: stillViewerTransform.panX + dx,
+            panY: stillViewerTransform.panY + dy,
+          };
+      applyStillViewerTransformToDom();
+    });
+    const endPan = (event) => {
+      if (!stillPanActive) {
+        return;
+      }
+      stillPanActive = false;
+      viewport.classList.remove("is-panning");
+      try {
+        viewport.releasePointerCapture?.(event.pointerId);
+      } catch {
+        // ignore
+      }
+    };
+    viewport.addEventListener("pointerup", endPan);
+    viewport.addEventListener("pointercancel", endPan);
+    viewport.addEventListener(
+      "wheel",
+      (event) => {
+        if (!elements.stillStage || elements.stillStage.classList.contains("hidden")) {
+          return;
+        }
+        event.preventDefault();
+        if (event.deltaY < 0) {
+          stillZoomIn();
+        } else if (event.deltaY > 0) {
+          stillZoomOut();
+        }
+      },
+      { passive: false },
+    );
+  }
+
   /** @param {number} total */
   function buildScreenshotNav(total) {
     const nav = document.createElement("div");
@@ -2629,7 +3055,9 @@
     prev.addEventListener("click", () => {
       if (screenshotActiveIndex <= 0) return;
       screenshotActiveIndex -= 1;
+      resetStillViewerState();
       renderScreenshotsTab();
+      renderStillStage();
     });
 
     const label = document.createElement("span");
@@ -2649,7 +3077,9 @@
     next.addEventListener("click", () => {
       if (screenshotActiveIndex >= total - 1) return;
       screenshotActiveIndex += 1;
+      resetStillViewerState();
       renderScreenshotsTab();
+      renderStillStage();
     });
 
     nav.append(prev, label, next);
@@ -3061,7 +3491,13 @@
   }
 
   function hasReportArtifactContent() {
-    return Boolean(report || privacySummary || screenshotUrl);
+    if (report || privacySummary || screenshotUrl) {
+      return true;
+    }
+    // Still-primary packages: caption / annotations live in Report (image is
+    // already in the media column).
+    const shots = screenshotsArtifact?.screenshots;
+    return Array.isArray(shots) && shots.length > 0 && isStillMediaPrimary();
   }
 
   function hasActivityContent() {
@@ -3091,8 +3527,27 @@
   function renderReportPanel() {
     if (!elements.reportPanel) return;
 
-    const pageUrl = report?.page?.url || metadata.url || "";
-    const title = report?.title || getRecordingTitleLabel(metadata);
+    const shots = Array.isArray(screenshotsArtifact?.screenshots)
+      ? screenshotsArtifact.screenshots
+      : [];
+    const activeShot =
+      shots.length > 0
+        ? shots[Math.min(Math.max(0, screenshotActiveIndex), shots.length - 1)]
+        : null;
+    const stillPrimary = isStillMediaPrimary() && Boolean(activeShot);
+
+    const pageUrl =
+      report?.page?.url ||
+      (typeof activeShot?.url === "string" ? activeShot.url : "") ||
+      metadata?.url ||
+      "";
+    const title =
+      report?.title ||
+      (typeof activeShot?.caption === "string" && activeShot.caption.trim()
+        ? activeShot.caption.trim()
+        : "") ||
+      (typeof activeShot?.title === "string" ? activeShot.title : "") ||
+      getRecordingTitleLabel(metadata);
     const hasReportContent = hasReportArtifactContent();
     const wasReportHidden = elements.reportTab?.classList.contains("hidden");
 
@@ -3116,16 +3571,62 @@
     }
 
     const chips = getReportMetaChips();
+    // Still packages: surface viewport as a meta chip when present.
+    if (stillPrimary && activeShot?.viewport) {
+      const w = Number(activeShot.viewport.width) || 0;
+      const h = Number(activeShot.viewport.height) || 0;
+      if (w > 0 && h > 0) {
+        chips.push(t("screenshots.viewportChip", { width: String(w), height: String(h) }));
+      }
+    }
     elements.reportMeta.innerHTML = chips
       .map((chip) => `<span class="report-meta-chip">${escapeHtml(chip)}</span>`)
       .join("");
 
-    if (screenshotUrl) {
+    // Never re-show the still in Report when the media column already owns it.
+    if (screenshotUrl && !stillPrimary) {
       elements.reportScreenshot.src = screenshotUrl;
       elements.reportScreenshot.classList.remove("hidden");
     } else {
       elements.reportScreenshot.removeAttribute("src");
       elements.reportScreenshot.classList.add("hidden");
+    }
+
+    // Still report: list annotations under meta (no second image).
+    let annotationsBlock = elements.reportPanel.querySelector(".still-report-annotations");
+    if (stillPrimary && activeShot) {
+      const annotations = Array.isArray(activeShot.annotations) ? activeShot.annotations : [];
+      const described = globalThis.gnCore?.annotate?.describeAnnotation;
+      if (!annotationsBlock) {
+        annotationsBlock = document.createElement("div");
+        annotationsBlock.className = "still-report-annotations";
+        elements.reportPanel.append(annotationsBlock);
+      }
+      annotationsBlock.replaceChildren();
+      if (described && annotations.length > 0) {
+        const heading = document.createElement("h3");
+        heading.className = "screenshot-annotations-heading";
+        heading.textContent = t("screenshots.annotationsHeading");
+        annotationsBlock.append(heading);
+        const list = document.createElement("ul");
+        list.className = "screenshot-annotation-list";
+        for (const annotation of annotations) {
+          const item = document.createElement("li");
+          item.textContent = described(annotation);
+          if (annotation.type === "redact") {
+            item.className = "is-redaction";
+          }
+          list.append(item);
+        }
+        annotationsBlock.append(list);
+      } else if (!String(activeShot.caption || "").trim() && annotations.length === 0) {
+        const empty = document.createElement("p");
+        empty.className = "screenshot-empty-note";
+        empty.textContent = t("screenshots.noAnnotations");
+        annotationsBlock.append(empty);
+      }
+    } else if (annotationsBlock) {
+      annotationsBlock.remove();
     }
 
     // Prefer Report on first reveal when report artifacts exist.
@@ -5102,20 +5603,30 @@
     const mode = plan?.mode || "recording";
     const hasNoVideo = (options.videoPartCount || 0) === 0;
     const root = elements.playerState || document.body;
+    const showStillStageFlag = Boolean(plan?.showStillStage);
+    const showDomStageFlag = Boolean(plan?.showDomStage);
 
-    document.body.classList.toggle("no-video", hasNoVideo && mode !== "screenshot");
+    document.body.classList.toggle(
+      "no-video",
+      hasNoVideo && mode !== "screenshot" && !showStillStageFlag,
+    );
     document.body.classList.toggle("presentation-screenshot", mode === "screenshot");
+    document.body.classList.toggle("presentation-still-media", showStillStageFlag);
     document.body.classList.toggle("presentation-sdk-logs", mode === "sdk-logs");
     document.body.classList.toggle("presentation-empty", mode === "empty-evidence");
     root.classList.toggle("presentation-screenshot", mode === "screenshot");
+    root.classList.toggle("presentation-still-media", showStillStageFlag);
     root.classList.toggle("presentation-sdk-logs", mode === "sdk-logs");
     root.classList.toggle("presentation-empty", mode === "empty-evidence");
 
     if (elements.videoSection) {
       elements.videoSection.classList.toggle("hidden", plan ? !plan.showVideoSection : false);
     }
-    const showDomStageFlag = Boolean(plan?.showDomStage);
-    showDomStage(showDomStageFlag && getDomLookbackFrames().length > 0);
+    // Primary surface exclusivity: video | still | DOM.
+    if (elements.stillStage) {
+      elements.stillStage.classList.toggle("hidden", !showStillStageFlag);
+    }
+    showDomStage(showDomStageFlag && !showStillStageFlag && getDomLookbackFrames().length > 0);
     if (elements.layoutSplitter) {
       elements.layoutSplitter.classList.toggle("hidden", plan ? !plan.showLayoutSplitter : false);
       elements.layoutSplitter.setAttribute(
@@ -5123,19 +5634,33 @@
         plan && !plan.showLayoutSplitter ? "true" : "false",
       );
     }
-    // When DOM stage owns the media column, still allow layout toggle.
-    const hideLayoutChrome =
-      (mode === "screenshot" && !showDomStageFlag) || mode === "empty-evidence";
+    // Still / DOM media keep layout toggles; empty-evidence hides them.
+    // Still-primary uses buttons on the still toolbar (video-controls are hidden).
+    const hideLayoutChrome = mode === "empty-evidence";
     if (elements.layoutHorizontalBtn) {
       elements.layoutHorizontalBtn.classList.toggle("hidden", hideLayoutChrome);
     }
     if (elements.layoutVerticalBtn) {
       elements.layoutVerticalBtn.classList.toggle("hidden", hideLayoutChrome);
     }
+    if (elements.stillLayoutHorizontalBtn) {
+      elements.stillLayoutHorizontalBtn.classList.toggle("hidden", hideLayoutChrome);
+    }
+    if (elements.stillLayoutVerticalBtn) {
+      elements.stillLayoutVerticalBtn.classList.toggle("hidden", hideLayoutChrome);
+    }
+    // Video expand-in-tab lives on video-controls (hidden in still mode).
+    // Still expand-in-tab lives on the still toolbar and uses the same state.
     if (elements.videoFullscreenBtn) {
       elements.videoFullscreenBtn.classList.toggle(
         "hidden",
-        hideLayoutChrome || hasNoVideo || showDomStageFlag,
+        hideLayoutChrome || hasNoVideo || showDomStageFlag || showStillStageFlag,
+      );
+    }
+    if (elements.stillFullscreenBtn) {
+      elements.stillFullscreenBtn.classList.toggle(
+        "hidden",
+        hideLayoutChrome || !showStillStageFlag,
       );
     }
 
@@ -5145,7 +5670,10 @@
     if (notice) {
       const kind = plan?.noVideoNotice || (hasNoVideo ? "sdk" : "none");
       const showNotice =
-        Boolean(plan?.showVideoSection) && (kind === "sdk" || kind === "screenshot");
+        Boolean(plan?.showVideoSection) &&
+        !showStillStageFlag &&
+        !showDomStageFlag &&
+        (kind === "sdk" || kind === "screenshot");
       notice.classList.toggle("hidden", !showNotice);
       if (showNotice && noticeTitle && noticeHint) {
         if (kind === "screenshot") {
@@ -5156,6 +5684,10 @@
           noticeHint.textContent = t("noVideo.hint");
         }
       }
+    }
+
+    if (showStillStageFlag) {
+      renderStillStage();
     }
 
     if (!plan) {
@@ -5198,12 +5730,14 @@
       }
     }
 
-    // Leave video-fullscreen if screenshot mode collapses the media column.
-    if (
-      (mode === "screenshot" || mode === "empty-evidence") &&
-      elements.playerState?.classList.contains("is-video-fullscreen")
-    ) {
-      elements.playerState.classList.remove("is-video-fullscreen");
+    // Leave expand-in-tab when there is no media column (empty evidence only).
+    // Still-primary screenshot packages keep expand-in-tab like recordings.
+    if (mode === "empty-evidence" && isVideoFullscreen) {
+      isVideoFullscreen = false;
+      elements.playerState?.classList.remove("is-video-fullscreen");
+      updateFullscreenButton();
+    } else if (showStillStageFlag || (plan?.showVideoSection && !hasNoVideo)) {
+      updateFullscreenButton();
     }
   }
 
@@ -5215,6 +5749,7 @@
         defaultTab: "console",
         showVideoSection: true,
         showDomStage: false,
+        showStillStage: false,
         showLayoutSplitter: true,
         showConsoleTab: true,
         showNetworkTab: true,
@@ -5261,14 +5796,17 @@
       return resolve(evidence);
     }
 
-    // Fallback when gn-core is missing: keep previous no-video behaviour.
-    const showDomStage = !evidence.hasVideo && evidence.hasDom && evidence.screenshotCount === 0;
+    // Fallback when gn-core is missing: mirror shared resolvePresentationMode.
+    const showStillStage = !evidence.hasVideo && evidence.screenshotCount > 0;
+    const showDomStage =
+      !evidence.hasVideo && !showStillStage && evidence.hasDom && evidence.screenshotCount === 0;
     if (evidence.hasVideo) {
       return {
         mode: "recording",
         defaultTab: "console",
         showVideoSection: true,
         showDomStage: false,
+        showStillStage: false,
         showLayoutSplitter: true,
         showConsoleTab: true,
         showNetworkTab: true,
@@ -5284,25 +5822,28 @@
       const showConsole = evidence.consoleCount > 0 || hasInstantReplay;
       const showNetwork =
         evidence.networkCount > 0 || evidence.websocketCount > 0 || hasInstantReplay;
+      const mediaColumn = showStillStage || showDomStage;
+      const stillPrimary = showStillStage;
       return {
         mode: "screenshot",
         defaultTab:
           hasInstantReplay && evidence.consoleCount > 0
             ? "console"
             : evidence.screenshotCount > 0
-              ? "screenshots"
+              ? "report"
               : "elements",
-        showVideoSection: showDomStage,
+        showVideoSection: mediaColumn,
         showDomStage,
-        showLayoutSplitter: showDomStage,
+        showStillStage,
+        showLayoutSplitter: mediaColumn,
         showConsoleTab: showConsole,
         showNetworkTab: showNetwork,
-        showScreenshotsTab: evidence.screenshotCount > 0,
-        showReportTab: evidence.hasReportContent,
+        showScreenshotsTab: evidence.screenshotCount > 0 && !stillPrimary,
+        showReportTab: evidence.hasReportContent || stillPrimary,
         showActivityTab: evidence.activityCount > 0,
         showStorageTab: evidence.hasStorage,
         showElementsTab: evidence.hasDom,
-        noVideoNotice: showDomStage ? "none" : "screenshot",
+        noVideoNotice: "none",
       };
     }
     return {
@@ -5310,6 +5851,7 @@
       defaultTab: "console",
       showVideoSection: true,
       showDomStage: false,
+      showStillStage: false,
       showLayoutSplitter: true,
       showConsoleTab: true,
       showNetworkTab: true,
@@ -5842,33 +6384,73 @@
       // Screenshot images live at their own paths under `screenshots/`, so the
       // viewer resolves them from the entry map rather than from a fixed name.
       packageEntries: entries,
-      videoParts: videoPartPaths.map((path) => ({
-        name: path,
-        blob: getPackageEntry(entries, path),
-      })),
+      // Optional lookup so a no-video package is not rejected before capability checks.
+      videoParts: videoPartPaths
+        .map((path) => {
+          const blob = getPackageEntry(entries, path, false);
+          return blob ? { name: path, blob } : null;
+        })
+        .filter(Boolean),
     };
 
-    if (!resolved.metadata) {
+    if (!resolved.metadata?.blob) {
       throw new Error("Invalid recording package. Missing metadata.");
     }
 
-    // Video is no longer universal: the in-page SDK cannot capture a tab, so it
-    // writes packages with console/network/websocket and no video at all. Only
-    // treat missing parts as corruption when the producer claims it captured
-    // video — otherwise a valid SDK recording would be rejected as malformed.
+    // Video is not universal: screenshot reports, Instant Replay packages, and
+    // the in-page SDK ship without video.parts. Only treat missing parts as
+    // corruption when the package actually claims video capture.
     if (resolved.videoParts.length === 0) {
       const metadataJson = await parseJsonBlob(resolved.metadata.blob, "metadata.json").catch(
         () => null,
       );
-      const claimsVideo = globalThis.gnCore?.capabilities
-        ? globalThis.gnCore.capabilities.hasCapability(metadataJson || {}, "video")
-        : true;
-      if (claimsVideo) {
+      if (packageClaimsVideo(metadataJson, resolved)) {
         throw new Error("Invalid recording package. Missing video parts.");
       }
     }
 
     return resolved;
+  }
+
+  /**
+   * Whether a package is expected to include video parts.
+   *
+   * Prefer explicit `metadata.capabilities`. When that field is missing (legacy
+   * packages) or metadata failed to parse, use package contents: screenshots /
+   * Instant Replay / DOM lookback mean a no-video package is valid.
+   *
+   * Important: do NOT call hasCapability({}) — empty metadata resolves to the
+   * full extension capability set (includes video) and false-rejects IR/screenshot zips.
+   */
+  function packageClaimsVideo(metadataJson, resolvedFiles) {
+    if (metadataJson && Array.isArray(metadataJson.capabilities)) {
+      return metadataJson.capabilities.includes("video");
+    }
+
+    const hasNonVideoPrimary = Boolean(
+      resolvedFiles?.screenshots ||
+        resolvedFiles?.instantReplay ||
+        resolvedFiles?.dom ||
+        resolvedFiles?.screenshot,
+    );
+    if (hasNonVideoPrimary) {
+      return false;
+    }
+
+    if (
+      metadataJson &&
+      metadataJson.video &&
+      typeof metadataJson.video.partCount === "number" &&
+      metadataJson.video.partCount > 0
+    ) {
+      return true;
+    }
+
+    // Legacy full recordings omitted capabilities and always shipped video.
+    if (globalThis.gnCore?.capabilities && metadataJson) {
+      return globalThis.gnCore.capabilities.hasCapability(metadataJson, "video");
+    }
+    return true;
   }
 
   async function unlockEncryptedRecordingPackage(entries, indexJson, indexId) {
@@ -6018,8 +6600,20 @@
       videoParts: videoPartFileIds.map((id) => ({ id })),
     };
 
-    if (!resolved.metadata || resolved.videoParts.length === 0) {
-      throw new Error("Invalid recording index. Missing metadata or video parts.");
+    if (!resolved.metadata) {
+      throw new Error("Invalid recording index. Missing metadata.");
+    }
+    // Multi-file Drive indexes for full recordings list video part file ids.
+    // Screenshot / Instant Replay packages upload as a single zip (other branch).
+    // Only fail when the index *declares* video parts that are missing.
+    const declaredVideoPartCount =
+      typeof indexJson?.video?.partCount === "number" && indexJson.video.partCount > 0
+        ? indexJson.video.partCount
+        : Array.isArray(indexJson?.video?.partFileIds)
+          ? indexJson.video.partFileIds.filter(Boolean).length
+          : 0;
+    if (declaredVideoPartCount > 0 && resolved.videoParts.length === 0) {
+      throw new Error("Invalid recording index. Missing video parts.");
     }
 
     return resolved;
@@ -6561,7 +7155,9 @@
       // Update UI (video metadata wait already ran inside the video load branch).
       updatePlayerTitle(metadata);
       screenshotActiveIndex = 0;
+      resetStillViewerState();
       renderScreenshotsTab();
+      renderStillStage();
       renderReportPanel();
       renderActivityPanel();
       if (!timelineDurationLocked) {
@@ -6581,6 +7177,9 @@
       applyPresentationMode(presentationPlan, {
         videoPartCount: recordingFiles.videoParts.length,
       });
+      // Report panel depends on still-primary chrome (no duplicate image).
+      renderReportPanel();
+      renderScreenshotsTab();
       showLogsTab(presentationPlan.defaultTab);
     } catch (err) {
       markPendingLoadingEntriesFailed();
@@ -8709,6 +9308,7 @@
     setupLayoutListeners();
     setupVideoListeners();
     bindDomStageControls();
+    bindStillStageControls();
     setupFilterListeners();
     setupLogRowListeners();
     setupTabListeners();

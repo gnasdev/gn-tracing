@@ -103,8 +103,16 @@ VITE_BASE_PATH="$VITE_BASE_PATH" \
   VITE_FEEDBACK_PROXY_URL="$VITE_FEEDBACK_PROXY_URL" \
   task -d .. player:build:cloudflare
 
-echo "Publishing dist/ to project ${PROJECT_NAME}..."
-npx wrangler pages deploy dist --project-name="${PROJECT_NAME}"
+# Production custom domain (tracing.gnas.dev) tracks the Pages production
+# branch (`main`). Wrangler otherwise tags the deploy with the current git
+# branch (often `dev`) and ships a Preview that the custom domain never sees.
+PRODUCTION_BRANCH="${CLOUDFLARE_PAGES_PRODUCTION_BRANCH:-main}"
+
+echo "Publishing dist/ to project ${PROJECT_NAME} (branch ${PRODUCTION_BRANCH})..."
+npx wrangler pages deploy dist \
+  --project-name="${PROJECT_NAME}" \
+  --branch "${PRODUCTION_BRANCH}" \
+  --commit-dirty=true
 
 echo "Deploy complete."
 echo "Player host: ${PLAYER_HOST_URL}"
