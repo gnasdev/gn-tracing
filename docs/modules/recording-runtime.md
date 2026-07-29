@@ -11,7 +11,7 @@ source_paths:
   - "src/background/storage-manager.ts"
   - "src/offscreen/offscreen.ts"
   - "src/popup/popup.ts"
-  - "src/settings/settings.ts"
+  - "src/shared/settings-form-ui.ts"
   - "src/shared/recording-target.ts"
 related:
   - "./drive-and-player.md"
@@ -28,7 +28,7 @@ related:
 
 - Trạng thái: active
 - Phạm vi: recording lifecycle, CDP capture, offscreen media capture, service-worker state, popup state rendering, and capture settings
-- Nguồn code: `src/background/service-worker.ts`, `src/background/recorder-manager.ts`, `src/background/cdp-manager.ts`, `src/background/storage-manager.ts`, `src/offscreen/offscreen.ts`, `src/popup/popup.ts`, `src/settings/settings.ts`, `src/shared/recording-target.ts`
+- Nguồn code: `src/background/service-worker.ts`, `src/background/recorder-manager.ts`, `src/background/cdp-manager.ts`, `src/background/storage-manager.ts`, `src/offscreen/offscreen.ts`, `src/popup/popup.ts`, `src/shared/settings-form-ui.ts`, `src/shared/recording-target.ts`
 - Tuân thủ: Không áp dụng
 - Links: [Cloud Storage And Player](./drive-and-player.md), [Privacy And Redaction](./privacy-and-redaction.md), [Replay Player](./replay-player.md), [Extension Surfaces](../features/extension-surfaces.md), [Shared Data Models](../shared/data-models.md), [API Conventions](../shared/api-conventions.md)
 
@@ -41,7 +41,7 @@ This module covers the runtime capture path implemented by:
 - `src/background/storage-manager.ts`
 - `src/offscreen/offscreen.ts`
 - `src/popup/popup.ts`
-- `src/settings/settings.ts`
+- `src/shared/settings-form-ui.ts`
 - `src/shared/recording-target.ts`
 
 The service worker is the orchestration boundary. It owns session state, starts/stops capture, keeps the worker alive during recording, and exposes synchronized status to UI surfaces through `chrome.storage.session`.

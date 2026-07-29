@@ -86,7 +86,10 @@ describe("Instant Replay CDP wiring", () => {
     expect(Array.isArray(JSON.parse(artifacts.console!))).toBe(true);
 
     expect(swSource).toContain("buildInstantReplayPackageArtifacts");
-    expect(swSource).toMatch(/artifacts:\s*packageArtifacts/);
+    // IR capture freezes lookback + opens annotate; packaging runs on save.
+    expect(swSource).toContain("buildInstantReplayPending");
+    expect(swSource).toContain("createAnnotateCaptureDeps");
+    expect(swSource).toContain("resolveInstantReplayForSave");
     expect(swSource).toMatch(/artifacts:\s*screenshotArtifacts/);
     expect(swSource).toContain("createInstantReplayCdpHub");
     expect(swSource).toContain("irCdpHub");

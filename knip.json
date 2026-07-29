@@ -9,8 +9,6 @@
     "src/content/in-page-relay.ts",
     "src/drive-auth/drive-auth.ts",
     "src/storage-auth/storage-auth.ts",
-    "src/history/history.ts",
-    "src/settings/settings.ts",
     "src/shared/agent-report.ts",
     "scripts/*.mjs"
   ],

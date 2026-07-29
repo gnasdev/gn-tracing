@@ -1,15 +1,14 @@
 /**
- * Manages the full-page settings surface for Drive, package, and capture controls.
+ * Capture / privacy settings form shared by the full settings page and the
+ * popup settings dialog. Callers own page chrome (topbar, toast host, i18n
+ * language switch) and pass a root that contains the form controls.
  */
 
-import { attachFeedbackPopover, type FeedbackUiController } from "../shared/feedback-ui";
-import { attachPageNav } from "../shared/page-nav";
-import { getPrivacyProfileSettings, normalizeMaskDomSelectors } from "../shared/privacy-redaction";
-import { attachThemeToggle, type ThemeToggleController } from "../shared/theme";
-import { attachLanguageSwitch, type UiLanguage } from "../shared/ui-language";
-import type { MessageResponse, UploadHistoryEntry, UploadSettings } from "../types/messages";
+import type { MessageResponse, UploadSettings } from "../types/messages";
+import { getPrivacyProfileSettings, normalizeMaskDomSelectors } from "./privacy-redaction";
+import type { UiLanguage } from "./ui-language";
 
-const DEFAULT_SETTINGS: UploadSettings = {
+export const DEFAULT_SETTINGS: UploadSettings = {
   activeStorageProvider: "google-drive",
   folderInput: "/gn-tracing",
   folderId: null,
@@ -48,35 +47,11 @@ const DEFAULT_SETTINGS: UploadSettings = {
   captureMode: "cdp",
 };
 
-type SettingsLanguage = UiLanguage;
+export type SettingsSectionId = "privacy" | "capture" | "captureMode";
 
-const TRANSLATIONS: Record<SettingsLanguage, Record<string, string>> = {
+/** Form-only i18n keys used by the shared settings markup. */
+export const SETTINGS_FORM_TRANSLATIONS: Record<UiLanguage, Record<string, string>> = {
   en: {
-    "topbar.pageTitle": "Settings",
-    "nav.settings": "Settings",
-    "nav.history": "Upload History",
-    "nav.connect": "Manage clouds",
-    "theme.system": "System",
-    "theme.light": "Light",
-    "theme.dark": "Dark",
-    "theme.aria": "Theme: {label}",
-    "theme.titleSystem": "Theme: {label} (follows OS). Click to cycle System → Light → Dark.",
-    "theme.titleFixed": "Theme: {label}. Click to cycle System → Light → Dark.",
-    "feedback.button": "Feedback",
-    "feedback.sectionAria": "Send feedback",
-    "feedback.label": "Feedback",
-    "feedback.placeholder": "Describe a bug, idea, or question…",
-    "feedback.hint":
-      "Creates a public GitHub issue. Includes extension version, browser, OS, and locale only. Do not include secrets or passwords.",
-    "feedback.submit": "Submit",
-    "feedback.cancel": "Cancel",
-    "feedback.sending": "Sending…",
-    "feedback.success": "Feedback submitted.",
-    "feedback.failed": "Could not submit feedback.",
-    "page.title": "Settings",
-    "page.lead":
-      "Choose what each recording captures before you start a session. Save each section when you finish editing it.",
-    "actions.save": "Save Settings",
     "actions.saveSection": "Save section",
     "actions.savingSection": "Saving…",
     "sections.privacyRedaction": "Privacy & Redaction",
@@ -155,33 +130,11 @@ const TRANSLATIONS: Record<SettingsLanguage, Record<string, string>> = {
     "messages.saveFailed": "Failed to save settings",
     "info.buttonLabel": "Explain this field",
     "info.dialogTitleFallback": "Setting help",
+    "settings.dialogTitle": "Settings",
+    "settings.dialogLead":
+      "Choose what each recording captures before you start a session. Save each section when you finish editing it.",
   },
   vi: {
-    "topbar.pageTitle": "Cài đặt",
-    "nav.settings": "Cài đặt",
-    "nav.history": "Lịch sử upload",
-    "nav.connect": "Quản lý cloud",
-    "theme.system": "Hệ thống",
-    "theme.light": "Sáng",
-    "theme.dark": "Tối",
-    "theme.aria": "Giao diện: {label}",
-    "theme.titleSystem": "Giao diện: {label} (theo OS). Bấm để chuyển Hệ thống → Sáng → Tối.",
-    "theme.titleFixed": "Giao diện: {label}. Bấm để chuyển Hệ thống → Sáng → Tối.",
-    "feedback.button": "Góp ý",
-    "feedback.sectionAria": "Gửi góp ý",
-    "feedback.label": "Góp ý",
-    "feedback.placeholder": "Mô tả lỗi, ý tưởng hoặc câu hỏi…",
-    "feedback.hint":
-      "Tạo issue GitHub công khai. Chỉ kèm version extension, browser, OS và locale. Không gửi mật khẩu hay secret.",
-    "feedback.submit": "Gửi",
-    "feedback.cancel": "Hủy",
-    "feedback.sending": "Đang gửi…",
-    "feedback.success": "Đã gửi góp ý.",
-    "feedback.failed": "Không gửi được góp ý.",
-    "page.title": "Cài đặt",
-    "page.lead":
-      "Chọn dữ liệu cần capture trước khi bắt đầu phiên ghi. Lưu từng section sau khi chỉnh.",
-    "actions.save": "Lưu cài đặt",
     "actions.saveSection": "Lưu section",
     "actions.savingSection": "Đang lưu…",
     "sections.privacyRedaction": "Privacy & Redaction",
@@ -260,10 +213,13 @@ const TRANSLATIONS: Record<SettingsLanguage, Record<string, string>> = {
     "messages.saveFailed": "Không lưu được cài đặt",
     "info.buttonLabel": "Giải thích field này",
     "info.dialogTitleFallback": "Giải thích cài đặt",
+    "settings.dialogTitle": "Cài đặt",
+    "settings.dialogLead":
+      "Chọn dữ liệu cần capture trước khi bắt đầu phiên ghi. Lưu từng section sau khi chỉnh.",
   },
 };
 
-const FIELD_HELP: Record<string, Record<SettingsLanguage, { title: string; body: string }>> = {
+const FIELD_HELP: Record<string, Record<UiLanguage, { title: string; body: string }>> = {
   "capture-console-input": {
     en: {
       title: "Capture console artifact",
@@ -496,313 +452,28 @@ const FIELD_HELP: Record<string, Record<SettingsLanguage, { title: string; body:
   },
 };
 
-const infoPopover = document.getElementById("setting-info-popover") as HTMLElement;
-const infoPopoverTitle = document.getElementById("setting-info-title")!;
-const infoPopoverBody = document.getElementById("setting-info-body")!;
-const toastEl = document.getElementById("toast")!;
-const toastIconEl = document.getElementById("toast-icon")!;
-const toastMessageEl = document.getElementById("toast-message")!;
-const toastCloseBtn = document.getElementById("toast-close-btn") as HTMLButtonElement;
-const redactSensitiveHeadersInput = document.getElementById(
-  "redact-sensitive-headers-input",
-) as HTMLInputElement;
-const redactSensitiveQueryParamsInput = document.getElementById(
-  "redact-sensitive-query-params-input",
-) as HTMLInputElement;
-const redactRequestBodyFieldsInput = document.getElementById(
-  "redact-request-body-fields-input",
-) as HTMLInputElement;
-const redactResponseBodyFieldsInput = document.getElementById(
-  "redact-response-body-fields-input",
-) as HTMLInputElement;
-const redactConsoleValuesInput = document.getElementById(
-  "redact-console-values-input",
-) as HTMLInputElement;
-const redactEventMetadataInput = document.getElementById(
-  "redact-event-metadata-input",
-) as HTMLInputElement;
-const redactWebSocketPayloadsInput = document.getElementById(
-  "redact-websocket-payloads-input",
-) as HTMLSelectElement;
-const maskDomSelectorsInput = document.getElementById(
-  "mask-dom-selectors-input",
-) as HTMLTextAreaElement;
-
-const captureConsoleInput = document.getElementById("capture-console-input") as HTMLInputElement;
-const captureConsoleArgsInput = document.getElementById(
-  "capture-console-args-input",
-) as HTMLInputElement;
-const consolePreviewDepthInput = document.getElementById(
-  "console-preview-depth-input",
-) as HTMLSelectElement;
-const captureConsoleStacksInput = document.getElementById(
-  "capture-console-stacks-input",
-) as HTMLSelectElement;
-const captureConsoleSourceSnippetsInput = document.getElementById(
-  "capture-console-source-snippets-input",
-) as HTMLSelectElement;
-const maxConsoleEntryBytesInput = document.getElementById(
-  "max-console-entry-bytes-input",
-) as HTMLInputElement;
-
-const captureNetworkInput = document.getElementById("capture-network-input") as HTMLInputElement;
-const captureRequestHeadersInput = document.getElementById(
-  "capture-request-headers-input",
-) as HTMLSelectElement;
-const captureResponseHeadersInput = document.getElementById(
-  "capture-response-headers-input",
-) as HTMLSelectElement;
-const captureRequestBodiesInput = document.getElementById(
-  "capture-request-bodies-input",
-) as HTMLInputElement;
-const captureResponseBodyModeInput = document.getElementById(
-  "capture-response-body-mode-input",
-) as HTMLSelectElement;
-const maxResponseBodyBytesInput = document.getElementById(
-  "max-response-body-bytes-input",
-) as HTMLInputElement;
-const captureRedirectHeadersInput = document.getElementById(
-  "capture-redirect-headers-input",
-) as HTMLSelectElement;
-const captureInitiatorInput = document.getElementById(
-  "capture-initiator-input",
-) as HTMLSelectElement;
-const suppressRecorderInternalRequestsInput = document.getElementById(
-  "suppress-recorder-internal-requests-input",
-) as HTMLInputElement;
-
-const captureWebSocketsInput = document.getElementById(
-  "capture-websockets-input",
-) as HTMLInputElement;
-const captureWebSocketFramesInput = document.getElementById(
-  "capture-websocket-frames-input",
-) as HTMLInputElement;
-const maxWebSocketFrameBytesInput = document.getElementById(
-  "max-websocket-frame-bytes-input",
-) as HTMLInputElement;
-const captureWebSocketInitiatorInput = document.getElementById(
-  "capture-websocket-initiator-input",
-) as HTMLInputElement;
-
-const captureStorageInput = document.getElementById("capture-storage-input") as HTMLInputElement;
-const redactStorageValuesInput = document.getElementById(
-  "redact-storage-values-input",
-) as HTMLInputElement;
-const captureDomSnapshotsInput = document.getElementById(
-  "capture-dom-snapshots-input",
-) as HTMLInputElement;
-const redactDomTextContentInput = document.getElementById(
-  "redact-dom-text-content-input",
-) as HTMLInputElement;
-const captureModeInput = document.getElementById("capture-mode-input") as HTMLSelectElement;
-
-type SettingsSectionId = "privacy" | "capture" | "captureMode";
-
-let currentSettings: UploadSettings | null = null;
-let currentLanguage: SettingsLanguage = "en";
-
-function t(key: string, replacements: Record<string, string> = {}): string {
-  const template = TRANSLATIONS[currentLanguage][key] || TRANSLATIONS.en[key] || key;
-  return Object.entries(replacements).reduce(
-    (text, [name, value]) => text.replaceAll(`{${name}}`, value),
-    template,
-  );
+export interface SettingsFormController {
+  load: () => Promise<void>;
+  refreshFieldInfoLabels: () => void;
+  destroy: () => void;
 }
 
-function getLabelForHelpKey(helpKey: string): string {
-  const label = document
-    .querySelector(`[for="${helpKey}"] [data-i18n], #${helpKey}`)
-    ?.closest("label");
-  const labelText = label?.querySelector("[data-i18n]")?.textContent?.trim();
-  return labelText || t("info.dialogTitleFallback");
+export interface AttachSettingsFormOptions {
+  /** Container that owns the form controls (ids below must exist under it). */
+  root: HTMLElement;
+  /** Optional popover host for field help (`#setting-info-popover` markup). */
+  infoPopover?: HTMLElement | null;
+  getLanguage: () => UiLanguage;
+  t: (key: string, replacements?: Record<string, string>) => string;
+  showMessage: (message: string, success?: boolean) => void;
 }
 
-function applyTranslations(): void {
-  document.documentElement.lang = currentLanguage;
-  document.title = currentLanguage === "vi" ? "Cài đặt GN Tracing" : "GN Tracing Settings";
-
-  document.querySelectorAll<HTMLElement>("[data-i18n]").forEach((element) => {
-    element.textContent = t(element.dataset.i18n || "");
-  });
-  document.querySelectorAll<HTMLInputElement>("[data-i18n-placeholder]").forEach((element) => {
-    element.placeholder = t(element.dataset.i18nPlaceholder || "");
-  });
-  document.querySelectorAll<HTMLButtonElement>(".field-info-btn").forEach((button) => {
-    button.setAttribute("aria-label", t("info.buttonLabel"));
-    button.title = t("info.buttonLabel");
-  });
-
-  if (activeInfoHelpKey && isPopoverOpen(infoPopover) && activeInfoButton) {
-    fillInfoPopover(activeInfoHelpKey);
-    positionInfoPopover(activeInfoButton);
+function requireEl<T extends HTMLElement>(root: HTMLElement, id: string): T {
+  const el = root.querySelector<T>(`#${id}`);
+  if (!el) {
+    throw new Error(`settings form missing #${id}`);
   }
-}
-
-function addFieldInfoButton(label: HTMLLabelElement, helpKey: string): void {
-  if (label.querySelector(".field-info-btn")) {
-    return;
-  }
-
-  // Prefer explicit check-text / label span so both toggle rows and labeled controls work.
-  const labelText =
-    label.querySelector<HTMLElement>(".settings-check-text[data-i18n]") ||
-    label.querySelector<HTMLElement>(".setting-field-label-row [data-i18n]") ||
-    label.querySelector<HTMLElement>("span[data-i18n]");
-  if (!labelText) {
-    return;
-  }
-
-  const hasHelp = FIELD_HELP[helpKey]?.en || FIELD_HELP[helpKey]?.vi;
-  if (!hasHelp) {
-    return;
-  }
-
-  // Keep the label text + info button on one horizontal row. `.setting-field`
-  // is a column flex, so a bare sibling button would wrap onto its own line.
-  let labelRow = labelText.closest(".setting-field-label-row");
-  if (!labelRow) {
-    labelRow = document.createElement("div");
-    labelRow.className = "setting-field-label-row";
-    labelText.insertAdjacentElement("beforebegin", labelRow);
-    labelRow.appendChild(labelText);
-  }
-
-  const button = document.createElement("button");
-  button.className = "field-info-btn";
-  button.type = "button";
-  button.dataset.helpKey = helpKey;
-  button.textContent = "i";
-  button.setAttribute("aria-label", t("info.buttonLabel"));
-  button.setAttribute("aria-haspopup", "dialog");
-  button.setAttribute("aria-expanded", "false");
-  button.setAttribute("aria-controls", "setting-info-popover");
-  button.title = t("info.buttonLabel");
-  labelRow.appendChild(button);
-}
-
-function setupFieldInfoButtons(): void {
-  document
-    .querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>(
-      "input[id], select[id], textarea[id]",
-    )
-    .forEach((control) => {
-      const label = control.closest("label");
-      if (label) {
-        addFieldInfoButton(label, control.id);
-      }
-    });
-}
-
-type ToastVariant = "success" | "info" | "error";
-
-let toastTimeout: ReturnType<typeof setTimeout> | null = null;
-let activeInfoHelpKey: string | null = null;
-let activeInfoButton: HTMLButtonElement | null = null;
-
-function isPopoverOpen(element: HTMLElement): boolean {
-  return element.matches(":popover-open");
-}
-
-function getToastIcon(variant: ToastVariant): string {
-  switch (variant) {
-    case "info":
-      return "i";
-    case "error":
-      return "!";
-    default:
-      return "✓";
-  }
-}
-
-function showToast(
-  message: string,
-  durationMs = 2200,
-  options: { variant?: ToastVariant } = {},
-): void {
-  const variant = options.variant || "success";
-  toastIconEl.textContent = getToastIcon(variant);
-  toastMessageEl.textContent = message;
-  toastEl.classList.remove("toast-success", "toast-info", "toast-error", "hidden");
-  toastEl.classList.add(`toast-${variant}`);
-  toastEl.setAttribute("role", variant === "error" ? "alert" : "status");
-  toastEl.setAttribute("aria-live", variant === "error" ? "assertive" : "polite");
-
-  if (toastTimeout) {
-    clearTimeout(toastTimeout);
-  }
-  if (durationMs > 0) {
-    toastTimeout = setTimeout(() => {
-      hideToast();
-    }, durationMs);
-  }
-}
-
-function hideToast(): void {
-  toastEl.classList.add("hidden");
-  if (toastTimeout) {
-    clearTimeout(toastTimeout);
-    toastTimeout = null;
-  }
-}
-
-function fillInfoPopover(helpKey: string): void {
-  const help = FIELD_HELP[helpKey]?.[currentLanguage] || FIELD_HELP[helpKey]?.en;
-  infoPopoverTitle.textContent = help?.title || getLabelForHelpKey(helpKey);
-  infoPopoverBody.textContent = help?.body || t("info.dialogTitleFallback");
-}
-
-function positionInfoPopover(anchor: HTMLElement): void {
-  const gap = 8;
-  const margin = 12;
-  const rect = anchor.getBoundingClientRect();
-  // Measure after open so size is accurate.
-  const popRect = infoPopover.getBoundingClientRect();
-  let top = rect.bottom + gap;
-  let left = rect.left;
-
-  if (top + popRect.height > window.innerHeight - margin) {
-    top = rect.top - popRect.height - gap;
-  }
-  if (left + popRect.width > window.innerWidth - margin) {
-    left = window.innerWidth - popRect.width - margin;
-  }
-  top = Math.max(margin, top);
-  left = Math.max(margin, left);
-
-  infoPopover.style.top = `${Math.round(top)}px`;
-  infoPopover.style.left = `${Math.round(left)}px`;
-}
-
-function closeInfoPopover(): void {
-  if (isPopoverOpen(infoPopover)) {
-    infoPopover.hidePopover();
-  }
-  if (activeInfoButton) {
-    activeInfoButton.setAttribute("aria-expanded", "false");
-  }
-  activeInfoHelpKey = null;
-  activeInfoButton = null;
-}
-
-function openInfoPopover(helpKey: string, anchor: HTMLButtonElement): void {
-  if (activeInfoHelpKey === helpKey && isPopoverOpen(infoPopover)) {
-    closeInfoPopover();
-    return;
-  }
-
-  if (activeInfoButton && activeInfoButton !== anchor) {
-    activeInfoButton.setAttribute("aria-expanded", "false");
-  }
-
-  fillInfoPopover(helpKey);
-  activeInfoHelpKey = helpKey;
-  activeInfoButton = anchor;
-  anchor.setAttribute("aria-expanded", "true");
-
-  if (!isPopoverOpen(infoPopover)) {
-    infoPopover.showPopover();
-  }
-  positionInfoPopover(anchor);
+  return el;
 }
 
 function withDefaultSettings(settings: Partial<UploadSettings>): UploadSettings {
@@ -871,305 +542,519 @@ function withDefaultSettings(settings: Partial<UploadSettings>): UploadSettings 
   };
 }
 
-function showMessage(message: string, success = false): void {
-  showToast(message, success ? 2200 : 4200, {
-    variant: success ? "success" : "error",
-  });
-}
+/**
+ * Wire load/save/render for the capture+privacy form under `root`.
+ * Safe to call once per root; returns a controller for reload and cleanup.
+ */
+export function attachSettingsForm(options: AttachSettingsFormOptions): SettingsFormController {
+  const { root, getLanguage, t, showMessage } = options;
+  const infoPopover = options.infoPopover ?? null;
+  const infoPopoverTitle = infoPopover?.querySelector<HTMLElement>("#setting-info-title") ?? null;
+  const infoPopoverBody = infoPopover?.querySelector<HTMLElement>("#setting-info-body") ?? null;
 
-function getOptionalNumber(input: HTMLInputElement): number | null {
-  if (input.value.trim() === "") {
-    return null;
+  const redactSensitiveHeadersInput = requireEl<HTMLInputElement>(
+    root,
+    "redact-sensitive-headers-input",
+  );
+  const redactSensitiveQueryParamsInput = requireEl<HTMLInputElement>(
+    root,
+    "redact-sensitive-query-params-input",
+  );
+  const redactRequestBodyFieldsInput = requireEl<HTMLInputElement>(
+    root,
+    "redact-request-body-fields-input",
+  );
+  const redactResponseBodyFieldsInput = requireEl<HTMLInputElement>(
+    root,
+    "redact-response-body-fields-input",
+  );
+  const redactConsoleValuesInput = requireEl<HTMLInputElement>(root, "redact-console-values-input");
+  const redactEventMetadataInput = requireEl<HTMLInputElement>(root, "redact-event-metadata-input");
+  const redactWebSocketPayloadsInput = requireEl<HTMLSelectElement>(
+    root,
+    "redact-websocket-payloads-input",
+  );
+  const maskDomSelectorsInput = requireEl<HTMLTextAreaElement>(root, "mask-dom-selectors-input");
+
+  const captureConsoleInput = requireEl<HTMLInputElement>(root, "capture-console-input");
+  const captureConsoleArgsInput = requireEl<HTMLInputElement>(root, "capture-console-args-input");
+  const consolePreviewDepthInput = requireEl<HTMLSelectElement>(
+    root,
+    "console-preview-depth-input",
+  );
+  const captureConsoleStacksInput = requireEl<HTMLSelectElement>(
+    root,
+    "capture-console-stacks-input",
+  );
+  const captureConsoleSourceSnippetsInput = requireEl<HTMLSelectElement>(
+    root,
+    "capture-console-source-snippets-input",
+  );
+  const maxConsoleEntryBytesInput = requireEl<HTMLInputElement>(
+    root,
+    "max-console-entry-bytes-input",
+  );
+
+  const captureNetworkInput = requireEl<HTMLInputElement>(root, "capture-network-input");
+  const captureRequestHeadersInput = requireEl<HTMLSelectElement>(
+    root,
+    "capture-request-headers-input",
+  );
+  const captureResponseHeadersInput = requireEl<HTMLSelectElement>(
+    root,
+    "capture-response-headers-input",
+  );
+  const captureRequestBodiesInput = requireEl<HTMLInputElement>(
+    root,
+    "capture-request-bodies-input",
+  );
+  const captureResponseBodyModeInput = requireEl<HTMLSelectElement>(
+    root,
+    "capture-response-body-mode-input",
+  );
+  const maxResponseBodyBytesInput = requireEl<HTMLInputElement>(
+    root,
+    "max-response-body-bytes-input",
+  );
+  const captureRedirectHeadersInput = requireEl<HTMLSelectElement>(
+    root,
+    "capture-redirect-headers-input",
+  );
+  const captureInitiatorInput = requireEl<HTMLSelectElement>(root, "capture-initiator-input");
+  const suppressRecorderInternalRequestsInput = requireEl<HTMLInputElement>(
+    root,
+    "suppress-recorder-internal-requests-input",
+  );
+
+  const captureWebSocketsInput = requireEl<HTMLInputElement>(root, "capture-websockets-input");
+  const captureWebSocketFramesInput = requireEl<HTMLInputElement>(
+    root,
+    "capture-websocket-frames-input",
+  );
+  const maxWebSocketFrameBytesInput = requireEl<HTMLInputElement>(
+    root,
+    "max-websocket-frame-bytes-input",
+  );
+  const captureWebSocketInitiatorInput = requireEl<HTMLInputElement>(
+    root,
+    "capture-websocket-initiator-input",
+  );
+
+  const captureStorageInput = requireEl<HTMLInputElement>(root, "capture-storage-input");
+  const redactStorageValuesInput = requireEl<HTMLInputElement>(root, "redact-storage-values-input");
+  const captureDomSnapshotsInput = requireEl<HTMLInputElement>(root, "capture-dom-snapshots-input");
+  const redactDomTextContentInput = requireEl<HTMLInputElement>(
+    root,
+    "redact-dom-text-content-input",
+  );
+  const captureModeInput = requireEl<HTMLSelectElement>(root, "capture-mode-input");
+
+  let activeInfoHelpKey: string | null = null;
+  let activeInfoButton: HTMLButtonElement | null = null;
+  const abort = new AbortController();
+  const { signal } = abort;
+
+  function isPopoverOpen(element: HTMLElement): boolean {
+    return element.matches(":popover-open");
   }
-  const value = Number(input.value);
-  return Number.isFinite(value) ? value : null;
-}
 
-function renderSettings(settings: UploadSettings): void {
-  const normalizedSettings = withDefaultSettings(settings);
-  currentSettings = normalizedSettings;
-
-  redactSensitiveHeadersInput.checked = normalizedSettings.redactSensitiveHeaders;
-  redactSensitiveQueryParamsInput.checked = normalizedSettings.redactSensitiveQueryParams;
-  redactRequestBodyFieldsInput.checked = normalizedSettings.redactRequestBodyFields;
-  redactResponseBodyFieldsInput.checked = normalizedSettings.redactResponseBodyFields;
-  redactConsoleValuesInput.checked = normalizedSettings.redactConsoleValues;
-  redactEventMetadataInput.checked = normalizedSettings.redactEventMetadata;
-  redactWebSocketPayloadsInput.value = normalizedSettings.redactWebSocketPayloads;
-  maskDomSelectorsInput.value = normalizedSettings.maskDomSelectors.join("\n");
-
-  captureConsoleInput.checked = normalizedSettings.captureConsole;
-  captureConsoleArgsInput.checked = normalizedSettings.captureConsoleArgs;
-  consolePreviewDepthInput.value = normalizedSettings.consolePreviewDepth;
-  captureConsoleStacksInput.value = normalizedSettings.captureConsoleStacks;
-  captureConsoleSourceSnippetsInput.value = normalizedSettings.captureConsoleSourceSnippets;
-  maxConsoleEntryBytesInput.value =
-    normalizedSettings.maxConsoleEntryBytes == null
-      ? ""
-      : String(normalizedSettings.maxConsoleEntryBytes);
-
-  captureNetworkInput.checked = normalizedSettings.captureNetwork;
-  captureRequestHeadersInput.value = normalizedSettings.captureRequestHeaders;
-  captureResponseHeadersInput.value = normalizedSettings.captureResponseHeaders;
-  captureRequestBodiesInput.checked = normalizedSettings.captureRequestBodies;
-  captureResponseBodyModeInput.value = normalizedSettings.captureResponseBodyMode;
-  maxResponseBodyBytesInput.value =
-    normalizedSettings.maxResponseBodyBytes == null
-      ? ""
-      : String(normalizedSettings.maxResponseBodyBytes);
-  captureRedirectHeadersInput.value = normalizedSettings.captureRedirectHeaders;
-  captureInitiatorInput.value = normalizedSettings.captureInitiator;
-  suppressRecorderInternalRequestsInput.checked =
-    normalizedSettings.suppressRecorderInternalRequests;
-
-  captureWebSocketsInput.checked = normalizedSettings.captureWebSockets;
-  captureWebSocketFramesInput.checked = normalizedSettings.captureWebSocketFrames;
-  maxWebSocketFrameBytesInput.value =
-    normalizedSettings.maxWebSocketFrameBytes == null
-      ? ""
-      : String(normalizedSettings.maxWebSocketFrameBytes);
-  captureWebSocketInitiatorInput.checked = normalizedSettings.captureWebSocketInitiator;
-
-  captureStorageInput.checked = normalizedSettings.captureStorage;
-  redactStorageValuesInput.checked = normalizedSettings.redactStorageValues;
-  captureDomSnapshotsInput.checked = normalizedSettings.captureDomSnapshots;
-  redactDomTextContentInput.checked = normalizedSettings.redactDomTextContent;
-  captureModeInput.value = normalizedSettings.captureMode;
-  syncInspectorCaptureCoupling();
-}
-
-// When network/request capture is on, storage and DOM capture are forced on and
-// their checkboxes are locked to reflect that they cannot be turned off
-// independently. Mirrors the data-layer coupling in settings-store.ts and the
-// service worker.
-function syncInspectorCaptureCoupling(): void {
-  const coupled = captureNetworkInput.checked;
-  if (coupled) {
-    captureStorageInput.checked = true;
-    captureDomSnapshotsInput.checked = true;
+  function getOptionalNumber(input: HTMLInputElement): number | null {
+    if (input.value.trim() === "") {
+      return null;
+    }
+    const value = Number(input.value);
+    return Number.isFinite(value) ? value : null;
   }
-  captureStorageInput.disabled = coupled;
-  captureDomSnapshotsInput.disabled = coupled;
-}
 
-function getPrivacySectionPayload(): Record<string, unknown> {
-  return {
-    privacyProfile: "custom",
-    redactSensitiveHeaders: redactSensitiveHeadersInput.checked,
-    redactSensitiveQueryParams: redactSensitiveQueryParamsInput.checked,
-    redactRequestBodyFields: redactRequestBodyFieldsInput.checked,
-    redactResponseBodyFields: redactResponseBodyFieldsInput.checked,
-    redactConsoleValues: redactConsoleValuesInput.checked,
-    redactWebSocketPayloads: redactWebSocketPayloadsInput.value,
-    redactEventMetadata: redactEventMetadataInput.checked,
-    maskDomSelectors: normalizeMaskDomSelectors(maskDomSelectorsInput.value),
-  };
-}
-
-function getCaptureSectionPayload(): Record<string, unknown> {
-  return {
-    // Coupling: network/request capture forces storage + DOM capture on.
-    captureStorage: captureStorageInput.checked || captureNetworkInput.checked,
-    redactStorageValues: redactStorageValuesInput.checked,
-    captureDomSnapshots: captureDomSnapshotsInput.checked || captureNetworkInput.checked,
-    redactDomTextContent: redactDomTextContentInput.checked,
-    captureConsole: captureConsoleInput.checked,
-    captureConsoleArgs: captureConsoleArgsInput.checked,
-    consolePreviewDepth: consolePreviewDepthInput.value,
-    captureConsoleStacks: captureConsoleStacksInput.value,
-    captureConsoleSourceSnippets: captureConsoleSourceSnippetsInput.value,
-    maxConsoleEntryBytes: getOptionalNumber(maxConsoleEntryBytesInput),
-    captureNetwork: captureNetworkInput.checked,
-    captureRequestHeaders: captureRequestHeadersInput.value,
-    captureResponseHeaders: captureResponseHeadersInput.value,
-    captureRequestBodies: captureRequestBodiesInput.checked,
-    captureResponseBodies: captureResponseBodyModeInput.value !== "off",
-    captureResponseBodyMode: captureResponseBodyModeInput.value,
-    maxResponseBodyBytes: getOptionalNumber(maxResponseBodyBytesInput),
-    captureRedirectHeaders: captureRedirectHeadersInput.value,
-    captureInitiator: captureInitiatorInput.value,
-    suppressRecorderInternalRequests: suppressRecorderInternalRequestsInput.checked,
-    captureWebSockets: captureWebSocketsInput.checked,
-    captureWebSocketFrames: captureWebSocketFramesInput.checked,
-    maxWebSocketFrameBytes: getOptionalNumber(maxWebSocketFrameBytesInput),
-    captureWebSocketInitiator: captureWebSocketInitiatorInput.checked,
-  };
-}
-
-function getCaptureModeSectionPayload(): Record<string, unknown> {
-  return {
-    captureMode: captureModeInput.value,
-  };
-}
-
-function getSectionPayload(section: SettingsSectionId): Record<string, unknown> {
-  if (section === "privacy") {
-    return getPrivacySectionPayload();
+  function getLabelForHelpKey(helpKey: string): string {
+    const label = root
+      .querySelector(`[for="${helpKey}"] [data-i18n], #${helpKey}`)
+      ?.closest("label");
+    const labelText = label?.querySelector("[data-i18n]")?.textContent?.trim();
+    return labelText || t("info.dialogTitleFallback");
   }
-  if (section === "capture") {
-    return getCaptureSectionPayload();
-  }
-  return getCaptureModeSectionPayload();
-}
 
-async function loadSettings(): Promise<void> {
-  try {
-    const result = (await chrome.runtime.sendMessage({
-      action: "GET_SETTINGS",
-    })) as MessageResponse & {
-      settings?: UploadSettings;
-      uploadHistory?: UploadHistoryEntry[];
-    };
-    if (!result.ok || !result.settings) {
-      showMessage(result.error || t("messages.loadFailed"));
+  function fillInfoPopover(helpKey: string): void {
+    if (!infoPopoverTitle || !infoPopoverBody) {
       return;
     }
-    renderSettings(result.settings);
-  } catch (error) {
-    showMessage((error as Error).message);
+    const lang = getLanguage();
+    const help = FIELD_HELP[helpKey]?.[lang] || FIELD_HELP[helpKey]?.en;
+    infoPopoverTitle.textContent = help?.title || getLabelForHelpKey(helpKey);
+    infoPopoverBody.textContent = help?.body || t("info.dialogTitleFallback");
   }
-}
 
-async function saveSection(section: SettingsSectionId, button: HTMLButtonElement): Promise<void> {
-  const previousLabel = button.textContent;
-  button.disabled = true;
-  button.textContent = t("actions.savingSection");
-  try {
-    const result = (await chrome.runtime.sendMessage({
-      action: "UPDATE_SETTINGS",
-      data: getSectionPayload(section),
-    })) as MessageResponse & { settings?: UploadSettings; message?: string };
-    if (!result.ok || !result.settings) {
-      showMessage(result.error || t("messages.saveFailed"));
+  function positionInfoPopover(anchor: HTMLElement): void {
+    if (!infoPopover) {
       return;
     }
-    renderSettings(result.settings);
-    if (typeof result.message === "string" && result.message.trim()) {
-      showMessage(result.message, false);
-      return;
+    const gap = 8;
+    const margin = 12;
+    const rect = anchor.getBoundingClientRect();
+    const popRect = infoPopover.getBoundingClientRect();
+    let top = rect.bottom + gap;
+    let left = rect.left;
+
+    if (top + popRect.height > window.innerHeight - margin) {
+      top = rect.top - popRect.height - gap;
     }
-    showMessage(t("messages.sectionSaved"), true);
-  } catch (error) {
-    showMessage((error as Error).message);
-  } finally {
-    button.disabled = false;
-    button.textContent = previousLabel || t("actions.saveSection");
+    if (left + popRect.width > window.innerWidth - margin) {
+      left = window.innerWidth - popRect.width - margin;
+    }
+    top = Math.max(margin, top);
+    left = Math.max(margin, left);
+
+    infoPopover.style.top = `${Math.round(top)}px`;
+    infoPopover.style.left = `${Math.round(left)}px`;
   }
-}
 
-document.querySelectorAll("input, select, textarea").forEach((input) => {
-  input.addEventListener("change", () => {
-    // Keep storage/DOM toggles locked-on while network capture is enabled.
-    if (input.getAttribute("id") === "capture-network-input") {
-      syncInspectorCaptureCoupling();
+  function closeInfoPopover(): void {
+    if (infoPopover && isPopoverOpen(infoPopover)) {
+      infoPopover.hidePopover();
     }
-  });
-});
-
-document.querySelectorAll<HTMLButtonElement>(".settings-section-save").forEach((button) => {
-  button.addEventListener("click", () => {
-    const section = button.dataset.section as SettingsSectionId | undefined;
-    if (section === "privacy" || section === "capture" || section === "captureMode") {
-      void saveSection(section, button);
+    if (activeInfoButton) {
+      activeInfoButton.setAttribute("aria-expanded", "false");
     }
-  });
-});
-
-document.addEventListener("click", (event) => {
-  const button = (event.target as HTMLElement).closest<HTMLButtonElement>(".field-info-btn");
-  if (!button?.dataset.helpKey) {
-    return;
-  }
-  event.preventDefault();
-  event.stopPropagation();
-  openInfoPopover(button.dataset.helpKey, button);
-});
-
-infoPopover.addEventListener("toggle", (event) => {
-  const toggleEvent = event as ToggleEvent;
-  if (toggleEvent.newState === "closed" && activeInfoButton) {
-    activeInfoButton.setAttribute("aria-expanded", "false");
     activeInfoHelpKey = null;
     activeInfoButton = null;
   }
-});
 
-window.addEventListener(
-  "resize",
-  () => {
-    if (activeInfoButton && isPopoverOpen(infoPopover)) {
-      positionInfoPopover(activeInfoButton);
+  function openInfoPopover(helpKey: string, anchor: HTMLButtonElement): void {
+    if (!infoPopover || !infoPopoverTitle || !infoPopoverBody) {
+      return;
     }
-  },
-  { passive: true },
-);
-
-window.addEventListener(
-  "scroll",
-  () => {
-    if (activeInfoButton && isPopoverOpen(infoPopover)) {
-      positionInfoPopover(activeInfoButton);
+    if (activeInfoHelpKey === helpKey && isPopoverOpen(infoPopover)) {
+      closeInfoPopover();
+      return;
     }
-  },
-  { passive: true, capture: true },
-);
 
-toastCloseBtn.addEventListener("click", () => {
-  hideToast();
-});
+    if (activeInfoButton && activeInfoButton !== anchor) {
+      activeInfoButton.setAttribute("aria-expanded", "false");
+    }
 
-setupFieldInfoButtons();
-attachPageNav({ current: "settings" });
+    fillInfoPopover(helpKey);
+    activeInfoHelpKey = helpKey;
+    activeInfoButton = anchor;
+    anchor.setAttribute("aria-expanded", "true");
 
-const feedbackMount = document.getElementById("feedback-mount");
-let feedbackUi: FeedbackUiController | null = null;
-if (feedbackMount) {
-  feedbackUi = attachFeedbackPopover({
-    mount: feedbackMount,
-    getLabels: () => ({
-      button: t("feedback.button"),
-      sectionAria: t("feedback.sectionAria"),
-      label: t("feedback.label"),
-      placeholder: t("feedback.placeholder"),
-      hint: t("feedback.hint"),
-      submit: t("feedback.submit"),
-      cancel: t("feedback.cancel"),
-      sending: t("feedback.sending"),
-      success: t("feedback.success"),
-      failed: t("feedback.failed"),
-    }),
-    onResult: (result) => {
-      showToast(result.message, 4200, {
-        variant: result.ok ? "success" : "error",
+    if (!isPopoverOpen(infoPopover)) {
+      infoPopover.showPopover();
+    }
+    positionInfoPopover(anchor);
+  }
+
+  function addFieldInfoButton(label: HTMLLabelElement, helpKey: string): void {
+    if (label.querySelector(".field-info-btn")) {
+      return;
+    }
+
+    const labelText =
+      label.querySelector<HTMLElement>(".settings-check-text[data-i18n]") ||
+      label.querySelector<HTMLElement>(".setting-field-label-row [data-i18n]") ||
+      label.querySelector<HTMLElement>("span[data-i18n]");
+    if (!labelText) {
+      return;
+    }
+
+    const hasHelp = FIELD_HELP[helpKey]?.en || FIELD_HELP[helpKey]?.vi;
+    if (!hasHelp) {
+      return;
+    }
+
+    let labelRow = labelText.closest(".setting-field-label-row");
+    if (!labelRow) {
+      labelRow = document.createElement("div");
+      labelRow.className = "setting-field-label-row";
+      labelText.insertAdjacentElement("beforebegin", labelRow);
+      labelRow.appendChild(labelText);
+    }
+
+    const button = document.createElement("button");
+    button.className = "field-info-btn";
+    button.type = "button";
+    button.dataset.helpKey = helpKey;
+    button.textContent = "i";
+    button.setAttribute("aria-label", t("info.buttonLabel"));
+    button.setAttribute("aria-haspopup", "dialog");
+    button.setAttribute("aria-expanded", "false");
+    if (infoPopover?.id) {
+      button.setAttribute("aria-controls", infoPopover.id);
+    }
+    button.title = t("info.buttonLabel");
+    labelRow.appendChild(button);
+  }
+
+  function setupFieldInfoButtons(): void {
+    root
+      .querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>(
+        "input[id], select[id], textarea[id]",
+      )
+      .forEach((control) => {
+        const label = control.closest("label");
+        if (label) {
+          addFieldInfoButton(label, control.id);
+        }
       });
+  }
+
+  function refreshFieldInfoLabels(): void {
+    root.querySelectorAll<HTMLButtonElement>(".field-info-btn").forEach((button) => {
+      button.setAttribute("aria-label", t("info.buttonLabel"));
+      button.title = t("info.buttonLabel");
+    });
+    if (activeInfoHelpKey && infoPopover && isPopoverOpen(infoPopover) && activeInfoButton) {
+      fillInfoPopover(activeInfoHelpKey);
+      positionInfoPopover(activeInfoButton);
+    }
+  }
+
+  // When network/request capture is on, storage and DOM capture are forced on and
+  // their checkboxes are locked to reflect that they cannot be turned off
+  // independently. Mirrors the data-layer coupling in settings-store.ts.
+  function syncInspectorCaptureCoupling(): void {
+    const coupled = captureNetworkInput.checked;
+    if (coupled) {
+      captureStorageInput.checked = true;
+      captureDomSnapshotsInput.checked = true;
+    }
+    captureStorageInput.disabled = coupled;
+    captureDomSnapshotsInput.disabled = coupled;
+  }
+
+  function renderSettings(settings: UploadSettings): void {
+    const normalizedSettings = withDefaultSettings(settings);
+
+    redactSensitiveHeadersInput.checked = normalizedSettings.redactSensitiveHeaders;
+    redactSensitiveQueryParamsInput.checked = normalizedSettings.redactSensitiveQueryParams;
+    redactRequestBodyFieldsInput.checked = normalizedSettings.redactRequestBodyFields;
+    redactResponseBodyFieldsInput.checked = normalizedSettings.redactResponseBodyFields;
+    redactConsoleValuesInput.checked = normalizedSettings.redactConsoleValues;
+    redactEventMetadataInput.checked = normalizedSettings.redactEventMetadata;
+    redactWebSocketPayloadsInput.value = normalizedSettings.redactWebSocketPayloads;
+    maskDomSelectorsInput.value = normalizedSettings.maskDomSelectors.join("\n");
+
+    captureConsoleInput.checked = normalizedSettings.captureConsole;
+    captureConsoleArgsInput.checked = normalizedSettings.captureConsoleArgs;
+    consolePreviewDepthInput.value = normalizedSettings.consolePreviewDepth;
+    captureConsoleStacksInput.value = normalizedSettings.captureConsoleStacks;
+    captureConsoleSourceSnippetsInput.value = normalizedSettings.captureConsoleSourceSnippets;
+    maxConsoleEntryBytesInput.value =
+      normalizedSettings.maxConsoleEntryBytes == null
+        ? ""
+        : String(normalizedSettings.maxConsoleEntryBytes);
+
+    captureNetworkInput.checked = normalizedSettings.captureNetwork;
+    captureRequestHeadersInput.value = normalizedSettings.captureRequestHeaders;
+    captureResponseHeadersInput.value = normalizedSettings.captureResponseHeaders;
+    captureRequestBodiesInput.checked = normalizedSettings.captureRequestBodies;
+    captureResponseBodyModeInput.value = normalizedSettings.captureResponseBodyMode;
+    maxResponseBodyBytesInput.value =
+      normalizedSettings.maxResponseBodyBytes == null
+        ? ""
+        : String(normalizedSettings.maxResponseBodyBytes);
+    captureRedirectHeadersInput.value = normalizedSettings.captureRedirectHeaders;
+    captureInitiatorInput.value = normalizedSettings.captureInitiator;
+    suppressRecorderInternalRequestsInput.checked =
+      normalizedSettings.suppressRecorderInternalRequests;
+
+    captureWebSocketsInput.checked = normalizedSettings.captureWebSockets;
+    captureWebSocketFramesInput.checked = normalizedSettings.captureWebSocketFrames;
+    maxWebSocketFrameBytesInput.value =
+      normalizedSettings.maxWebSocketFrameBytes == null
+        ? ""
+        : String(normalizedSettings.maxWebSocketFrameBytes);
+    captureWebSocketInitiatorInput.checked = normalizedSettings.captureWebSocketInitiator;
+
+    captureStorageInput.checked = normalizedSettings.captureStorage;
+    redactStorageValuesInput.checked = normalizedSettings.redactStorageValues;
+    captureDomSnapshotsInput.checked = normalizedSettings.captureDomSnapshots;
+    redactDomTextContentInput.checked = normalizedSettings.redactDomTextContent;
+    captureModeInput.value = normalizedSettings.captureMode;
+    syncInspectorCaptureCoupling();
+  }
+
+  function getPrivacySectionPayload(): Record<string, unknown> {
+    return {
+      privacyProfile: "custom",
+      redactSensitiveHeaders: redactSensitiveHeadersInput.checked,
+      redactSensitiveQueryParams: redactSensitiveQueryParamsInput.checked,
+      redactRequestBodyFields: redactRequestBodyFieldsInput.checked,
+      redactResponseBodyFields: redactResponseBodyFieldsInput.checked,
+      redactConsoleValues: redactConsoleValuesInput.checked,
+      redactWebSocketPayloads: redactWebSocketPayloadsInput.value,
+      redactEventMetadata: redactEventMetadataInput.checked,
+      maskDomSelectors: normalizeMaskDomSelectors(maskDomSelectorsInput.value),
+    };
+  }
+
+  function getCaptureSectionPayload(): Record<string, unknown> {
+    return {
+      captureStorage: captureStorageInput.checked || captureNetworkInput.checked,
+      redactStorageValues: redactStorageValuesInput.checked,
+      captureDomSnapshots: captureDomSnapshotsInput.checked || captureNetworkInput.checked,
+      redactDomTextContent: redactDomTextContentInput.checked,
+      captureConsole: captureConsoleInput.checked,
+      captureConsoleArgs: captureConsoleArgsInput.checked,
+      consolePreviewDepth: consolePreviewDepthInput.value,
+      captureConsoleStacks: captureConsoleStacksInput.value,
+      captureConsoleSourceSnippets: captureConsoleSourceSnippetsInput.value,
+      maxConsoleEntryBytes: getOptionalNumber(maxConsoleEntryBytesInput),
+      captureNetwork: captureNetworkInput.checked,
+      captureRequestHeaders: captureRequestHeadersInput.value,
+      captureResponseHeaders: captureResponseHeadersInput.value,
+      captureRequestBodies: captureRequestBodiesInput.checked,
+      captureResponseBodies: captureResponseBodyModeInput.value !== "off",
+      captureResponseBodyMode: captureResponseBodyModeInput.value,
+      maxResponseBodyBytes: getOptionalNumber(maxResponseBodyBytesInput),
+      captureRedirectHeaders: captureRedirectHeadersInput.value,
+      captureInitiator: captureInitiatorInput.value,
+      suppressRecorderInternalRequests: suppressRecorderInternalRequestsInput.checked,
+      captureWebSockets: captureWebSocketsInput.checked,
+      captureWebSocketFrames: captureWebSocketFramesInput.checked,
+      maxWebSocketFrameBytes: getOptionalNumber(maxWebSocketFrameBytesInput),
+      captureWebSocketInitiator: captureWebSocketInitiatorInput.checked,
+    };
+  }
+
+  function getCaptureModeSectionPayload(): Record<string, unknown> {
+    return {
+      captureMode: captureModeInput.value,
+    };
+  }
+
+  function getSectionPayload(section: SettingsSectionId): Record<string, unknown> {
+    if (section === "privacy") {
+      return getPrivacySectionPayload();
+    }
+    if (section === "capture") {
+      return getCaptureSectionPayload();
+    }
+    return getCaptureModeSectionPayload();
+  }
+
+  async function load(): Promise<void> {
+    try {
+      const result = (await chrome.runtime.sendMessage({
+        action: "GET_SETTINGS",
+      })) as MessageResponse & { settings?: UploadSettings };
+      if (!result.ok || !result.settings) {
+        showMessage(result.error || t("messages.loadFailed"), false);
+        return;
+      }
+      renderSettings(result.settings);
+    } catch (error) {
+      showMessage((error as Error).message, false);
+    }
+  }
+
+  async function saveSection(section: SettingsSectionId, button: HTMLButtonElement): Promise<void> {
+    const previousLabel = button.textContent;
+    button.disabled = true;
+    button.textContent = t("actions.savingSection");
+    try {
+      const result = (await chrome.runtime.sendMessage({
+        action: "UPDATE_SETTINGS",
+        data: getSectionPayload(section),
+      })) as MessageResponse & { settings?: UploadSettings; message?: string };
+      if (!result.ok || !result.settings) {
+        showMessage(result.error || t("messages.saveFailed"), false);
+        return;
+      }
+      renderSettings(result.settings);
+      if (typeof result.message === "string" && result.message.trim()) {
+        showMessage(result.message, false);
+        return;
+      }
+      showMessage(t("messages.sectionSaved"), true);
+    } catch (error) {
+      showMessage((error as Error).message, false);
+    } finally {
+      button.disabled = false;
+      button.textContent = previousLabel || t("actions.saveSection");
+    }
+  }
+
+  root.addEventListener(
+    "change",
+    (event) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.getAttribute("id") === "capture-network-input") {
+        syncInspectorCaptureCoupling();
+      }
     },
+    { signal },
+  );
+
+  root.querySelectorAll<HTMLButtonElement>(".settings-section-save").forEach((button) => {
+    button.addEventListener(
+      "click",
+      () => {
+        const section = button.dataset.section as SettingsSectionId | undefined;
+        if (section === "privacy" || section === "capture" || section === "captureMode") {
+          void saveSection(section, button);
+        }
+      },
+      { signal },
+    );
   });
+
+  root.addEventListener(
+    "click",
+    (event) => {
+      const button = (event.target as HTMLElement).closest<HTMLButtonElement>(".field-info-btn");
+      if (!button?.dataset.helpKey) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      openInfoPopover(button.dataset.helpKey, button);
+    },
+    { signal },
+  );
+
+  if (infoPopover) {
+    infoPopover.addEventListener(
+      "toggle",
+      (event) => {
+        const toggleEvent = event as ToggleEvent;
+        if (toggleEvent.newState === "closed" && activeInfoButton) {
+          activeInfoButton.setAttribute("aria-expanded", "false");
+          activeInfoHelpKey = null;
+          activeInfoButton = null;
+        }
+      },
+      { signal },
+    );
+  }
+
+  window.addEventListener(
+    "resize",
+    () => {
+      if (activeInfoButton && infoPopover && isPopoverOpen(infoPopover)) {
+        positionInfoPopover(activeInfoButton);
+      }
+    },
+    { passive: true, signal },
+  );
+
+  window.addEventListener(
+    "scroll",
+    () => {
+      if (activeInfoButton && infoPopover && isPopoverOpen(infoPopover)) {
+        positionInfoPopover(activeInfoButton);
+      }
+    },
+    { passive: true, capture: true, signal },
+  );
+
+  setupFieldInfoButtons();
+
+  return {
+    load,
+    refreshFieldInfoLabels,
+    destroy: () => {
+      closeInfoPopover();
+      abort.abort();
+    },
+  };
 }
-
-const themeToggleUi: ThemeToggleController | null = attachThemeToggle(
-  "theme-toggle-btn",
-  "theme-toggle-icon",
-  {
-    getLabels: () => ({
-      system: t("theme.system"),
-      light: t("theme.light"),
-      dark: t("theme.dark"),
-      aria: t("theme.aria"),
-      titleSystem: t("theme.titleSystem"),
-      titleFixed: t("theme.titleFixed"),
-    }),
-  },
-);
-
-currentLanguage = attachLanguageSwitch({
-  onChange: (language) => {
-    currentLanguage = language;
-    applyTranslations();
-    feedbackUi?.refreshLabels();
-    themeToggleUi?.refreshLabels();
-  },
-});
-applyTranslations();
-feedbackUi?.refreshLabels();
-themeToggleUi?.refreshLabels();
-void loadSettings();

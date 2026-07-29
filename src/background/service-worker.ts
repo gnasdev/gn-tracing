@@ -75,17 +75,19 @@ import {
   COLLECT_INSTANT_REPLAY_ACTION,
   COMMIT_INSTANT_REPLAY_ACTION,
   type CollectInstantReplayResult,
-  hasInstantReplayFrames,
   parseCollectInstantReplayResponse,
 } from "./instant-replay-session";
 import { registerMessageListeners } from "./message-router";
 import { RecorderManager } from "./recorder-manager";
 import {
+  buildInstantReplayPending,
   captureScreenshotForAnnotation,
   clearPendingScreenshot,
+  isInstantReplayPending,
   mergeAnnotatedScreenshot,
-  type PendingScreenshot,
+  type PendingCapture,
   readPendingScreenshot,
+  resolveInstantReplayForSave,
   writePendingScreenshot,
 } from "./screenshot-report";
 import type { ProviderFolderSettings, UploadSettingsStore } from "./settings-store";
@@ -2612,9 +2614,47 @@ async function persistReportUploadHistory(input: {
 }
 
 /**
- * Capture-after-the-fact Instant Replay: collect the rolling DOM buffer + CDP
- * console/network rings on the active allowlisted tab, package without video,
- * and upload. Does not start MediaRecorder (CDP may already be attached for IR).
+ * Shared chrome.* deps for annotate capture (Screenshot and Instant Replay).
+ * IR only customizes finalizePending to freeze lookback into the parked kind.
+ */
+function createAnnotateCaptureDeps(
+  overrides: Partial<{
+    finalizePending: NonNullable<
+      Parameters<typeof captureScreenshotForAnnotation>[1]["finalizePending"]
+    >;
+  }> = {},
+): Parameters<typeof captureScreenshotForAnnotation>[1] {
+  return {
+    captureVisibleTab: (windowId) =>
+      chrome.tabs.captureVisibleTab(windowId, { format: "jpeg", quality: 85 }),
+    getTab: (id) => chrome.tabs.get(id),
+    getViewport: async (id) => {
+      // The image is device-pixel sized; annotations are placed in CSS pixels,
+      // so the page's own measurements are what the editor needs.
+      const [injected] = await chrome.scripting.executeScript({
+        target: { tabId: id },
+        func: () => ({
+          width: window.innerWidth,
+          height: window.innerHeight,
+          devicePixelRatio: window.devicePixelRatio,
+        }),
+      });
+      return (injected?.result as { width: number; height: number } | undefined) ?? null;
+    },
+    setPending: writePendingScreenshot,
+    openEditor: async () => {
+      await chrome.tabs.create({
+        url: chrome.runtime.getURL("annotate/annotate.html"),
+      });
+    },
+    ...overrides,
+  };
+}
+
+/**
+ * Instant Replay capture: freeze the lookback, capture a still for annotation,
+ * open the editor. Upload happens only after Save on the annotate page.
+ * Does not start MediaRecorder (CDP may already be attached for IR evidence).
  */
 async function handleCaptureInstantReplay(tabId: number | undefined): Promise<MessageResponse> {
   const settings = await getUploadSettings();
@@ -2622,14 +2662,13 @@ async function handleCaptureInstantReplay(tabId: number | undefined): Promise<Me
     return {
       ok: false,
       error:
-        "Instant Replay is off. Enable it in the popup or Settings, grant host permission, add an allowed domain, then browse a bit before capturing.",
+        "Instant Replay is off. Enable it in the popup, add an allowed domain, then browse a bit before capturing.",
     };
   }
   if (!settings.instantReplayAllowedDomains || settings.instantReplayAllowedDomains.length === 0) {
     return {
       ok: false,
-      error:
-        "Add at least one allowed domain for Instant Replay (popup or Settings), open that site, then capture.",
+      error: "Add at least one allowed domain for Instant Replay, open that site, then capture.",
     };
   }
 
@@ -2662,167 +2701,26 @@ async function handleCaptureInstantReplay(tabId: number | undefined): Promise<Me
     return { ok: false, error: target.error };
   }
 
+  // Freeze lookback before opening the editor so annotation time does not
+  // change which DOM/console/network rings ship with the package.
   const collected = await collectInstantReplay(targetTabId);
   if (!collected.ok) {
     return { ok: false, error: collected.error };
   }
 
-  const resolved = requireRegisteredStorageProvider(settings.activeStorageProvider);
-  if (!resolved.ok) {
-    return { ok: false, error: resolved.error };
-  }
-  const authToken = await resolved.provider.getAuthToken();
-  if (!authToken) {
-    return {
-      ok: false,
-      error: `Not connected to ${providerDisplayName(resolved.provider.id)}. Please connect first.`,
-    };
-  }
+  const result = await captureScreenshotForAnnotation(
+    targetTabId,
+    createAnnotateCaptureDeps({
+      finalizePending: (base) =>
+        buildInstantReplayPending(
+          base,
+          { artifact: collected.artifact, evidence: collected.evidence },
+          { url: target.url ?? base.url },
+        ),
+    }),
+  );
 
-  const storageProviderId = resolveRegisteredUploadProviderId(settings.activeStorageProvider);
-  const targetFolderId =
-    storageProviderId === "dropbox"
-      ? settings.folderPath.length > 0
-        ? `/${settings.folderPath.join("/")}`
-        : null
-      : settings.folderId;
-
-  // Optional viewport still for package context (not a full screen recording).
-  // Buffer was collected non-destructively; still failure still packages IR.
-  let imageDataUrl: string | null = null;
-  let viewport = {
-    width: 1280,
-    height: 800,
-    devicePixelRatio: 1 as number | undefined,
-  };
-  try {
-    if (typeof tab.windowId === "number") {
-      imageDataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, {
-        format: "jpeg",
-        quality: 85,
-      });
-    }
-    const [injected] = await chrome.scripting.executeScript({
-      target: { tabId: targetTabId },
-      func: () => ({
-        width: window.innerWidth,
-        height: window.innerHeight,
-        devicePixelRatio: window.devicePixelRatio,
-      }),
-    });
-    if (injected?.result && typeof injected.result === "object") {
-      viewport = injected.result as typeof viewport;
-    }
-  } catch {
-    // IR-only package is valid when the raster still is unavailable.
-  }
-
-  const capturedAt = Date.now();
-  const screenshots =
-    imageDataUrl && imageDataUrl.startsWith("data:image/")
-      ? [
-          {
-            screenshot: {
-              id: `ir-${capturedAt.toString(36)}`,
-              capturedAt,
-              url: target.url,
-              title: typeof tab.title === "string" ? tab.title : undefined,
-              viewport: {
-                width: viewport.width,
-                height: viewport.height,
-                devicePixelRatio: viewport.devicePixelRatio,
-              },
-              source: {
-                kind: "image" as const,
-                path: "",
-                mimeType: "image/jpeg",
-              },
-              annotations: [],
-              caption: "Instant Replay capture",
-            },
-            imageDataUrl,
-          },
-        ]
-      : [];
-
-  // Temporarily load privacy settings for IR redaction (not mid-recording).
-  const privacySettings = pickPrivacyRedactionSettings(settings);
-  const previousPrivacy = activeRecording.privacySettings;
-  const previousRecordingSettings = activeRecording.recordingSettings;
-  activeRecording.privacySettings = privacySettings;
-  activeRecording.recordingSettings = settings;
-
-  const packageArtifacts = buildInstantReplayPackageArtifacts({
-    instantReplayJson: JSON.stringify(collected.artifact),
-    evidence: collected.evidence,
-    privacySettings,
-    redact: {
-      network: (entry) => redactInPageNetworkEntry({ ...entry }),
-      websocket: (entry) =>
-        redactInPageWebSocketEntry({
-          ...entry,
-          frames: entry.frames.map((frame) => ({ ...frame })),
-        }),
-      storage: (snapshot) =>
-        redactInPageStorageSnapshot({
-          ...snapshot,
-          localStorage: snapshot.localStorage.map((item) => ({ ...item })),
-          sessionStorage: snapshot.sessionStorage.map((item) => ({ ...item })),
-          cookies: snapshot.cookies.map((cookie) => ({ ...cookie })),
-        }),
-    },
-  });
-
-  activeRecording.privacySettings = previousPrivacy;
-  activeRecording.recordingSettings = previousRecordingSettings;
-
-  try {
-    await ensureOffscreenDocumentForPackaging();
-    const result = (await chrome.runtime.sendMessage({
-      target: "offscreen",
-      type: "UPLOAD_SCREENSHOT_PACKAGE",
-      data: {
-        authToken,
-        storageProvider: storageProviderId,
-        targetFolderId,
-        targetFolderPath: settings.folderPath,
-        zipPassword: settings.zipPassword || null,
-        url: target.url,
-        screenshots,
-        artifacts: packageArtifacts,
-      },
-    })) as MessageResponse & Partial<UploadSuccessResult>;
-
-    if (!result?.ok) {
-      // Buffer intentionally left intact for retry.
-      return {
-        ok: false,
-        error: result?.error || "Instant Replay upload failed.",
-      };
-    }
-
-    await commitInstantReplay(targetTabId);
-    await closeOffscreenDocumentIfIdle();
-
-    const recordingUrl = normalizeRecordingUrl(result.recordingUrl) ?? undefined;
-    if (recordingUrl) {
-      await persistReportUploadHistory({
-        recordingUrl,
-        pageUrl: target.url ?? undefined,
-        indexFileId: result.indexFileId ?? null,
-        targetFolderId: result.targetFolderId ?? targetFolderId,
-        durationMs: collected.artifact.coveredMs,
-        provider: storageProviderId,
-      });
-    }
-
-    return {
-      ok: true,
-      recordingUrl,
-    };
-  } catch (error) {
-    return { ok: false, error: (error as Error).message };
-  }
+  return result.ok ? { ok: true } : { ok: false, error: result.error };
 }
 
 // ===== Screenshot reports =====
@@ -2845,36 +2743,12 @@ async function handleCaptureScreenshot(tabId: number | undefined): Promise<Messa
     };
   }
 
-  const result = await captureScreenshotForAnnotation(targetTabId, {
-    captureVisibleTab: (windowId) =>
-      chrome.tabs.captureVisibleTab(windowId, { format: "jpeg", quality: 85 }),
-    getTab: (id) => chrome.tabs.get(id),
-    getViewport: async (id) => {
-      // The image is device-pixel sized; annotations are placed in CSS pixels,
-      // so the page's own measurements are what the editor needs.
-      const [injected] = await chrome.scripting.executeScript({
-        target: { tabId: id },
-        func: () => ({
-          width: window.innerWidth,
-          height: window.innerHeight,
-          devicePixelRatio: window.devicePixelRatio,
-        }),
-      });
-      return (injected?.result as { width: number; height: number } | undefined) ?? null;
-    },
-    setPending: writePendingScreenshot,
-    openEditor: async () => {
-      await chrome.tabs.create({
-        url: chrome.runtime.getURL("annotate/annotate.html"),
-      });
-    },
-  });
-
+  const result = await captureScreenshotForAnnotation(targetTabId, createAnnotateCaptureDeps());
   return result.ok ? { ok: true } : { ok: false, error: result.error };
 }
 
 async function handleGetPendingScreenshot(): Promise<
-  MessageResponse & { screenshot?: PendingScreenshot }
+  MessageResponse & { screenshot?: PendingCapture }
 > {
   const pending = await readPendingScreenshot();
   return pending
@@ -2917,23 +2791,36 @@ async function handleSaveAnnotatedScreenshot(
       : settings.folderId;
 
   const merged = mergeAnnotatedScreenshot(pending, annotated);
-  const instantReplayCollected = settings.instantReplayEnabled
-    ? await collectInstantReplay(pending.tabId)
-    : null;
+  const irResolution = await resolveInstantReplayForSave(pending, {
+    instantReplayEnabled: Boolean(settings.instantReplayEnabled),
+    liveCollect: async () => {
+      const collected = await collectInstantReplay(pending.tabId);
+      if (!collected.ok) {
+        return { ok: false, error: collected.error };
+      }
+      return {
+        ok: true,
+        artifact: collected.artifact,
+        evidence: collected.evidence,
+      };
+    },
+  });
+
+  if (irResolution.mode === "error") {
+    return { ok: false, error: irResolution.error };
+  }
+
   let screenshotArtifacts: Record<string, string> = {};
-  if (
-    instantReplayCollected &&
-    instantReplayCollected.ok &&
-    hasInstantReplayFrames(instantReplayCollected.artifact)
-  ) {
+  let attachedCoveredMs = 0;
+  if (irResolution.mode === "attach") {
     const privacySettings = pickPrivacyRedactionSettings(settings);
     const previousPrivacy = activeRecording.privacySettings;
     const previousRecordingSettings = activeRecording.recordingSettings;
     activeRecording.privacySettings = privacySettings;
     activeRecording.recordingSettings = settings;
     screenshotArtifacts = buildInstantReplayPackageArtifacts({
-      instantReplayJson: JSON.stringify(instantReplayCollected.artifact),
-      evidence: instantReplayCollected.evidence,
+      instantReplayJson: JSON.stringify(irResolution.artifact),
+      evidence: irResolution.evidence,
       privacySettings,
       redact: {
         network: (entry) => redactInPageNetworkEntry({ ...entry }),
@@ -2955,6 +2842,8 @@ async function handleSaveAnnotatedScreenshot(
     });
     activeRecording.privacySettings = previousPrivacy;
     activeRecording.recordingSettings = previousRecordingSettings;
+    attachedCoveredMs =
+      typeof irResolution.artifact.coveredMs === "number" ? irResolution.artifact.coveredMs : 0;
   }
 
   try {
@@ -2975,7 +2864,14 @@ async function handleSaveAnnotatedScreenshot(
     })) as MessageResponse & Partial<UploadSuccessResult>;
 
     if (!result?.ok) {
-      return { ok: false, error: result?.error || "Screenshot upload failed." };
+      return {
+        ok: false,
+        error:
+          result?.error ||
+          (isInstantReplayPending(pending)
+            ? "Instant Replay upload failed."
+            : "Screenshot upload failed."),
+      };
     }
 
     // Commit IR buffer only after a successful upload (collect is non-destructive).
@@ -2995,7 +2891,7 @@ async function handleSaveAnnotatedScreenshot(
         pageUrl: merged.screenshot.url,
         indexFileId: result.indexFileId ?? null,
         targetFolderId: result.targetFolderId ?? targetFolderId,
-        durationMs: 0,
+        durationMs: attachedCoveredMs,
         provider: storageProviderId,
       });
     }

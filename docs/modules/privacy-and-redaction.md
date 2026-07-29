@@ -10,7 +10,7 @@ source_paths:
   - "src/background/service-worker.ts"
   - "src/background/cdp-manager.ts"
   - "src/background/storage-manager.ts"
-  - "src/settings/settings.ts"
+  - "src/shared/settings-form-ui.ts"
   - "src/types/recording.ts"
 related:
   - "./recording-runtime.md"
@@ -26,7 +26,7 @@ related:
 
 - Trạng thái: active
 - Phạm vi: redaction rules, Settings toggles, event sanitization, DOM masking, privacy artifact metadata, and replay privacy boundaries
-- Nguồn code: `src/shared/privacy-redaction.ts`, `src/content/recording-events.ts`, `src/background/service-worker.ts`, `src/background/cdp-manager.ts`, `src/background/storage-manager.ts`, `src/settings/settings.ts`, `src/types/recording.ts`
+- Nguồn code: `src/shared/privacy-redaction.ts`, `src/content/recording-events.ts`, `src/background/service-worker.ts`, `src/background/cdp-manager.ts`, `src/background/storage-manager.ts`, `src/shared/settings-form-ui.ts`, `src/types/recording.ts`
 - Tuân thủ: Google API Limited Use, Chrome Web Store data-use disclosure
 - Links: [Recording Runtime](./recording-runtime.md), [Replay Player](./replay-player.md), [Extension Surfaces](../features/extension-surfaces.md), [Shared Data Models](../shared/data-models.md), [Privacy Policy](../compliance/privacy-policy.md)
 
@@ -34,7 +34,7 @@ related:
 
 Privacy is a shared runtime policy, not only a Settings page concern. GN Tracing can capture detailed debugging evidence, but supported text/JSON evidence is passed through a versioned client-side redaction policy before it becomes replay artifacts.
 
-The current policy version is `1`. It is implemented without Chrome API dependencies so the service worker, CDP collector, storage buffer, injected event collector, Settings UI, and future tests can use the same rules and defaults.
+The current policy version is `1`. It is implemented without Chrome API dependencies so the service worker, CDP collector, storage buffer, injected event collector, popup settings form, and future tests can use the same rules and defaults.
 
 ## Settings And Defaults
 

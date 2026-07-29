@@ -7,12 +7,11 @@ This guide is for contributors working on GN Tracing. The main [README](./README
 - `src/background/`: MV3 service worker composition root, multi-cloud auth, storage provider registry, settings store, capture environment normalization, upload orchestrator, message router, CDP capture, recorder, storage
 - `src/background/storage/`: `StorageProvider` adapters (Google Drive, Dropbox)
 - `src/offscreen/`: tab media recording and cloud package upload work
-- `src/popup/`: extension popup UI and capture controls
-- `src/drive-auth/`: Google Drive auth page opened in a normal tab
-- `src/settings/`: Settings page (storage provider, folder, privacy, capture profile)
-- `src/history/`: upload history page
+- `src/popup/`: extension popup UI — capture controls, settings dialog, history dialog, manage-clouds dialog
+- `src/drive-auth/`: legacy Google Drive auth entry (redirects to storage-auth)
+- `src/storage-auth/`: multi-cloud OAuth connect page opened in a normal tab
 - `src/annotate/`: screenshot annotation editor page (state model + page wiring)
-- `src/shared/`: storage provider URL helpers, cloud API helpers, player URL, history helpers
+- `src/shared/`: settings form UI, storage provider helpers, cloud API helpers, player URL, history helpers
 - `src/types/`: extension message contracts; recording and privacy models re-export from `packages/replay-core/src/schema/`
 - `player/`: player assets used by the extension build. `core-entry.ts` is the single bundle (`window.gnCore`) through which the unbundled `player.js` reaches typed shared code
 - `player-standalone/`: hosted replay player app + per-provider download proxies
@@ -34,13 +33,15 @@ This guide is for contributors working on GN Tracing. The main [README](./README
 
 GN Tracing is a Manifest V3 extension with three main surfaces:
 
-1. The popup starts and stops recording, shows state, and exposes cloud storage/upload controls.
+1. The popup starts and stops recording, shows state, and hosts settings / history / manage-clouds dialogs.
 2. The service worker coordinates capture, attaches CDP to the active tab, and stores live UI state in `chrome.storage.session`.
 3. The offscreen document records tab media, uploads packages to the active cloud provider, and reports progress.
+4. `storage-auth` (and legacy `drive-auth`) open only for OAuth connect flows that cannot run inside the popup.
 
 ```mermaid
 flowchart LR
-  Popup["Popup / Settings"] --> SW["Service worker"]
+  Popup["Popup dialogs"] --> SW["Service worker"]
+  StorageAuth["storage-auth OAuth"] --> SW
   SW --> Registry["StorageProvider registry"]
   Registry --> G["Google Drive"]
   Registry --> D["Dropbox"]

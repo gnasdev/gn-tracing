@@ -53,10 +53,6 @@ const playerLocalPort = getConfigValue("PLAYER_LOCAL_PORT", "5176");
 const STATIC_ASSET_ENTRIES = [
   { type: "text", src: "popup/popup.html", dest: "dist/popup/popup.html" },
   { type: "file", src: "popup/popup.css", dest: "dist/popup/popup.css" },
-  { type: "text", src: "history/history.html", dest: "dist/history/history.html" },
-  { type: "file", src: "history/history.css", dest: "dist/history/history.css" },
-  { type: "text", src: "settings/settings.html", dest: "dist/settings/settings.html" },
-  { type: "file", src: "settings/settings.css", dest: "dist/settings/settings.css" },
   { type: "text", src: "annotate/annotate.html", dest: "dist/annotate/annotate.html" },
   { type: "file", src: "annotate/annotate.css", dest: "dist/annotate/annotate.css" },
   { type: "text", src: "offscreen/offscreen.html", dest: "dist/offscreen/offscreen.html" },
@@ -366,8 +362,6 @@ async function build() {
     ...commonOptions,
     entryPoints: [
       { in: "src/popup/popup.ts", out: "popup/popup" },
-      { in: "src/history/history.ts", out: "history/history" },
-      { in: "src/settings/settings.ts", out: "settings/settings" },
       { in: "src/offscreen/offscreen.ts", out: "offscreen/offscreen" },
       { in: "src/annotate/annotate.ts", out: "annotate/annotate" },
       { in: "src/drive-auth/drive-auth.ts", out: "drive-auth/drive-auth" },

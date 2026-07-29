@@ -63,7 +63,16 @@
         <button id="theme-toggle-btn" class="icon-btn" type="button" aria-label="Theme: System" title="Theme: System (follows OS). Click to cycle System → Light → Dark.">
           <span id="theme-toggle-icon" class="theme-toggle-icon" aria-hidden="true"></span>
         </button>
-        <button id="settings-page-btn" class="icon-btn" type="button" aria-label="Open settings" title="Open settings">
+        <button
+          id="settings-page-btn"
+          class="icon-btn"
+          type="button"
+          aria-label="Open settings"
+          title="Open settings"
+          aria-haspopup="dialog"
+          aria-expanded="false"
+          aria-controls="settings-dialog"
+        >
           <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M12 15.5A3.5 3.5 0 1 0 12 8a3.5 3.5 0 0 0 0 7.5Z"/>
             <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06A1.7 1.7 0 0 0 15 19.37a1.7 1.7 0 0 0-1 .58V20a2 2 0 1 1-4 0v-.08a1.7 1.7 0 0 0-1-.58a1.7 1.7 0 0 0-1.88.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.63 15a1.7 1.7 0 0 0-.58-1H4a2 2 0 1 1 0-4h.08a1.7 1.7 0 0 0 .58-1a1.7 1.7 0 0 0-.34-1.88l-.06-.06a2 2 0 1 1 2.83-2.83l.06-.06A1.7 1.7 0 0 0 9 4.63a1.7 1.7 0 0 0 1-.58V4a2 2 0 1 1 4 0v.08a1.7 1.7 0 0 0 1 .58a1.7 1.7 0 0 0 1.88-.34l.06.06a2 2 0 1 1 2.83-2.83l-.06.06A1.7 1.7 0 0 0 19.37 9c.16.35.37.68.63 1H20a2 2 0 1 1 0 4h-.08a1.7 1.7 0 0 0-.52 1Z"/>
@@ -82,19 +91,38 @@
             </svg>
             <span data-i18n="actions.startRecording">Start Recording</span>
           </button>
-          <button
-            id="instant-replay-btn"
-            class="btn btn-secondary"
-            type="button"
-            title="Capture Instant Replay lookback"
-            data-i18n-title="actions.captureInstantReplay"
-          >
-            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="12" cy="12" r="9"/>
-              <path d="M12 7v5l3 2"/>
-            </svg>
-            <span data-i18n="actions.captureInstantReplay">Instant Replay</span>
-          </button>
+          <div id="instant-replay-controls" class="instant-replay-controls">
+            <button
+              id="instant-replay-btn"
+              class="btn btn-secondary"
+              type="button"
+              title="Capture Instant Replay lookback"
+              data-i18n-title="actions.captureInstantReplay"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="9"/>
+                <path d="M12 7v5l3 2"/>
+              </svg>
+              <span data-i18n="actions.captureInstantReplay">Instant Replay</span>
+            </button>
+            <button
+              id="instant-replay-settings-btn"
+              class="btn btn-secondary instant-replay-settings-btn"
+              type="button"
+              aria-expanded="false"
+              aria-haspopup="dialog"
+              aria-controls="instant-replay-dialog"
+              title="Instant Replay settings"
+              data-i18n-title="instantReplay.settingsTitle"
+              data-i18n-aria="instantReplay.settingsAria"
+              aria-label="Instant Replay settings"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 15.5A3.5 3.5 0 1 0 12 8a3.5 3.5 0 0 0 0 7.5Z"/>
+                <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06A1.7 1.7 0 0 0 15 19.37a1.7 1.7 0 0 0-1 .58V20a2 2 0 1 1-4 0v-.08a1.7 1.7 0 0 0-1-.58a1.7 1.7 0 0 0-1.88.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.63 15a1.7 1.7 0 0 0-.58-1H4a2 2 0 1 1 0-4h.08a1.7 1.7 0 0 0 .58-1a1.7 1.7 0 0 0-.34-1.88l-.06-.06a2 2 0 1 1 2.83-2.83l.06-.06A1.7 1.7 0 0 0 9 4.63a1.7 1.7 0 0 0 1-.58V4a2 2 0 1 1 4 0v.08a1.7 1.7 0 0 0 1 .58a1.7 1.7 0 0 0 1.88-.34l.06.06a2 2 0 1 1 2.83-2.83l-.06.06A1.7 1.7 0 0 0 19.37 9c.16.35.37.68.63 1H20a2 2 0 1 1 0 4h-.08a1.7 1.7 0 0 0-.52 1Z"/>
+              </svg>
+            </button>
+          </div>
           <button id="remove-recording-btn" class="btn btn-danger hidden" type="button">
             <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M4 7h16"/>
@@ -165,7 +193,15 @@
             <button type="button" id="storage-edit-btn" class="btn btn-secondary btn-small hidden" data-i18n="storage.edit">
               Edit
             </button>
-            <button type="button" id="manage-storage-btn" class="btn btn-start btn-small" data-i18n="storage.connectClouds">
+            <button
+              type="button"
+              id="manage-storage-btn"
+              class="btn btn-start btn-small"
+              aria-haspopup="dialog"
+              aria-expanded="false"
+              aria-controls="manage-clouds-dialog"
+              data-i18n="storage.connectClouds"
+            >
               Connect clouds
             </button>
           </div>
@@ -225,7 +261,7 @@
       <div id="session-list" class="session-list"></div>
     </section>
 
-    <section id="upload-history-section">
+    <section id="upload-history-section" class="package-security-card upload-history-entry">
       <div class="section-title-row">
         <div class="section-title">
           <svg class="section-title-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -233,13 +269,16 @@
             <path d="m7 9 5-5 5 5"/>
             <path d="M20 16.5A3.5 3.5 0 0 1 16.5 20h-9A3.5 3.5 0 0 1 4 16.5"/>
           </svg>
-          <span data-i18n="sections.latestUpload">Latest Upload</span>
+          <span data-i18n="sections.uploadHistory">Upload history</span>
         </div>
         <button
           id="upload-history-page-btn"
           class="btn btn-secondary btn-small history-page-btn"
           type="button"
-          aria-label="History"
+          aria-haspopup="dialog"
+          aria-expanded="false"
+          aria-controls="upload-history-dialog"
+          aria-label="Open upload history"
           title="History"
           data-i18n-aria="actions.openHistory"
           data-i18n-title="actions.openHistory"
@@ -248,7 +287,9 @@
           History
         </button>
       </div>
-      <div id="popup-upload-history-list" class="history-list"></div>
+      <p id="upload-history-entry-summary" class="upload-history-entry-summary" data-i18n="history.entryEmpty">
+        No uploads yet.
+      </p>
     </section>
 
     <section id="package-security-section" class="package-security-card">
@@ -298,75 +339,6 @@
       </div>
     </section>
 
-    <section id="instant-replay-section" class="package-security-card" aria-label="Instant replay">
-      <div class="section-title">
-        <svg class="section-title-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="12" cy="12" r="9"/>
-          <path d="M12 7v5l3 2"/>
-        </svg>
-        <span data-i18n="instantReplay.sectionTitle">Instant replay</span>
-      </div>
-      <label class="settings-check instant-replay-enable">
-        <input id="instant-replay-enabled" type="checkbox">
-        <span data-i18n="instantReplay.enableLabel">Enable Instant Replay</span>
-      </label>
-      <div id="instant-replay-window-row" class="instant-replay-window-field">
-        <div class="instant-replay-window-label-row">
-          <label for="instant-replay-window" data-i18n="instantReplay.windowLabel">Keep last</label>
-          <span id="instant-replay-window-value" class="instant-replay-window-value">120s</span>
-        </div>
-        <input
-          id="instant-replay-window"
-          class="instant-replay-window-range"
-          type="range"
-          min="15"
-          max="300"
-          step="5"
-          value="120"
-          aria-valuemin="15"
-          aria-valuemax="300"
-          aria-valuenow="120"
-          aria-valuetext="120 seconds"
-          data-ir-window-min="15"
-          data-ir-window-max="300"
-          data-ir-window-default="120"
-        >
-        <div class="instant-replay-window-scale" aria-hidden="true">
-          <span>15s</span>
-          <span>300s</span>
-        </div>
-      </div>
-      <div id="instant-replay-domains-row" class="instant-replay-domains-field">
-        <div class="instant-replay-window-label-row">
-          <span class="instant-replay-domains-heading" data-i18n="instantReplay.domainsLabel">Allowed domains (CDP)</span>
-          <button
-            type="button"
-            id="instant-replay-add-site-btn"
-            class="btn btn-secondary btn-small"
-            data-i18n="instantReplay.addThisSite"
-          >
-            Add this site
-          </button>
-        </div>
-        <div
-          id="instant-replay-domains-list"
-          class="instant-replay-domains-list"
-          role="list"
-          aria-live="polite"
-          aria-relevant="additions text"
-        >
-          <p class="instant-replay-domains-empty" data-i18n="instantReplay.domainsEmpty">
-            None — add a site so CDP console/network can attach.
-          </p>
-        </div>
-      </div>
-      <p id="instant-replay-hint" class="package-security-hint" data-i18n="instantReplay.hint">
-        When on, keeps a rolling DOM lookback on matching pages. Console and network use CDP
-        (debugger banner) only on allowed domains. After a bug, click Instant Replay to package
-        and upload. Nothing leaves your browser until you capture.
-      </p>
-    </section>
-
     <div id="error-msg" class="hidden"></div>
     <div id="toast" class="toast hidden" role="status" aria-live="polite">
       <span id="toast-icon" class="toast-icon" aria-hidden="true"></span>
@@ -376,6 +348,527 @@
           <path d="M6 6l12 12M18 6 6 18"/>
         </svg>
       </button>
+    </div>
+
+    <div
+      id="instant-replay-dialog"
+      class="popup-dialog-root hidden"
+      aria-hidden="true"
+    >
+      <button
+        type="button"
+        class="popup-dialog-backdrop"
+        data-popup-dialog-dismiss
+        tabindex="-1"
+        aria-label="Close Instant Replay settings"
+        data-i18n-aria="dialog.close"
+      ></button>
+      <div
+        id="instant-replay-panel"
+        class="popup-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="instant-replay-dialog-title"
+      >
+        <div class="popup-dialog-header">
+          <div class="section-title" id="instant-replay-dialog-title">
+            <svg class="section-title-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="9"/>
+              <path d="M12 7v5l3 2"/>
+            </svg>
+            <span data-i18n="instantReplay.sectionTitle">Instant replay</span>
+          </div>
+          <button
+            type="button"
+            id="instant-replay-settings-close-btn"
+            class="icon-btn popup-dialog-close"
+            aria-label="Close"
+            title="Close"
+            data-i18n-aria="dialog.close"
+            data-i18n-title="dialog.close"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
+              <path d="M6 6l12 12M18 6 6 18"/>
+            </svg>
+          </button>
+        </div>
+        <div class="popup-dialog-body">
+          <label class="settings-check instant-replay-enable">
+            <input id="instant-replay-enabled" type="checkbox">
+            <span data-i18n="instantReplay.enableLabel">Enable Instant Replay</span>
+          </label>
+          <div id="instant-replay-window-row" class="instant-replay-window-field">
+            <div class="instant-replay-window-label-row">
+              <label for="instant-replay-window" data-i18n="instantReplay.windowLabel">Keep last</label>
+              <span id="instant-replay-window-value" class="instant-replay-window-value">120s</span>
+            </div>
+            <input
+              id="instant-replay-window"
+              class="instant-replay-window-range"
+              type="range"
+              min="15"
+              max="300"
+              step="5"
+              value="120"
+              aria-valuemin="15"
+              aria-valuemax="300"
+              aria-valuenow="120"
+              aria-valuetext="120 seconds"
+              data-ir-window-min="15"
+              data-ir-window-max="300"
+              data-ir-window-default="120"
+            >
+            <div class="instant-replay-window-scale" aria-hidden="true">
+              <span>15s</span>
+              <span>300s</span>
+            </div>
+          </div>
+          <div id="instant-replay-domains-row" class="instant-replay-domains-field">
+            <div class="instant-replay-window-label-row">
+              <span class="instant-replay-domains-heading" data-i18n="instantReplay.domainsLabel">Allowed domains (CDP)</span>
+              <button
+                type="button"
+                id="instant-replay-add-site-btn"
+                class="btn btn-secondary btn-small"
+                data-i18n="instantReplay.addThisSite"
+              >
+                Add this site
+              </button>
+            </div>
+            <div
+              id="instant-replay-domains-list"
+              class="instant-replay-domains-list"
+              role="list"
+              aria-live="polite"
+              aria-relevant="additions text"
+            >
+              <p class="instant-replay-domains-empty" data-i18n="instantReplay.domainsEmpty">
+                None — add a site so CDP console/network can attach.
+              </p>
+            </div>
+          </div>
+          <p id="instant-replay-hint" class="package-security-hint" data-i18n="instantReplay.hint">
+            When on, keeps a rolling DOM lookback on matching pages. Console and network use CDP
+            (debugger banner) only on allowed domains. After a bug, click Instant Replay to annotate,
+            then save to upload. Nothing leaves your browser until you save.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div
+      id="manage-clouds-dialog"
+      class="popup-dialog-root hidden"
+      aria-hidden="true"
+    >
+      <button
+        type="button"
+        class="popup-dialog-backdrop"
+        data-popup-dialog-dismiss
+        tabindex="-1"
+        aria-label="Close"
+        data-i18n-aria="dialog.close"
+      ></button>
+      <div
+        id="manage-clouds-panel"
+        class="popup-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="manage-clouds-dialog-title"
+      >
+        <div class="popup-dialog-header">
+          <div class="section-title" id="manage-clouds-dialog-title">
+            <svg class="section-title-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/>
+            </svg>
+            <span data-i18n="storage.manageCloudsTitle">Manage clouds</span>
+          </div>
+          <button
+            type="button"
+            id="manage-clouds-close-btn"
+            class="icon-btn popup-dialog-close"
+            aria-label="Close"
+            title="Close"
+            data-i18n-aria="dialog.close"
+            data-i18n-title="dialog.close"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
+              <path d="M6 6l12 12M18 6 6 18"/>
+            </svg>
+          </button>
+        </div>
+        <div class="popup-dialog-body">
+          <p class="popup-dialog-lead" data-i18n="storage.manageCloudsLead">
+            Connect Google Drive or Dropbox. OAuth may briefly close this popup — reopen it after signing in.
+          </p>
+          <div id="popup-provider-list" class="popup-provider-list" role="list"></div>
+        </div>
+      </div>
+    </div>
+
+    <div
+      id="upload-history-dialog"
+      class="popup-dialog-root hidden"
+      aria-hidden="true"
+    >
+      <button
+        type="button"
+        class="popup-dialog-backdrop"
+        data-popup-dialog-dismiss
+        tabindex="-1"
+        aria-label="Close"
+        data-i18n-aria="dialog.close"
+      ></button>
+      <div
+        id="upload-history-panel"
+        class="popup-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="upload-history-dialog-title"
+      >
+        <div class="popup-dialog-header">
+          <div class="section-title" id="upload-history-dialog-title">
+            <svg class="section-title-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 16V4"/>
+              <path d="m7 9 5-5 5 5"/>
+              <path d="M20 16.5A3.5 3.5 0 0 1 16.5 20h-9A3.5 3.5 0 0 1 4 16.5"/>
+            </svg>
+            <span data-i18n="sections.uploadHistory">Upload history</span>
+          </div>
+          <button
+            type="button"
+            id="upload-history-close-btn"
+            class="icon-btn popup-dialog-close"
+            aria-label="Close"
+            title="Close"
+            data-i18n-aria="dialog.close"
+            data-i18n-title="dialog.close"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
+              <path d="M6 6l12 12M18 6 6 18"/>
+            </svg>
+          </button>
+        </div>
+        <div class="popup-dialog-body">
+          <p id="upload-history-dialog-summary" class="popup-dialog-lead" data-i18n="history.summaryEmpty">
+            Browse your recent uploads here once recordings are uploaded.
+          </p>
+          <div id="popup-upload-history-list" class="history-list"></div>
+        </div>
+      </div>
+    </div>
+
+    <div
+      id="settings-dialog"
+      class="popup-dialog-root hidden"
+      aria-hidden="true"
+    >
+      <button
+        type="button"
+        class="popup-dialog-backdrop"
+        data-popup-dialog-dismiss
+        tabindex="-1"
+        aria-label="Close"
+        data-i18n-aria="dialog.close"
+      ></button>
+      <div
+        id="settings-panel"
+        class="popup-dialog popup-dialog--settings"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="settings-dialog-title"
+      >
+        <div class="popup-dialog-header">
+          <div class="section-title" id="settings-dialog-title">
+            <svg class="section-title-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 15.5A3.5 3.5 0 1 0 12 8a3.5 3.5 0 0 0 0 7.5Z"/>
+              <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06A1.7 1.7 0 0 0 15 19.37a1.7 1.7 0 0 0-1 .58V20a2 2 0 1 1-4 0v-.08a1.7 1.7 0 0 0-1-.58a1.7 1.7 0 0 0-1.88.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.63 15a1.7 1.7 0 0 0-.58-1H4a2 2 0 1 1 0-4h.08a1.7 1.7 0 0 0 .58-1a1.7 1.7 0 0 0-.34-1.88l-.06-.06a2 2 0 1 1 2.83-2.83l.06-.06A1.7 1.7 0 0 0 9 4.63a1.7 1.7 0 0 0 1-.58V4a2 2 0 1 1 4 0v.08a1.7 1.7 0 0 0 1 .58a1.7 1.7 0 0 0 1.88-.34l.06.06a2 2 0 1 1 2.83-2.83l-.06.06A1.7 1.7 0 0 0 19.37 9c.16.35.37.68.63 1H20a2 2 0 1 1 0 4h-.08a1.7 1.7 0 0 0-.52 1Z"/>
+            </svg>
+            <span data-i18n="settings.dialogTitle">Settings</span>
+          </div>
+          <button
+            type="button"
+            id="settings-close-btn"
+            class="icon-btn popup-dialog-close"
+            aria-label="Close"
+            title="Close"
+            data-i18n-aria="dialog.close"
+            data-i18n-title="dialog.close"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
+              <path d="M6 6l12 12M18 6 6 18"/>
+            </svg>
+          </button>
+        </div>
+        <div class="popup-dialog-body" id="settings-form-root">
+          <p class="popup-dialog-lead" data-i18n="settings.dialogLead">
+            Choose what each recording captures before you start a session. Save each section when you finish editing it.
+          </p>
+
+          <section class="settings-panel" aria-labelledby="popup-section-privacy" data-settings-section="privacy">
+            <div class="settings-panel-header">
+              <h2 id="popup-section-privacy" data-i18n="sections.privacyRedaction">Privacy &amp; Redaction</h2>
+              <button type="button" class="btn btn-start btn-small settings-section-save" data-section="privacy" data-i18n="actions.saveSection">Save section</button>
+            </div>
+            <div class="settings-grid">
+              <div class="settings-group">
+                <h3 data-i18n="sections.privacyData">Data redaction</h3>
+                <label class="settings-check" for="redact-sensitive-headers-input">
+                  <input id="redact-sensitive-headers-input" type="checkbox" checked>
+                  <span class="settings-check-text" data-i18n="fields.redactSensitiveHeaders.label">Redact sensitive headers</span>
+                </label>
+                <label class="settings-check" for="redact-sensitive-query-params-input">
+                  <input id="redact-sensitive-query-params-input" type="checkbox" checked>
+                  <span class="settings-check-text" data-i18n="fields.redactSensitiveQueryParams.label">Redact sensitive query params</span>
+                </label>
+                <label class="settings-check" for="redact-request-body-fields-input">
+                  <input id="redact-request-body-fields-input" type="checkbox" checked>
+                  <span class="settings-check-text" data-i18n="fields.redactRequestBodyFields.label">Redact request body fields</span>
+                </label>
+                <label class="settings-check" for="redact-response-body-fields-input">
+                  <input id="redact-response-body-fields-input" type="checkbox" checked>
+                  <span class="settings-check-text" data-i18n="fields.redactResponseBodyFields.label">Redact response body fields</span>
+                </label>
+                <label class="settings-check" for="redact-console-values-input">
+                  <input id="redact-console-values-input" type="checkbox" checked>
+                  <span class="settings-check-text" data-i18n="fields.redactConsoleValues.label">Redact console values</span>
+                </label>
+                <label class="settings-check" for="redact-event-metadata-input">
+                  <input id="redact-event-metadata-input" type="checkbox" checked>
+                  <span class="settings-check-text" data-i18n="fields.redactEventMetadata.label">Redact event/report metadata</span>
+                </label>
+                <label class="setting-field" for="redact-websocket-payloads-input">
+                  <span class="setting-field-label-row">
+                    <span data-i18n="fields.redactWebSocketPayloads.label">WebSocket payload redaction</span>
+                  </span>
+                  <select id="redact-websocket-payloads-input">
+                    <option value="off" data-i18n="options.off">Off</option>
+                    <option value="sensitive-fields" selected data-i18n="options.sensitiveFields">Sensitive fields</option>
+                    <option value="all" data-i18n="options.allPayloads">All payloads</option>
+                  </select>
+                </label>
+              </div>
+              <div class="settings-group">
+                <h3 data-i18n="sections.visualMasking">Visual masking</h3>
+                <label class="setting-field" for="mask-dom-selectors-input">
+                  <span class="setting-field-label-row">
+                    <span data-i18n="fields.maskDomSelectors.label">DOM selectors to mask</span>
+                  </span>
+                  <textarea id="mask-dom-selectors-input" rows="5" placeholder="[data-private]&#10;.customer-email" data-i18n-placeholder="placeholders.maskDomSelectors"></textarea>
+                </label>
+                <p class="setting-hint" data-i18n="hints.visualMasking">Selectors are applied before capture when possible. They do not cover canvas, video, or closed shadow DOM.</p>
+              </div>
+            </div>
+          </section>
+
+          <section class="settings-panel" aria-labelledby="popup-section-capture" data-settings-section="capture">
+            <div class="settings-panel-header">
+              <h2 id="popup-section-capture" data-i18n="sections.capture">Capture</h2>
+              <button type="button" class="btn btn-start btn-small settings-section-save" data-section="capture" data-i18n="actions.saveSection">Save section</button>
+            </div>
+            <div class="settings-grid">
+              <div class="settings-group">
+                <h3 data-i18n="sections.console">Console</h3>
+                <label class="settings-check" for="capture-console-input">
+                  <input id="capture-console-input" type="checkbox" checked>
+                  <span class="settings-check-text" data-i18n="fields.captureConsole.label">Capture console artifact</span>
+                </label>
+                <label class="settings-check" for="capture-console-args-input">
+                  <input id="capture-console-args-input" type="checkbox" checked>
+                  <span class="settings-check-text" data-i18n="fields.captureConsoleArgs.label">Store console args and previews</span>
+                </label>
+                <label class="setting-field" for="console-preview-depth-input">
+                  <span class="setting-field-label-row">
+                    <span data-i18n="fields.consolePreviewDepth.label">Preview depth</span>
+                  </span>
+                  <select id="console-preview-depth-input">
+                    <option value="none" data-i18n="options.none">None</option>
+                    <option value="shallow" data-i18n="options.shallow">Shallow</option>
+                    <option value="full" selected data-i18n="options.fullWithinLimit">Full within limit</option>
+                  </select>
+                </label>
+                <label class="setting-field" for="capture-console-stacks-input">
+                  <span class="setting-field-label-row">
+                    <span data-i18n="fields.captureConsoleStacks.label">Stacks</span>
+                  </span>
+                  <select id="capture-console-stacks-input">
+                    <option value="off" data-i18n="options.off">Off</option>
+                    <option value="errors" data-i18n="options.errorsOnly">Errors only</option>
+                    <option value="warnings-errors" data-i18n="options.warningsErrors">Warnings and errors</option>
+                    <option value="all" selected data-i18n="options.allEntries">All entries</option>
+                  </select>
+                </label>
+                <label class="setting-field" for="capture-console-source-snippets-input">
+                  <span class="setting-field-label-row">
+                    <span data-i18n="fields.captureConsoleSourceSnippets.label">Source snippets</span>
+                  </span>
+                  <select id="capture-console-source-snippets-input">
+                    <option value="off" data-i18n="options.off">Off</option>
+                    <option value="errors" data-i18n="options.errorsOnly">Errors only</option>
+                    <option value="warnings-errors" data-i18n="options.warningsErrors">Warnings and errors</option>
+                    <option value="all" selected data-i18n="options.allResolvedEntries">All resolved entries</option>
+                  </select>
+                </label>
+                <label class="setting-field" for="max-console-entry-bytes-input">
+                  <span class="setting-field-label-row">
+                    <span data-i18n="fields.maxConsoleEntryBytes.label">Max entry bytes</span>
+                  </span>
+                  <input id="max-console-entry-bytes-input" type="number" min="1024" max="524288" step="1024" placeholder="No limit" data-i18n-placeholder="placeholders.noLimit">
+                </label>
+              </div>
+
+              <div class="settings-group">
+                <h3 data-i18n="sections.network">Network</h3>
+                <label class="settings-check" for="capture-network-input">
+                  <input id="capture-network-input" type="checkbox" checked>
+                  <span class="settings-check-text" data-i18n="fields.captureNetwork.label">Capture network artifact</span>
+                </label>
+                <label class="settings-check" for="capture-request-bodies-input">
+                  <input id="capture-request-bodies-input" type="checkbox" checked>
+                  <span class="settings-check-text" data-i18n="fields.captureRequestBodies.label">Capture request bodies</span>
+                </label>
+                <label class="settings-check" for="suppress-recorder-internal-requests-input">
+                  <input id="suppress-recorder-internal-requests-input" type="checkbox" checked>
+                  <span class="settings-check-text" data-i18n="fields.suppressRecorderInternalRequests.label">Suppress recorder sourcemap fetches</span>
+                </label>
+                <label class="setting-field" for="capture-request-headers-input">
+                  <span class="setting-field-label-row">
+                    <span data-i18n="fields.captureRequestHeaders.label">Request headers</span>
+                  </span>
+                  <select id="capture-request-headers-input">
+                    <option value="off" data-i18n="options.off">Off</option>
+                    <option value="minimal" data-i18n="options.minimal">Minimal</option>
+                    <option value="full" selected data-i18n="options.fullRedacted">Full redacted</option>
+                  </select>
+                </label>
+                <label class="setting-field" for="capture-response-headers-input">
+                  <span class="setting-field-label-row">
+                    <span data-i18n="fields.captureResponseHeaders.label">Response headers</span>
+                  </span>
+                  <select id="capture-response-headers-input">
+                    <option value="off" data-i18n="options.off">Off</option>
+                    <option value="minimal" data-i18n="options.minimal">Minimal</option>
+                    <option value="full" selected data-i18n="options.fullRedacted">Full redacted</option>
+                  </select>
+                </label>
+                <label class="setting-field" for="capture-response-body-mode-input">
+                  <span class="setting-field-label-row">
+                    <span data-i18n="fields.captureResponseBodyMode.label">Response bodies</span>
+                  </span>
+                  <select id="capture-response-body-mode-input">
+                    <option value="off" data-i18n="options.off">Off</option>
+                    <option value="text" data-i18n="options.textOnly">Text only</option>
+                    <option value="text-json" data-i18n="options.textJson">Text and JSON</option>
+                    <option value="eligible" selected data-i18n="options.eligibleText">All eligible text types</option>
+                  </select>
+                </label>
+                <label class="setting-field" for="capture-redirect-headers-input">
+                  <span class="setting-field-label-row">
+                    <span data-i18n="fields.captureRedirectHeaders.label">Redirect headers</span>
+                  </span>
+                  <select id="capture-redirect-headers-input">
+                    <option value="off" data-i18n="options.off">Off</option>
+                    <option value="location" data-i18n="options.locationOnly">Location only</option>
+                    <option value="full" selected data-i18n="options.fullRedacted">Full redacted</option>
+                  </select>
+                </label>
+                <label class="setting-field" for="capture-initiator-input">
+                  <span class="setting-field-label-row">
+                    <span data-i18n="fields.captureInitiator.label">Initiator</span>
+                  </span>
+                  <select id="capture-initiator-input">
+                    <option value="off" data-i18n="options.off">Off</option>
+                    <option value="summary" data-i18n="options.summaryLocation">Summary location</option>
+                    <option value="short-stack" data-i18n="options.shortStack">Short stack</option>
+                    <option value="full-stack" selected data-i18n="options.fullStack">Full stack</option>
+                  </select>
+                </label>
+                <label class="setting-field" for="max-response-body-bytes-input">
+                  <span class="setting-field-label-row">
+                    <span data-i18n="fields.maxResponseBodyBytes.label">Max response body bytes</span>
+                  </span>
+                  <input id="max-response-body-bytes-input" type="number" min="0" max="10485760" step="1024" placeholder="No limit" data-i18n-placeholder="placeholders.noLimit">
+                </label>
+              </div>
+            </div>
+
+            <div class="settings-grid settings-grid-follow">
+              <div class="settings-group">
+                <h3 data-i18n="sections.websocket">WebSocket</h3>
+                <label class="settings-check" for="capture-websockets-input">
+                  <input id="capture-websockets-input" type="checkbox" checked>
+                  <span class="settings-check-text" data-i18n="fields.captureWebSockets.label">Capture WebSocket artifact</span>
+                </label>
+                <label class="settings-check" for="capture-websocket-frames-input">
+                  <input id="capture-websocket-frames-input" type="checkbox" checked>
+                  <span class="settings-check-text" data-i18n="fields.captureWebSocketFrames.label">Store WebSocket frame payloads</span>
+                </label>
+                <label class="settings-check" for="capture-websocket-initiator-input">
+                  <input id="capture-websocket-initiator-input" type="checkbox" checked>
+                  <span class="settings-check-text" data-i18n="fields.captureWebSocketInitiator.label">Store WebSocket initiator</span>
+                </label>
+                <label class="setting-field" for="max-websocket-frame-bytes-input">
+                  <span class="setting-field-label-row">
+                    <span data-i18n="fields.maxWebSocketFrameBytes.label">Max frame bytes</span>
+                  </span>
+                  <input id="max-websocket-frame-bytes-input" type="number" min="0" max="1048576" step="1024" placeholder="No limit" data-i18n-placeholder="placeholders.noLimit">
+                </label>
+              </div>
+
+              <div class="settings-group">
+                <h3 data-i18n="sections.inspector">Inspector capture</h3>
+                <label class="settings-check" for="capture-storage-input">
+                  <input id="capture-storage-input" type="checkbox" checked>
+                  <span class="settings-check-text" data-i18n="fields.captureStorage.label">Capture storage snapshots</span>
+                </label>
+                <label class="settings-check" for="redact-storage-values-input">
+                  <input id="redact-storage-values-input" type="checkbox" checked>
+                  <span class="settings-check-text" data-i18n="fields.redactStorageValues.label">Redact storage values</span>
+                </label>
+                <label class="settings-check" for="capture-dom-snapshots-input">
+                  <input id="capture-dom-snapshots-input" type="checkbox" checked>
+                  <span class="settings-check-text" data-i18n="fields.captureDomSnapshots.label">Capture DOM snapshots</span>
+                </label>
+                <label class="settings-check" for="redact-dom-text-content-input">
+                  <input id="redact-dom-text-content-input" type="checkbox" checked>
+                  <span class="settings-check-text" data-i18n="fields.redactDomTextContent.label">Redact DOM text content</span>
+                </label>
+                <p class="setting-hint" data-i18n="hints.inspectorCapture">Storage and DOM capture are on by default with full recording. They capture more sensitive data (storage, cookies, DOM text) and increase package size. Keep redaction on to mask values that match sensitive patterns. They lock on while network capture is enabled.</p>
+              </div>
+            </div>
+          </section>
+
+          <section class="settings-panel" aria-labelledby="popup-section-capture-mode" data-settings-section="captureMode">
+            <div class="settings-panel-header">
+              <h2 id="popup-section-capture-mode" data-i18n="sections.captureMode">Capture mode</h2>
+              <button type="button" class="btn btn-start btn-small settings-section-save" data-section="captureMode" data-i18n="actions.saveSection">Save section</button>
+            </div>
+            <div class="settings-group">
+              <label class="setting-field" for="capture-mode-input">
+                <span class="setting-field-label-row">
+                  <span data-i18n="fields.captureMode.label">Capture mode</span>
+                </span>
+                <select id="capture-mode-input">
+                  <option value="cdp" selected data-i18n="options.captureModeCdp">CDP (full fidelity, debugger banner)</option>
+                  <option value="in-page" data-i18n="options.captureModeInPage">In-page (no banner, lower fidelity)</option>
+                </select>
+              </label>
+              <p class="setting-hint" data-i18n="hints.captureMode">CDP is the default and captures with full fidelity, but shows a chrome.debugger banner. In-page mode avoids the banner but has lower fidelity (no cross-origin response bodies, no real source maps).</p>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+
+    <div
+      id="setting-info-popover"
+      class="setting-info-popover"
+      popover="auto"
+      role="dialog"
+      aria-labelledby="setting-info-title"
+    >
+      <h2 id="setting-info-title" class="setting-info-title"></h2>
+      <p id="setting-info-body"></p>
     </div>
   </div>
   <script src="./popup.js"></script>

@@ -18,6 +18,11 @@ import {
 } from "../shared/instant-replay-window";
 import { resolveReplayOpenUrl } from "../shared/player-host";
 import { getRecordingTabTarget } from "../shared/recording-target";
+import {
+  attachSettingsForm,
+  SETTINGS_FORM_TRANSLATIONS,
+  type SettingsFormController,
+} from "../shared/settings-form-ui";
 import { buildCloudRemoteOpenUrl, resolveHistoryProvider } from "../shared/storage-provider";
 import { attachThemeToggle, type ThemeToggleController } from "../shared/theme";
 import { attachLanguageSwitch, type UiLanguage } from "../shared/ui-language";
@@ -26,8 +31,6 @@ import {
   formatDateTime,
   formatPageLabel,
   formatTime,
-  getVisibleUploadHistory,
-  HISTORY_PAGE_PATH,
   handleUploadHistoryAction,
   renderUploadHistoryList,
   setUploadHistoryUiLabels,
@@ -41,10 +44,11 @@ import type {
   RecordingStatus,
   UploadHistoryEntry,
 } from "../types/messages";
+import { PopupDialogHost } from "./dialog-host";
 
 type PopupLanguage = UiLanguage;
 
-const TRANSLATIONS: Record<PopupLanguage, Record<string, string>> = {
+const POPUP_TRANSLATIONS: Record<PopupLanguage, Record<string, string>> = {
   en: {
     "actions.startRecording": "Start Recording",
     "actions.captureInstantReplay": "Instant Replay",
@@ -79,12 +83,20 @@ const TRANSLATIONS: Record<PopupLanguage, Record<string, string>> = {
     "storage.ready": "{name} ready",
     "storage.connectClouds": "Connect clouds",
     "storage.manageClouds": "Manage clouds",
+    "storage.manageCloudsTitle": "Manage clouds",
+    "storage.manageCloudsLead":
+      "Connect Google Drive or Dropbox. OAuth may briefly close this popup — reopen it after signing in.",
+    "storage.connected": "Connected",
+    "storage.notConnectedStatus": "Not connected",
+    "storage.working": "Working…",
+    "storage.disconnect": "Disconnect",
+    "storage.connectProvider": "Connect {name}",
     "storage.selectAria": "Connected storage provider",
     "storage.connectFirst": "Connect a cloud first…",
     "storage.notConnected": "{name} is not connected.",
     "storage.switchFailed": "Could not switch storage provider.",
     "storage.connectBeforeRecord": "Connect cloud storage before recording.",
-    "storage.connectCloudFirst": "Connect that cloud on the cloud page first.",
+    "storage.connectCloudFirst": "Connect that cloud first.",
     "storage.folderLabel": "Upload folder",
     "storage.folderPlaceholderDrive": "/gn-tracing, folder ID, or Drive link",
     "storage.folderPlaceholderDropbox": "/gn-tracing or blank for root",
@@ -102,6 +114,12 @@ const TRANSLATIONS: Record<PopupLanguage, Record<string, string>> = {
     "storage.summaryDisconnected": "No cloud connected",
     "sections.captureQueue": "Capture Queue",
     "sections.latestUpload": "Latest Upload",
+    "sections.uploadHistory": "Upload history",
+    "dialog.close": "Close",
+    "history.entryEmpty": "No uploads yet.",
+    "history.entrySummary": "{count} upload{plural} · latest {page}",
+    "history.summaryEmpty": "Browse your recent uploads here once recordings are uploaded.",
+    "history.summaryCount": "{count} upload{plural} saved locally.",
     "password.sectionTitle": "Package password",
     "password.label": "Zip password",
     "password.placeholder": "Set password for new uploads",
@@ -117,6 +135,8 @@ const TRANSLATIONS: Record<PopupLanguage, Record<string, string>> = {
     "password.saveFailed": "Could not update zip password.",
     "password.required": "Enter a password to save.",
     "instantReplay.sectionTitle": "Instant replay",
+    "instantReplay.settingsTitle": "Instant Replay settings",
+    "instantReplay.settingsAria": "Instant Replay settings",
     "instantReplay.enableLabel": "Enable Instant Replay",
     "instantReplay.windowLabel": "Keep last",
     "instantReplay.domainsLabel": "Allowed domains (CDP)",
@@ -126,19 +146,20 @@ const TRANSLATIONS: Record<PopupLanguage, Record<string, string>> = {
     "instantReplay.domainsEmpty":
       "None yet — click “Add this site” while on the page you want to debug.",
     "instantReplay.domainAdded": "Added {domain} to Instant Replay.",
+    "instantReplay.domainRemoved": "Removed {domain} from Instant Replay.",
     "instantReplay.domainExists": "{domain} is already on the allowlist.",
     "instantReplay.domainInvalid":
       "Could not read a host from the active tab (open an http/https page).",
+    "instantReplay.removeDomain": "Remove {domain}",
     "instantReplay.enableFirst": "Enable Instant Replay first, then add this site.",
     "instantReplay.hint":
-      "When on, keeps a rolling DOM lookback. Console/network use CDP (debugger banner) only on allowed domains. After a bug, click Instant Replay to package and upload. Nothing leaves your browser until you capture.",
+      "When on, keeps a rolling DOM lookback. Console/network use CDP (debugger banner) only on allowed domains. After a bug, click Instant Replay to annotate, then save to upload. Nothing leaves your browser until you save.",
     "instantReplay.saveFailed": "Could not update Instant Replay settings.",
     "instantReplay.windowSaved": "Instant Replay window saved.",
     "instantReplay.enabledSaved": "Instant Replay enabled.",
     "instantReplay.disabledSaved": "Instant Replay disabled.",
     "instantReplay.captureFailed": "Could not capture Instant Replay.",
-    "instantReplay.captureSuccess": "Instant Replay uploaded.",
-    "instantReplay.disabledTitle": "Enable Instant Replay below first",
+    "instantReplay.disabledTitle": "Enable Instant Replay in settings first",
     "footer.feedback": "Feedback",
     "feedback.sectionAria": "Send feedback",
     "feedback.label": "Feedback",
@@ -166,7 +187,6 @@ const TRANSLATIONS: Record<PopupLanguage, Record<string, string>> = {
     "history.duration": "Duration: {time}",
     "history.unknownTime": "Unknown time",
     "history.unknownPage": "Unknown page",
-    "history.olderHidden": "{count} older upload{plural} hidden.",
     "messages.checkingTab": "Checking whether this tab can be recorded.",
     "messages.cannotInspectTab": "Cannot inspect the active tab for recording.",
     "messages.stopFailed": "Failed to stop recording",
@@ -218,12 +238,20 @@ const TRANSLATIONS: Record<PopupLanguage, Record<string, string>> = {
     "storage.ready": "{name} sẵn sàng",
     "storage.connectClouds": "Kết nối cloud",
     "storage.manageClouds": "Quản lý cloud",
+    "storage.manageCloudsTitle": "Quản lý cloud",
+    "storage.manageCloudsLead":
+      "Kết nối Google Drive hoặc Dropbox. OAuth có thể đóng popup — mở lại sau khi đăng nhập.",
+    "storage.connected": "Đã kết nối",
+    "storage.notConnectedStatus": "Chưa kết nối",
+    "storage.working": "Đang xử lý…",
+    "storage.disconnect": "Ngắt kết nối",
+    "storage.connectProvider": "Kết nối {name}",
     "storage.selectAria": "Nhà cung cấp lưu trữ đã kết nối",
     "storage.connectFirst": "Hãy kết nối cloud trước…",
     "storage.notConnected": "{name} chưa được kết nối.",
     "storage.switchFailed": "Không chuyển được nhà cung cấp lưu trữ.",
     "storage.connectBeforeRecord": "Hãy kết nối cloud trước khi ghi.",
-    "storage.connectCloudFirst": "Hãy kết nối cloud đó trên trang cloud trước.",
+    "storage.connectCloudFirst": "Hãy kết nối cloud đó trước.",
     "storage.folderLabel": "Thư mục upload",
     "storage.folderPlaceholderDrive": "/gn-tracing, folder ID, hoặc link Drive",
     "storage.folderPlaceholderDropbox": "/gn-tracing hoặc để trống cho root",
@@ -241,6 +269,12 @@ const TRANSLATIONS: Record<PopupLanguage, Record<string, string>> = {
     "storage.summaryDisconnected": "Chưa kết nối cloud",
     "sections.captureQueue": "Hàng đợi capture",
     "sections.latestUpload": "Upload gần nhất",
+    "sections.uploadHistory": "Lịch sử upload",
+    "dialog.close": "Đóng",
+    "history.entryEmpty": "Chưa có upload.",
+    "history.entrySummary": "{count} upload · gần nhất {page}",
+    "history.summaryEmpty": "Các bản ghi sau khi upload sẽ hiện tại đây.",
+    "history.summaryCount": "{count} upload được lưu cục bộ.",
     "password.sectionTitle": "Mật khẩu package",
     "password.label": "Mật khẩu zip",
     "password.placeholder": "Đặt mật khẩu cho upload mới",
@@ -256,6 +290,8 @@ const TRANSLATIONS: Record<PopupLanguage, Record<string, string>> = {
     "password.saveFailed": "Không cập nhật được mật khẩu zip.",
     "password.required": "Nhập mật khẩu để lưu.",
     "instantReplay.sectionTitle": "Instant replay",
+    "instantReplay.settingsTitle": "Cài đặt Instant Replay",
+    "instantReplay.settingsAria": "Cài đặt Instant Replay",
     "instantReplay.enableLabel": "Bật Instant Replay",
     "instantReplay.windowLabel": "Giữ lại",
     "instantReplay.domainsLabel": "Domain được phép (CDP)",
@@ -264,18 +300,19 @@ const TRANSLATIONS: Record<PopupLanguage, Record<string, string>> = {
     "instantReplay.alreadyOnList": "Đã có",
     "instantReplay.domainsEmpty": "Chưa có — mở trang cần debug rồi bấm “Thêm site này”.",
     "instantReplay.domainAdded": "Đã thêm {domain} vào Instant Replay.",
+    "instantReplay.domainRemoved": "Đã gỡ {domain} khỏi Instant Replay.",
     "instantReplay.domainExists": "{domain} đã có trong danh sách.",
     "instantReplay.domainInvalid": "Không đọc được host từ tab hiện tại (mở trang http/https).",
+    "instantReplay.removeDomain": "Gỡ {domain}",
     "instantReplay.enableFirst": "Bật Instant Replay trước, rồi mới thêm site.",
     "instantReplay.hint":
-      "Khi bật, giữ lookback DOM. Console/network dùng CDP (banner debugger) chỉ trên domain được phép. Gặp bug thì bấm Instant Replay để đóng gói và upload. Không rời máy cho đến khi bạn capture.",
+      "Khi bật, giữ lookback DOM. Console/network dùng CDP (banner debugger) chỉ trên domain được phép. Gặp bug thì bấm Instant Replay để chú thích, rồi lưu để upload. Không rời máy cho đến khi bạn lưu.",
     "instantReplay.saveFailed": "Không cập nhật được Instant Replay.",
     "instantReplay.windowSaved": "Đã lưu cửa sổ Instant Replay.",
     "instantReplay.enabledSaved": "Đã bật Instant Replay.",
     "instantReplay.disabledSaved": "Đã tắt Instant Replay.",
     "instantReplay.captureFailed": "Không capture được Instant Replay.",
-    "instantReplay.captureSuccess": "Đã upload Instant Replay.",
-    "instantReplay.disabledTitle": "Bật Instant Replay bên dưới trước",
+    "instantReplay.disabledTitle": "Bật Instant Replay trong cài đặt trước",
     "footer.feedback": "Góp ý",
     "feedback.sectionAria": "Gửi góp ý",
     "feedback.label": "Góp ý",
@@ -303,7 +340,6 @@ const TRANSLATIONS: Record<PopupLanguage, Record<string, string>> = {
     "history.duration": "Thời lượng: {time}",
     "history.unknownTime": "Thời gian không rõ",
     "history.unknownPage": "Trang không rõ",
-    "history.olderHidden": "{count} upload cũ hơn bị ẩn.",
     "messages.checkingTab": "Đang kiểm tra tab này có ghi được không.",
     "messages.cannotInspectTab": "Không kiểm tra được tab đang mở để ghi.",
     "messages.stopFailed": "Không dừng được bản ghi",
@@ -323,8 +359,14 @@ const TRANSLATIONS: Record<PopupLanguage, Record<string, string>> = {
   },
 };
 
+const TRANSLATIONS: Record<PopupLanguage, Record<string, string>> = {
+  en: { ...SETTINGS_FORM_TRANSLATIONS.en, ...POPUP_TRANSLATIONS.en },
+  vi: { ...SETTINGS_FORM_TRANSLATIONS.vi, ...POPUP_TRANSLATIONS.vi },
+};
+
 let currentLanguage: PopupLanguage = "en";
 let themeToggleUi: ThemeToggleController | null = null;
+let settingsForm: SettingsFormController | null = null;
 
 function t(key: string, replacements: Record<string, string> = {}): string {
   const template = TRANSLATIONS[currentLanguage][key] || TRANSLATIONS.en[key] || key;
@@ -368,6 +410,7 @@ function applyStaticTranslations(): void {
 
   settingsPageBtn.setAttribute("aria-label", t("actions.openSettings"));
   settingsPageBtn.setAttribute("title", t("actions.openSettings"));
+  settingsForm?.refreshFieldInfoLabels();
   themeToggleUi?.refreshLabels();
   const feedbackToggle = document.getElementById("feedback-toggle-btn");
   if (feedbackToggle) {
@@ -397,6 +440,9 @@ function applyTranslations(): void {
   }
 
   renderPopupUploadHistory(currentUploadHistory, { animateLatestSuccess: false });
+  if (isPopupDialogOpen("manage-clouds")) {
+    renderManageCloudsProviderList();
+  }
   renderDrawColorSwatches();
   updateZipPasswordUi(Boolean(latestPopupState?.settings?.zipPasswordConfigured));
   applyInstantReplaySettingsFromSnapshot(latestPopupState?.settings);
@@ -456,6 +502,31 @@ const zipPasswordCancelBtn = document.getElementById(
 ) as HTMLButtonElement;
 const zipPasswordClearBtn = document.getElementById("zip-password-clear-btn") as HTMLButtonElement;
 const instantReplayBtn = document.getElementById("instant-replay-btn") as HTMLButtonElement | null;
+const instantReplaySettingsBtn = document.getElementById(
+  "instant-replay-settings-btn",
+) as HTMLButtonElement | null;
+const instantReplayDialog = document.getElementById("instant-replay-dialog");
+const instantReplayPanel = document.getElementById("instant-replay-panel");
+const instantReplaySettingsCloseBtn = document.getElementById(
+  "instant-replay-settings-close-btn",
+) as HTMLButtonElement | null;
+const manageCloudsDialog = document.getElementById("manage-clouds-dialog");
+const manageCloudsPanel = document.getElementById("manage-clouds-panel");
+const manageCloudsCloseBtn = document.getElementById(
+  "manage-clouds-close-btn",
+) as HTMLButtonElement | null;
+const popupProviderList = document.getElementById("popup-provider-list");
+const uploadHistoryDialog = document.getElementById("upload-history-dialog");
+const uploadHistoryPanel = document.getElementById("upload-history-panel");
+const uploadHistoryCloseBtn = document.getElementById(
+  "upload-history-close-btn",
+) as HTMLButtonElement | null;
+const uploadHistoryEntrySummary = document.getElementById("upload-history-entry-summary");
+const uploadHistoryDialogSummary = document.getElementById("upload-history-dialog-summary");
+const settingsDialog = document.getElementById("settings-dialog");
+const settingsCloseBtn = document.getElementById("settings-close-btn") as HTMLButtonElement | null;
+const settingsFormRoot = document.getElementById("settings-form-root");
+const settingInfoPopover = document.getElementById("setting-info-popover");
 const instantReplayEnabledInput = document.getElementById(
   "instant-replay-enabled",
 ) as HTMLInputElement | null;
@@ -476,6 +547,17 @@ let instantReplayWindowSaveInFlight = false;
 let instantReplayEnableSaveInFlight = false;
 let instantReplayCaptureInFlight = false;
 let instantReplayDomainSaveInFlight = false;
+type PopupDialogId = "instant-replay" | "manage-clouds" | "upload-history" | "settings";
+const popupDialogHost = new PopupDialogHost<PopupDialogId>();
+type PopupDialogEntry = {
+  root: HTMLElement | null;
+  trigger?: HTMLButtonElement | null;
+  focusOnOpen?: HTMLElement | null;
+  onOpen?: () => void;
+};
+const popupDialogEntries = new Map<PopupDialogId, PopupDialogEntry>();
+const manageCloudsBusy = new Set<"google-drive" | "dropbox">();
+const manageCloudsErrors = new Map<"google-drive" | "dropbox", string>();
 /** Host just added — chip + button feedback until next update. */
 let instantReplayJustAddedDomain: string | null = null;
 let instantReplayAddButtonFeedbackTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -994,9 +1076,117 @@ function setInstantReplayWindowDisplay(seconds: number): void {
   }
 }
 
+function isPopupDialogOpen(id: PopupDialogId): boolean {
+  return popupDialogHost.isOpen(id);
+}
+
+function syncPopupDialogBodyLock(): void {
+  document.body.classList.toggle("popup-dialog-open", popupDialogHost.anyOpen());
+}
+
+function applyPopupDialogDom(id: PopupDialogId, open: boolean): void {
+  const entry = popupDialogEntries.get(id);
+  if (!entry?.root) {
+    return;
+  }
+  entry.root.classList.toggle("hidden", !open);
+  entry.root.setAttribute("aria-hidden", open ? "false" : "true");
+  if (entry.trigger) {
+    entry.trigger.setAttribute("aria-expanded", open ? "true" : "false");
+    entry.trigger.classList.toggle("is-open", open);
+  }
+}
+
+/**
+ * Single-open dialog host: opening one dialog closes every other open dialog
+ * without an N-way hard-coded ladder.
+ */
+function setPopupDialogOpen(id: PopupDialogId, open: boolean): void {
+  const entry = popupDialogEntries.get(id);
+  if (!entry?.root) {
+    return;
+  }
+  const wasOpen = popupDialogHost.isOpen(id);
+  if (open === wasOpen) {
+    return;
+  }
+
+  if (open) {
+    const { closedIds } = popupDialogHost.markOpen(id);
+    for (const otherId of closedIds) {
+      applyPopupDialogDom(otherId, false);
+    }
+    applyPopupDialogDom(id, true);
+    syncPopupDialogBodyLock();
+    entry.onOpen?.();
+    (entry.focusOnOpen ?? entry.trigger)?.focus();
+    return;
+  }
+
+  popupDialogHost.markClose(id);
+  applyPopupDialogDom(id, false);
+  syncPopupDialogBodyLock();
+  if (wasOpen) {
+    entry.trigger?.focus();
+  }
+}
+
+function setInstantReplaySettingsOpen(open: boolean): void {
+  setPopupDialogOpen("instant-replay", open);
+}
+
+function setManageCloudsDialogOpen(open: boolean): void {
+  setPopupDialogOpen("manage-clouds", open);
+}
+
+function setUploadHistoryDialogOpen(open: boolean): void {
+  setPopupDialogOpen("upload-history", open);
+}
+
+function setSettingsDialogOpen(open: boolean): void {
+  setPopupDialogOpen("settings", open);
+}
+
+function registerPopupDialogs(): void {
+  popupDialogEntries.set("instant-replay", {
+    root: instantReplayDialog,
+    trigger: instantReplaySettingsBtn,
+    focusOnOpen: instantReplayEnabledInput ?? instantReplaySettingsCloseBtn,
+  });
+  popupDialogEntries.set("manage-clouds", {
+    root: manageCloudsDialog,
+    trigger: manageStorageBtn,
+    focusOnOpen: manageCloudsCloseBtn,
+    onOpen: () => {
+      void refreshManageCloudsAndRender();
+    },
+  });
+  popupDialogEntries.set("upload-history", {
+    root: uploadHistoryDialog,
+    trigger: uploadHistoryPageBtn,
+    focusOnOpen: uploadHistoryCloseBtn,
+    onOpen: () => {
+      renderPopupUploadHistory(currentUploadHistory, { animateLatestSuccess: false });
+    },
+  });
+  popupDialogEntries.set("settings", {
+    root: settingsDialog,
+    trigger: settingsPageBtn,
+    focusOnOpen: settingsCloseBtn,
+    onOpen: () => {
+      void settingsForm?.load();
+    },
+  });
+}
+
 function updateInstantReplayControls(options: { recordingActive?: boolean } = {}): void {
   const recordingActive =
     options.recordingActive ?? Boolean(latestPopupState?.recording?.isRecording);
+
+  // Hide the settings panel while a full Record session owns the tab.
+  if (recordingActive && isPopupDialogOpen("instant-replay")) {
+    setInstantReplaySettingsOpen(false);
+  }
 
   if (instantReplayEnabledInput && !instantReplayEnableSaveInFlight) {
     instantReplayEnabledInput.checked = instantReplayEnabled;
@@ -1020,6 +1210,21 @@ function updateInstantReplayControls(options: { recordingActive?: boolean } = {}
     }
   }
 
+  if (instantReplaySettingsBtn) {
+    instantReplaySettingsBtn.disabled = recordingActive || instantReplayCaptureInFlight;
+    instantReplaySettingsBtn.classList.toggle("is-enabled", instantReplayEnabled);
+    instantReplaySettingsBtn.setAttribute("title", t("instantReplay.settingsTitle"));
+    instantReplaySettingsBtn.setAttribute("aria-label", t("instantReplay.settingsAria"));
+  }
+
+  if (instantReplayPanel) {
+    instantReplayPanel.setAttribute("aria-label", t("instantReplay.settingsAria"));
+  }
+  if (instantReplaySettingsCloseBtn) {
+    instantReplaySettingsCloseBtn.setAttribute("title", t("dialog.close"));
+    instantReplaySettingsCloseBtn.setAttribute("aria-label", t("dialog.close"));
+  }
+
   if (instantReplayWindowInput && !instantReplayWindowSaveInFlight) {
     setInstantReplayWindowDisplay(instantReplayWindowSeconds);
     instantReplayWindowInput.disabled =
@@ -1034,6 +1239,12 @@ function renderInstantReplayDomainsList(options: { flash?: boolean } = {}): void
   if (!instantReplayDomainsList) {
     return;
   }
+  const recordingActive = Boolean(latestPopupState?.recording?.isRecording);
+  const removeDisabled =
+    recordingActive ||
+    !instantReplayEnabled ||
+    instantReplayDomainSaveInFlight ||
+    instantReplayCaptureInFlight;
   if (instantReplayAllowedDomains.length === 0) {
     instantReplayDomainsList.innerHTML = `<p class="instant-replay-domains-empty">${escapeHtml(
       t("instantReplay.domainsEmpty"),
@@ -1042,9 +1253,24 @@ function renderInstantReplayDomainsList(options: { flash?: boolean } = {}): void
     instantReplayDomainsList.innerHTML = instantReplayAllowedDomains
       .map((domain) => {
         const isNew = domain === instantReplayJustAddedDomain;
+        const safeDomain = escapeHtml(domain);
         return `<span class="instant-replay-domain-chip${
           isNew ? " is-new" : ""
-        }" role="listitem" title="${escapeHtml(domain)}">${escapeHtml(domain)}</span>`;
+        }" role="listitem" data-domain="${safeDomain}" title="${safeDomain}">
+          <span class="instant-replay-domain-chip-label">${safeDomain}</span>
+          <button
+            type="button"
+            class="instant-replay-domain-remove"
+            data-ir-domain-remove="${safeDomain}"
+            aria-label="${escapeHtml(t("instantReplay.removeDomain", { domain }))}"
+            title="${escapeHtml(t("instantReplay.removeDomain", { domain }))}"
+            ${removeDisabled ? "disabled" : ""}
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
+              <path d="M6 6l12 12M18 6 6 18"/>
+            </svg>
+          </button>
+        </span>`;
       })
       .join("");
   }
@@ -1105,6 +1331,51 @@ async function syncInstantReplayAddSiteButtonLabel(recordingActive: boolean): Pr
   instantReplayAddSiteBtn.textContent = t("instantReplay.addThisSite");
 }
 
+async function persistInstantReplayAllowedDomains(
+  next: string[],
+): Promise<{ ok: true; domains: string[] } | { ok: false; error: string }> {
+  const normalized = normalizeInstantReplayAllowedDomains(next);
+  const result = (await chrome.runtime.sendMessage({
+    action: "UPDATE_SETTINGS",
+    data: { instantReplayAllowedDomains: normalized },
+  })) as MessageResponse & { settings?: PopupState["settings"] };
+
+  if (!result?.ok || !result.settings) {
+    return { ok: false, error: result?.error || t("instantReplay.saveFailed") };
+  }
+
+  let domains = normalizeInstantReplayAllowedDomains(
+    result.settings.instantReplayAllowedDomains ?? normalized,
+  );
+  // Prefer the list we saved if the snapshot omitted/lagged the field.
+  if (
+    domains.length !== normalized.length ||
+    normalized.some((domain) => !domains.includes(domain))
+  ) {
+    domains = normalized;
+  }
+
+  instantReplayAllowedDomains = domains;
+  if (latestPopupState?.settings) {
+    latestPopupState = {
+      ...latestPopupState,
+      settings: {
+        ...latestPopupState.settings,
+        instantReplayAllowedDomains: [...instantReplayAllowedDomains],
+      },
+    };
+  }
+  await hydrateInstantReplaySettingsFromLocal();
+  // Keep the saved list if storage lag re-read an older value mid-flight.
+  if (
+    instantReplayAllowedDomains.length !== domains.length ||
+    domains.some((domain) => !instantReplayAllowedDomains.includes(domain))
+  ) {
+    instantReplayAllowedDomains = domains;
+  }
+  return { ok: true, domains: instantReplayAllowedDomains };
+}
+
 async function addCurrentSiteToInstantReplayAllowlist(): Promise<void> {
   if (instantReplayDomainSaveInFlight) {
     return;
@@ -1132,44 +1403,58 @@ async function addCurrentSiteToInstantReplayAllowlist(): Promise<void> {
       });
       return;
     }
-    const next = normalizeInstantReplayAllowedDomains([...instantReplayAllowedDomains, pattern]);
-    const result = (await chrome.runtime.sendMessage({
-      action: "UPDATE_SETTINGS",
-      data: { instantReplayAllowedDomains: next },
-    })) as MessageResponse & { settings?: PopupState["settings"] };
-
-    if (!result?.ok || !result.settings) {
-      showToast(result?.error || t("instantReplay.saveFailed"), 3600, {
-        variant: "error",
-      });
+    const next = [...instantReplayAllowedDomains, pattern];
+    const saved = await persistInstantReplayAllowedDomains(next);
+    if (!saved.ok) {
+      showToast(saved.error, 3600, { variant: "error" });
       return;
     }
-    instantReplayAllowedDomains = normalizeInstantReplayAllowedDomains(
-      result.settings.instantReplayAllowedDomains ?? next,
-    );
-    // Prefer local next if snapshot omitted the field (older worker).
-    if (instantReplayAllowedDomains.length === 0 && next.length > 0) {
-      instantReplayAllowedDomains = next;
-    }
-    if (latestPopupState?.settings) {
-      latestPopupState = {
-        ...latestPopupState,
-        settings: {
-          ...latestPopupState.settings,
-          instantReplayAllowedDomains: [...instantReplayAllowedDomains],
-        },
-      };
-    }
     instantReplayJustAddedDomain = pattern;
-    // Confirm durable local write (session can lag after page reload).
-    await hydrateInstantReplaySettingsFromLocal();
-    if (!instantReplayAllowedDomains.includes(pattern)) {
-      // SW responded ok but local lag — keep the merged list we just saved.
-      instantReplayAllowedDomains = next;
-    }
     renderInstantReplayDomainsList({ flash: true });
     setInstantReplayAddSiteButtonFeedback("added");
     showToast(t("instantReplay.domainAdded", { domain: pattern }), 3200, {
+      variant: "success",
+    });
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    showToast(detail || t("instantReplay.saveFailed"), 3600, { variant: "error" });
+  } finally {
+    instantReplayDomainSaveInFlight = false;
+    updateInstantReplayControls({
+      recordingActive: Boolean(latestPopupState?.recording?.isRecording),
+    });
+  }
+}
+
+async function removeDomainFromInstantReplayAllowlist(domain: string): Promise<void> {
+  if (instantReplayDomainSaveInFlight) {
+    return;
+  }
+  if (!instantReplayEnabled) {
+    showToast(t("instantReplay.enableFirst"), 2800, { variant: "error" });
+    return;
+  }
+  const pattern = normalizeInstantReplayDomainPattern(domain) || domain.trim().toLowerCase();
+  if (!pattern || !instantReplayAllowedDomains.includes(pattern)) {
+    // Already gone — just re-render from current state.
+    renderInstantReplayDomainsList();
+    return;
+  }
+
+  instantReplayDomainSaveInFlight = true;
+  if (instantReplayJustAddedDomain === pattern) {
+    instantReplayJustAddedDomain = null;
+  }
+  updateInstantReplayControls();
+  try {
+    const next = instantReplayAllowedDomains.filter((entry) => entry !== pattern);
+    const saved = await persistInstantReplayAllowedDomains(next);
+    if (!saved.ok) {
+      showToast(saved.error, 3600, { variant: "error" });
+      return;
+    }
+    renderInstantReplayDomainsList({ flash: true });
+    showToast(t("instantReplay.domainRemoved", { domain: pattern }), 2800, {
       variant: "success",
     });
   } catch (error) {
@@ -1349,6 +1634,7 @@ async function captureInstantReplayNow(): Promise<void> {
       return;
     }
     if (!instantReplayEnabled) {
+      setInstantReplaySettingsOpen(true);
       showError(t("instantReplay.disabledTitle"));
       return;
     }
@@ -1364,23 +1650,15 @@ async function captureInstantReplayNow(): Promise<void> {
     const result = (await chrome.runtime.sendMessage({
       action: "CAPTURE_INSTANT_REPLAY",
       tabId: tab.id,
-    })) as MessageResponse & { recordingUrl?: string };
+    })) as MessageResponse;
 
     if (!result?.ok) {
       showError(result?.error || t("instantReplay.captureFailed"));
       return;
     }
 
-    showToast(t("instantReplay.captureSuccess"), 2200, { variant: "success" });
-    if (result.recordingUrl) {
-      try {
-        await navigator.clipboard.writeText(result.recordingUrl);
-        showToast(t("messages.copySuccess"), 1800, { variant: "success" });
-      } catch {
-        // Clipboard may be blocked; URL still available in history.
-      }
-    }
-    await refreshPopupFromStorage();
+    // Editor tab opens for annotate → save → upload (same path as Screenshot).
+    window.close();
   } catch (error) {
     showError((error as Error).message || t("instantReplay.captureFailed"));
   } finally {
@@ -1598,6 +1876,30 @@ function updateSessionProgressSections(sessions: RecordingSessionSummary[]): boo
   return true;
 }
 
+function updateUploadHistorySummaries(): void {
+  const count = currentUploadHistory.length;
+  const latest = currentUploadHistory[0] || null;
+  if (uploadHistoryEntrySummary) {
+    uploadHistoryEntrySummary.textContent =
+      count === 0
+        ? t("history.entryEmpty")
+        : t("history.entrySummary", {
+            count: String(count),
+            plural: count === 1 ? "" : "s",
+            page: formatPageLabel(latest?.pageUrl),
+          });
+  }
+  if (uploadHistoryDialogSummary) {
+    uploadHistoryDialogSummary.textContent =
+      count === 0
+        ? t("history.summaryEmpty")
+        : t("history.summaryCount", {
+            count: String(count),
+            plural: count === 1 ? "" : "s",
+          });
+  }
+}
+
 function renderPopupUploadHistory(
   history: UploadHistoryEntry[] | undefined,
   options: { animateLatestSuccess?: boolean } = {},
@@ -1610,18 +1912,9 @@ function renderPopupUploadHistory(
     }
   }
   currentUploadHistory = sortedHistory.filter((entry) => !pendingDeletedHistoryIds.has(entry.id));
-  const { visibleItems, hiddenCount } = getVisibleUploadHistory(currentUploadHistory);
-  popupUploadHistoryList.innerHTML = [
-    renderUploadHistoryList(visibleItems),
-    hiddenCount > 0
-      ? `<div class="history-empty">${escapeHtml(
-          t("history.olderHidden", {
-            count: String(hiddenCount),
-            plural: hiddenCount === 1 ? "" : "s",
-          }),
-        )}</div>`
-      : "",
-  ].join("");
+  // Full list lives in the history dialog.
+  popupUploadHistoryList.innerHTML = renderUploadHistoryList(currentUploadHistory);
+  updateUploadHistorySummaries();
   const latestUpload = currentUploadHistory[0] || null;
   const shouldAnimateLatestSuccess =
     Boolean(options.animateLatestSuccess) &&
@@ -1641,9 +1934,131 @@ function renderPopupUploadHistory(
           ?.classList.remove("is-upload-success");
       }, 1000),
     );
+    // Surface the full list when a new upload lands.
+    setUploadHistoryDialogOpen(true);
   }
   if (latestUpload && animatingUploadHistoryIds.has(latestUpload.id)) {
     popupUploadHistoryList.querySelector(".history-item")?.classList.add("is-upload-success");
+  }
+}
+
+function renderManageCloudsProviderList(): void {
+  if (!popupProviderList) {
+    return;
+  }
+  const providers: Array<"google-drive" | "dropbox"> = ["google-drive", "dropbox"];
+  popupProviderList.innerHTML = "";
+  for (const id of providers) {
+    const connected = Boolean(connectedProviders.get(id));
+    const busy = manageCloudsBusy.has(id);
+    const error = manageCloudsErrors.get(id);
+    const name = storageProviderDisplayName(id);
+
+    const card = document.createElement("div");
+    card.className = "popup-provider-card";
+    card.dataset.provider = id;
+    card.setAttribute("role", "listitem");
+
+    const meta = document.createElement("div");
+    meta.className = "meta";
+    const nameEl = document.createElement("div");
+    nameEl.className = "name";
+    nameEl.textContent = name;
+    const statusEl = document.createElement("div");
+    statusEl.className = "status";
+    if (busy) {
+      statusEl.classList.add("is-busy");
+      statusEl.innerHTML = `${buttonSpinnerHtml()}<span>${escapeHtml(t("storage.working"))}</span>`;
+    } else if (error) {
+      statusEl.classList.add("is-error");
+      statusEl.textContent = error;
+    } else if (connected) {
+      statusEl.classList.add("is-connected");
+      statusEl.textContent = t("storage.connected");
+    } else {
+      statusEl.textContent = t("storage.notConnectedStatus");
+    }
+    meta.append(nameEl, statusEl);
+
+    const actions = document.createElement("div");
+    actions.className = "actions";
+    const actionBtn = document.createElement("button");
+    actionBtn.type = "button";
+    actionBtn.className = connected ? "btn btn-secondary btn-small" : "btn btn-start btn-small";
+    actionBtn.disabled = busy;
+    actionBtn.textContent = connected
+      ? t("storage.disconnect")
+      : t("storage.connectProvider", { name });
+    actionBtn.addEventListener("click", () => {
+      if (connected) {
+        void disconnectCloudProvider(id);
+      } else {
+        void connectCloudProvider(id);
+      }
+    });
+    actions.append(actionBtn);
+    card.append(meta, actions);
+    popupProviderList.append(card);
+  }
+}
+
+async function refreshManageCloudsAndRender(): Promise<void> {
+  await refreshAllProviderStatuses();
+  renderManageCloudsProviderList();
+}
+
+async function connectCloudProvider(provider: "google-drive" | "dropbox"): Promise<void> {
+  manageCloudsBusy.add(provider);
+  manageCloudsErrors.delete(provider);
+  renderManageCloudsProviderList();
+  try {
+    const result = (await chrome.runtime.sendMessage({
+      action: "STORAGE_CONNECT",
+      data: { provider },
+    })) as MessageResponse;
+    if (!result.ok) {
+      throw new Error(
+        result.error || t("storage.notConnected", { name: storageProviderDisplayName(provider) }),
+      );
+    }
+    connectedProviders.set(provider, true);
+    await chrome.runtime.sendMessage({
+      action: "UPDATE_SETTINGS",
+      data: { activeStorageProvider: provider },
+    });
+    await refreshPopupFromStorage();
+    await refreshAllProviderStatuses();
+    updateStorageUI(true, provider);
+  } catch (error) {
+    manageCloudsErrors.set(provider, error instanceof Error ? error.message : String(error));
+  } finally {
+    manageCloudsBusy.delete(provider);
+    renderManageCloudsProviderList();
+  }
+}
+
+async function disconnectCloudProvider(provider: "google-drive" | "dropbox"): Promise<void> {
+  manageCloudsBusy.add(provider);
+  manageCloudsErrors.delete(provider);
+  renderManageCloudsProviderList();
+  try {
+    const result = (await chrome.runtime.sendMessage({
+      action: "STORAGE_DISCONNECT",
+      data: { provider },
+    })) as MessageResponse;
+    if (!result.ok) {
+      throw new Error(result.error || t("storage.switchFailed"));
+    }
+    connectedProviders.set(provider, false);
+    await refreshPopupFromStorage();
+    await refreshAllProviderStatuses();
+    const next = listConnectedProviderIds()[0] || provider;
+    updateStorageUI(Boolean(listConnectedProviderIds().length), next);
+  } catch (error) {
+    manageCloudsErrors.set(provider, error instanceof Error ? error.message : String(error));
+  } finally {
+    manageCloudsBusy.delete(provider);
+    renderManageCloudsProviderList();
   }
 }
 
@@ -1903,13 +2318,8 @@ async function setActiveStorageProvider(provider: string): Promise<void> {
   void refreshAllProviderStatuses();
 }
 
-function openStorageAuthPage(provider?: string): void {
-  const url = new URL(chrome.runtime.getURL("storage-auth/storage-auth.html"));
-  if (provider) {
-    url.searchParams.set("provider", normalizePopupStorageProvider(provider));
-  }
-  chrome.tabs.create({ url: url.toString() });
-  window.close();
+function openManageCloudsDialog(): void {
+  setManageCloudsDialogOpen(true);
 }
 
 function setCaptureUiVisibility(isVisible: boolean): void {
@@ -2187,11 +2597,8 @@ function openReplayUrl(url: string): void {
   openExternalUrl(resolveReplayOpenUrl(url));
 }
 
-function openSettingsPage(): void {
-  chrome.tabs.create({
-    url: chrome.runtime.getURL("settings/settings.html"),
-  });
-  window.close();
+function openSettingsDialog(): void {
+  setSettingsDialogOpen(!isPopupDialogOpen("settings"));
 }
 
 toggleBtn.addEventListener("click", async () => {
@@ -2244,12 +2651,67 @@ instantReplayBtn?.addEventListener("click", () => {
   void captureInstantReplayNow();
 });
 
+instantReplaySettingsBtn?.addEventListener("click", (event) => {
+  event.stopPropagation();
+  setInstantReplaySettingsOpen(!isPopupDialogOpen("instant-replay"));
+});
+
+instantReplaySettingsCloseBtn?.addEventListener("click", () => {
+  setInstantReplaySettingsOpen(false);
+});
+
+manageCloudsCloseBtn?.addEventListener("click", () => {
+  setManageCloudsDialogOpen(false);
+});
+
+uploadHistoryCloseBtn?.addEventListener("click", () => {
+  setUploadHistoryDialogOpen(false);
+});
+
+function wirePopupDialogDismiss(root: HTMLElement | null, close: () => void): void {
+  root?.querySelectorAll("[data-popup-dialog-dismiss]").forEach((el) => {
+    el.addEventListener("click", () => {
+      close();
+    });
+  });
+}
+
+wirePopupDialogDismiss(instantReplayDialog, () => setInstantReplaySettingsOpen(false));
+wirePopupDialogDismiss(manageCloudsDialog, () => setManageCloudsDialogOpen(false));
+wirePopupDialogDismiss(uploadHistoryDialog, () => setUploadHistoryDialogOpen(false));
+wirePopupDialogDismiss(settingsDialog, () => setSettingsDialogOpen(false));
+settingsCloseBtn?.addEventListener("click", () => {
+  setSettingsDialogOpen(false);
+});
+
+// Keep clicks inside dialog panels from reaching the backdrop.
+for (const panel of [instantReplayPanel, manageCloudsPanel, uploadHistoryPanel]) {
+  panel?.addEventListener("click", (event) => {
+    event.stopPropagation();
+  });
+}
+
 instantReplayEnabledInput?.addEventListener("change", () => {
   void saveInstantReplayEnabled(Boolean(instantReplayEnabledInput.checked));
 });
 
 instantReplayAddSiteBtn?.addEventListener("click", () => {
   void addCurrentSiteToInstantReplayAllowlist();
+});
+
+instantReplayDomainsList?.addEventListener("click", (event) => {
+  const target = event.target as HTMLElement | null;
+  const removeBtn = target?.closest<HTMLButtonElement>("[data-ir-domain-remove]");
+  if (!removeBtn || removeBtn.disabled) {
+    return;
+  }
+  event.preventDefault();
+  event.stopPropagation();
+  const domain = removeBtn.getAttribute("data-ir-domain-remove") || "";
+  if (!domain) {
+    return;
+  }
+  void removeDomainFromInstantReplayAllowlist(domain);
 });
 
 function setDrawButtonActive(active: boolean): void {
@@ -2446,7 +2908,7 @@ toastCloseBtn.addEventListener("click", () => {
   hideToast();
 });
 
-settingsPageBtn.addEventListener("click", openSettingsPage);
+settingsPageBtn.addEventListener("click", openSettingsDialog);
 
 storageProviderSelect?.addEventListener("change", async () => {
   const raw = storageProviderSelect.value;
@@ -2456,7 +2918,7 @@ storageProviderSelect?.addEventListener("change", async () => {
   const provider = normalizePopupStorageProvider(raw);
   if (!connectedProviders.get(provider)) {
     showError(t("storage.connectCloudFirst"));
-    openStorageAuthPage(provider);
+    openManageCloudsDialog();
     return;
   }
   storageProviderSelect.disabled = true;
@@ -2474,9 +2936,7 @@ storageProviderSelect?.addEventListener("change", async () => {
 });
 
 manageStorageBtn?.addEventListener("click", () => {
-  openStorageAuthPage(
-    storageProviderSelect?.value || latestPopupState?.settings?.activeStorageProvider || undefined,
-  );
+  setManageCloudsDialogOpen(!isPopupDialogOpen("manage-clouds"));
 });
 
 storageEditBtn?.addEventListener("click", () => {
@@ -2641,8 +3101,18 @@ sessionList.addEventListener("click", async (event) => {
 });
 
 document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape") {
+  if (event.key !== "Escape") {
+    return;
+  }
+  if (!popupDialogHost.anyOpen()) {
     hideToast();
+    return;
+  }
+  event.preventDefault();
+  // Close any open dialog via the host snapshot (single-open policy).
+  const openIds = popupDialogHost.listOpen();
+  for (const id of openIds) {
+    setPopupDialogOpen(id, false);
   }
 });
 
@@ -2702,9 +3172,7 @@ popupUploadHistoryList.addEventListener("click", async (event) => {
 });
 
 uploadHistoryPageBtn.addEventListener("click", () => {
-  chrome.tabs.create({
-    url: chrome.runtime.getURL(HISTORY_PAGE_PATH),
-  });
+  setUploadHistoryDialogOpen(!isPopupDialogOpen("upload-history"));
 });
 
 async function saveZipPassword(options: { clear?: boolean } = {}): Promise<void> {
@@ -2969,6 +3437,22 @@ themeToggleUi = attachThemeToggle("theme-toggle-btn", "theme-toggle-icon", {
     titleFixed: t("theme.titleFixed"),
   }),
 });
+
+registerPopupDialogs();
+
+if (settingsFormRoot) {
+  settingsForm = attachSettingsForm({
+    root: settingsFormRoot,
+    infoPopover: settingInfoPopover,
+    getLanguage: () => currentLanguage,
+    t,
+    showMessage: (message, success = false) => {
+      showToast(message, success ? 2200 : 4200, {
+        variant: success ? "success" : "error",
+      });
+    },
+  });
+}
 
 currentLanguage = attachLanguageSwitch({
   onChange: (language) => {

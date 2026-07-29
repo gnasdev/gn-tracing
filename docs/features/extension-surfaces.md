@@ -1,22 +1,23 @@
 ---
 title: "Extension Surfaces"
-description: "Current popup, settings, auth, and upload-history page behavior for GN Tracing."
+description: "Current popup dialogs (settings, history, manage clouds), auth, and annotate surfaces for GN Tracing."
 type: feature
 status: implemented
 tags: ["popup", "settings", "history", "auth", "cloud-storage"]
 source_paths:
   - "src/popup/popup.ts"
+  - "src/popup/dialog-host.ts"
   - "src/shared/feedback.ts"
+  - "src/shared/settings-form-ui.ts"
   - "src/background/feedback-submit.ts"
+  - "src/background/screenshot-report.ts"
   - "popup/popup.html"
   - "popup/popup.css"
-  - "src/settings/settings.ts"
-  - "settings/settings.html"
-  - "settings/settings.css"
   - "src/drive-auth/drive-auth.ts"
   - "drive-auth/drive-auth.html"
-  - "src/history/history.ts"
-  - "history/history.html"
+  - "src/storage-auth/storage-auth.ts"
+  - "storage-auth/storage-auth.html"
+  - "src/annotate/annotate.ts"
   - "src/shared/upload-history-ui.ts"
 related:
   - "../modules/recording-runtime.md"
@@ -30,8 +31,8 @@ related:
 ## Meta
 
 - Trạng thái: implemented
-- Phạm vi: popup controls, Settings page, Google Drive auth page, full upload-history page, local history actions, and UI ownership boundaries
-- Nguồn code: `src/popup/popup.ts`, `popup/`, `src/settings/settings.ts`, `settings/`, `src/drive-auth/drive-auth.ts`, `drive-auth/`, `src/history/history.ts`, `history/`, `src/shared/upload-history-ui.ts`
+- Phạm vi: popup controls and dialogs (settings, history, manage clouds, Instant Replay), OAuth auth tabs, annotate editor, local history actions, and UI ownership boundaries
+- Nguồn code: `src/popup/popup.ts`, `src/popup/dialog-host.ts`, `popup/`, `src/shared/settings-form-ui.ts`, `src/storage-auth/`, `src/drive-auth/`, `src/annotate/`, `src/shared/upload-history-ui.ts`
 - Tuân thủ: Chrome Web Store submission disclosure for recording controls and cloud storage connection
 - Links: [Recording Runtime](../modules/recording-runtime.md), [Cloud Storage And Player](../modules/drive-and-player.md), [Privacy And Redaction](../modules/privacy-and-redaction.md), [Shared Data Models](../shared/data-models.md)
 
@@ -48,13 +49,15 @@ The popup is the quick recording surface. It:
 - shows the **Cloud storage** card: active connected provider select, upload folder path, status, and Connect/Manage clouds
 - revalidates connection state on open using per-provider mirrored connection keys when available
 - persists provider switch and folder edits immediately via `UPDATE_SETTINGS` (per-provider folder paths)
-- also owns package zip-password controls and Instant Replay (enable toggle + lookback window; capture-after-the-fact, not a Record session)
+- also owns package zip-password controls and Instant Replay (enable toggle, lookback window, domain allowlist; capture-after-the-fact, not a Record session)
+- opens **Settings**, **Upload history**, **Manage clouds**, and **Instant Replay settings** as in-popup dialogs (single-open host)
 - hides capture controls and the pending capture queue until the active storage provider is connected
 - checks whether the active tab is recordable before enabling start
 - sends start, stop, remove, upload, delete-session, storage connect/disconnect, and upload-history delete commands to the service worker
-- uses generic `STORAGE_CONNECT` / disconnect paths (Dropbox uses `launchWebAuthFlow`; Google may open the Drive auth page)
-- renders live recording timer, console/network counts, upload progress, per-artifact progress rows, latest local upload history, and an opt-in **Feedback** button in the topbar
-- Feedback opens a popover form (not a footer panel): the user submits a message and the service worker POSTs to the Worker `/feedback` route to create a public GitHub issue (light diagnostics only: extension version, browser, OS, locale). Settings, History, Manage clouds, and the extension player expose the same topbar Feedback control. GitHub repo/Contribute deep-links are not shown on extension UI surfaces
+- uses generic `STORAGE_CONNECT` / disconnect paths (Dropbox uses `launchWebAuthFlow`; Google may open the storage-auth / Drive auth tab)
+- **Screenshot** and **Instant Replay** both open the annotate editor before upload; Instant Replay freezes lookback at capture time
+- renders live recording timer, console/network counts, upload progress, per-artifact progress rows, upload-history entry summary, and an opt-in **Feedback** button in the topbar
+- Feedback opens a popover form (not a footer panel): the user submits a message and the service worker POSTs to the Worker `/feedback` route to create a public GitHub issue (light diagnostics only: extension version, browser, OS, locale). GitHub repo/Contribute deep-links are not shown on extension UI surfaces
 
 Stop is presented as "Stop & Upload" because a valid token for the active provider can auto-start upload after capture finalization.
 
@@ -70,30 +73,30 @@ Stop is presented as "Stop & Upload" because a valid token for the active provid
 
 Shared primitives live in `shared/theme.css` (`.btn-spinner`, `.btn.is-loading`, empty cards) and `src/shared/button-loading.ts`.
 
-Capture disclosure copy refers to cloud storage generically (Google Drive or Dropbox). Cloud provider, upload folder, package password, and connect/manage flows live on the **popup** (and the dedicated Manage clouds page). Capture detail and redaction options live in Settings.
+Capture disclosure copy refers to cloud storage generically (Google Drive or Dropbox). Cloud provider, upload folder, package password, connect/manage, capture detail, redaction options, Instant Replay, and upload history all live on the **popup** (dialogs for dense forms).
 
-## Settings Page
+## Settings Dialog (popup)
 
-The Settings page owns capture/privacy configuration that should not crowd the popup. Layout uses one panel chrome and two field primitives (toggle row + labeled control) across sections:
+Capture/privacy configuration opens from the popup gear as a dialog (not a standalone HTML page). Shared form logic lives in `src/shared/settings-form-ui.ts`. Sections:
 
-1. **Privacy & Redaction** — 2-col layout + per-section Save
-2. **Capture** — 2×2 groups (Console | Network, WebSocket | Inspector) + per-section Save
+1. **Privacy & Redaction** — per-section Save
+2. **Capture** — Console / Network / WebSocket / Inspector + per-section Save
 3. **Capture mode** — CDP / in-page + per-section Save
 
-Instant Replay lives on the **popup**: enable the checkbox (requests host permission), set rolling window (15–300s, default 120s), browse normally, then click **Instant Replay** after a bug to package the DOM lookback (not screen video). English/Vietnamese labels cover the control. Defaults are full capture + CDP for **Record**. Cloud storage and package password also stay on the popup.
+Instant Replay controls live in a separate popup dialog (enable, window, domain allowlist). After a bug, **Instant Replay** freezes lookback, opens the annotate editor, and uploads only on Save. Defaults are full capture + CDP for **Record**.
 
-## Google Drive Auth Page
+## Cloud Auth Pages
 
-The Drive auth page is a normal extension tab so **Google** OAuth is not interrupted by popup teardown. It shows initial, loading, success, and error states, can switch English/Vietnamese text, and reacts to service-worker session-state changes. Wording on this page remains Google Drive-specific because the surface is Drive-only.
+`storage-auth` is the multi-cloud OAuth tab (Google Drive / Dropbox). `drive-auth` remains a thin legacy redirect into storage-auth. These stay full pages so OAuth is not interrupted by popup teardown.
 
-Chrome uses `chrome.identity.getAuthToken()`. Other Chromium browsers use `launchWebAuthFlow` and a locally stored token cache (with refresh when available) behind the same service-worker-facing API. Dropbox connect flows are initiated from the popup / connect page without this HTML page.
+Chrome uses `chrome.identity.getAuthToken()` for Google when available. Other Chromium browsers use `launchWebAuthFlow` and a locally stored token cache behind the same service-worker-facing API.
 
-## Upload History Page
+## Upload History Dialog (popup)
 
 Upload history is local-only extension data. It is not written to cloud storage and is not embedded in replay packages. Entries may record which provider produced the replay link.
 
-The popup shows only the latest visible upload, while the full History page renders the complete locally stored list. Both surfaces share `src/shared/upload-history-ui.ts` so replay, copy-link, open-folder, and delete-history actions use the same markup and action routing.
+The popup shows an entry summary on the main surface and the full list in a history dialog. Rendering/actions share `src/shared/upload-history-ui.ts`.
 
 ## State Ownership
 
-Popup and Settings never own durable recording truth. The service worker owns session phase, upload progress, and auth caches. Surfaces read snapshots from `chrome.storage.session` / settings store commands and re-sync on open.
+Popup dialogs never own durable recording truth. The service worker owns session phase, upload progress, and auth caches. Surfaces read snapshots from `chrome.storage.session` / settings store commands and re-sync on open.

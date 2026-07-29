@@ -68,10 +68,10 @@ await esbuild.context({
   ...commonOptions,
   entryPoints: [
     { in: "src/popup/popup.ts", out: "popup/popup" },
-    { in: "src/history/history.ts", out: "history/history" },
-    { in: "src/settings/settings.ts", out: "settings/settings" },
     { in: "src/offscreen/offscreen.ts", out: "offscreen/offscreen" },
+    { in: "src/annotate/annotate.ts", out: "annotate/annotate" },
     { in: "src/drive-auth/drive-auth.ts", out: "drive-auth/drive-auth" },
+    { in: "src/storage-auth/storage-auth.ts", out: "storage-auth/storage-auth" },
   ],
   outdir: "dist",
   format: "iife",
@@ -165,7 +165,7 @@ Equivalent Task aliases (chapter `09`): `task build`, `task dist`, `task watch`.
 
 - `dist/manifest.json` with placeholders replaced.
 - `dist/background/service-worker.js` (ESM).
-- `dist/popup/popup.js`, `dist/history/history.js`, `dist/settings/settings.js`, `dist/offscreen/offscreen.js`, `dist/drive-auth/drive-auth.js` (IIFE).
+- `dist/popup/popup.js`, `dist/offscreen/offscreen.js`, `dist/annotate/annotate.js`, `dist/drive-auth/drive-auth.js`, `dist/storage-auth/storage-auth.js` (IIFE).
 - `dist/content/recording-events.js`, `dist/content/in-page-capture.js`, `dist/content/in-page-relay.js` (IIFE, no sourcemap).
 - A watcher that re-syncs when you edit a static asset.
 

@@ -25,12 +25,11 @@ The full list lives in `esbuild.config.mjs`. Reproduced here in build-from-scrat
 | --- | --- | --- |
 | `popup/popup.html` | `dist/popup/popup.html` | text |
 | `popup/popup.css` | `dist/popup/popup.css` | file |
-| `history/history.html` | `dist/history/history.html` | text |
-| `history/history.css` | `dist/history/history.css` | file |
-| `settings/settings.html` | `dist/settings/settings.html` | text |
-| `settings/settings.css` | `dist/settings/settings.css` | file |
+| `annotate/annotate.html` | `dist/annotate/annotate.html` | text |
+| `annotate/annotate.css` | `dist/annotate/annotate.css` | file |
 | `offscreen/offscreen.html` | `dist/offscreen/offscreen.html` | text |
 | `drive-auth/drive-auth.html` | `dist/drive-auth/drive-auth.html` | text |
+| `storage-auth/storage-auth.html` | `dist/storage-auth/storage-auth.html` | text |
 | `icons/` | `dist/icons/` | dir |
 | `shared/theme.css` | `dist/shared/theme.css` | file |
 | `shared/theme-init.js` | `dist/shared/theme-init.js` | file |
@@ -48,13 +47,9 @@ The popup is the toolbar action. It boots from `src/popup/popup.ts` (chapter `06
 
 The HTML must include `<script src="popup.js"></script>` (esbuild emits the file as a sibling).
 
-### `settings/settings.html` and `settings/settings.css`
+### Settings and history (popup dialogs)
 
-The Settings page is opened from the popup and lives in its own extension page. It reads and writes capture/privacy settings (redaction toggles, DOM masking, capture mode, advanced capture). Cloud provider and upload folder are edited on the popup storage card.
-
-### `history/history.html` and `history/history.css`
-
-A small page listing locally cached upload history. No Drive read; the history is a Chrome-local cache.
+Capture/privacy settings and upload history are **not** standalone HTML pages. They ship inside `popup/popup.html` as dialogs, with form logic in `src/shared/settings-form-ui.ts` and history list helpers in `src/shared/upload-history-ui.ts`.
 
 ### `offscreen/offscreen.html`
 
@@ -85,10 +80,10 @@ Phosphor icon font CSS and vendored `luna-object-viewer`/`luna-json-editor` UMD 
 These are not written by the build system and must exist before the first build:
 
 - `popup/popup.html`, `popup/popup.css`
-- `settings/settings.html`, `settings/settings.css`
-- `history/history.html`, `history/history.css`
+- `annotate/annotate.html`, `annotate/annotate.css`
 - `offscreen/offscreen.html` (intentionally tiny)
-- `drive-auth/drive-auth.html` (the full OAuth page)
+- `drive-auth/drive-auth.html` (legacy redirect)
+- `storage-auth/storage-auth.html` (multi-cloud OAuth page)
 - `icons/icon16.png`, `icons/icon48.png`, `icons/icon128.png`, `icons/icon.svg`
 - `shared/theme.css`, `shared/theme-init.js`
 - `player/player.html`, `player/player.css`, `player/player.js`

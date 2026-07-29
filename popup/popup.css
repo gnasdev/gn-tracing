@@ -37,6 +37,11 @@ body {
   gap: 14px;
 }
 
+/* While any popup dialog is open, freeze popup scroll. */
+body.popup-dialog-open #app {
+  overflow: hidden;
+}
+
 /* ---------- Header ---------- */
 /* Popup reuses brand/action classes from theme but is not a full-page
    sticky bar. Brand + timer left; icon tools right. */
@@ -179,7 +184,7 @@ body {
   gap: 8px;
 }
 
-/* Idle: Start | Instant Replay on row 1, Screenshot full width on row 2.
+/* Idle: Start | Instant Replay (+ settings) on row 1, Screenshot full width on row 2.
    Recording: Stop | Discard on row 1, Screenshot full width on row 2. */
 .recording-actions-row {
   display: flex;
@@ -195,7 +200,7 @@ body {
 }
 
 #toggle-btn,
-#instant-replay-btn,
+.instant-replay-controls,
 #screenshot-btn {
   flex: 1 1 0;
   width: auto;
@@ -210,8 +215,64 @@ body {
   font-size: var(--fs-md);
 }
 
+/* Split control: Instant Replay capture + gear settings */
+.instant-replay-controls {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  gap: 0;
+  min-width: 0;
+}
+
 #instant-replay-btn {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+  min-height: 42px;
   font-size: var(--fs-base);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+  border-right-width: 0;
+}
+
+.instant-replay-settings-btn {
+  flex: 0 0 40px;
+  width: 40px;
+  min-width: 40px;
+  min-height: 42px;
+  padding-inline: 0;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  box-shadow: none;
+  position: relative;
+}
+
+.instant-replay-settings-btn svg {
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+
+.instant-replay-settings-btn.is-open,
+.instant-replay-settings-btn[aria-expanded="true"] {
+  color: var(--accent, #3b82f6);
+  border-color: color-mix(in srgb, var(--accent, #3b82f6) 45%, var(--border-default));
+  background: color-mix(in srgb, var(--accent, #3b82f6) 12%, var(--bg-card));
+}
+
+/* Enabled indicator on the gear (always-on lookback is active). */
+.instant-replay-settings-btn.is-enabled::after {
+  content: "";
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--success, #16a34a);
+  box-shadow: 0 0 0 1.5px var(--bg-card);
 }
 
 #screenshot-btn {
@@ -232,8 +293,435 @@ body {
   min-width: 0;
 }
 
-#recording-actions.is-recording #instant-replay-btn {
+#recording-actions.is-recording .instant-replay-controls {
   display: none;
+}
+
+/* ---------- Shared popup dialogs (IR settings / manage clouds / history) ---------- */
+/* Above feedback popover (70); toast stays on top so save feedback remains visible. */
+.popup-dialog-root {
+  position: fixed;
+  inset: 0;
+  z-index: 75;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 14px 12px;
+  pointer-events: none;
+}
+
+#toast {
+  z-index: 90;
+}
+
+.popup-dialog-root:not(.hidden) {
+  pointer-events: auto;
+}
+
+.popup-dialog-backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  background: var(--bg-overlay, rgba(3, 7, 16, 0.72));
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.popup-dialog {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  width: min(100%, 348px);
+  max-height: min(520px, calc(100vh - 28px));
+  overflow: hidden;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg, 12px);
+  background: var(--bg-card);
+  box-shadow:
+    0 18px 48px color-mix(in srgb, #000 42%, transparent),
+    var(--shadow-sm);
+  animation: popup-dialog-in 140ms var(--ease-standard, ease-out);
+}
+
+/* Full settings form needs more vertical room inside the 380px popup. */
+.popup-dialog--settings {
+  width: min(100%, 352px);
+  max-height: min(572px, calc(100vh - 20px));
+}
+
+@keyframes popup-dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.popup-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 12px 10px;
+  border-bottom: 1px solid var(--border-subtle, var(--border-default));
+  flex-shrink: 0;
+}
+
+.popup-dialog-header .section-title {
+  min-width: 0;
+  margin: 0;
+}
+
+.popup-dialog-close {
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+}
+
+.popup-dialog-close svg {
+  width: 14px;
+  height: 14px;
+}
+
+.popup-dialog-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.popup-dialog-lead {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--fs-sm, 12px);
+  line-height: 1.45;
+  font-weight: 500;
+}
+
+/* Manage clouds provider cards (compact for dialog). */
+.popup-provider-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.popup-provider-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface-solid, var(--bg-card-hover));
+}
+
+.popup-provider-card .meta {
+  flex: 1;
+  min-width: 0;
+}
+
+.popup-provider-card .name {
+  font-weight: 700;
+  font-size: var(--fs-base);
+  color: var(--text-primary);
+  line-height: 1.3;
+}
+
+.popup-provider-card .status {
+  margin-top: 2px;
+  font-size: var(--fs-xs, 11px);
+  font-weight: 600;
+  color: var(--text-secondary);
+  line-height: 1.35;
+}
+
+.popup-provider-card .status.is-connected {
+  color: var(--success, #16a34a);
+}
+
+.popup-provider-card .status.is-busy {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.popup-provider-card .status.is-error {
+  color: var(--danger, #e35);
+}
+
+.popup-provider-card .actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 6px;
+}
+
+.popup-provider-card .status .btn-spinner {
+  width: 12px;
+  height: 12px;
+}
+
+/* Compact history entry on the main popup surface. */
+#upload-history-section.upload-history-entry {
+  gap: 6px;
+}
+
+.upload-history-entry-summary {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--fs-sm, 12px);
+  line-height: 1.4;
+  font-weight: 500;
+}
+
+/* ---------- Settings form (dialog body) ---------- */
+#settings-form-root {
+  gap: 12px;
+}
+
+#settings-form-root .settings-panel {
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md, 10px);
+  background: var(--bg-surface-solid, var(--bg-card-hover));
+  box-shadow: none;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+#settings-form-root .settings-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+#settings-form-root .settings-panel-header h2 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: var(--fs-md, 13px);
+  font-weight: 700;
+  line-height: 1.3;
+  min-width: 0;
+}
+
+#settings-form-root .settings-panel-header .settings-section-save {
+  flex-shrink: 0;
+}
+
+#settings-form-root .settings-group > h3 {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--fs-xs, 11px);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  line-height: 1.3;
+}
+
+#settings-form-root .settings-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+  align-items: start;
+  min-width: 0;
+}
+
+#settings-form-root .settings-grid-follow {
+  padding-top: 10px;
+  border-top: 1px solid var(--border-subtle, var(--border-default));
+}
+
+#settings-form-root .settings-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+#settings-form-root .setting-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+#settings-form-root .setting-field-label-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+#settings-form-root .setting-field > .setting-field-label-row > span,
+#settings-form-root .setting-field-label-row > span {
+  color: var(--text-secondary);
+  font-size: var(--fs-sm, 12px);
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+#settings-form-root .setting-field > select,
+#settings-form-root .setting-field > input[type="number"],
+#settings-form-root .setting-field > input[type="text"],
+#settings-form-root .setting-field > textarea {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+#settings-form-root .setting-field > textarea {
+  min-height: 88px;
+  resize: vertical;
+}
+
+#settings-form-root .settings-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--text-primary);
+  font-size: var(--fs-sm, 12px);
+  line-height: 1.4;
+  cursor: pointer;
+  width: fit-content;
+  max-width: 100%;
+}
+
+#settings-form-root .settings-check input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  margin: 2px 0 0;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+#settings-form-root .settings-check input[type="checkbox"]:focus-visible {
+  outline: 2px solid var(--accent-muted);
+  outline-offset: 2px;
+}
+
+#settings-form-root .settings-check input[type="checkbox"]:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+#settings-form-root .settings-check:has(input[type="checkbox"]:disabled) {
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+
+#settings-form-root .settings-check-text {
+  min-width: 0;
+  color: var(--text-primary);
+  font-size: var(--fs-sm, 12px);
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+#settings-form-root .settings-check .setting-field-label-row {
+  flex: 1;
+  min-width: 0;
+}
+
+#settings-form-root .settings-check .setting-field-label-row > .settings-check-text,
+#settings-form-root .settings-check .setting-field-label-row > span {
+  color: var(--text-primary);
+  font-size: var(--fs-sm, 12px);
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+#settings-form-root .setting-hint {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--fs-xs, 11px);
+  line-height: 1.45;
+}
+
+.field-info-btn {
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-full, 999px);
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font-ui);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    border-color var(--dur-fast, 120ms) var(--ease-standard, ease),
+    color var(--dur-fast, 120ms) var(--ease-standard, ease),
+    background var(--dur-fast, 120ms) var(--ease-standard, ease);
+}
+
+.field-info-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.field-info-btn:focus-visible {
+  outline: 2px solid var(--accent-muted);
+  outline-offset: 2px;
+}
+
+.field-info-btn[aria-expanded="true"] {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--bg-accent-soft, color-mix(in srgb, var(--accent) 12%, transparent));
+}
+
+.setting-info-popover {
+  inset: unset;
+  margin: 0;
+  max-width: min(300px, calc(100vw - 24px));
+  padding: 12px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md, 10px);
+  background: var(--bg-elevated, var(--bg-card));
+  color: var(--text-primary);
+  box-shadow: var(--shadow-lg, 0 12px 32px color-mix(in srgb, #000 28%, transparent));
+  z-index: 95;
+}
+
+.setting-info-popover:popover-open {
+  display: block;
+}
+
+.setting-info-title {
+  margin: 0 0 6px;
+  color: var(--text-primary);
+  font-size: var(--fs-md, 13px);
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+#setting-info-body {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--fs-sm, 12px);
+  line-height: 1.5;
 }
 
 #recording-unavailable-msg {
@@ -835,8 +1323,9 @@ body {
 .instant-replay-domain-chip {
   display: inline-flex;
   align-items: center;
+  gap: 4px;
   max-width: 100%;
-  padding: 3px 8px;
+  padding: 2px 4px 2px 8px;
   border-radius: 999px;
   border: 1px solid var(--border-subtle);
   background: var(--bg-input, var(--bg-card));
@@ -844,7 +1333,51 @@ body {
   font-size: var(--fs-xs);
   font-weight: 600;
   line-height: 1.3;
+}
+
+.instant-replay-domain-chip-label {
+  min-width: 0;
   word-break: break-all;
+}
+
+.instant-replay-domain-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition:
+    background var(--dur-fast, 120ms) var(--ease-standard, ease),
+    color var(--dur-fast, 120ms) var(--ease-standard, ease);
+}
+
+.instant-replay-domain-remove svg {
+  width: 11px;
+  height: 11px;
+  display: block;
+}
+
+.instant-replay-domain-remove:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger, #e35) 16%, transparent);
+  color: var(--danger, #e35);
+}
+
+.instant-replay-domain-remove:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent, #3b82f6) 55%, transparent);
+  outline-offset: 1px;
+}
+
+.instant-replay-domain-remove:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .instant-replay-domain-chip.is-new {

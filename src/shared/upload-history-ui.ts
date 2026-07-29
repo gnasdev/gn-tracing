@@ -8,12 +8,9 @@ import { buildCloudRemoteOpenUrl, resolveHistoryProvider } from "./storage-provi
 /**
  * Shared upload-history rendering and action routing.
  *
- * Popup and history page use the same markup/action attributes so replay links,
- * remote cloud opens, copy actions, and delete controls behave consistently
- * across both extension surfaces.
+ * Popup history dialog uses these markup/action attributes so replay links,
+ * remote cloud opens, copy actions, and delete controls stay consistent.
  */
-const POPUP_UPLOAD_HISTORY_LIMIT = 1;
-export const HISTORY_PAGE_PATH = "history/history.html";
 
 /** User-visible strings for the shared history list (EN defaults; surfaces override via setUploadHistoryUiLabels). */
 export type UploadHistoryUiLabels = {
@@ -61,17 +58,6 @@ export function sortUploadHistoryNewestFirst(
 ): UploadHistoryEntry[] {
   const items = Array.isArray(history) ? history : [];
   return [...items].sort((left, right) => (right.uploadedAt || 0) - (left.uploadedAt || 0));
-}
-
-export function getVisibleUploadHistory(
-  history: UploadHistoryEntry[] | undefined,
-  limit = POPUP_UPLOAD_HISTORY_LIMIT,
-): { visibleItems: UploadHistoryEntry[]; hiddenCount: number } {
-  const items = sortUploadHistoryNewestFirst(history);
-  return {
-    visibleItems: items.slice(0, limit),
-    hiddenCount: Math.max(0, items.length - limit),
-  };
 }
 
 export function renderUploadHistoryList(items: UploadHistoryEntry[] | undefined): string {

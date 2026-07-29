@@ -4,7 +4,6 @@
  */
 import { buttonSpinnerHtml } from "../shared/button-loading";
 import { attachFeedbackPopover, type FeedbackUiController } from "../shared/feedback-ui";
-import { attachPageNav } from "../shared/page-nav";
 import { attachThemeToggle, type ThemeToggleController } from "../shared/theme";
 import { attachLanguageSwitch, type UiLanguage } from "../shared/ui-language";
 import type { MessageResponse } from "../types/messages";
@@ -191,8 +190,6 @@ chrome.storage.session.onChanged.addListener(() => {
   // Best-effort refresh when popup/service worker updates session state.
   void refreshAllStatuses();
 });
-
-attachPageNav({ current: "connect" });
 
 const THEME_LABELS = {
   en: {

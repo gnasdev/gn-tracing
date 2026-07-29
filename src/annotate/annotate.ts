@@ -33,16 +33,24 @@ const ANNOTATE_COPY = {
     packaging: "Packaging and uploading…",
     uploaded: "Uploaded. Opening the replay…",
     ready: "Draw on the screenshot, then save.",
+    readyIr: "Annotate this Instant Replay still, then save to upload the lookback package.",
     noPending: "No screenshot is waiting to be annotated.",
     uploadFailed: "Upload failed.",
+    titleScreenshot: "Annotate screenshot",
+    titleIr: "Annotate Instant Replay",
+    defaultCaptionIr: "Instant Replay capture",
   },
   vi: {
     emptyShapes: "Chưa có chú thích.",
     packaging: "Đang đóng gói và tải lên…",
     uploaded: "Đã tải lên. Đang mở replay…",
     ready: "Vẽ trên ảnh chụp, rồi lưu.",
+    readyIr: "Chú thích ảnh Instant Replay này, rồi lưu để upload gói lookback.",
     noPending: "Không có ảnh chụp nào đang chờ chú thích.",
     uploadFailed: "Tải lên thất bại.",
+    titleScreenshot: "Chú thích ảnh chụp",
+    titleIr: "Chú thích Instant Replay",
+    defaultCaptionIr: "Instant Replay capture",
   },
 } as const;
 
@@ -62,6 +70,7 @@ interface PendingScreenshot {
   url?: string;
   title?: string;
   viewport: { width: number; height: number; devicePixelRatio?: number };
+  kind?: "screenshot" | "instant-replay";
 }
 
 const TOOL_SHORTCUTS: Record<string, EditorTool> = {
@@ -371,11 +380,23 @@ const TOOL_SHORTCUTS: Record<string, EditorTool> = {
     }
 
     pending = response.screenshot;
+    const isInstantReplay = pending.kind === "instant-replay";
     elements.image.src = pending.imageDataUrl;
     elements.wrap.style.aspectRatio = `${pending.viewport.width} / ${pending.viewport.height}`;
+    if (isInstantReplay && !elements.caption.value.trim()) {
+      elements.caption.value = annotateT("defaultCaptionIr");
+      elements.caption.placeholder = annotateT("defaultCaptionIr");
+    }
+    const titleEl = document.querySelector<HTMLElement>("[data-i18n='annotate.title']");
+    if (titleEl) {
+      titleEl.textContent = isInstantReplay ? annotateT("titleIr") : annotateT("titleScreenshot");
+    }
+    document.title = isInstantReplay
+      ? `${annotateT("titleIr")} — GN Tracing`
+      : `${annotateT("titleScreenshot")} — GN Tracing`;
     selectTool("select");
     render();
-    setStatus(annotateT("ready"));
+    setStatus(annotateT(isInstantReplay ? "readyIr" : "ready"));
   }
 
   void load();

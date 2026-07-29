@@ -66,9 +66,9 @@ const storeShots = [
     file: "05-upload-history-page.png",
     capture: "history-page.png",
     title: ["Upload", "history"],
-    copy: ["Actual history page for replay", "links and previous uploads."],
+    copy: ["Popup history dialog for replay", "links and previous uploads."],
     badge: "Upload history",
-    screenshot: { x: 72, y: 280, w: 1136, h: 420 },
+    screenshot: { x: 560, y: 72, w: 374, h: 650 },
   },
 ];
 
@@ -174,17 +174,8 @@ async function makePlayerCapture(name, mode) {
 }
 
 async function makeHistoryCapture() {
-  const historyHtml = await fs.readFile(path.join(rootDir, "history", "history.html"), "utf8");
-  const popupCss = await fs.readFile(path.join(rootDir, "popup", "popup.css"), "utf8");
-  const historyCss = await fs.readFile(path.join(rootDir, "history", "history.css"), "utf8");
-  const body = readBody(historyHtml);
-  const htmlPath = path.join(tempDir, "history-page.html");
-  await fs.writeFile(
-    htmlPath,
-    baseHtml("history-page", `${popupCss}\n${historyCss}`, body, historyScript()),
-    "utf8",
-  );
-  await captureChrome(htmlPath, path.join(capturesDir, "history-page.png"), 1100, 760);
+  // History lives in the popup dialog now; capture that surface for store shots.
+  await makePopupCapture("history-page", historyScript());
 }
 
 async function captureChrome(htmlPath, outPath, width, height) {
@@ -290,13 +281,24 @@ function playerReplayScript() {
 
 function historyScript() {
   return `
-    document.getElementById('history-count').textContent = '12';
-    document.getElementById('history-summary').textContent = 'Browse recent Drive uploads, reopen replay links, or copy a link for teammates.';
-    document.getElementById('upload-history-list').innerHTML = [
-      ['Checkout bug replay', 'Today · 02:41 · 124 requests · https://tracing.gnas.dev/1M7b...xQ'],
-      ['WebSocket reconnect issue', 'Yesterday · 01:38 · 6 socket frames'],
-      ['Pricing page slow API', 'May 10 · 03:12 · 218 requests']
-    ].map(([title, meta]) => '<div class="history-item"><div class="history-item-title">'+title+'</div><div class="history-item-meta">'+meta+'</div><div class="history-item-actions"><button>Open replay</button><button>Copy link</button><button data-action="delete-history">Delete</button></div></div>').join('');
+    const dialog = document.getElementById('upload-history-dialog');
+    if (dialog) {
+      dialog.classList.remove('hidden');
+      dialog.setAttribute('aria-hidden', 'false');
+    }
+    document.body.classList.add('popup-dialog-open');
+    const summary = document.getElementById('upload-history-dialog-summary');
+    if (summary) {
+      summary.textContent = '3 recent uploads · reopen replay links or copy for teammates.';
+    }
+    const list = document.getElementById('popup-upload-history-list');
+    if (list) {
+      list.innerHTML = [
+        ['Checkout bug replay', 'Today · 02:41 · 124 requests'],
+        ['WebSocket reconnect issue', 'Yesterday · 01:38 · 6 socket frames'],
+        ['Pricing page slow API', 'May 10 · 03:12 · 218 requests']
+      ].map(([title, meta]) => '<div class="history-item"><div class="history-item-title">'+title+'</div><div class="history-item-meta">'+meta+'</div><div class="history-item-actions"><button type="button">Open replay</button><button type="button">Copy link</button></div></div>').join('');
+    }
   `;
 }
 
