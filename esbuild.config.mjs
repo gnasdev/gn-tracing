@@ -385,6 +385,7 @@ async function build() {
       { in: "src/content/in-page-relay.ts", out: "content/in-page-relay" },
       { in: "src/content/drawing-overlay.ts", out: "content/drawing-overlay" },
       { in: "src/content/instant-replay.ts", out: "content/instant-replay" },
+      { in: "src/content/instant-replay-evidence.ts", out: "content/instant-replay-evidence" },
     ],
     outdir: "dist",
     format: "iife",

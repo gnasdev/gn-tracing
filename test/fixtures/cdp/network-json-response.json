@@ -1,0 +1,11 @@
+{
+  "description": "Minimal CDP Network event sequence for a JSON XHR with response body",
+  "requestId": "req-json-1",
+  "url": "https://api.example.com/items",
+  "method": "GET",
+  "resourceType": "XHR",
+  "mimeType": "application/json",
+  "status": 200,
+  "body": "{\"items\":[1,2,3]}",
+  "base64Encoded": false
+}

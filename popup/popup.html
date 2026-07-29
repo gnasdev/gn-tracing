@@ -74,33 +74,50 @@
 
     <div id="recording-live" class="recording-live">
       <div id="recording-actions">
-        <button id="toggle-btn" class="btn btn-start" type="button">
-          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="12" cy="12" r="7"/>
-            <circle cx="12" cy="12" r="3" fill="currentColor" stroke="none"/>
-          </svg>
-          <span data-i18n="actions.startRecording">Start Recording</span>
-        </button>
-        <button id="remove-recording-btn" class="btn btn-danger hidden" type="button">
-          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M4 7h16"/>
-            <path d="M10 11v6"/>
-            <path d="M14 11v6"/>
-            <path d="M6 7l1 14h10l1-14"/>
-            <path d="M9 7V4h6v3"/>
-          </svg>
-          <span data-i18n="actions.discard">Discard</span>
-        </button>
-        <button id="screenshot-btn" class="btn btn-secondary" type="button" title="Capture and annotate a screenshot" data-i18n-title="actions.screenshotTitle">
-          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M4 8V6a2 2 0 012-2h2"/>
-            <path d="M16 4h2a2 2 0 012 2v2"/>
-            <path d="M20 16v2a2 2 0 01-2 2h-2"/>
-            <path d="M8 20H6a2 2 0 01-2-2v-2"/>
-            <circle cx="12" cy="12" r="3"/>
-          </svg>
-          <span data-i18n="actions.screenshot">Screenshot</span>
-        </button>
+        <div class="recording-actions-row recording-actions-primary">
+          <button id="toggle-btn" class="btn btn-start" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="7"/>
+              <circle cx="12" cy="12" r="3" fill="currentColor" stroke="none"/>
+            </svg>
+            <span data-i18n="actions.startRecording">Start Recording</span>
+          </button>
+          <button
+            id="instant-replay-btn"
+            class="btn btn-secondary"
+            type="button"
+            title="Capture Instant Replay lookback"
+            data-i18n-title="actions.captureInstantReplay"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="9"/>
+              <path d="M12 7v5l3 2"/>
+            </svg>
+            <span data-i18n="actions.captureInstantReplay">Instant Replay</span>
+          </button>
+          <button id="remove-recording-btn" class="btn btn-danger hidden" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 7h16"/>
+              <path d="M10 11v6"/>
+              <path d="M14 11v6"/>
+              <path d="M6 7l1 14h10l1-14"/>
+              <path d="M9 7V4h6v3"/>
+            </svg>
+            <span data-i18n="actions.discard">Discard</span>
+          </button>
+        </div>
+        <div class="recording-actions-row recording-actions-secondary">
+          <button id="screenshot-btn" class="btn btn-secondary" type="button" title="Capture and annotate a screenshot" data-i18n-title="actions.screenshotTitle">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 8V6a2 2 0 012-2h2"/>
+              <path d="M16 4h2a2 2 0 012 2v2"/>
+              <path d="M20 16v2a2 2 0 01-2 2h-2"/>
+              <path d="M8 20H6a2 2 0 01-2-2v-2"/>
+              <circle cx="12" cy="12" r="3"/>
+            </svg>
+            <span data-i18n="actions.screenshot">Screenshot</span>
+          </button>
+        </div>
         <div id="recording-unavailable-msg" class="hidden" role="status"></div>
       </div>
 
@@ -143,20 +160,53 @@
     <div id="connected-google-drive-slot">
       <div id="google-drive-section" class="storage-connect-card">
         <div class="storage-connect-header">
-          <label for="storage-provider-select" id="storage-provider-label" data-i18n="storage.uploadTo">Upload to</label>
-          <div id="google-drive-status">No cloud connected</div>
+          <span id="storage-provider-label" data-i18n="storage.uploadTo">Upload to</span>
+          <div class="storage-header-actions">
+            <button type="button" id="storage-edit-btn" class="btn btn-secondary btn-small hidden" data-i18n="storage.edit">
+              Edit
+            </button>
+            <button type="button" id="manage-storage-btn" class="btn btn-start btn-small" data-i18n="storage.connectClouds">
+              Connect clouds
+            </button>
+          </div>
         </div>
-        <div class="storage-connect-controls">
-          <select id="storage-provider-select" aria-label="Connected storage provider" data-i18n-aria="storage.selectAria" disabled>
-            <option value="">Connect a cloud first…</option>
-          </select>
-          <button type="button" id="manage-storage-btn" class="btn btn-start btn-small">
-            Connect clouds
-          </button>
+
+        <!-- Compact summary: only when a cloud is connected -->
+        <div id="storage-summary" class="storage-summary hidden">
+          <p id="storage-summary-line" class="storage-summary-line"></p>
         </div>
-        <p class="storage-connect-hint" id="storage-connect-hint">
-          Connect Google Drive or Dropbox on the cloud page. This popup only switches among already-connected providers.
-        </p>
+
+        <!-- Expanded editor (shown when Edit is pressed) -->
+        <div id="storage-editor" class="storage-editor hidden">
+          <div class="storage-connect-controls">
+            <select id="storage-provider-select" aria-label="Connected storage provider" data-i18n-aria="storage.selectAria" disabled>
+              <option value="">Connect a cloud first…</option>
+            </select>
+          </div>
+          <label class="storage-folder-field" for="storage-folder-input">
+            <span class="storage-folder-label" data-i18n="storage.folderLabel">Upload folder</span>
+            <input
+              id="storage-folder-input"
+              type="text"
+              autocomplete="off"
+              spellcheck="false"
+              value="/gn-tracing"
+              data-i18n-placeholder="storage.folderPlaceholderDrive"
+              placeholder="/gn-tracing, folder ID, or Drive link"
+            >
+          </label>
+          <p class="storage-connect-hint" id="storage-folder-hint" data-i18n="storage.folderHintDefault">
+            Using upload folder: /gn-tracing.
+          </p>
+          <div class="storage-editor-actions">
+            <button type="button" id="storage-editor-done-btn" class="btn btn-start btn-small" data-i18n="storage.done">
+              Done
+            </button>
+            <button type="button" id="storage-editor-cancel-btn" class="btn btn-secondary btn-small" data-i18n="storage.cancel">
+              Cancel
+            </button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -202,24 +252,15 @@
     </section>
 
     <section id="package-security-section" class="package-security-card">
-      <div class="section-title">
-        <svg class="section-title-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="5" y="11" width="14" height="10" rx="2"/>
-          <path d="M8 11V8a4 4 0 0 1 8 0v3"/>
-        </svg>
-        <span data-i18n="password.sectionTitle">Package password</span>
-      </div>
-
-      <div id="zip-password-summary" class="package-security-summary">
-        <div class="package-security-status-row">
-          <span id="zip-password-status" class="package-security-status is-off" data-i18n="password.statusOff">
-            Not set
-          </span>
-          <p id="zip-password-hint" class="package-security-hint" data-i18n="password.hintNone">
-            New uploads will not require a zip password.
-          </p>
+      <div class="package-security-header">
+        <div class="section-title">
+          <svg class="section-title-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="5" y="11" width="14" height="10" rx="2"/>
+            <path d="M8 11V8a4 4 0 0 1 8 0v3"/>
+          </svg>
+          <span data-i18n="password.sectionTitle">Package password</span>
         </div>
-        <div class="package-security-summary-actions">
+        <div class="package-security-header-actions">
           <button type="button" id="zip-password-set-btn" class="btn btn-secondary btn-small" data-i18n="password.set">
             Set password
           </button>
@@ -227,6 +268,12 @@
             Remove password
           </button>
         </div>
+      </div>
+
+      <div id="zip-password-summary" class="package-security-summary">
+        <span id="zip-password-status" class="package-security-status is-off" data-i18n="password.statusOff">
+          Not set
+        </span>
       </div>
 
       <div id="zip-password-form" class="package-security-form hidden">
@@ -249,6 +296,75 @@
           </button>
         </div>
       </div>
+    </section>
+
+    <section id="instant-replay-section" class="package-security-card" aria-label="Instant replay">
+      <div class="section-title">
+        <svg class="section-title-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="9"/>
+          <path d="M12 7v5l3 2"/>
+        </svg>
+        <span data-i18n="instantReplay.sectionTitle">Instant replay</span>
+      </div>
+      <label class="settings-check instant-replay-enable">
+        <input id="instant-replay-enabled" type="checkbox">
+        <span data-i18n="instantReplay.enableLabel">Enable Instant Replay</span>
+      </label>
+      <div id="instant-replay-window-row" class="instant-replay-window-field">
+        <div class="instant-replay-window-label-row">
+          <label for="instant-replay-window" data-i18n="instantReplay.windowLabel">Keep last</label>
+          <span id="instant-replay-window-value" class="instant-replay-window-value">120s</span>
+        </div>
+        <input
+          id="instant-replay-window"
+          class="instant-replay-window-range"
+          type="range"
+          min="15"
+          max="300"
+          step="5"
+          value="120"
+          aria-valuemin="15"
+          aria-valuemax="300"
+          aria-valuenow="120"
+          aria-valuetext="120 seconds"
+          data-ir-window-min="15"
+          data-ir-window-max="300"
+          data-ir-window-default="120"
+        >
+        <div class="instant-replay-window-scale" aria-hidden="true">
+          <span>15s</span>
+          <span>300s</span>
+        </div>
+      </div>
+      <div id="instant-replay-domains-row" class="instant-replay-domains-field">
+        <div class="instant-replay-window-label-row">
+          <span class="instant-replay-domains-heading" data-i18n="instantReplay.domainsLabel">Allowed domains (CDP)</span>
+          <button
+            type="button"
+            id="instant-replay-add-site-btn"
+            class="btn btn-secondary btn-small"
+            data-i18n="instantReplay.addThisSite"
+          >
+            Add this site
+          </button>
+        </div>
+        <div
+          id="instant-replay-domains-list"
+          class="instant-replay-domains-list"
+          role="list"
+          aria-live="polite"
+          aria-relevant="additions text"
+        >
+          <p class="instant-replay-domains-empty" data-i18n="instantReplay.domainsEmpty">
+            None — add a site so CDP console/network can attach.
+          </p>
+        </div>
+      </div>
+      <p id="instant-replay-hint" class="package-security-hint" data-i18n="instantReplay.hint">
+        When on, keeps a rolling DOM lookback on matching pages. Console and network use CDP
+        (debugger banner) only on allowed domains. After a bug, click Instant Replay to package
+        and upload. Nothing leaves your browser until you capture.
+      </p>
     </section>
 
     <div id="error-msg" class="hidden"></div>

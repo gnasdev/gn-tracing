@@ -360,11 +360,13 @@ export function installInPageCapture(
 ): () => void {
   const emit: BoundSend = (kind, entry) => send(sessionId, kind, entry);
   const restorers: Array<() => void> = [];
+  /** In-flight fetch/XHR rows; flushed as incomplete when capture stops. */
+  const inflightNetwork = new Set<PendingNetworkCapture>();
 
   installConsoleCapture(scope, emit, restorers);
   installUncaughtErrorCapture(scope, emit, restorers);
-  installFetchCapture(scope, emit, restorers);
-  installXhrCapture(scope, emit, restorers);
+  installFetchCapture(scope, emit, restorers, inflightNetwork);
+  installXhrCapture(scope, emit, restorers, inflightNetwork);
   installWebSocketCapture(scope, emit, restorers);
 
   // Storage is captured via start/stop snapshots (the player's StorageSnapshot
@@ -378,6 +380,11 @@ export function installInPageCapture(
       return;
     }
     cleaned = true;
+    // Flush incomplete network rows before tearing down patches so stop-time
+    // packaging still sees in-flight fetch/XHR (status null = incomplete).
+    for (const pending of Array.from(inflightNetwork)) {
+      settleNetworkCapture(pending, inflightNetwork, emit);
+    }
     emit("storage", captureStorageSnapshot(scope, "stop"));
     // Restore in reverse order so each global returns to its exact original.
     for (let i = restorers.length - 1; i >= 0; i -= 1) {
@@ -485,10 +492,36 @@ function installConsoleCapture(
   }
 }
 
+/** Tracks an in-flight network capture so cleanup can flush incomplete rows once. */
+interface PendingNetworkCapture {
+  entry: NetworkEntry;
+  settled: boolean;
+}
+
+function settleNetworkCapture(
+  pending: PendingNetworkCapture,
+  inflight: Set<PendingNetworkCapture>,
+  send: BoundSend,
+  mutate?: (entry: NetworkEntry) => void,
+): void {
+  if (pending.settled) {
+    return;
+  }
+  pending.settled = true;
+  inflight.delete(pending);
+  try {
+    mutate?.(pending.entry);
+    send("network", pending.entry);
+  } catch {
+    // Never let capture failures break the page request path.
+  }
+}
+
 function installFetchCapture(
   scope: InPageCaptureScope,
   send: BoundSend,
   restorers: Array<() => void>,
+  inflight: Set<PendingNetworkCapture>,
 ): void {
   const originalFetch = scope.fetch;
   if (typeof originalFetch !== "function") {
@@ -503,17 +536,21 @@ function installFetchCapture(
     if (typeof init?.body === "string") {
       entry.postData = init.body;
     }
+    const pending: PendingNetworkCapture = { entry, settled: false };
+    inflight.add(pending);
     try {
       const response = await originalFetch(input as RequestInfo, init);
-      entry.status = response.status;
-      entry.statusText = response.statusText;
-      entry.responseHeaders = responseHeadersToRecord(response.headers);
-      entry.mimeType = response.headers?.get?.("content-type") ?? null;
-      send("network", entry);
+      settleNetworkCapture(pending, inflight, send, (e) => {
+        e.status = response.status;
+        e.statusText = response.statusText;
+        e.responseHeaders = responseHeadersToRecord(response.headers);
+        e.mimeType = response.headers?.get?.("content-type") ?? null;
+      });
       return response;
     } catch (error) {
-      entry.error = error instanceof Error ? error.message : String(error);
-      send("network", entry);
+      settleNetworkCapture(pending, inflight, send, (e) => {
+        e.error = error instanceof Error ? error.message : String(error);
+      });
       throw error;
     }
   };
@@ -524,13 +561,14 @@ function installFetchCapture(
 }
 
 interface CapturedXhrState {
-  entry: NetworkEntry;
+  pending: PendingNetworkCapture;
 }
 
 function installXhrCapture(
   scope: InPageCaptureScope,
   send: BoundSend,
   restorers: Array<() => void>,
+  inflight: Set<PendingNetworkCapture>,
 ): void {
   const OriginalXHR = scope.XMLHttpRequest;
   if (typeof OriginalXHR !== "function") {
@@ -550,7 +588,8 @@ function installXhrCapture(
   ): void {
     const urlString = typeof url === "string" ? url : url.toString();
     const entry = emptyNetworkEntry(urlString, (method || "GET").toUpperCase(), "xhr");
-    const state: CapturedXhrState = { entry };
+    const pending: PendingNetworkCapture = { entry, settled: false };
+    const state: CapturedXhrState = { pending };
     this[stateKey] = state;
     (originalOpen as (...a: unknown[]) => void).apply(this, [method, url, ...rest]);
   } as typeof proto.open;
@@ -561,27 +600,26 @@ function installXhrCapture(
   ): void {
     const state = this[stateKey] as CapturedXhrState | undefined;
     if (state) {
-      state.entry.timestamp = monotonicNow(scope);
+      state.pending.entry.timestamp = monotonicNow(scope);
       if (typeof body === "string") {
-        state.entry.postData = body;
+        state.pending.entry.postData = body;
       }
+      inflight.add(state.pending);
       const onLoadEnd = (): void => {
-        try {
-          state.entry.status = this.status || null;
-          state.entry.statusText = this.statusText || null;
+        settleNetworkCapture(state.pending, inflight, send, (entry) => {
+          entry.status = this.status || null;
+          entry.statusText = this.statusText || null;
           const rawHeaders = this.getAllResponseHeaders?.() ?? "";
-          state.entry.responseHeaders = parseRawHeaders(rawHeaders);
-          state.entry.mimeType = this.getResponseHeader?.("content-type") ?? state.entry.mimeType;
-          send("network", state.entry);
-        } catch {
-          // ignore capture-time failures
-        }
+          entry.responseHeaders = parseRawHeaders(rawHeaders);
+          entry.mimeType = this.getResponseHeader?.("content-type") ?? entry.mimeType;
+        });
         this.removeEventListener("loadend", onLoadEnd);
         this.removeEventListener("error", onError);
       };
       const onError = (): void => {
-        state.entry.error = "Network request failed";
-        send("network", state.entry);
+        settleNetworkCapture(state.pending, inflight, send, (entry) => {
+          entry.error = "Network request failed";
+        });
         this.removeEventListener("loadend", onLoadEnd);
         this.removeEventListener("error", onError);
       };

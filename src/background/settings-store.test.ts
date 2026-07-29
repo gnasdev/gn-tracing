@@ -7,7 +7,8 @@
  *
  * - reading persisted settings out of `chrome.storage.local`,
  * - the `chrome.storage.session` popup-state fallback (and the local backfill),
- * - default/empty behaviour when nothing is stored, and
+ * - default/empty behaviour when nothing is stored (CDP + full capture),
+ * - legacy captureProfile / privacyProfile keys ignored for missing fields, and
  * - persisting settings (asserting both the spy call and the resulting state).
  *
  * The module caches loaded settings at module scope, so each test resets the
@@ -41,49 +42,135 @@ beforeEach(() => {
 });
 
 describe("getUploadSettings", () => {
-  it("returns persisted settings from local storage", async () => {
+  it("returns persisted fields from local storage and ignores legacy captureProfile", async () => {
     await mockChrome().storage.local.set({
-      [STORAGE_KEY_SETTINGS]: { captureProfile: "lean", zipPassword: "secret" },
+      [STORAGE_KEY_SETTINGS]: {
+        captureProfile: "lean",
+        zipPassword: "secret",
+        // Explicit lean-era field; must be preserved.
+        captureRequestBodies: false,
+      },
     });
 
     const { getUploadSettings } = await importStore();
     const settings = await getUploadSettings();
 
-    expect(settings.captureProfile).toBe("lean");
+    expect((settings as { captureProfile?: unknown }).captureProfile).toBeUndefined();
     expect(settings.zipPassword).toBe("secret");
-    // Stored captureProfile drives profile-derived defaults (lean disables request bodies).
+    // Legacy captureProfile must not re-apply lean defaults for missing fields.
     expect(settings.captureRequestBodies).toBe(false);
+    // Missing capture fields fall back to full defaults, not lean.
+    expect(settings.captureResponseBodies).toBe(true);
+    expect(settings.captureMode).toBe("cdp");
+    expect(settings.privacyProfile).toBe("custom");
     expect(mockChrome().storage.local.get.callCount).toBe(1);
   });
 
-  it("returns normalized defaults when nothing is stored", async () => {
+  it("returns full CDP defaults when nothing is stored", async () => {
     const { getUploadSettings } = await importStore();
     const settings = await getUploadSettings();
 
-    expect(settings.captureProfile).toBe("full");
+    expect(settings.captureMode).toBe("cdp");
+    expect(settings.privacyProfile).toBe("custom");
     expect(settings.folderInput).toBe("/gn-tracing");
     expect(settings.zipPassword).toBe("");
     expect(settings.activeStorageProvider).toBe("google-drive");
-    // The "full" profile enables request/response body capture by default.
     expect(settings.captureRequestBodies).toBe(true);
     expect(settings.captureResponseBodies).toBe(true);
+    expect(settings.captureResponseBodyMode).toBe("eligible");
+    expect(settings.maxResponseBodyBytes).toBeNull();
+    expect(settings.captureWebSocketFrames).toBe(true);
+    expect(settings.maxWebSocketFrameBytes).toBeNull();
+    expect(settings.captureConsoleArgs).toBe(true);
+    expect(settings.consolePreviewDepth).toBe("full");
+    expect(settings.captureConsoleStacks).toBe("all");
+    expect(settings.captureStorage).toBe(true);
+    expect(settings.captureDomSnapshots).toBe(true);
+    expect(settings.redactSensitiveHeaders).toBe(true);
+    expect(settings.instantReplayEnabled).toBe(false);
+    expect(settings.instantReplayWindowSeconds).toBe(120);
+    expect((settings as { captureProfile?: unknown }).captureProfile).toBeUndefined();
+  });
+
+  it("clamps instantReplayWindowSeconds and preserves always-on enable flag", async () => {
+    await mockChrome().storage.local.set({
+      [STORAGE_KEY_SETTINGS]: {
+        instantReplayEnabled: true,
+        instantReplayWindowSeconds: 999,
+      },
+    });
+
+    const { getUploadSettings, normalizeInstantReplayWindowSeconds } = await importStore();
+    const settings = await getUploadSettings();
+
+    expect(settings.instantReplayEnabled).toBe(true);
+    expect(settings.instantReplayWindowSeconds).toBe(300);
+    expect(normalizeInstantReplayWindowSeconds(10)).toBe(15);
+    expect(normalizeInstantReplayWindowSeconds(45)).toBe(45);
+    expect(normalizeInstantReplayWindowSeconds("120")).toBe(120);
+  });
+
+  it("persists and reloads instantReplayAllowedDomains across getUploadSettings", async () => {
+    const { getUploadSettings, saveUploadSettings, getSettingsSnapshot } = await importStore();
+    const settings = await getUploadSettings();
+    settings.instantReplayEnabled = true;
+    settings.instantReplayAllowedDomains = ["app.example.com", "*.other.test"];
+    await saveUploadSettings(settings);
+
+    // Simulate service-worker restart: drop module cache and re-read local.
+    vi.resetModules();
+    const reloaded = await importStore();
+    const again = await reloaded.getUploadSettings();
+    expect(again.instantReplayAllowedDomains).toEqual(["app.example.com", "*.other.test"]);
+    expect(reloaded.getSettingsSnapshot(again).instantReplayAllowedDomains).toEqual([
+      "app.example.com",
+      "*.other.test",
+    ]);
+  });
+
+  it("migrates legacy privacyProfile strict/standard to custom without re-applying presets", async () => {
+    await mockChrome().storage.local.set({
+      [STORAGE_KEY_SETTINGS]: {
+        privacyProfile: "strict",
+        redactSensitiveHeaders: false,
+        captureMode: "in-page",
+      },
+    });
+
+    const { getUploadSettings } = await importStore();
+    const settings = await getUploadSettings();
+
+    expect(settings.privacyProfile).toBe("custom");
+    // Explicit redaction toggle preserved; not reset by strict/standard preset.
+    expect(settings.redactSensitiveHeaders).toBe(false);
+    expect(settings.captureMode).toBe("in-page");
+    // Missing capture fields still use full defaults.
+    expect(settings.captureRequestBodies).toBe(true);
+    expect(settings.captureStorage).toBe(true);
   });
 
   it("falls back to session popup state and backfills local storage", async () => {
     await mockChrome().storage.session.set({
-      [STORAGE_KEY_STATE]: { settings: { captureProfile: "lean", zipPassword: "from-session" } },
+      [STORAGE_KEY_STATE]: {
+        settings: { captureProfile: "lean", zipPassword: "from-session" },
+      },
     });
 
     const { getUploadSettings } = await importStore();
     const settings = await getUploadSettings();
 
-    expect(settings.captureProfile).toBe("lean");
     expect(settings.zipPassword).toBe("from-session");
+    expect((settings as { captureProfile?: unknown }).captureProfile).toBeUndefined();
+    // Lean legacy key must not force lean capture defaults.
+    expect(settings.captureRequestBodies).toBe(true);
+    expect(settings.captureMode).toBe("cdp");
 
     // The session-derived settings are written back to local storage.
     const local = mockChrome().storage.local;
     expect(local.set.callCount).toBe(1);
-    expect(local.set.calls[0]?.args[0]).toEqual({ [STORAGE_KEY_SETTINGS]: settings });
+    expect(local.set.calls[0]?.args[0]).toEqual({
+      [STORAGE_KEY_SETTINGS]: settings,
+    });
     expect(local.store[STORAGE_KEY_SETTINGS]).toEqual(settings);
   });
 
@@ -104,8 +191,21 @@ describe("getUploadSettings", () => {
     const { getUploadSettings } = await importStore();
     const settings = await getUploadSettings();
 
-    expect(settings.captureProfile).toBe("full");
+    expect(settings.captureMode).toBe("cdp");
     expect(settings.folderInput).toBe("/gn-tracing");
+    expect(settings.captureStorage).toBe(true);
+  });
+
+  it("snapshot omits captureProfile and keeps privacyProfile custom", async () => {
+    const { getUploadSettings, getSettingsSnapshot } = await importStore();
+    const settings = await getUploadSettings();
+    const snapshot = getSettingsSnapshot(settings);
+
+    expect("captureProfile" in snapshot).toBe(false);
+    expect(snapshot.privacyProfile).toBe("custom");
+    expect(snapshot.captureMode).toBe("cdp");
+    expect(snapshot.captureStorage).toBe(true);
+    expect(snapshot.captureDomSnapshots).toBe(true);
   });
 });
 
@@ -113,7 +213,11 @@ describe("saveUploadSettings", () => {
   it("persists settings to local storage and caches them", async () => {
     const { getUploadSettings, saveUploadSettings } = await importStore();
     const defaults = await getUploadSettings();
-    const updated = { ...defaults, zipPassword: "new-password", captureProfile: "lean" as const };
+    const updated = {
+      ...defaults,
+      zipPassword: "new-password",
+      captureMode: "in-page" as const,
+    };
 
     await saveUploadSettings(updated);
 

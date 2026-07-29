@@ -375,4 +375,49 @@ describe("in-page captured entries match player schema (R9.3)", () => {
     expect(storageSnaps.every(isStorageSnapshot)).toBe(true);
     expect(storageSnaps.map((s) => s.phase)).toEqual(["start", "stop"]);
   });
+
+  it("flushes in-flight fetch as incomplete on cleanup without double-emit", async () => {
+    const { scope } = makeFakeScope();
+    let release!: (value: {
+      status: number;
+      statusText: string;
+      headers: { get: () => string | null };
+    }) => void;
+    const delayed = new Promise<{
+      status: number;
+      statusText: string;
+      headers: { get: () => string | null };
+    }>((resolve) => {
+      release = resolve;
+    });
+    scope.fetch = (() => delayed) as unknown as typeof fetch;
+
+    const { send, entries } = makeCollector();
+    const cleanup = installInPageCapture(scope, "session-inflight", send);
+
+    const fetchPromise = scope.fetch("https://api.example.com/slow");
+    // Yield so the patched fetch registers the pending entry.
+    await Promise.resolve();
+
+    cleanup();
+
+    const networkAfterStop = entries
+      .filter((e) => e.kind === "network")
+      .map((e) => e.entry as { url: string; status: number | null; canceled?: boolean });
+    expect(networkAfterStop).toHaveLength(1);
+    expect(networkAfterStop[0]?.url).toContain("api.example.com/slow");
+    expect(networkAfterStop[0]?.status).toBeNull();
+    expect(networkAfterStop[0]?.canceled).not.toBe(true);
+
+    release({
+      status: 200,
+      statusText: "OK",
+      headers: { get: () => "application/json" },
+    });
+    await fetchPromise.catch(() => {});
+
+    const networkFinal = entries.filter((e) => e.kind === "network");
+    // Must not emit a second completed row after cleanup already flushed incomplete.
+    expect(networkFinal).toHaveLength(1);
+  });
 });

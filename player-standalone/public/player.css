@@ -1810,8 +1810,31 @@ body:has(#player-state:not(.hidden)) .player-lang-toggle--global {
 
 .elements-toolbar {
   display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.elements-toolbar-meta {
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
+  min-width: 0;
+}
+
+.elements-search-wrap {
+  display: flex;
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.elements-search-wrap .search-input {
+  width: 100%;
+  flex: 1;
+  min-width: 0;
 }
 
 .elements-snapshot-label {
@@ -1839,11 +1862,41 @@ body:has(#player-state:not(.hidden)) .player-lang-toggle--global {
 
 .elements-tree {
   flex: 1;
+  min-width: 0;
+  min-height: 0;
   padding: 8px 10px;
   font-family: var(--font-mono, monospace);
   font-size: 12px;
   line-height: 1.6;
   color: var(--text-secondary);
+  /* Override .entries-scroll overflow-x: hidden so deep/wide DOM lines can scroll. */
+  overflow-x: auto;
+  overflow-y: auto;
+}
+
+.elements-tree::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.elements-tree::-webkit-scrollbar-track {
+  background: var(--bg-base);
+}
+
+.elements-tree::-webkit-scrollbar-thumb {
+  background: var(--border-input);
+  border-radius: 3px;
+}
+
+.elements-tree::-webkit-scrollbar-thumb:hover {
+  background: var(--text-dim);
+}
+
+/* Keep tag/attribute lines on one row so overflow produces a horizontal scrollbar. */
+.elements-tree .dom-summary,
+.elements-tree .dom-leaf,
+.elements-tree .dom-close-tag {
+  white-space: nowrap;
 }
 
 .dom-node {
@@ -1918,6 +1971,12 @@ body:has(#player-state:not(.hidden)) .player-lang-toggle--global {
   text-transform: uppercase;
   letter-spacing: 0.04em;
   vertical-align: middle;
+}
+
+.dom-search-hit > .dom-summary,
+.dom-leaf.dom-search-hit {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border-radius: 4px;
 }
 
 .dom-empty {
@@ -3296,6 +3355,126 @@ body.presentation-screenshot .screenshot-image,
   border-left: 3px solid var(--accent, #5b8cff);
   border-radius: 10px;
   background: var(--bg-card);
+}
+
+/* ---------- Instant Replay DOM stage (structural lookback) ---------- */
+.dom-stage {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  background: var(--bg-base, #0f1115);
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.dom-stage.hidden {
+  display: none;
+}
+
+.dom-stage-frame {
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 200px;
+  border: 0;
+  background: #fff;
+}
+
+.dom-stage-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-top: 1px solid var(--border-subtle);
+  background: var(--bg-card);
+}
+
+.dom-stage-scrubber {
+  flex: 1 1 auto;
+  min-width: 80px;
+  height: 18px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  box-shadow: none;
+  accent-color: var(--accent, #4f8cff);
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.dom-stage-scrubber::-webkit-slider-runnable-track {
+  height: 6px;
+  border: none;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--border-default) 88%, transparent);
+}
+
+.dom-stage-scrubber::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -4px;
+  border: none;
+  border-radius: 50%;
+  background: var(--accent, #4f8cff);
+  cursor: pointer;
+}
+
+.dom-stage-scrubber::-moz-range-track {
+  height: 6px;
+  border: none;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--border-default) 88%, transparent);
+}
+
+.dom-stage-scrubber::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border: none;
+  border-radius: 50%;
+  background: var(--accent, #4f8cff);
+  cursor: pointer;
+}
+
+.dom-stage-time {
+  flex: 0 0 auto;
+  min-width: 3.5em;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.dom-stage-url {
+  flex: 0 1 28%;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dom-stage-hint {
+  margin: 0;
+  padding: 4px 10px 8px;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.video-section.is-dom-stage .video-container,
+.video-section.is-dom-stage .video-controls {
+  display: none;
+}
+
+.instant-replay-open-btn {
+  margin-top: 8px;
 }
 
 .empty-evidence-panel {

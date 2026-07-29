@@ -1,6 +1,6 @@
 ---
 title: "Privacy And Redaction"
-description: "Current privacy profiles, redaction policy, page-event sanitization, and replay privacy metadata."
+description: "Redaction policy, page-event sanitization, Settings toggles, and replay privacy metadata."
 type: module
 status: active
 tags: ["privacy", "redaction", "recording"]
@@ -25,7 +25,7 @@ related:
 ## Meta
 
 - Trạng thái: active
-- Phạm vi: privacy profiles, redaction rules, event sanitization, DOM masking, privacy artifact metadata, and replay privacy boundaries
+- Phạm vi: redaction rules, Settings toggles, event sanitization, DOM masking, privacy artifact metadata, and replay privacy boundaries
 - Nguồn code: `src/shared/privacy-redaction.ts`, `src/content/recording-events.ts`, `src/background/service-worker.ts`, `src/background/cdp-manager.ts`, `src/background/storage-manager.ts`, `src/settings/settings.ts`, `src/types/recording.ts`
 - Tuân thủ: Google API Limited Use, Chrome Web Store data-use disclosure
 - Links: [Recording Runtime](./recording-runtime.md), [Replay Player](./replay-player.md), [Extension Surfaces](../features/extension-surfaces.md), [Shared Data Models](../shared/data-models.md), [Privacy Policy](../compliance/privacy-policy.md)
@@ -34,17 +34,20 @@ related:
 
 Privacy is a shared runtime policy, not only a Settings page concern. GN Tracing can capture detailed debugging evidence, but supported text/JSON evidence is passed through a versioned client-side redaction policy before it becomes replay artifacts.
 
-The current policy version is `1`. It is implemented without Chrome API dependencies so the service worker, CDP collector, storage buffer, injected event collector, Settings UI, and future tests can use the same rules and profile defaults.
+The current policy version is `1`. It is implemented without Chrome API dependencies so the service worker, CDP collector, storage buffer, injected event collector, Settings UI, and future tests can use the same rules and defaults.
 
-## Profiles And Settings
+## Settings And Defaults
 
-- `standard` enables credential-focused redaction for headers, query params, request/response bodies, console values, WebSocket text payloads, report metadata, event metadata, and DOM mask selector normalization.
-- `strict` keeps the standard protections and also redacts additional personal, location, and opaque-id patterns where supported.
-- `custom` starts from the protected defaults and lets the user adjust individual switches in Settings.
+There is **no user-facing privacy profile preset** (standard/strict/custom radios are removed). Settings exposes per-surface redaction toggles and DOM mask selectors. Internally, `privacyProfile` is fixed to `"custom"` for redaction rule membership and `privacy.json` metadata (standard-class credential rules when toggles are on; strict-only personal/location/opaque-id rules are not a product surface).
 
-Capture depth and privacy profile are separate choices. A user can keep full debug capture enabled while still applying standard, strict, or custom redaction before artifacts are uploaded.
+Default capture is **full recording + CDP**:
 
-Storage and DOM capture are privacy-first opt-ins. `captureStorage` and `captureDomSnapshots` default off; their redaction companions `redactStorageValues` and `redactDomTextContent` default on. The `captureMode` setting (`"cdp"` default, `"in-page"` opt-in) does not change redaction, but `"in-page"` records additional fidelity limitations in `privacy.json`.
+- Console, network, WebSocket (including bodies/frames) on with unbounded byte limits (`null`) where applicable.
+- `captureStorage` and `captureDomSnapshots` default **on**; their redaction companions `redactStorageValues` and `redactDomTextContent` default **on**.
+- Redaction surface toggles (headers, query, bodies, console, event metadata; WebSocket = sensitive-fields) default **on**.
+- `captureMode` defaults to `"cdp"`; `"in-page"` remains selectable and records additional fidelity limitations in `privacy.json`.
+
+Legacy stored `captureProfile` / named `privacyProfile` values are ignored or migrated on load and do not re-apply preset bundles for missing fields.
 
 ## Redaction Surfaces
 
@@ -74,7 +77,7 @@ DOM masking is best-effort. The configured selectors are normalized and validate
 
 `privacy.json` records:
 
-- policy version and selected privacy profile
+- policy version and privacy profile field (always `"custom"` for new recordings)
 - artifact flags for video, screenshot, report, events, console, network, WebSocket, request/response bodies, WebSocket payloads, source snippets, storage, and DOM snapshots
 - grouped redaction counts, including `storage` and `dom` hits
 - bounded known limitations, including storage/DOM capture failures, skipped oversized DOM snapshots, and `in-page` capture-mode fidelity limits
@@ -92,4 +95,4 @@ The privacy artifact is optional for replay compatibility. Packages without it s
 
 - `recording-runtime` applies the privacy policy while collecting CDP data, page events, reports, screenshots, source-map diagnostics, and final artifacts.
 - `replay-player` renders privacy summaries, redacted source locations, redacted snippets, and optional privacy limitations.
-- `extension-surfaces` owns the user controls for privacy profile, custom redaction switches, DOM mask selectors, and ZIP password configuration.
+- `extension-surfaces` owns the user controls for redaction switches, DOM mask selectors, and ZIP password configuration.

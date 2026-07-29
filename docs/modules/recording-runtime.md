@@ -68,8 +68,8 @@ The primary lifecycle is:
 - Capture media, console logs, network traffic, and WebSocket frames for the same tab session.
 - Capture lightweight report metadata, browser/page environment context, a redacted user interaction timeline, and an optional visible-tab screenshot for the replay report.
 - Apply a shared client-side privacy/redaction policy across headers, URLs, JSON/form bodies, console values, WebSocket text payloads, report metadata, and event metadata before artifacts are uploaded.
-- Redact sensitive header values by default and capture console, network, request/response body, initiator, and WebSocket payload details according to the user's capture profile and advanced settings.
-- Allow a separate privacy profile so users can capture detailed evidence while still applying standard, strict, or custom redaction rules.
+- Redact sensitive header values by default and capture console, network, request/response body, initiator, and WebSocket payload details according to the user's capture and redaction Settings toggles (full + CDP by default).
+- Allow independent redaction toggles so users can capture detailed evidence while still masking secrets before artifacts are uploaded.
 - Compute recording duration as elapsed wall-clock time between start and stop.
 - Preserve popup UX even when the popup closes by mirroring state into session storage.
 - Hide capture controls and the capture queue from the popup until the active cloud storage provider is connected.
@@ -116,6 +116,16 @@ When `captureStorage` is on, `CdpManager` enables `DOMStorage`, snapshots `local
 - `"cdp"` (default): attaches `chrome.debugger` for full-fidelity capture; the browser shows a debugging banner.
 - `"in-page"` (opt-in): the service worker does not attach `chrome.debugger`. Instead it injects MAIN-world instrumentation (`src/content/in-page-capture.ts`, relayed through `src/content/in-page-relay.ts`) that monkey-patches `console.*`, `fetch`, `XMLHttpRequest`, `WebSocket`, and storage, maps results into the same `ConsoleEntry`/`NetworkEntry`/`WebSocketEntry`/`StorageSnapshot` schemas the player reads, and restores every patched global on stop. The service worker applies redaction to relayed messages, records fidelity limitations (no cross-origin response bodies, no real source maps) in the privacy summary, and when a page CSP blocks MAIN-world injection records a limitation recommending `captureMode: "cdp"`.
 
+## 3.4 Instant Replay (always-on lookback)
+
+Instant Replay is **not** a Start/Stop recording session. It follows the jam.dev model: opt-in continuous DOM lookback, capture after the bug.
+
+- **Enable:** `instantReplayEnabled` in settings (default off). Enabling requests `optional_host_permissions` for `http://*/*` and `https://*/*`, then registers content script `gn-tracing-instant-replay` (`src/content/instant-replay.ts`) via `syncInstantReplayRegistration`.
+- **Buffer:** in-page rolling DOM snapshots from `packages/replay-core` (`startInstantReplay`). Default window **120s** (clamp 15–300 via `normalizeInstantReplayWindowSeconds`). Hard purge every 120s; auto-disables on heavy pages (snapshot overrun budget).
+- **Capture:** popup **Instant Replay** sends `CAPTURE_INSTANT_REPLAY` → `COLLECT_INSTANT_REPLAY` on the tab → packages still + `instant-replay.json` (no MediaRecorder / no debugger) → upload. Screenshot reports also attach the buffer when enabled.
+- **Privacy:** nothing leaves the machine until the user captures; disable unregisters the script.
+- **Phase 2 (later):** continuous in-page console/network ring for fuller jam parity.
+
 ## 4. Business Rules
 
 - `START_RECORDING` clears prior captured data before a new session begins.
@@ -145,11 +155,14 @@ When `captureStorage` is on, `CdpManager` enables `DOMStorage`, snapshots `local
 - successful cloud upload is treated as the end of the in-memory artifact lifecycle: service worker capture buffers are cleared and the offscreen recorded video blob is released, while upload result state remains available for popup UX.
 - stopping a finished capture can auto-start upload when the active storage provider is already connected, while the completed session remains removable from popup/history state.
 - popup capture controls are gated by the cached active-provider auth state; service worker upload commands still validate a live token for that provider before uploading.
-- popup keeps quick recording controls and opens a dedicated Settings page for storage provider/folder, package security, capture profiles, and advanced console/network/WebSocket controls.
+- popup keeps quick recording controls and opens a dedicated Settings page for storage provider/folder, package security, redaction toggles, and advanced console/network/WebSocket/capture-mode controls.
 - Settings UI text can switch between English and Vietnamese, and each capture field exposes a tester-oriented help dialog explaining when QC should enable, disable, or limit that evidence.
-- capture profiles include lean, balanced, full debug, and custom; full debug is the default, and profile selection expands into concrete settings so the runtime does not infer behavior from UI labels.
+- capture defaults are full fidelity with `captureMode: "cdp"`; Settings exposes per-field toggles (no lean/balanced/full/custom profile presets).
 - CDP collection applies capture settings before storing artifacts: disabled console/network/WebSocket groups are skipped, disabled bodies are not fetched, WebSocket payloads can be redacted or size-limited, blank byte-limit fields mean no limit, and network headers/initiators can be reduced.
 - CDP collection applies shared redaction before storage: header values, query params, request/response body fields, WebSocket payloads, initiator URLs, redirect URLs, and parsed Error stack frame locations go through the active privacy policy.
+- In-page mode only instruments `fetch`/`XMLHttpRequest`/`WebSocket`/`console` (plus start/stop storage snapshots). Script/css/image/document and other DevTools resource types are not captured unless `captureMode` is `"cdp"`.
+- On in-page stop, the service worker keeps a short drain window (`inPageDrainSessionId`) so bridged entries after `isRecording` flips false still land in `StorageManager` (stop storage snapshot and late network rows). Cleanup also flushes in-flight fetch/XHR as incomplete network entries (`status: null`).
+- CDP auto-attach uses `waitForDebuggerOnStart: true` and always resumes the child target after enabling Network/Runtime so early iframe/worker requests are not missed.
 
 ## 5. Constraints & Assumptions
 
@@ -157,7 +170,7 @@ When `captureStorage` is on, `CdpManager` enables `DOMStorage`, snapshots `local
 - offscreen audio is looped back to the user through an `AudioContext` so tab audio remains audible during capture.
 - `MediaRecorder` uses VP9+Opus when supported, otherwise VP8+Opus.
 - before packaging, the offscreen upload path runs a fail-open WebM seek fix (`src/shared/webm-seek-fix.ts` via `webm-duration-fix`) on the full recorded blob: a single cues rewrite rebuilds SeekHead + Duration + Cues so Chromium can random-seek. Failure keeps the original blob (`ok: false`) and does not block upload.
-- request/response body capture is configurable, best-effort, and subject to CDP availability plus body size/type settings.
+- request/response body capture is configurable, best-effort, and subject to CDP availability plus body size/type settings. Eligibility lives in `src/shared/network-response-body.ts`: mode `off`/`text`/`text-json`/`eligible`, MIME resolved from CDP `mimeType` or `Content-Type` headers (including `*+json` subtypes for eligible/text-json), and optional `maxResponseBodyBytes`. On stop, `CdpManager.detach` **drains in-flight `Network.getResponseBody` fetches before `chrome.debugger.detach`**, then finalizes pending requests — detaching first used to drop bodies still in flight.
 - sensitive headers are redacted by header-name pattern before network entries are serialized for upload/replay.
 - source previews depend on acquired sourcemaps carrying `sourcesContent`; recordings fall back to generated file/line labels plus frame-level source-map status when a map is missing, CDP cannot load it, the map response is HTML/non-JSON, or no mapping segment matches, and snippet retention follows the configured console source-snippet mode.
 - event capture is best-effort across page navigations and depends on the page accepting a temporary injected script under the active-tab permission grant.
@@ -168,7 +181,7 @@ When `captureStorage` is on, `CdpManager` enables `DOMStorage`, snapshots `local
 ## 6. Relationships
 
 - provides captured artifacts, report metadata, event timeline entries, privacy summaries, diagnostics, and optional screenshot data to `drive-and-player` and `replay-player`
-- consumes `privacy-and-redaction` for privacy profile defaults, redaction, event sanitization, DOM masking selectors, and privacy summary construction
+- consumes `privacy-and-redaction` for redaction defaults, event sanitization, DOM masking selectors, and privacy summary construction
 - receives commands and renders state through `extension-surfaces`
 - consumes shared message/data models from `shared/data-models`
 - depends on Chrome extension platform APIs and multi-cloud storage-provider upload orchestration from the cloud storage module

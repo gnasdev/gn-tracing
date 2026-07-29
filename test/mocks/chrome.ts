@@ -101,6 +101,7 @@ export interface ChromeMock {
     detach: MockSpy;
     sendCommand: MockSpy;
     onEvent: MockEvent;
+    onDetach: MockEvent;
   };
   action: {
     setBadgeText: MockSpy;
@@ -389,6 +390,7 @@ export function createChromeMock(): ChromeMock {
       detach: createSpy(counter, spies, () => Promise.resolve()),
       sendCommand: createSpy(counter, spies, () => Promise.resolve({})),
       onEvent: createEvent(counter, spies, events),
+      onDetach: createEvent(counter, spies, events),
     },
     "chrome.debugger",
   );

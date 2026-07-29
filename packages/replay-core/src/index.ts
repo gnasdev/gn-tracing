@@ -19,6 +19,10 @@ export {
   type RecordingPackage,
 } from "./artifacts";
 export {
+  type HydrateDomOptions,
+  hydrateDomNodeToHtml,
+} from "./dom/hydrate-dom";
+export {
   isReplayError,
   ReplayError,
   type ReplayErrorCode,

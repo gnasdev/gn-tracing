@@ -51,7 +51,6 @@
   const TimelineSeek = globalThis.gnCore?.timelineSeek;
   const SEEK_MAX_RETRIES = 3;
   const ZIP_CRYPTO_HEADER_BYTES = 12;
-  const DYNAMIC_ROUTE_EXTENSIONS = new Set([".html", ".htm", ".php", ".asp", ".aspx", ".jsp"]);
 
   console.log("[GN Tracing Player] Mode:", IS_EXTENSION ? "extension" : "standalone");
 
@@ -90,7 +89,7 @@
       "tabs.network": "Network",
       "tabs.storage": "Storage",
       "tabs.elements": "Elements",
-      "tabs.screenshots": "Screenshots",
+      "tabs.screenshots": "Screenshot",
       "screenshots.aria": "Annotated screenshots",
       "screenshots.sourceImage": "Captured image",
       "screenshots.sourceDom": "DOM snapshot",
@@ -100,6 +99,16 @@
       "screenshots.instantReplay": "Instant replay (before the report)",
       "screenshots.instantReplayMeta":
         "{frames} frames covering {seconds}s before the report ({dropped} dropped to stay inside the buffer).",
+      "screenshots.instantReplayOpenElements":
+        "Open the Elements tab to inspect the DOM lookback timeline.",
+      "screenshots.instantReplayOpenStage": "Scrub DOM lookback",
+      "domStage.aria": "DOM lookback",
+      "domStage.frameTitle": "DOM lookback preview",
+      "domStage.prev": "Previous frame",
+      "domStage.next": "Next frame",
+      "domStage.scrubberAria": "DOM lookback scrubber",
+      "domStage.hint": "Structural DOM lookback — layout may differ without full page CSS.",
+      "domStage.empty": "No DOM frames to preview.",
       "screenshots.badge": "Screenshot report",
       "screenshots.noCaption": "No caption from the reporter",
       "screenshots.noAnnotations": "No shapes or notes were drawn on this screenshot.",
@@ -142,7 +151,10 @@
       "elements.aria": "DOM snapshot tree",
       "elements.snapshot": "Snapshot",
       "elements.selectAria": "Select DOM snapshot",
+      "elements.search": "Search elements",
+      "elements.searchAria": "Search elements",
       "elements.empty": "No DOM nodes captured.",
+      "elements.noMatch": "No matching elements.",
       "source.lineTruncated": "Line truncated in recording artifact.",
       "theme.system": "System",
       "theme.light": "Light",
@@ -255,6 +267,7 @@
       "detail.frames": "Frames ({count})",
       "detail.none": "(none)",
       "detail.binaryData": "(binary data)",
+      "detail.noResponseBody": "No response body",
       "detail.truncated": "...(truncated)",
       "detail.anonymous": "(anonymous)",
       "detail.toggleDetails": "Toggle details",
@@ -277,7 +290,7 @@
         "It was captured by the in-page SDK, which records console, network, and WebSocket activity without a screen recording.",
       "noVideo.screenshotTitle": "Screenshot report",
       "noVideo.screenshotHint":
-        "This package is an annotated screenshot — there is no screen recording to play. Use the Screenshots tab for the reporter's image, notes, and shapes.",
+        "This package is an annotated screenshot — there is no screen recording to play. Use the Screenshot tab for the reporter's image, notes, and shapes.",
       "presentation.emptyTitle": "No replay evidence in this package",
       "presentation.emptyHint":
         "The package loaded, but it has no video, screenshots, or log artifacts to inspect.",
@@ -343,13 +356,13 @@
       "controls.expandVideo": "Phóng to video trong tab",
       "controls.exitExpandedVideo": "Thoát chế độ phóng to video",
       "controls.splitter": "Đổi kích thước panel player và logs",
-      "tabs.report": "Báo cáo",
-      "tabs.activity": "Hoạt động",
+      "tabs.report": "Report",
+      "tabs.activity": "Activity",
       "tabs.console": "Console",
       "tabs.network": "Network",
       "tabs.storage": "Storage",
       "tabs.elements": "Elements",
-      "tabs.screenshots": "Ảnh màn hình",
+      "tabs.screenshots": "Screenshot",
       "screenshots.aria": "Ảnh màn hình có chú thích",
       "screenshots.sourceImage": "Ảnh chụp",
       "screenshots.sourceDom": "Ảnh chụp DOM",
@@ -359,6 +372,16 @@
       "screenshots.instantReplay": "Instant replay (trước khi báo cáo)",
       "screenshots.instantReplayMeta":
         "{frames} khung hình bao phủ {seconds}s trước lúc báo cáo ({dropped} khung bị bỏ để vừa bộ đệm).",
+      "screenshots.instantReplayOpenElements": "Mở tab Elements để xem timeline DOM lookback.",
+      "screenshots.instantReplayOpenStage": "Scrub DOM lookback",
+      "domStage.aria": "DOM lookback",
+      "domStage.frameTitle": "Xem trước DOM lookback",
+      "domStage.prev": "Khung trước",
+      "domStage.next": "Khung sau",
+      "domStage.scrubberAria": "Thanh scrub DOM lookback",
+      "domStage.hint":
+        "DOM lookback dạng cấu trúc — layout có thể khác khi thiếu CSS đầy đủ của trang.",
+      "domStage.empty": "Không có khung DOM để xem.",
       "screenshots.badge": "Báo cáo ảnh chụp màn hình",
       "screenshots.noCaption": "Người báo cáo không để chú thích",
       "screenshots.noAnnotations": "Không có hình vẽ hay ghi chú trên ảnh này.",
@@ -401,7 +424,10 @@
       "elements.aria": "Cây snapshot DOM",
       "elements.snapshot": "Snapshot",
       "elements.selectAria": "Chọn snapshot DOM",
+      "elements.search": "Tìm elements",
+      "elements.searchAria": "Tìm elements",
       "elements.empty": "Không có node DOM nào được capture.",
+      "elements.noMatch": "Không có element khớp.",
       "source.lineTruncated": "Dòng bị cắt trong artifact bản ghi.",
       "theme.system": "Hệ thống",
       "theme.light": "Sáng",
@@ -511,6 +537,7 @@
       "detail.frames": "Frame ({count})",
       "detail.none": "(không có)",
       "detail.binaryData": "(dữ liệu nhị phân)",
+      "detail.noResponseBody": "Không có response body",
       "detail.truncated": "...(đã cắt)",
       "detail.anonymous": "(ẩn danh)",
       "detail.toggleDetails": "Mở/đóng chi tiết",
@@ -533,7 +560,7 @@
         "Bản ghi được tạo bởi SDK nhúng trong trang, ghi lại console, network và WebSocket mà không quay màn hình.",
       "noVideo.screenshotTitle": "Báo cáo ảnh chụp màn hình",
       "noVideo.screenshotHint":
-        "Gói này là ảnh có chú thích — không có video để phát. Dùng tab Ảnh màn hình để xem ảnh, ghi chú và hình vẽ của người báo cáo.",
+        "Gói này là ảnh có chú thích — không có video để phát. Dùng tab Screenshot để xem ảnh, ghi chú và hình vẽ của người báo cáo.",
       "presentation.emptyTitle": "Gói không có bằng chứng để xem lại",
       "presentation.emptyHint":
         "Gói đã tải được nhưng không có video, ảnh chụp màn hình, hay log để kiểm tra.",
@@ -1162,6 +1189,12 @@
   /** Object URLs for screenshot images, revoked when a new recording loads. */
   const screenshotObjectUrls = [];
   let instantReplayArtifact = null;
+  /** @type {number} */
+  let domStageIndex = 0;
+  /** @type {boolean} */
+  let domStageVisible = false;
+  /** @type {number | null} */
+  let domStageHydrateTimer = null;
   /** Active index when the Screenshots stage shows one of several shots. */
   let screenshotActiveIndex = 0;
   // Track which snapshot each time-synced panel is currently showing, so the
@@ -1352,7 +1385,15 @@
     elements.screenshotsContent = document.getElementById("screenshots-content");
     elements.elementsViewer = document.getElementById("elements-viewer");
     elements.elementsSnapshotSelect = document.getElementById("elements-snapshot-select");
+    elements.elementsSearch = document.getElementById("elements-search");
     elements.elementsTree = document.getElementById("elements-tree");
+    elements.domStage = document.getElementById("dom-stage");
+    elements.domStageFrame = document.getElementById("dom-stage-frame");
+    elements.domStageScrubber = document.getElementById("dom-stage-scrubber");
+    elements.domStagePrev = document.getElementById("dom-stage-prev");
+    elements.domStageNext = document.getElementById("dom-stage-next");
+    elements.domStageTime = document.getElementById("dom-stage-time");
+    elements.domStageUrl = document.getElementById("dom-stage-url");
 
     // Console
     elements.consoleFilters = document.getElementById("console-filters");
@@ -2208,10 +2249,34 @@
     return label;
   }
 
+  function getElementsSearchQuery() {
+    return (elements.elementsSearch?.value || "").trim().toLowerCase();
+  }
+
+  function domNodeMatchesQuery(node, query) {
+    if (!query || !node || typeof node !== "object") return !query;
+    const nodeType = Number(node.nodeType);
+    if (nodeType === 3 || nodeType === 4 || nodeType === 8) {
+      const text = typeof node.nodeValue === "string" ? node.nodeValue : "";
+      return text.toLowerCase().includes(query);
+    }
+    const tagName = typeof node.nodeName === "string" ? node.nodeName.toLowerCase() : "";
+    if (tagName.includes(query)) return true;
+    if (node.attributes && typeof node.attributes === "object") {
+      for (const [name, value] of Object.entries(node.attributes)) {
+        if (String(name).toLowerCase().includes(query)) return true;
+        if (String(value).toLowerCase().includes(query)) return true;
+      }
+    }
+    return false;
+  }
+
   // Render a single DOM node (and its descendants) as a <details>/<summary>
   // tree. Masked nodes never expose original text; they carry REDACTED_VALUE
   // from capture and are flagged with a visible badge.
-  function renderDomNodeFallback(node) {
+  // Nodes default to collapsed; when `query` is set, matching subtrees stay and
+  // ancestors open so hits remain reachable.
+  function renderDomNodeFallback(node, query = "") {
     if (!node || typeof node !== "object") return "";
 
     const nodeType = Number(node.nodeType);
@@ -2219,14 +2284,17 @@
     const maskedBadge = isMasked
       ? `<span class="dom-masked-badge" title="${escapeHtml(t("elements.maskedTitle"))}">${escapeHtml(t("elements.masked"))}</span>`
       : "";
+    const selfMatch = domNodeMatchesQuery(node, query);
 
     // Text node (nodeType 3) / CDATA (4) / comment (8): render value only.
     if (nodeType === 3 || nodeType === 4 || nodeType === 8) {
       const text = typeof node.nodeValue === "string" ? node.nodeValue : "";
       const trimmed = text.trim();
       if (!trimmed && !isMasked) return "";
+      if (query && !selfMatch) return "";
       const cls = nodeType === 8 ? "dom-comment" : "dom-text";
-      return `<div class="dom-leaf ${cls}">${maskedBadge}<span class="dom-text-value">${escapeHtml(trimmed)}</span></div>`;
+      const hitCls = query && selfMatch ? " dom-search-hit" : "";
+      return `<div class="dom-leaf ${cls}${hitCls}">${maskedBadge}<span class="dom-text-value">${escapeHtml(trimmed)}</span></div>`;
     }
 
     const tagName = typeof node.nodeName === "string" ? node.nodeName.toLowerCase() : "node";
@@ -2244,17 +2312,24 @@
     }
 
     const children = Array.isArray(node.children) ? node.children : [];
-    const childHtml = children.map((child) => renderDomNodeFallback(child)).join("");
+    const childHtml = children.map((child) => renderDomNodeFallback(child, query)).join("");
 
+    // Filter mode: drop nodes that neither match nor contain a match.
+    if (query && !selfMatch && !childHtml) return "";
+
+    const hitCls = query && selfMatch ? " dom-search-hit" : "";
     const openTag = `<span class="dom-tag">&lt;${escapeHtml(tagName)}${attrsHtml}&gt;</span>`;
 
     // Leaf element (no rendered children): single summary line.
     if (!childHtml) {
-      return `<div class="dom-leaf dom-element">${maskedBadge}${openTag}<span class="dom-tag">&lt;/${escapeHtml(tagName)}&gt;</span></div>`;
+      return `<div class="dom-leaf dom-element${hitCls}">${maskedBadge}${openTag}<span class="dom-tag">&lt;/${escapeHtml(tagName)}&gt;</span></div>`;
     }
 
+    // Default collapsed; open only when searching and this branch has matches below.
+    const openAttr = query && childHtml ? " open" : "";
+
     return `
-      <details class="dom-node" open>
+      <details class="dom-node${hitCls}"${openAttr}>
         <summary class="dom-summary">${maskedBadge}${openTag}</summary>
         <div class="dom-children">${childHtml}</div>
         <div class="dom-leaf dom-close-tag"><span class="dom-tag">&lt;/${escapeHtml(tagName)}&gt;</span></div>
@@ -2262,8 +2337,9 @@
   }
 
   // Render a DOM snapshot's tree into a container. Prefers window.LunaDomViewer
-  // when present; otherwise falls back to a <details>/<summary> tree. MUST NOT
-  // throw when LunaDomViewer is undefined (R8.3).
+  // when present and no search query; otherwise uses the <details>/<summary>
+  // fallback (collapsed by default, searchable). MUST NOT throw when
+  // LunaDomViewer is undefined (R8.3).
   function renderDomTree(rootNode, container) {
     if (!container) return;
     container.innerHTML = "";
@@ -2273,22 +2349,209 @@
       return;
     }
 
+    const query = getElementsSearchQuery();
+
+    // Search needs the fallback tree so we can filter + open match paths.
+    // Without a query, Luna is fine if available — but do not auto-expand.
     const DomViewer = window.LunaDomViewer;
-    if (typeof DomViewer === "function") {
+    if (!query && typeof DomViewer === "function") {
       try {
-        const viewer = new DomViewer(container, { node: rootNode });
-        if (viewer && typeof viewer.expand === "function") {
-          viewer.expand();
-        }
+        new DomViewer(container, { node: rootNode });
+        // Intentionally do not call expand() — nodes stay collapsed.
         return;
       } catch (error) {
-        // Fall through to the safe fallback renderer.
         console.warn("[GN Tracing Player] LunaDomViewer failed, using fallback:", error);
         container.innerHTML = "";
       }
     }
 
-    container.innerHTML = renderDomNodeFallback(rootNode);
+    const html = renderDomNodeFallback(rootNode, query);
+    if (!html) {
+      container.innerHTML = `<div class="dom-empty">${escapeHtml(
+        query ? t("elements.noMatch") : t("elements.empty"),
+      )}</div>`;
+      return;
+    }
+    container.innerHTML = html;
+  }
+
+  function rerenderActiveElementsTree() {
+    const tree = elements.elementsTree;
+    if (!tree) return;
+    const snapshots = Array.isArray(domArtifact?.snapshots) ? domArtifact.snapshots : [];
+    if (snapshots.length === 0) return;
+    const index =
+      elementsActiveIndex >= 0 && elementsActiveIndex < snapshots.length ? elementsActiveIndex : 0;
+    renderDomTree(snapshots[index]?.root, tree);
+  }
+
+  /**
+   * Frames for the DOM stage scrubber: prefer Instant Replay artifact frames
+   * (true relativeMs), else map merged Elements snapshots.
+   * @returns {Array<{ relativeMs: number, documentUrl: string, root: unknown, viewport?: { width?: number, height?: number } }>}
+   */
+  function getDomLookbackFrames() {
+    if (
+      instantReplayArtifact &&
+      Array.isArray(instantReplayArtifact.frames) &&
+      instantReplayArtifact.frames.length > 0
+    ) {
+      return instantReplayArtifact.frames.map((frame) => ({
+        relativeMs: Number(frame.relativeMs) || 0,
+        documentUrl: typeof frame.documentUrl === "string" ? frame.documentUrl : "",
+        root: frame.root,
+        viewport: frame.viewport,
+      }));
+    }
+    const snapshots = Array.isArray(domArtifact?.snapshots) ? domArtifact.snapshots : [];
+    if (snapshots.length === 0) {
+      return [];
+    }
+    const base = Number(snapshots[0]?.capturedAt) || 0;
+    return snapshots.map((snapshot, index) => {
+      const capturedAt = Number(snapshot.capturedAt) || 0;
+      const relativeMs = base > 0 && capturedAt >= base ? capturedAt - base : index * 1000;
+      return {
+        relativeMs,
+        documentUrl: typeof snapshot.documentUrl === "string" ? snapshot.documentUrl : "",
+        root: snapshot.root,
+      };
+    });
+  }
+
+  function formatDomStageRelativeMs(ms) {
+    const seconds = Math.round((Number(ms) || 0) / 100) / 10;
+    return `+${seconds.toFixed(1)}s`;
+  }
+
+  function hydrateDomStageFrame(frame) {
+    const iframe = elements.domStageFrame;
+    if (!iframe) {
+      return;
+    }
+    if (!frame || !frame.root) {
+      iframe.removeAttribute("srcdoc");
+      iframe.srcdoc = `<!DOCTYPE html><html><body style="font:14px system-ui;padding:16px;color:#666">${escapeHtml(
+        t("domStage.empty"),
+      )}</body></html>`;
+      return;
+    }
+    const hydrate =
+      globalThis.gnCore &&
+      globalThis.gnCore.dom &&
+      typeof globalThis.gnCore.dom.hydrateDomNodeToHtml === "function"
+        ? globalThis.gnCore.dom.hydrateDomNodeToHtml
+        : null;
+    if (!hydrate) {
+      iframe.srcdoc = `<!DOCTYPE html><html><body style="font:14px system-ui;padding:16px">DOM hydrate unavailable</body></html>`;
+      return;
+    }
+    try {
+      iframe.srcdoc = hydrate(frame.root, {
+        baseHref: frame.documentUrl || undefined,
+        title: frame.documentUrl || "DOM lookback",
+      });
+    } catch (error) {
+      console.warn("[GN Tracing Player] DOM hydrate failed:", error);
+      iframe.srcdoc = `<!DOCTYPE html><html><body style="font:14px system-ui;padding:16px">Failed to render frame</body></html>`;
+    }
+  }
+
+  /**
+   * @param {number} index
+   * @param {{ syncElements?: boolean, seekVideo?: boolean }} [options]
+   */
+  function setDomStageIndex(index, options = {}) {
+    const frames = getDomLookbackFrames();
+    if (frames.length === 0) {
+      return;
+    }
+    const syncElements = options.syncElements !== false;
+    const seekVideo = options.seekVideo === true;
+    const max = frames.length - 1;
+    const next = Math.max(0, Math.min(max, Math.round(Number(index) || 0)));
+    domStageIndex = next;
+    const frame = frames[next];
+
+    if (elements.domStageScrubber) {
+      elements.domStageScrubber.max = String(max);
+      elements.domStageScrubber.value = String(next);
+      elements.domStageScrubber.setAttribute("aria-valuemin", "0");
+      elements.domStageScrubber.setAttribute("aria-valuemax", String(max));
+      elements.domStageScrubber.setAttribute("aria-valuenow", String(next));
+      elements.domStageScrubber.setAttribute(
+        "aria-valuetext",
+        formatDomStageRelativeMs(frame.relativeMs),
+      );
+    }
+    if (elements.domStageTime) {
+      elements.domStageTime.textContent = formatDomStageRelativeMs(frame.relativeMs);
+    }
+    if (elements.domStageUrl) {
+      elements.domStageUrl.textContent = frame.documentUrl || "";
+      elements.domStageUrl.title = frame.documentUrl || "";
+    }
+    if (elements.domStagePrev) {
+      elements.domStagePrev.disabled = next <= 0;
+    }
+    if (elements.domStageNext) {
+      elements.domStageNext.disabled = next >= max;
+    }
+
+    // Debounce hydrate while dragging the range for large DOMs.
+    if (domStageHydrateTimer != null) {
+      cancelAnimationFrame(domStageHydrateTimer);
+    }
+    domStageHydrateTimer = requestAnimationFrame(() => {
+      domStageHydrateTimer = null;
+      hydrateDomStageFrame(frame);
+    });
+
+    if (syncElements) {
+      const snapshots = Array.isArray(domArtifact?.snapshots) ? domArtifact.snapshots : [];
+      if (snapshots.length > 0) {
+        const elIndex = Math.min(next, snapshots.length - 1);
+        if (elements.elementsSnapshotSelect) {
+          elements.elementsSnapshotSelect.value = String(elIndex);
+        }
+        if (elIndex !== elementsActiveIndex) {
+          elementsActiveIndex = elIndex;
+          renderDomTree(snapshots[elIndex]?.root, elements.elementsTree);
+        }
+      }
+    }
+
+    if (seekVideo && elements.video && Number.isFinite(frame.relativeMs)) {
+      seekVideoToMs(frame.relativeMs);
+    }
+  }
+
+  function showDomStage(visible) {
+    domStageVisible = Boolean(visible);
+    elements.domStage?.classList.toggle("hidden", !domStageVisible);
+    elements.videoSection?.classList.toggle("is-dom-stage", domStageVisible);
+    if (domStageVisible) {
+      const frames = getDomLookbackFrames();
+      if (elements.domStageScrubber) {
+        elements.domStageScrubber.max = String(Math.max(0, frames.length - 1));
+      }
+      setDomStageIndex(domStageIndex, { syncElements: true, seekVideo: false });
+    }
+  }
+
+  function bindDomStageControls() {
+    elements.domStageScrubber?.addEventListener("input", () => {
+      setDomStageIndex(Number(elements.domStageScrubber.value), {
+        syncElements: true,
+        seekVideo: false,
+      });
+    });
+    elements.domStagePrev?.addEventListener("click", () => {
+      setDomStageIndex(domStageIndex - 1, { syncElements: true });
+    });
+    elements.domStageNext?.addEventListener("click", () => {
+      setDomStageIndex(domStageIndex + 1, { syncElements: true });
+    });
   }
 
   /**
@@ -2643,16 +2906,36 @@
     });
     card.append(summary);
 
+    // Point readers at Elements — frame roots are mapped into the DOM snapshot
+    // timeline so the existing tree inspector is the lookback surface.
     if (frames.length > 0) {
-      const list = document.createElement("ol");
-      list.className = "screenshot-annotation-list";
-      for (const frame of frames) {
-        const item = document.createElement("li");
-        const offset = (Math.round((frame.relativeMs || 0) / 100) / 10).toFixed(1);
-        item.textContent = `+${offset}s \u2014 ${frame.documentUrl || ""}`;
-        list.append(item);
-      }
-      card.append(list);
+      const hint = document.createElement("p");
+      hint.className = "screenshot-meta";
+      hint.textContent =
+        typeof t === "function"
+          ? t("screenshots.instantReplayOpenElements") ||
+            "Open the Elements tab to inspect the DOM lookback timeline."
+          : "Open the Elements tab to inspect the DOM lookback timeline.";
+      card.append(hint);
+
+      const openBtn = document.createElement("button");
+      openBtn.type = "button";
+      openBtn.className = "control-btn instant-replay-open-btn";
+      openBtn.textContent =
+        typeof t === "function"
+          ? t("screenshots.instantReplayOpenStage") || "Scrub DOM lookback"
+          : "Scrub DOM lookback";
+      openBtn.addEventListener("click", () => {
+        if (getDomLookbackFrames().length > 0) {
+          showDomStage(true);
+          setDomStageIndex(0, { syncElements: true });
+          // Prefer Elements tab for tree + keep stage visible in media column.
+          if (elements.elementsTab && !elements.elementsTab.classList.contains("hidden")) {
+            elements.elementsTab.click();
+          }
+        }
+      });
+      card.append(openBtn);
     }
 
     return card;
@@ -2724,11 +3007,14 @@
         const index = Number.parseInt(select.value, 10);
         const safeIndex = Number.isFinite(index) ? index : 0;
         const rel = getSnapshotRelativeMs(snapshots[safeIndex]);
-        if (rel !== null && elements.video) {
+        if (rel !== null && elements.video && !domStageVisible) {
           seekVideoToMs(rel);
         }
         elementsActiveIndex = -1; // force re-render of the chosen snapshot
         updateElementsForTime(safeIndex);
+        if (domStageVisible || getDomLookbackFrames().length > 0) {
+          setDomStageIndex(safeIndex, { syncElements: false, seekVideo: false });
+        }
       };
     }
 
@@ -2933,130 +3219,34 @@
     }
   }
 
-  function getNetworkUrlExtension(url) {
-    try {
-      const pathname = new URL(url || "", "http://x").pathname.toLowerCase();
-      const lastSegment = pathname.split("/").pop() || "";
-      const dot = lastSegment.lastIndexOf(".");
-      if (dot > 0 && dot < lastSegment.length - 1) {
-        return lastSegment.slice(dot);
-      }
-    } catch {}
-
-    return "";
-  }
-
-  function isFileLikeNetworkUrl(url) {
-    const ext = getNetworkUrlExtension(url);
-    if (!ext) return false;
-
-    return !DYNAMIC_ROUTE_EXTENSIONS.has(ext);
-  }
-
-  function detectNetworkFilterFromUrlAndMime(url, mimeType) {
-    const normalizedMimeType = String(mimeType || "").toLowerCase();
-
-    if (normalizedMimeType.includes("javascript") || normalizedMimeType.includes("ecmascript"))
-      return "js";
-    if (normalizedMimeType.includes("css")) return "css";
-    if (normalizedMimeType.includes("html")) return "doc";
-    if (normalizedMimeType.startsWith("image/")) return "img";
-    if (normalizedMimeType.startsWith("font/")) return "font";
-    if (normalizedMimeType.startsWith("audio/") || normalizedMimeType.startsWith("video/"))
-      return "media";
-
-    try {
-      const ext = getNetworkUrlExtension(url);
-      if (ext) {
-        const extMap = {
-          ".js": "js",
-          ".mjs": "js",
-          ".cjs": "js",
-          ".map": "js",
-          ".css": "css",
-          ".png": "img",
-          ".jpg": "img",
-          ".jpeg": "img",
-          ".gif": "img",
-          ".svg": "img",
-          ".webp": "img",
-          ".ico": "img",
-          ".avif": "img",
-          ".bmp": "img",
-          ".woff": "font",
-          ".woff2": "font",
-          ".ttf": "font",
-          ".eot": "font",
-          ".otf": "font",
-          ".mp4": "media",
-          ".webm": "media",
-          ".mp3": "media",
-          ".ogg": "media",
-          ".wav": "media",
-          ".html": "doc",
-          ".htm": "doc",
-          ".php": "doc",
-          ".asp": "doc",
-          ".aspx": "doc",
-          ".jsp": "doc",
-          ".json": "other",
-          ".xml": "other",
-          ".txt": "other",
-          ".csv": "other",
-          ".pdf": "other",
-          ".zip": "other",
-        };
-        if (extMap[ext]) return extMap[ext];
-      }
-    } catch {}
-
-    if (normalizedMimeType.includes("json")) return "fetch";
-
-    return null;
-  }
-
+  /**
+   * DevTools-like network filter type. Source of truth:
+   * `src/shared/network-filter-type.ts` → `window.gnCore.network`.
+   */
   function getNetworkFilterType(entry) {
-    const resourceType = String(entry.resourceType || "").trim();
-    const normalizedResourceType = resourceType.toLowerCase();
     const url = (entry.request && entry.request.url) || entry.url || "";
     const mimeType = (entry.response && entry.response.mimeType) || entry.mimeType || "";
-
-    if (normalizedResourceType === "xhr" || normalizedResourceType === "fetch") {
-      const detectedType = detectNetworkFilterFromUrlAndMime(url, mimeType);
-      if (detectedType && detectedType !== "doc") return detectedType;
-      if (isFileLikeNetworkUrl(url)) return "other";
-      return "fetch";
-    }
-
-    const typeMap = {
-      script: "js",
-      stylesheet: "css",
-      image: "img",
-      document: "doc",
-      font: "font",
-      media: "media",
-      texttrack: "media",
-      websocket: "ws",
-      xhr: "fetch",
-      fetch: "fetch",
-      preflight: "fetch",
-      prefetch: "fetch",
-      eventsource: "fetch",
-      manifest: "doc",
-      signedexchange: "doc",
-      ping: "other",
-      cspviolationreport: "other",
-      fedcm: "other",
-      other: "other",
+    const input = {
+      resourceType: entry.resourceType || "",
+      url,
+      mimeType,
     };
-
-    if (typeMap[normalizedResourceType]) {
-      return typeMap[normalizedResourceType];
+    const core = globalThis.gnCore && globalThis.gnCore.network;
+    if (core && typeof core.getNetworkFilterType === "function") {
+      return core.getNetworkFilterType(input);
     }
-
-    const detectedType = detectNetworkFilterFromUrlAndMime(url, mimeType);
-    if (detectedType) return detectedType;
-
+    // Fallback if vendor bundle is missing: keep Script/XHR correct at minimum.
+    const type = String(entry.resourceType || "")
+      .trim()
+      .toLowerCase();
+    if (type === "script") return "js";
+    if (type === "xhr" || type === "fetch" || type === "preflight") return "fetch";
+    if (type === "stylesheet") return "css";
+    if (type === "image") return "img";
+    if (type === "font") return "font";
+    if (type === "document") return "doc";
+    if (type === "websocket") return "ws";
+    if (type === "media" || type === "texttrack") return "media";
     return "other";
   }
 
@@ -4358,14 +4548,30 @@
 
   function buildResponseBodySection(entry, content) {
     const responseText = getResponseBodyText(entry, content);
-    const isBinary = content.encoding === "base64" && !responseText;
-    const jsonValidation = validateJsonBody(responseText);
+    const core = globalThis.gnCore && globalThis.gnCore.network;
+    const display =
+      core && typeof core.resolveNetworkResponseBodyDisplay === "function"
+        ? core.resolveNetworkResponseBodyDisplay({
+            text: content.text,
+            encoding: content.encoding,
+            decodedText: responseText,
+          })
+        : !content.text
+          ? { kind: "missing", text: "" }
+          : content.encoding === "base64" && !responseText
+            ? { kind: "binary", text: "" }
+            : { kind: "text", text: responseText || String(content.text || "") };
 
-    if (!content.text) {
-      return "";
+    if (display.kind === "missing") {
+      return `
+        <div class="detail-section">
+          <h4>${escapeHtml(t("detail.responseBody"))}</h4>
+          <pre class="response-body empty">${escapeHtml(t("detail.noResponseBody"))}</pre>
+        </div>
+      `;
     }
 
-    if (isBinary) {
+    if (display.kind === "binary") {
       return `
         <div class="detail-section">
           <h4>${escapeHtml(t("detail.responseBody"))}</h4>
@@ -4374,7 +4580,8 @@
       `;
     }
 
-    const displayText = responseText;
+    const displayText = display.text;
+    const jsonValidation = validateJsonBody(displayText);
     const truncatedText = displayText.slice(0, MAX_RESPONSE_DISPLAY_CHARS);
     const highlighted = escapeHtml(truncatedText);
     const showJsonPreview = isJsonPreviewReplacingRaw(entry, "response", jsonValidation);
@@ -4907,6 +5114,8 @@
     if (elements.videoSection) {
       elements.videoSection.classList.toggle("hidden", plan ? !plan.showVideoSection : false);
     }
+    const showDomStageFlag = Boolean(plan?.showDomStage);
+    showDomStage(showDomStageFlag && getDomLookbackFrames().length > 0);
     if (elements.layoutSplitter) {
       elements.layoutSplitter.classList.toggle("hidden", plan ? !plan.showLayoutSplitter : false);
       elements.layoutSplitter.setAttribute(
@@ -4914,22 +5123,19 @@
         plan && !plan.showLayoutSplitter ? "true" : "false",
       );
     }
+    // When DOM stage owns the media column, still allow layout toggle.
+    const hideLayoutChrome =
+      (mode === "screenshot" && !showDomStageFlag) || mode === "empty-evidence";
     if (elements.layoutHorizontalBtn) {
-      elements.layoutHorizontalBtn.classList.toggle(
-        "hidden",
-        mode === "screenshot" || mode === "empty-evidence",
-      );
+      elements.layoutHorizontalBtn.classList.toggle("hidden", hideLayoutChrome);
     }
     if (elements.layoutVerticalBtn) {
-      elements.layoutVerticalBtn.classList.toggle(
-        "hidden",
-        mode === "screenshot" || mode === "empty-evidence",
-      );
+      elements.layoutVerticalBtn.classList.toggle("hidden", hideLayoutChrome);
     }
     if (elements.videoFullscreenBtn) {
       elements.videoFullscreenBtn.classList.toggle(
         "hidden",
-        mode === "screenshot" || mode === "empty-evidence" || hasNoVideo,
+        hideLayoutChrome || hasNoVideo || showDomStageFlag,
       );
     }
 
@@ -5008,6 +5214,7 @@
         mode: hasNoVideo ? "sdk-logs" : "recording",
         defaultTab: "console",
         showVideoSection: true,
+        showDomStage: false,
         showLayoutSplitter: true,
         showConsoleTab: true,
         showNetworkTab: true,
@@ -5028,6 +5235,11 @@
    */
   function buildPresentationPlan(options) {
     const resolve = globalThis.gnCore?.presentation?.resolvePresentationMode;
+    const hasInstantReplay = Boolean(
+      instantReplayArtifact &&
+        Array.isArray(instantReplayArtifact.frames) &&
+        instantReplayArtifact.frames.length > 0,
+    );
     const evidence = {
       hasVideo: (options.videoPartCount || 0) > 0,
       screenshotCount: Array.isArray(screenshotsArtifact?.screenshots)
@@ -5042,6 +5254,7 @@
         ? domArtifact.snapshots.length > 0
         : Boolean(domArtifact?.root || domArtifact?.document),
       hasReportContent: hasReportArtifactContent(),
+      hasInstantReplay,
     };
 
     if (typeof resolve === "function") {
@@ -5049,11 +5262,13 @@
     }
 
     // Fallback when gn-core is missing: keep previous no-video behaviour.
+    const showDomStage = !evidence.hasVideo && evidence.hasDom && evidence.screenshotCount === 0;
     if (evidence.hasVideo) {
       return {
         mode: "recording",
         defaultTab: "console",
         showVideoSection: true,
+        showDomStage: false,
         showLayoutSplitter: true,
         showConsoleTab: true,
         showNetworkTab: true,
@@ -5065,26 +5280,36 @@
         noVideoNotice: "none",
       };
     }
-    if (evidence.screenshotCount > 0) {
+    if (evidence.screenshotCount > 0 || evidence.hasDom) {
+      const showConsole = evidence.consoleCount > 0 || hasInstantReplay;
+      const showNetwork =
+        evidence.networkCount > 0 || evidence.websocketCount > 0 || hasInstantReplay;
       return {
         mode: "screenshot",
-        defaultTab: "screenshots",
-        showVideoSection: false,
-        showLayoutSplitter: false,
-        showConsoleTab: evidence.consoleCount > 0,
-        showNetworkTab: evidence.networkCount > 0 || evidence.websocketCount > 0,
-        showScreenshotsTab: true,
+        defaultTab:
+          hasInstantReplay && evidence.consoleCount > 0
+            ? "console"
+            : evidence.screenshotCount > 0
+              ? "screenshots"
+              : "elements",
+        showVideoSection: showDomStage,
+        showDomStage,
+        showLayoutSplitter: showDomStage,
+        showConsoleTab: showConsole,
+        showNetworkTab: showNetwork,
+        showScreenshotsTab: evidence.screenshotCount > 0,
         showReportTab: evidence.hasReportContent,
         showActivityTab: evidence.activityCount > 0,
         showStorageTab: evidence.hasStorage,
         showElementsTab: evidence.hasDom,
-        noVideoNotice: "screenshot",
+        noVideoNotice: showDomStage ? "none" : "screenshot",
       };
     }
     return {
       mode: "sdk-logs",
       defaultTab: "console",
       showVideoSection: true,
+      showDomStage: false,
       showLayoutSplitter: true,
       showConsoleTab: true,
       showNetworkTab: true,
@@ -6296,6 +6521,42 @@
             })
           : Promise.resolve(),
       ]);
+
+      // Feed Instant Replay frame roots into the Elements path so lookback is
+      // inspectable DOM, not only a URL/time meta list on the screenshots card.
+      const resolveIrDom =
+        globalThis.gnCore &&
+        globalThis.gnCore.instantReplay &&
+        typeof globalThis.gnCore.instantReplay.resolveDomArtifactForPlayer === "function"
+          ? globalThis.gnCore.instantReplay.resolveDomArtifactForPlayer
+          : null;
+      if (resolveIrDom) {
+        const mergedDom = resolveIrDom({
+          dom: domArtifact,
+          instantReplay: instantReplayArtifact,
+        });
+        if (mergedDom) {
+          domArtifact = mergedDom;
+        }
+      } else if (
+        instantReplayArtifact &&
+        Array.isArray(instantReplayArtifact.frames) &&
+        instantReplayArtifact.frames.length > 0
+      ) {
+        // Fallback if gnCore is missing: same mapping as shared policy.
+        domArtifact = {
+          schemaVersion: 1,
+          snapshots: instantReplayArtifact.frames.map((frame, index) => {
+            const seconds = Math.round((frame.relativeMs || 0) / 100) / 10;
+            return {
+              label: `instant-replay:+${seconds}s`,
+              capturedAt: frame.capturedAt,
+              documentUrl: frame.documentUrl || "",
+              root: frame.root || { nodeType: 9, nodeName: "#document" },
+            };
+          }),
+        };
+      }
 
       // Update UI (video metadata wait already ran inside the video load branch).
       updatePlayerTitle(metadata);
@@ -8079,6 +8340,16 @@
       networkSearchQuery = elements.networkSearch.value || "";
       debouncedRenderNetworkEntries();
     });
+
+    if (elements.elementsSearch) {
+      const debouncedRerenderElements = debounce(
+        rerenderActiveElementsTree,
+        SEARCH_INPUT_DEBOUNCE_MS,
+      );
+      elements.elementsSearch.addEventListener("input", () => {
+        debouncedRerenderElements();
+      });
+    }
   }
 
   // Toggling a row's expanded state only needs that one row patched — not a
@@ -8437,6 +8708,7 @@
     window.addEventListener("unload", releaseScreenshotResources);
     setupLayoutListeners();
     setupVideoListeners();
+    bindDomStageControls();
     setupFilterListeners();
     setupLogRowListeners();
     setupTabListeners();

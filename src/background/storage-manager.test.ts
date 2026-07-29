@@ -91,6 +91,70 @@ describe("StorageManager", () => {
       manager.beginSession();
       expect(manager.getConsoleLogCount()).toBe(0);
     });
+
+    it("rolling window drops console/network older than N ms", () => {
+      // Use wall-clock now: add paths trim against Date.now() automatically.
+      const now = Date.now();
+      manager.setRollingWindowMs(30_000);
+
+      manager.addConsoleEntry(makeConsoleEntry({ timestamp: now - 45_000, message: "old" }));
+      manager.addConsoleEntry(makeConsoleEntry({ timestamp: now - 5_000, message: "fresh" }));
+      manager.addNetworkEntry(
+        makeNetworkEntry({
+          requestId: "old-net",
+          wallTime: (now - 40_000) / 1000,
+          timestamp: (now - 40_000) / 1000,
+        }),
+      );
+      manager.addNetworkEntry(
+        makeNetworkEntry({
+          requestId: "new-net",
+          wallTime: (now - 2_000) / 1000,
+          timestamp: (now - 2_000) / 1000,
+        }),
+      );
+
+      const finalized = manager.finalizeCurrentSession();
+      expect(finalized.consoleLogCount).toBe(1);
+      expect(finalized.networkRequestCount).toBe(1);
+      expect(finalized.consoleLogs).toContain("fresh");
+      expect(finalized.consoleLogs).not.toContain('"message":"old"');
+      expect(finalized.networkRequests).toContain("new-net");
+      expect(finalized.networkRequests).not.toContain("old-net");
+    });
+
+    it("clearing rolling window retains the full session", () => {
+      const now = Date.now();
+      manager.setRollingWindowMs(10_000);
+      manager.addConsoleEntry(makeConsoleEntry({ timestamp: now - 20_000 }));
+      expect(manager.getConsoleLogCount()).toBe(0);
+      manager.setRollingWindowMs(null);
+      manager.addConsoleEntry(makeConsoleEntry({ timestamp: now - 20_000, message: "kept" }));
+      expect(manager.getConsoleLogCount()).toBe(1);
+    });
+
+    it("drops open WebSocket entries with no frames left in the window", () => {
+      const now = Date.now();
+      manager.setRollingWindowMs(30_000);
+      manager.addWebSocketEntry(
+        makeWebSocketEntry({
+          requestId: "stale-open",
+          closed: false,
+          frames: [{ direction: "sent", timestamp: now - 60_000, opcode: 1, payloadData: "old" }],
+        }),
+      );
+      manager.addWebSocketEntry(
+        makeWebSocketEntry({
+          requestId: "fresh",
+          closed: false,
+          frames: [{ direction: "sent", timestamp: now - 5_000, opcode: 1, payloadData: "new" }],
+        }),
+      );
+      manager.trimToRollingWindow(now);
+      const finalized = manager.finalizeCurrentSession();
+      expect(finalized.webSocketLogs).toContain("fresh");
+      expect(finalized.webSocketLogs).not.toContain("stale-open");
+    });
   });
 
   describe("addConsoleEntry", () => {

@@ -57,3 +57,7 @@ tmp/
 .Spotlight-V100
 .Trashes
 ehthumbs.db
+
+# Playwright / local test artifacts
+test-results/
+playwright-report/

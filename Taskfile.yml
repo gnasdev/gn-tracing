@@ -66,6 +66,11 @@ tasks:
           fi
           echo "All contexts passed."
 
+  test:e2e:
+    desc: Run Playwright player e2e (requires browsers via npx playwright install chromium).
+    cmds:
+      - npm run test:e2e:player
+
   player:sync:
     desc: Sync shared player assets into the standalone player.
     dir: player-standalone

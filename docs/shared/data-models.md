@@ -48,7 +48,7 @@ related:
 - `UploadState`
   tracks in-flight upload progress, status message, generated recording URL, and error.
 - `UploadSettings`
-  tracks the Drive target folder input, which defaults to `/gn-tracing`, the resolved folder ID, zip password status, capture profile, privacy profile, redaction controls, DOM masking selectors, advanced console/network/WebSocket capture modes, and optional byte limits where `null` means no limit.
+  tracks the Drive target folder input, which defaults to `/gn-tracing`, the resolved folder ID, zip password status, fixed internal `privacyProfile` (`"custom"`), redaction controls, DOM masking selectors, advanced console/network/WebSocket capture modes, `captureMode` (default `"cdp"`), inspector capture flags, and optional byte limits where `null` means no limit.
 - `UploadHistoryEntry`
   tracks recent uploaded replay links, Drive folder IDs, target folder scope, source page URL, and duration for popup/history UI.
 

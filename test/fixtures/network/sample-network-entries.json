@@ -1,0 +1,38 @@
+[
+  {
+    "requestId": "script-1",
+    "url": "https://cdn.example.com/app.js",
+    "method": "GET",
+    "resourceType": "Script",
+    "status": 200,
+    "mimeType": "application/javascript",
+    "responseBody": { "body": "console.log(1)", "base64Encoded": false }
+  },
+  {
+    "requestId": "xhr-1",
+    "url": "https://api.example.com/module.js",
+    "method": "GET",
+    "resourceType": "XHR",
+    "status": 200,
+    "mimeType": "application/javascript",
+    "responseBody": { "body": "export default {}", "base64Encoded": false }
+  },
+  {
+    "requestId": "api-1",
+    "url": "https://api.example.com/items",
+    "method": "GET",
+    "resourceType": "Fetch",
+    "status": 200,
+    "mimeType": "application/json",
+    "responseBody": { "body": "{\"ok\":true}", "base64Encoded": false }
+  },
+  {
+    "requestId": "empty-1",
+    "url": "https://api.example.com/empty",
+    "method": "GET",
+    "resourceType": "Fetch",
+    "status": 204,
+    "mimeType": "application/json",
+    "responseBody": null
+  }
+]

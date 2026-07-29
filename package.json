@@ -8,6 +8,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
+    "test:e2e": "playwright test --config e2e/playwright.config.mjs",
+    "test:e2e:player": "playwright test --config e2e/playwright.config.mjs e2e/specs/player-*.spec.mjs",
     "lint": "biome lint . --files-ignore-unknown=true",
     "format": "biome format --write . --files-ignore-unknown=true",
     "format:check": "biome format . --files-ignore-unknown=true && npm run docs:check",
@@ -22,6 +24,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.15",
+    "@playwright/test": "^1.62.0",
     "@types/chrome": "^0.0.287",
     "@vitest/coverage-v8": "4.1.9",
     "concurrently": "^8.2.2",

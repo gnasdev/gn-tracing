@@ -475,8 +475,13 @@ async function uploadScreenshotPackage(data: ScreenshotUploadData): Promise<{
   targetFolderId?: string | null;
   error?: string;
 }> {
-  if (!Array.isArray(data.screenshots) || data.screenshots.length === 0) {
-    return { ok: false, error: "No screenshots to upload." };
+  const screenshotsIn = Array.isArray(data.screenshots) ? data.screenshots : [];
+  const hasInstantReplayArtifact =
+    typeof data.artifacts?.instantReplay === "string" && data.artifacts.instantReplay.length > 0;
+  // Instant Replay packages may ship lookback without a raster still when
+  // captureVisibleTab is unavailable; require at least one of the two.
+  if (screenshotsIn.length === 0 && !hasInstantReplayArtifact) {
+    return { ok: false, error: "No screenshots or Instant Replay to upload." };
   }
 
   const storageProvider: StorageProviderId =
@@ -493,7 +498,7 @@ async function uploadScreenshotPackage(data: ScreenshotUploadData): Promise<{
     const targetFolderId = await resolveFolderPath(data.targetFolderPath, data.targetFolderId);
 
     const screenshots: ScreenshotInput[] = [];
-    for (const item of data.screenshots) {
+    for (const item of screenshotsIn) {
       const blob = createBlobFromDataUrl(item.imageDataUrl);
       if (!blob) {
         return { ok: false, error: `Screenshot ${item.screenshot.id} has no image data.` };

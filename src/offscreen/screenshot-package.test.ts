@@ -290,6 +290,52 @@ describe("annotate → save & package (full reporter flow)", () => {
     expect(shots?.screenshots[0]?.annotations[0]?.type).toBe("arrow");
   });
 
+  it("packages Instant Replay lookback without a raster still", async () => {
+    const instantReplay: InstantReplayArtifact = {
+      schemaVersion: 1,
+      windowMs: 180_000,
+      coveredMs: 4_000,
+      droppedFrames: 1,
+      frames: [
+        {
+          capturedAt: 1_700_000_000_000,
+          relativeMs: 0,
+          documentUrl: "https://app.test/ir",
+          viewport: { width: 800, height: 600 },
+          root: {
+            nodeType: 1,
+            nodeName: "HTML",
+            children: [
+              {
+                nodeType: 1,
+                nodeName: "BODY",
+                children: [{ nodeType: 3, nodeName: "#text", nodeValue: "lookback-root" }],
+              },
+            ],
+          },
+        },
+      ],
+    };
+
+    const built = await buildScreenshotPackage({
+      screenshots: [],
+      packagedAt: "2026-07-27T00:00:00.000Z",
+      zipFilename: "gn-tracing-ir-only.zip",
+      url: "https://app.test/ir",
+      artifacts: {
+        instantReplay: encodeJsonArtifact(instantReplay),
+      },
+      modifiedAt: new Date(0),
+    });
+
+    const pkg = await openRecordingPackageFromBytes(concatChunks(built.chunks));
+    expect(pkg.hasArtifact("instantReplay")).toBe(true);
+    expect(pkg.hasArtifact("video")).toBe(false);
+    const replay = await pkg.readArtifact<InstantReplayArtifact>("instantReplay");
+    expect(replay?.frames).toHaveLength(1);
+    expect(JSON.stringify(replay?.frames[0].root)).toContain("lookback-root");
+  });
+
   it("refuses to package a screenshot whose redaction is still pending and unbakeable", async () => {
     vi.spyOn(raster, "bakeRedactions").mockImplementation(async (bytes, mimeType) => ({
       bytes,

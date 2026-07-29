@@ -1,69 +1,93 @@
 /**
- * Instant-replay content script.
+ * Instant-replay content script (ISOLATED world).
  *
- * Runs the core's rolling DOM buffer inside the page so a screenshot report can
- * include the seconds *before* the bug, without the reporter having to
- * reproduce it.
+ * Runs the core's rolling DOM buffer. Console/network lookback is owned by the
+ * service worker via CDP (`instant-replay-cdp.ts`) on allowlisted domains.
+ * Registered only when Instant Replay is enabled — see
+ * `instant-replay-registration.ts`.
  *
- * This is the one script in the extension that runs without the user having
- * started anything, so it is registered only when they turn the feature on in
- * Settings and grant host access — see
- * `src/background/instant-replay-registration.ts`. Everything it collects stays
- * in this page's memory until the service worker asks for it, and the buffer is
- * dropped on a fixed cycle so a tab left open overnight is not quietly holding
- * a recording of it.
+ * Collect is non-destructive; COMMIT clears DOM after upload ok.
  */
 
 import {
+  DEFAULT_INSTANT_REPLAY_WINDOW_MS,
   type InstantReplayRecorder,
   startInstantReplay,
 } from "../../packages/replay-core/src/capture/instant-replay";
+import {
+  COLLECT_INSTANT_REPLAY_ACTION,
+  COMMIT_INSTANT_REPLAY_ACTION,
+} from "../shared/instant-replay-policy";
+import {
+  INSTANT_REPLAY_WINDOW_SECONDS_DEFAULT,
+  normalizeInstantReplayWindowSeconds,
+} from "../shared/instant-replay-window";
 
-/** How often the buffer is discarded outright, regardless of the time window. */
-const PURGE_INTERVAL_MS = 480_000;
+const SETTINGS_STORAGE_KEY = "gn_tracing_upload_settings";
 
 interface InstantReplayWindow extends Window {
   __gnTracingInstantReplay?: InstantReplayRecorder;
 }
 
-(() => {
+interface InstantReplaySettingsSlice {
+  instantReplayWindowSeconds?: unknown;
+}
+
+async function resolveWindowMs(): Promise<number> {
+  try {
+    const stored = await chrome.storage.local.get(SETTINGS_STORAGE_KEY);
+    const settings = stored?.[SETTINGS_STORAGE_KEY] as InstantReplaySettingsSlice | undefined;
+    const seconds = normalizeInstantReplayWindowSeconds(
+      settings?.instantReplayWindowSeconds,
+      INSTANT_REPLAY_WINDOW_SECONDS_DEFAULT,
+    );
+    return seconds * 1000;
+  } catch {
+    return DEFAULT_INSTANT_REPLAY_WINDOW_MS;
+  }
+}
+
+void (async () => {
   const pageWindow = window as InstantReplayWindow;
   if (pageWindow.__gnTracingInstantReplay) {
     return;
   }
 
+  const windowMs = await resolveWindowMs();
   const recorder = startInstantReplay(window, {
-    // Mask selectors are applied by the service worker's settings when a report
-    // is packaged; the in-page default keeps password fields out of the buffer
-    // through the serializer's own rules.
+    windowMs,
+    // Password fields stay out via the serializer defaults.
     includeFormValues: false,
   });
   pageWindow.__gnTracingInstantReplay = recorder;
 
-  const purgeTimer = window.setInterval(() => {
-    recorder.buffer.clear();
-  }, PURGE_INTERVAL_MS);
-
   window.addEventListener("pagehide", () => {
     recorder.stop();
     recorder.buffer.clear();
-    window.clearInterval(purgeTimer);
   });
 
   chrome.runtime.onMessage.addListener(
     (message: { action?: string }, _sender, sendResponse: (response: unknown) => void): boolean => {
-      if (message?.action !== "COLLECT_INSTANT_REPLAY") {
+      const action = message?.action;
+      if (action !== COLLECT_INSTANT_REPLAY_ACTION && action !== COMMIT_INSTANT_REPLAY_ACTION) {
         return false;
       }
 
-      sendResponse({
-        ok: true,
-        artifact: recorder.toArtifact(),
-        disabledReason: recorder.disabledReason,
-      });
-      // Handing the frames over ends their purpose here; keeping a copy would
-      // mean the next report silently re-sends the same history.
+      if (action === COLLECT_INSTANT_REPLAY_ACTION) {
+        // Snapshot only — never clear here. Commit clears after upload ok.
+        // Evidence (console/network) is attached by the service worker from CDP.
+        sendResponse({
+          ok: true,
+          artifact: recorder.toArtifact(),
+          evidence: null,
+          disabledReason: recorder.disabledReason,
+        });
+        return false;
+      }
+
+      // COMMIT: upload succeeded; discard the handed-off lookback.
       recorder.buffer.clear();
+      sendResponse({ ok: true });
       return false;
     },
   );

@@ -1,5 +1,10 @@
 import { parseDropboxFolderInput } from "../shared/dropbox-folder";
 import { parseGoogleDriveFolderInput } from "../shared/google-drive-folder";
+import { normalizeInstantReplayAllowedDomains } from "../shared/instant-replay-domain";
+import {
+  INSTANT_REPLAY_WINDOW_SECONDS_DEFAULT,
+  normalizeInstantReplayWindowSeconds,
+} from "../shared/instant-replay-window";
 import { buildExternalPlayerUrl } from "../shared/player-host";
 import { getPrivacyProfileSettings, normalizeMaskDomSelectors } from "../shared/privacy-redaction";
 import {
@@ -9,20 +14,31 @@ import {
 } from "../shared/storage-provider";
 import type {
   CaptureMode,
-  CaptureProfile,
   ConsolePreviewDepth,
   ConsoleSourceSnippetMode,
   ConsoleStackMode,
   HeaderCaptureMode,
   InitiatorCaptureMode,
   PopupState,
-  PrivacyProfile,
   PrivacyRedactionSettings,
   RedirectHeaderCaptureMode,
   ResponseBodyCaptureMode,
   UploadHistoryEntry,
   UploadSettings,
 } from "../types/messages";
+
+export {
+  normalizeInstantReplayAllowedDomains,
+  normalizeInstantReplayDomainPattern,
+  tabUrlMatchesInstantReplayAllowlist,
+} from "../shared/instant-replay-domain";
+export {
+  INSTANT_REPLAY_WINDOW_PRESETS,
+  INSTANT_REPLAY_WINDOW_SECONDS_DEFAULT,
+  INSTANT_REPLAY_WINDOW_SECONDS_MAX,
+  INSTANT_REPLAY_WINDOW_SECONDS_MIN,
+  normalizeInstantReplayWindowSeconds,
+} from "../shared/instant-replay-window";
 
 /** Per-provider upload folder so switching providers does not overwrite paths. */
 export interface ProviderFolderSettings {
@@ -43,7 +59,6 @@ export interface UploadSettingsStore extends PrivacyRedactionSettings {
    */
   folderByProvider: Partial<Record<StorageProviderId, ProviderFolderSettings>>;
   zipPassword: string;
-  captureProfile: CaptureProfile;
   captureConsole: boolean;
   captureConsoleArgs: boolean;
   consolePreviewDepth: ConsolePreviewDepth;
@@ -64,39 +79,24 @@ export interface UploadSettingsStore extends PrivacyRedactionSettings {
   captureWebSocketFrames: boolean;
   maxWebSocketFrameBytes: number | null;
   captureWebSocketInitiator: boolean;
-  // Inspector capture toggles (privacy-first: capture OFF, redact ON by default).
-  // Independent of capture/privacy profiles so presets never re-enable them.
+  // Inspector capture: on by default for full recording; redaction companions stay on.
   captureStorage: boolean;
   redactStorageValues: boolean;
   captureDomSnapshots: boolean;
   redactDomTextContent: boolean;
   /**
-   * Rolling pre-bug DOM buffer. Off by default and gated on a host-permission
-   * grant: it is the only capture that observes pages the user has not asked to
-   * record, so it must be a deliberate choice rather than a default.
+   * Always-on Instant Replay (jam-style). When true, a content script keeps a
+   * rolling DOM lookback on browsed pages. Capture packages the buffer after
+   * the bug — no Start/Stop recording session.
    */
   instantReplayEnabled: boolean;
-  // Capture mechanism is profile-independent (CDP vs in-page); presets never change it.
+  /** Rolling lookback window for the always-on Instant Replay buffer (seconds). */
+  instantReplayWindowSeconds: number;
+  /** Hosts where IR may attach chrome.debugger for console/network lookback. */
+  instantReplayAllowedDomains: string[];
+  // Capture mechanism (CDP vs in-page). Default is CDP for full fidelity.
   captureMode: CaptureMode;
 }
-
-type CaptureSettingsStore = Omit<
-  UploadSettingsStore,
-  | "activeStorageProvider"
-  | "folderInput"
-  | "folderId"
-  | "folderPath"
-  | "folderByProvider"
-  | "zipPassword"
-  | "captureProfile"
-  | "captureStorage"
-  | "redactStorageValues"
-  | "captureDomSnapshots"
-  | "redactDomTextContent"
-  | "instantReplayEnabled"
-  | "captureMode"
-  | keyof PrivacyRedactionSettings
->;
 
 interface PersistedPopupState extends PopupState {}
 
@@ -106,9 +106,9 @@ const STORAGE_KEY_HISTORY = "gn_tracing_upload_history";
 const DEFAULT_UPLOAD_FOLDER_INPUT = "/gn-tracing";
 export const MAX_UPLOAD_HISTORY_ITEMS = 100;
 const DEFAULT_UPLOAD_FOLDER = parseGoogleDriveFolderInput(DEFAULT_UPLOAD_FOLDER_INPUT);
-export const DEFAULT_PRIVACY_REDACTION_SETTINGS = getPrivacyProfileSettings("standard");
+/** Fixed non-UI privacy profile for redaction rule membership + privacy.json. */
+export const DEFAULT_PRIVACY_REDACTION_SETTINGS = getPrivacyProfileSettings("custom");
 export const DEFAULT_CAPTURE_PRIVACY_SETTINGS = {
-  captureProfile: "full" as CaptureProfile,
   ...DEFAULT_PRIVACY_REDACTION_SETTINGS,
   captureConsole: true,
   captureConsoleArgs: true,
@@ -130,16 +130,17 @@ export const DEFAULT_CAPTURE_PRIVACY_SETTINGS = {
   captureWebSocketFrames: true,
   maxWebSocketFrameBytes: null,
   captureWebSocketInitiator: true,
-  // Inspector capture defaults are privacy-first: capture OFF, redact ON.
-  captureStorage: false,
+  // Full recording defaults: inspector surfaces on; redaction companions stay on.
+  captureStorage: true,
   redactStorageValues: true,
-  captureDomSnapshots: false,
+  captureDomSnapshots: true,
   redactDomTextContent: true,
   instantReplayEnabled: false,
-  // Capture mechanism defaults to in-page so recordings do not show the
-  // chrome.debugger banner. CDP remains available for full fidelity (real
-  // source maps, cross-origin response bodies) when the user opts in.
-  captureMode: "in-page" as CaptureMode,
+  instantReplayWindowSeconds: INSTANT_REPLAY_WINDOW_SECONDS_DEFAULT,
+  instantReplayAllowedDomains: [] as string[],
+  // CDP is the default capture mechanism (full fidelity; debugger banner may show).
+  // In-page remains selectable for lower-fidelity capture without the banner.
+  captureMode: "cdp" as CaptureMode,
 };
 
 const DEFAULT_GOOGLE_FOLDER: ProviderFolderSettings = {
@@ -159,8 +160,14 @@ let cachedUploadSettings: UploadSettingsStore = {
   folderId: DEFAULT_GOOGLE_FOLDER.folderId,
   folderPath: [...DEFAULT_GOOGLE_FOLDER.folderPath],
   folderByProvider: {
-    "google-drive": { ...DEFAULT_GOOGLE_FOLDER, folderPath: [...DEFAULT_GOOGLE_FOLDER.folderPath] },
-    dropbox: { ...DEFAULT_DROPBOX_FOLDER, folderPath: [...DEFAULT_DROPBOX_FOLDER.folderPath] },
+    "google-drive": {
+      ...DEFAULT_GOOGLE_FOLDER,
+      folderPath: [...DEFAULT_GOOGLE_FOLDER.folderPath],
+    },
+    dropbox: {
+      ...DEFAULT_DROPBOX_FOLDER,
+      folderPath: [...DEFAULT_DROPBOX_FOLDER.folderPath],
+    },
   },
   zipPassword: "",
   ...DEFAULT_CAPTURE_PRIVACY_SETTINGS,
@@ -274,81 +281,6 @@ function normalizeProviderFolderSettings(
   };
 }
 
-export function getCaptureProfileSettings(profile: CaptureProfile): CaptureSettingsStore {
-  if (profile === "lean") {
-    return {
-      captureConsole: true,
-      captureConsoleArgs: false,
-      consolePreviewDepth: "none",
-      captureConsoleStacks: "errors",
-      captureConsoleSourceSnippets: "errors",
-      maxConsoleEntryBytes: 16384,
-      captureNetwork: true,
-      captureRequestHeaders: "minimal",
-      captureResponseHeaders: "minimal",
-      captureRequestBodies: false,
-      captureResponseBodies: false,
-      captureResponseBodyMode: "off",
-      maxResponseBodyBytes: 0,
-      captureRedirectHeaders: "location",
-      captureInitiator: "summary",
-      suppressRecorderInternalRequests: true,
-      captureWebSockets: true,
-      captureWebSocketFrames: false,
-      maxWebSocketFrameBytes: 0,
-      captureWebSocketInitiator: false,
-    };
-  }
-
-  if (profile === "full") {
-    return {
-      captureConsole: true,
-      captureConsoleArgs: true,
-      consolePreviewDepth: "full",
-      captureConsoleStacks: "all",
-      captureConsoleSourceSnippets: "all",
-      maxConsoleEntryBytes: null,
-      captureNetwork: true,
-      captureRequestHeaders: "full",
-      captureResponseHeaders: "full",
-      captureRequestBodies: true,
-      captureResponseBodies: true,
-      captureResponseBodyMode: "eligible",
-      maxResponseBodyBytes: null,
-      captureRedirectHeaders: "full",
-      captureInitiator: "full-stack",
-      suppressRecorderInternalRequests: true,
-      captureWebSockets: true,
-      captureWebSocketFrames: true,
-      maxWebSocketFrameBytes: null,
-      captureWebSocketInitiator: true,
-    };
-  }
-
-  return {
-    captureConsole: true,
-    captureConsoleArgs: true,
-    consolePreviewDepth: "shallow",
-    captureConsoleStacks: "warnings-errors",
-    captureConsoleSourceSnippets: "warnings-errors",
-    maxConsoleEntryBytes: 32768,
-    captureNetwork: true,
-    captureRequestHeaders: "full",
-    captureResponseHeaders: "full",
-    captureRequestBodies: true,
-    captureResponseBodies: true,
-    captureResponseBodyMode: "eligible",
-    maxResponseBodyBytes: 1024 * 1024,
-    captureRedirectHeaders: "location",
-    captureInitiator: "summary",
-    suppressRecorderInternalRequests: true,
-    captureWebSockets: true,
-    captureWebSocketFrames: true,
-    maxWebSocketFrameBytes: 65536,
-    captureWebSocketInitiator: false,
-  };
-}
-
 function normalizeUploadSettingsStore(
   stored: Partial<UploadSettingsStore> | Partial<UploadSettings> | undefined,
 ): UploadSettingsStore {
@@ -399,31 +331,16 @@ function normalizeUploadSettingsStore(
   };
   const activeFolder = activeStorageProvider === "dropbox" ? dropboxFolder : googleFolder;
 
-  const captureProfile = normalizeEnum<CaptureProfile>(
-    storedUploadSettings?.captureProfile,
-    ["lean", "balanced", "full", "custom"],
-    DEFAULT_CAPTURE_PRIVACY_SETTINGS.captureProfile,
-  );
-  const profileDefaults = getCaptureProfileSettings(
-    captureProfile === "custom" ? "full" : captureProfile,
-  );
-  const privacyProfile = normalizeEnum<PrivacyProfile>(
-    storedUploadSettings?.privacyProfile,
-    ["standard", "strict", "custom"],
-    DEFAULT_PRIVACY_REDACTION_SETTINGS.privacyProfile,
-  );
-  const privacyDefaults = getPrivacyProfileSettings(
-    privacyProfile === "custom" ? "standard" : privacyProfile,
-  );
+  // Field-level fallbacks only — legacy captureProfile / privacyProfile keys are ignored
+  // so missing fields never re-apply lean/balanced/strict preset bundles.
+  const defaults = DEFAULT_CAPTURE_PRIVACY_SETTINGS;
+  const privacyDefaults = DEFAULT_PRIVACY_REDACTION_SETTINGS;
 
   // Coupling (product rule): when network/request capture is on, storage and
-  // DOM snapshot capture are forced on too. captureNetwork defaults to true in
-  // every profile, so in practice these inspector captures are on unless the
-  // user turns network capture off. Redaction toggles stay independent and ON
-  // by default, so sensitive values are still masked.
+  // DOM snapshot capture are forced on too. Redaction toggles stay independent.
   const captureNetwork = normalizeBoolean(
     storedUploadSettings?.captureNetwork,
-    profileDefaults.captureNetwork,
+    defaults.captureNetwork,
   );
 
   return {
@@ -434,8 +351,8 @@ function normalizeUploadSettingsStore(
     folderByProvider,
     zipPassword:
       typeof storedUploadSettings?.zipPassword === "string" ? storedUploadSettings.zipPassword : "",
-    captureProfile,
-    privacyProfile,
+    // Always "custom" for redaction rule membership (standard-class rules when toggles on).
+    privacyProfile: "custom",
     redactSensitiveHeaders: normalizeBoolean(
       storedUploadSettings?.redactSensitiveHeaders,
       privacyDefaults.redactSensitiveHeaders,
@@ -466,32 +383,29 @@ function normalizeUploadSettingsStore(
       privacyDefaults.redactEventMetadata,
     ),
     maskDomSelectors: normalizeMaskDomSelectors(storedUploadSettings?.maskDomSelectors),
-    captureConsole: normalizeBoolean(
-      storedUploadSettings?.captureConsole,
-      profileDefaults.captureConsole,
-    ),
+    captureConsole: normalizeBoolean(storedUploadSettings?.captureConsole, defaults.captureConsole),
     captureConsoleArgs: normalizeBoolean(
       storedUploadSettings?.captureConsoleArgs,
-      profileDefaults.captureConsoleArgs,
+      defaults.captureConsoleArgs,
     ),
     consolePreviewDepth: normalizeEnum<ConsolePreviewDepth>(
       storedUploadSettings?.consolePreviewDepth,
       ["none", "shallow", "full"],
-      profileDefaults.consolePreviewDepth,
+      defaults.consolePreviewDepth,
     ),
     captureConsoleStacks: normalizeEnum<ConsoleStackMode>(
       storedUploadSettings?.captureConsoleStacks,
       ["off", "errors", "warnings-errors", "all"],
-      profileDefaults.captureConsoleStacks,
+      defaults.captureConsoleStacks,
     ),
     captureConsoleSourceSnippets: normalizeEnum<ConsoleSourceSnippetMode>(
       storedUploadSettings?.captureConsoleSourceSnippets,
       ["off", "errors", "warnings-errors", "all"],
-      profileDefaults.captureConsoleSourceSnippets,
+      defaults.captureConsoleSourceSnippets,
     ),
     maxConsoleEntryBytes: normalizeOptionalNumber(
       storedUploadSettings?.maxConsoleEntryBytes,
-      profileDefaults.maxConsoleEntryBytes,
+      defaults.maxConsoleEntryBytes,
       1024,
       512 * 1024,
     ),
@@ -499,95 +413,95 @@ function normalizeUploadSettingsStore(
     captureRequestHeaders: normalizeEnum<HeaderCaptureMode>(
       storedUploadSettings?.captureRequestHeaders,
       ["off", "minimal", "full"],
-      profileDefaults.captureRequestHeaders,
+      defaults.captureRequestHeaders,
     ),
     captureResponseHeaders: normalizeEnum<HeaderCaptureMode>(
       storedUploadSettings?.captureResponseHeaders,
       ["off", "minimal", "full"],
-      profileDefaults.captureResponseHeaders,
+      defaults.captureResponseHeaders,
     ),
     captureRequestBodies: normalizeBoolean(
       stored?.captureRequestBodies,
-      profileDefaults.captureRequestBodies,
+      defaults.captureRequestBodies,
     ),
     captureResponseBodies: normalizeBoolean(
       stored?.captureResponseBodies,
-      profileDefaults.captureResponseBodies,
+      defaults.captureResponseBodies,
     ),
     captureResponseBodyMode: normalizeEnum<ResponseBodyCaptureMode>(
       storedUploadSettings?.captureResponseBodyMode,
       ["off", "text", "text-json", "eligible"],
-      normalizeBoolean(stored?.captureResponseBodies, profileDefaults.captureResponseBodies)
-        ? profileDefaults.captureResponseBodyMode
+      normalizeBoolean(stored?.captureResponseBodies, defaults.captureResponseBodies)
+        ? defaults.captureResponseBodyMode
         : "off",
     ),
     maxResponseBodyBytes: normalizeOptionalNumber(
       storedUploadSettings?.maxResponseBodyBytes,
-      profileDefaults.maxResponseBodyBytes,
+      defaults.maxResponseBodyBytes,
       0,
       10 * 1024 * 1024,
     ),
     captureRedirectHeaders: normalizeEnum<RedirectHeaderCaptureMode>(
       storedUploadSettings?.captureRedirectHeaders,
       ["off", "location", "full"],
-      profileDefaults.captureRedirectHeaders,
+      defaults.captureRedirectHeaders,
     ),
     captureInitiator: normalizeEnum<InitiatorCaptureMode>(
       storedUploadSettings?.captureInitiator,
       ["off", "summary", "short-stack", "full-stack"],
-      profileDefaults.captureInitiator,
+      defaults.captureInitiator,
     ),
     suppressRecorderInternalRequests: normalizeBoolean(
       storedUploadSettings?.suppressRecorderInternalRequests,
-      profileDefaults.suppressRecorderInternalRequests,
+      defaults.suppressRecorderInternalRequests,
     ),
     captureWebSockets: normalizeBoolean(
       storedUploadSettings?.captureWebSockets,
-      profileDefaults.captureWebSockets,
+      defaults.captureWebSockets,
     ),
     captureWebSocketFrames: normalizeBoolean(
       stored?.captureWebSocketFrames,
-      profileDefaults.captureWebSocketFrames,
+      defaults.captureWebSocketFrames,
     ),
     maxWebSocketFrameBytes: normalizeOptionalNumber(
       storedUploadSettings?.maxWebSocketFrameBytes,
-      profileDefaults.maxWebSocketFrameBytes,
+      defaults.maxWebSocketFrameBytes,
       0,
       1024 * 1024,
     ),
     captureWebSocketInitiator: normalizeBoolean(
       storedUploadSettings?.captureWebSocketInitiator,
-      profileDefaults.captureWebSocketInitiator,
+      defaults.captureWebSocketInitiator,
     ),
-    // Inspector capture toggles migrate to privacy-first defaults when missing,
-    // but are forced on whenever network/request capture is enabled (coupling).
     captureStorage:
-      normalizeBoolean(
-        storedUploadSettings?.captureStorage,
-        DEFAULT_CAPTURE_PRIVACY_SETTINGS.captureStorage,
-      ) || captureNetwork,
+      normalizeBoolean(storedUploadSettings?.captureStorage, defaults.captureStorage) ||
+      captureNetwork,
     redactStorageValues: normalizeBoolean(
       storedUploadSettings?.redactStorageValues,
-      DEFAULT_CAPTURE_PRIVACY_SETTINGS.redactStorageValues,
+      defaults.redactStorageValues,
     ),
     captureDomSnapshots:
-      normalizeBoolean(
-        storedUploadSettings?.captureDomSnapshots,
-        DEFAULT_CAPTURE_PRIVACY_SETTINGS.captureDomSnapshots,
-      ) || captureNetwork,
+      normalizeBoolean(storedUploadSettings?.captureDomSnapshots, defaults.captureDomSnapshots) ||
+      captureNetwork,
     redactDomTextContent: normalizeBoolean(
       storedUploadSettings?.redactDomTextContent,
-      DEFAULT_CAPTURE_PRIVACY_SETTINGS.redactDomTextContent,
+      defaults.redactDomTextContent,
     ),
     instantReplayEnabled: normalizeBoolean(
       storedUploadSettings?.instantReplayEnabled,
-      DEFAULT_CAPTURE_PRIVACY_SETTINGS.instantReplayEnabled,
+      defaults.instantReplayEnabled,
     ),
-    // Capture mechanism falls back to "cdp" when missing or invalid (R9.1).
+    instantReplayWindowSeconds: normalizeInstantReplayWindowSeconds(
+      storedUploadSettings?.instantReplayWindowSeconds,
+      defaults.instantReplayWindowSeconds,
+    ),
+    instantReplayAllowedDomains: normalizeInstantReplayAllowedDomains(
+      storedUploadSettings?.instantReplayAllowedDomains ?? defaults.instantReplayAllowedDomains,
+    ),
     captureMode: normalizeEnum<CaptureMode>(
       storedUploadSettings?.captureMode,
       ["cdp", "in-page"],
-      DEFAULT_CAPTURE_PRIVACY_SETTINGS.captureMode,
+      defaults.captureMode,
     ),
   };
 }
@@ -611,7 +525,9 @@ export async function getUploadSettings(): Promise<UploadSettingsStore> {
     cachedUploadSettings = normalizeUploadSettingsStore(stored);
 
     if (shouldBackfillLocalSettings) {
-      await chrome.storage.local.set({ [STORAGE_KEY_SETTINGS]: cachedUploadSettings });
+      await chrome.storage.local.set({
+        [STORAGE_KEY_SETTINGS]: cachedUploadSettings,
+      });
     }
   } catch {
     cachedUploadSettings = normalizeUploadSettingsStore(undefined);
@@ -660,7 +576,6 @@ export function getSettingsSnapshot(settings: UploadSettingsStore): UploadSettin
     folderInput: settings.folderInput,
     folderId: settings.folderId,
     zipPasswordConfigured: settings.zipPassword.length > 0,
-    captureProfile: settings.captureProfile,
     privacyProfile: settings.privacyProfile,
     redactSensitiveHeaders: settings.redactSensitiveHeaders,
     redactSensitiveQueryParams: settings.redactSensitiveQueryParams,
@@ -695,6 +610,8 @@ export function getSettingsSnapshot(settings: UploadSettingsStore): UploadSettin
     captureDomSnapshots: settings.captureDomSnapshots,
     redactDomTextContent: settings.redactDomTextContent,
     instantReplayEnabled: settings.instantReplayEnabled,
+    instantReplayWindowSeconds: settings.instantReplayWindowSeconds,
+    instantReplayAllowedDomains: [...settings.instantReplayAllowedDomains],
     captureMode: settings.captureMode,
   };
 }

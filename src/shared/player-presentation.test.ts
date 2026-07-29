@@ -99,4 +99,62 @@ describe("resolvePresentationMode", () => {
     expect(plan.mode).toBe("recording");
     expect(plan.showScreenshotsTab).toBe(true);
   });
+
+  it("opens Elements for Instant Replay lookback when hasDom is set without stills", () => {
+    const plan = resolvePresentationMode({
+      ...empty,
+      hasDom: true,
+    });
+    expect(plan.mode).toBe("screenshot");
+    expect(plan.defaultTab).toBe("elements");
+    expect(plan.showElementsTab).toBe(true);
+    expect(plan.showScreenshotsTab).toBe(false);
+    // Media column hosts the DOM scrubber stage.
+    expect(plan.showVideoSection).toBe(true);
+    expect(plan.showDomStage).toBe(true);
+  });
+
+  it("always offers Console/Network tabs for Instant Replay packages", () => {
+    const quiet = resolvePresentationMode({
+      ...empty,
+      hasDom: true,
+      hasInstantReplay: true,
+      consoleCount: 0,
+      networkCount: 0,
+    });
+    expect(quiet.mode).toBe("screenshot");
+    expect(quiet.showConsoleTab).toBe(true);
+    expect(quiet.showNetworkTab).toBe(true);
+    expect(quiet.defaultTab).toBe("elements");
+
+    const withLogs = resolvePresentationMode({
+      ...empty,
+      hasDom: true,
+      hasInstantReplay: true,
+      consoleCount: 2,
+    });
+    expect(withLogs.showConsoleTab).toBe(true);
+    expect(withLogs.defaultTab).toBe("console");
+  });
+
+  it("keeps video primary and hides DOM stage when video is present", () => {
+    const plan = resolvePresentationMode({
+      ...empty,
+      hasVideo: true,
+      hasDom: true,
+    });
+    expect(plan.showDomStage).toBe(false);
+    expect(plan.showVideoSection).toBe(true);
+  });
+
+  it("keeps stills primary and hides DOM stage when screenshots exist", () => {
+    const plan = resolvePresentationMode({
+      ...empty,
+      screenshotCount: 1,
+      hasDom: true,
+    });
+    expect(plan.showDomStage).toBe(false);
+    expect(plan.showScreenshotsTab).toBe(true);
+    expect(plan.defaultTab).toBe("screenshots");
+  });
 });

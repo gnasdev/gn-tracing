@@ -1,0 +1,47 @@
+[
+  {
+    "name": "Script maps to js",
+    "input": {
+      "resourceType": "Script",
+      "url": "https://cdn.example.com/app.js",
+      "mimeType": "application/javascript"
+    },
+    "expected": "js"
+  },
+  {
+    "name": "Other + JS mime maps to js",
+    "input": {
+      "resourceType": "Other",
+      "url": "https://cdn.example.com/app.chunk.js",
+      "mimeType": "application/javascript"
+    },
+    "expected": "js"
+  },
+  {
+    "name": "XHR with .js URL stays fetch",
+    "input": {
+      "resourceType": "XHR",
+      "url": "https://api.example.com/module.js",
+      "mimeType": "application/javascript"
+    },
+    "expected": "fetch"
+  },
+  {
+    "name": "Fetch JSON stays fetch",
+    "input": {
+      "resourceType": "Fetch",
+      "url": "https://api.example.com/items",
+      "mimeType": "application/json"
+    },
+    "expected": "fetch"
+  },
+  {
+    "name": ".map is other not js",
+    "input": {
+      "resourceType": "Other",
+      "url": "https://cdn.example.com/app.js.map",
+      "mimeType": "application/json"
+    },
+    "expected": "other"
+  }
+]

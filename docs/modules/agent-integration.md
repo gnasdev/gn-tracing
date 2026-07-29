@@ -17,7 +17,6 @@ related:
   - "./replay-player.md"
   - "./privacy-and-redaction.md"
   - "../shared/data-models.md"
-  - "../specs/planning/mcp-skill-agent-friendly.md"
 ---
 
 # Agent Integration
@@ -28,7 +27,7 @@ related:
 - Phạm vi: đọc recording package bằng agent (MCP local + remote), artifact `agent-summary.json`, skill `gn-tracing-replay`, nút "Copy for AI" của player
 - Nguồn code: `packages/replay-core/src`, `mcp/src`, `worker/src/mcp-route.ts`, `src/offscreen/agent-summary.ts`, `src/shared/agent-report.ts`
 - Tuân thủ: read-only; không mở rộng phạm vi capture; xem [Privacy And Redaction](./privacy-and-redaction.md)
-- Links: [Replay Player](./replay-player.md), [Shared Data Models](../shared/data-models.md), [Plan](../specs/planning/mcp-skill-agent-friendly.md)
+- Links: [Replay Player](./replay-player.md), [Shared Data Models](../shared/data-models.md)
 
 ## Kiến Trúc
 
@@ -198,9 +197,11 @@ Hai tool bổ sung, cùng đọc qua reader dùng chung:
   ghi chú viết gì). Không trả về byte ảnh: agent không nhìn được ảnh, và phần có giá trị là chỗ người
   báo lỗi chỉ vào cùng câu chữ họ viết. Vùng `redact` được nêu rõ là đã bị **phá huỷ pixel** trước khi
   đóng gói, không phải bị che.
-- `get_instant_replay` — bộ đệm DOM trước thời điểm báo lỗi. Trả về **cả** `configuredWindowMs` lẫn
-  `actuallyCoveredMs`; khi hai số khác nhau nghĩa là frame cũ đã bị loại vì chạm trần dung lượng, và
-  agent không được suy ra "không có gì xảy ra" trong khoảng đó.
+- `get_instant_replay` — artifact DOM ring (`instant-replay.json`) từ always-on Instant Replay
+  (opt-in content script) khi user capture sau bug, hoặc đính kèm screenshot report.
+  Tool trả về **cả** `configuredWindowMs` lẫn `actuallyCoveredMs`; khi hai số khác nhau nghĩa là
+  frame cũ đã bị loại vì chạm trần dung lượng, và agent không được suy ra "không có gì xảy ra"
+  trong khoảng đó. Player map frames vào tab Elements để inspect DOM lookback.
 
 Skill `gn-tracing-screenshot-report` hướng dẫn đường đi cho báo cáo dạng ảnh: đọc caption và ghi chú
 trước, rồi mới tới log — một lỗi hiển thị thường không ném ra gì cả.

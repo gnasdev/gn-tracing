@@ -9,9 +9,11 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   createRegistrationDeps,
+  INSTANT_REPLAY_EVIDENCE_SCRIPT_ID,
   INSTANT_REPLAY_SCRIPT_ID,
   type RegistrationDeps,
   syncInstantReplayRegistration,
+  unregisterLegacyInstantReplayScript,
 } from "./instant-replay-registration";
 
 function createDeps(overrides: Partial<RegistrationDeps> = {}) {
@@ -28,16 +30,46 @@ function createDeps(overrides: Partial<RegistrationDeps> = {}) {
     requestHostPermission: vi.fn(async () => true),
     ...overrides,
   };
-  return { deps, isRegistered: () => registered.some((s) => s.id === INSTANT_REPLAY_SCRIPT_ID) };
+  return {
+    deps,
+    isRegistered: () => registered.some((s) => s.id === INSTANT_REPLAY_SCRIPT_ID),
+    getRegistered: () => registered,
+  };
 }
 
 describe("syncInstantReplayRegistration", () => {
-  it("registers the script when the feature is enabled", async () => {
-    const { deps, isRegistered } = createDeps();
+  it("registers only the DOM orchestrator when the feature is enabled", async () => {
+    const injectIntoOpenTabs = vi.fn(async () => {});
+    const { deps, isRegistered } = createDeps({ injectIntoOpenTabs });
     const result = await syncInstantReplayRegistration(true, deps);
 
     expect(result).toEqual({ ok: true, enabled: true });
     expect(isRegistered()).toBe(true);
+    expect(injectIntoOpenTabs).toHaveBeenCalledOnce();
+    const registeredScripts = (deps.register as ReturnType<typeof vi.fn>).mock
+      .calls[0]?.[0] as Array<{ id: string; world?: string }>;
+    expect(registeredScripts.map((s) => s.id)).toEqual([INSTANT_REPLAY_SCRIPT_ID]);
+    expect(registeredScripts[0]?.world).toBe("ISOLATED");
+  });
+
+  it("unregisters legacy MAIN evidence scripts when enabling", async () => {
+    const { deps, getRegistered } = createDeps();
+    // Simulate leftover MAIN evidence id from an older build.
+    (deps.getRegistered as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
+      { id: INSTANT_REPLAY_EVIDENCE_SCRIPT_ID },
+    ]);
+    (deps.getRegistered as ReturnType<typeof vi.fn>).mockImplementation(async () =>
+      getRegistered(),
+    );
+    // Seed state: only evidence registered.
+    await deps.register([{ id: INSTANT_REPLAY_EVIDENCE_SCRIPT_ID }] as Array<
+      Record<string, unknown>
+    >);
+
+    await syncInstantReplayRegistration(true, deps);
+
+    expect(getRegistered().some((s) => s.id === INSTANT_REPLAY_EVIDENCE_SCRIPT_ID)).toBe(false);
+    expect(getRegistered().some((s) => s.id === INSTANT_REPLAY_SCRIPT_ID)).toBe(true);
   });
 
   it("is idempotent, so a worker restart does not register it twice", async () => {
@@ -54,7 +86,7 @@ describe("syncInstantReplayRegistration", () => {
     const result = await syncInstantReplayRegistration(false, deps);
 
     expect(result).toEqual({ ok: true, enabled: false });
-    expect(deps.unregister).toHaveBeenCalledWith({ ids: [INSTANT_REPLAY_SCRIPT_ID] });
+    expect(deps.unregister).toHaveBeenCalled();
     expect(isRegistered()).toBe(false);
   });
 
@@ -96,10 +128,31 @@ describe("syncInstantReplayRegistration", () => {
   });
 });
 
+describe("unregisterLegacyInstantReplayScript", () => {
+  it("unregisters a leftover always-on script", async () => {
+    const { deps, isRegistered } = createDeps();
+    await syncInstantReplayRegistration(true, deps);
+
+    const result = await unregisterLegacyInstantReplayScript(deps);
+
+    expect(result).toEqual({ ok: true, wasRegistered: true });
+    expect(isRegistered()).toBe(false);
+  });
+
+  it("is a no-op when nothing is registered", async () => {
+    const { deps, isRegistered } = createDeps();
+    const result = await unregisterLegacyInstantReplayScript(deps);
+    expect(result).toEqual({ ok: true, wasRegistered: false });
+    expect(deps.unregister).not.toHaveBeenCalled();
+    expect(isRegistered()).toBe(false);
+  });
+});
+
 describe("createRegistrationDeps", () => {
   it("builds a dependency set bound to the chrome APIs", () => {
     const deps = createRegistrationDeps();
     expect(typeof deps.register).toBe("function");
     expect(typeof deps.hasHostPermission).toBe("function");
+    expect(typeof deps.unregister).toBe("function");
   });
 });

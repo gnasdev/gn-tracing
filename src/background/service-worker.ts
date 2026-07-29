@@ -4,9 +4,13 @@
 
 import type { Screenshot } from "../../packages/replay-core/src/schema/annotation";
 import { DEFAULT_DRAW_COLOR, normalizeDrawColor } from "../shared/drawing";
+import { shouldAcceptInPageEntry } from "../shared/in-page-entry-gate";
+import { normalizeInstantReplayAllowedDomains } from "../shared/instant-replay-domain";
+import { buildInstantReplayPackageArtifacts } from "../shared/instant-replay-evidence-package";
+import { buildReportUploadHistoryEntry } from "../shared/instant-replay-policy";
+import { normalizeInstantReplayWindowSeconds } from "../shared/instant-replay-window";
 import {
   buildRecordingPrivacySummary,
-  getPrivacyProfileSettings,
   normalizeMaskDomSelectors,
   REDACTED_VALUE,
   redactBodyText,
@@ -20,7 +24,6 @@ import { getRecordingTabTarget } from "../shared/recording-target";
 import { normalizeStorageProviderId, type StorageProviderId } from "../shared/storage-provider";
 import type {
   CaptureMode,
-  CaptureProfile,
   ConsolePreviewDepth,
   ConsoleSourceSnippetMode,
   ConsoleStackMode,
@@ -28,7 +31,6 @@ import type {
   InitiatorCaptureMode,
   MessageResponse,
   PopupState,
-  PrivacyProfile,
   PrivacyRedactionSettings,
   ProgressItemSnapshot,
   RecordingSessionSummary,
@@ -64,10 +66,18 @@ import {
 } from "./capture-environment";
 import { CdpManager } from "./cdp-manager";
 import { submitFeedback } from "./feedback-submit";
+import { createInstantReplayCdpHub } from "./instant-replay-cdp";
 import {
   createRegistrationDeps,
   syncInstantReplayRegistration,
 } from "./instant-replay-registration";
+import {
+  COLLECT_INSTANT_REPLAY_ACTION,
+  COMMIT_INSTANT_REPLAY_ACTION,
+  type CollectInstantReplayResult,
+  hasInstantReplayFrames,
+  parseCollectInstantReplayResponse,
+} from "./instant-replay-session";
 import { registerMessageListeners } from "./message-router";
 import { RecorderManager } from "./recorder-manager";
 import {
@@ -81,7 +91,6 @@ import {
 import type { ProviderFolderSettings, UploadSettingsStore } from "./settings-store";
 import {
   DEFAULT_PRIVACY_REDACTION_SETTINGS,
-  getCaptureProfileSettings,
   getSettingsSnapshot,
   getUploadHistory,
   getUploadSettings,
@@ -120,6 +129,8 @@ import { getUploadArtifactChunk } from "./upload-orchestrator";
 const storage = new StorageManager();
 const recorder = new RecorderManager();
 const cdp = new CdpManager(storage);
+/** Instant Replay CDP lookback (separate StorageManager + CdpManager). */
+const irCdpHub = createInstantReplayCdpHub(getUploadSettings);
 /** Multi-cloud storage providers from the registry (Drive + Dropbox). */
 const googleDriveProvider = getGoogleDriveProvider();
 const googleAuth = googleDriveProvider.getAuth();
@@ -131,6 +142,11 @@ void googleAuth.initialize();
 interface ActiveRecordingState {
   sessionId: string | null;
   isRecording: boolean;
+  /**
+   * While set, bridged in-page entries for this session are still accepted
+   * after `isRecording` flips false (stop drain window).
+   */
+  inPageDrainSessionId: string | null;
   tabId: number | null;
   startTime: number | null;
   stopTime: number | null;
@@ -195,6 +211,7 @@ const IN_PAGE_DRAIN_DELAY_MS = 200;
 const activeRecording: ActiveRecordingState = {
   sessionId: null,
   isRecording: false,
+  inPageDrainSessionId: null,
   tabId: null,
   startTime: null,
   stopTime: null,
@@ -250,6 +267,7 @@ function getElapsedMs(now = Date.now()): number {
 function resetActiveRecordingState(): void {
   activeRecording.sessionId = null;
   activeRecording.isRecording = false;
+  activeRecording.inPageDrainSessionId = null;
   activeRecording.tabId = null;
   activeRecording.startTime = null;
   activeRecording.stopTime = null;
@@ -550,6 +568,12 @@ async function syncRuntimeState(): Promise<void> {
     activeRecording.isRecording = Boolean(offscreenState.isRecording);
     activeRecording.sessionId = offscreenState.activeSessionId ?? activeRecording.sessionId;
     recorder.hydrateActiveSession(activeRecording.sessionId);
+    // Restore capture settings for redaction/privacy after worker eviction.
+    if (!activeRecording.recordingSettings) {
+      const settings = await getUploadSettings();
+      activeRecording.recordingSettings = settings;
+      activeRecording.privacySettings = pickPrivacyRedactionSettings(settings);
+    }
   }
 
   sessions = sortSessions(
@@ -615,37 +639,45 @@ async function syncRuntimeState(): Promise<void> {
 }
 
 /**
- * Reconciles the instant-replay content script with the stored setting.
- *
- * Runs on every worker start because registration survives worker eviction but
- * the setting is the source of truth: a script left registered after the user
- * switched the feature off would keep snapshotting their browsing.
+ * Aligns the always-on Instant Replay content script + CDP hub with settings.
+ * Safe on every boot: disabled installs unregister; enabled installs re-register.
  */
-async function syncInstantReplayFromSettings(): Promise<void> {
+async function syncInstantReplayRegistrationOnBoot(): Promise<void> {
   try {
     const settings = await getUploadSettings();
     await syncInstantReplayRegistration(settings.instantReplayEnabled, createRegistrationDeps());
+    await irCdpHub.sync();
   } catch (error) {
-    console.warn("[GN Tracing] Could not reconcile instant replay registration:", error);
+    console.warn("[GN Tracing] Could not sync Instant Replay registration:", error);
   }
 }
 
 void syncRuntimeState();
-void syncInstantReplayFromSettings();
+void syncInstantReplayRegistrationOnBoot();
 
 chrome.runtime.onStartup.addListener(() => {
   void syncRuntimeState();
-  void syncInstantReplayFromSettings();
+  void syncInstantReplayRegistrationOnBoot();
 });
 
 chrome.runtime.onInstalled.addListener(() => {
   void syncRuntimeState();
-  void syncInstantReplayFromSettings();
+  void syncInstantReplayRegistrationOnBoot();
+});
+
+// IR CDP follows the focused allowlisted tab.
+chrome.tabs.onActivated.addListener(() => {
+  void irCdpHub.sync();
+});
+chrome.tabs.onUpdated.addListener((_tabId, changeInfo) => {
+  if (changeInfo.status === "complete" || typeof changeInfo.url === "string") {
+    void irCdpHub.sync();
+  }
 });
 
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === "gn-tracing-keepalive" && activeRecording.isRecording) {
-    // Intentionally empty: this wakes the service worker during recording.
+    // Wake the service worker so MV3 does not evict mid-capture.
   }
 });
 
@@ -742,6 +774,7 @@ registerMessageListeners({
     return { ok: true };
   },
   saveAnnotatedScreenshot: handleSaveAnnotatedScreenshot,
+  captureInstantReplay: handleCaptureInstantReplay,
 });
 
 /**
@@ -987,7 +1020,10 @@ async function toggleDrawingOverlay(): Promise<MessageResponse> {
       type: "TOGGLE",
     })) as { active?: boolean };
     activeRecording.drawingOverlayActive = Boolean(response?.active);
-    return { ok: true, active: activeRecording.drawingOverlayActive } as MessageResponse;
+    return {
+      ok: true,
+      active: activeRecording.drawingOverlayActive,
+    } as MessageResponse;
   } catch (error) {
     return { ok: false, error: (error as Error).message };
   }
@@ -1023,7 +1059,10 @@ async function setDrawingColor(
   await drawingColorReady;
   const color = normalizeDrawColor(data?.color);
   if (!color) {
-    return { ok: false, error: "Invalid drawing color. Use a CSS hex value such as #ff6b6b." };
+    return {
+      ok: false,
+      error: "Invalid drawing color. Use a CSS hex value such as #ff6b6b.",
+    };
   }
 
   drawingColor = color;
@@ -1397,10 +1436,14 @@ function handleRecordingInPageEntry(
 ): MessageResponse {
   const sessionId = typeof data?.sessionId === "string" ? data.sessionId : "";
   if (
-    !sessionId ||
-    sessionId !== activeRecording.sessionId ||
-    sender.tab?.id !== activeRecording.tabId ||
-    !activeRecording.isRecording
+    !shouldAcceptInPageEntry({
+      sessionId,
+      activeSessionId: activeRecording.sessionId,
+      senderTabId: sender.tab?.id,
+      activeTabId: activeRecording.tabId,
+      isRecording: activeRecording.isRecording,
+      drainSessionId: activeRecording.inPageDrainSessionId,
+    })
   ) {
     return { ok: true };
   }
@@ -1588,13 +1631,17 @@ function buildPrivacySummary(
   );
 }
 
-async function startRecording(tabId: number): Promise<MessageResponse> {
+async function startRecording(
+  tabId: number,
+  data?: Record<string, unknown>,
+): Promise<MessageResponse> {
   if (activeRecording.isRecording) {
     return { ok: false, error: "Already recording" };
   }
 
   try {
     const settings = await getUploadSettings();
+    void data;
     const tab = await chrome.tabs.get(tabId);
     const target = getRecordingTabTarget(tab);
     if (target.error) {
@@ -1618,9 +1665,14 @@ async function startRecording(tabId: number): Promise<MessageResponse> {
     activeRecording.privacySettings = pickPrivacyRedactionSettings(settings);
     activeRecording.recordingSettings = settings;
 
+    // Avoid double monkey-patch of console/fetch with always-on IR evidence.
+    await pauseInstantReplayEvidence(tabId);
+
     storage.beginSession();
     storage.setCaptureSettings(settings);
     storage.setPrivacySettings(activeRecording.privacySettings, recordActiveRedactionHits);
+    // Full recordings keep all evidence (no rolling Instant Replay retention).
+    storage.setRollingWindowMs(null);
     cdp.setCaptureSettings(settings);
     cdp.setPrivacySettings(activeRecording.privacySettings, recordActiveRedactionHits);
 
@@ -1672,6 +1724,9 @@ async function startRecording(tabId: number): Promise<MessageResponse> {
     }
     resetActiveRecordingState();
     storage.beginSession();
+    // Pause ran before attach/startCapture; always resume IR evidence on failure
+    // so always-on lookback is not stuck until the tab reloads.
+    await resumeInstantReplayEvidence(tabId);
     await saveStateToStorage();
     return { ok: false, error: (error as Error).message };
   }
@@ -1686,8 +1741,15 @@ async function stopRecording(): Promise<MessageResponse> {
   const startTime = activeRecording.startTime;
   const stopTime = Date.now();
   const tabUrl = activeRecording.tabUrl;
+  const recordingTabId = activeRecording.tabId;
 
   try {
+    // Keep accepting bridged in-page entries while the drain window is open
+    // (stop storage snapshot + late fetch/XHR). Gate uses drainSessionId, not
+    // isRecording alone — otherwise the 200ms drain drops everything.
+    if (activeRecording.recordingSettings?.captureMode === "in-page") {
+      activeRecording.inPageDrainSessionId = sessionId;
+    }
     activeRecording.isRecording = false;
     activeRecording.stopTime = stopTime;
 
@@ -1708,6 +1770,7 @@ async function stopRecording(): Promise<MessageResponse> {
       // Allow the MAIN→relay→service-worker bridge to deliver in-flight entries
       // (notably the stop storage snapshot) before finalizing the session.
       await waitForInPageDrain();
+      activeRecording.inPageDrainSessionId = null;
     } else {
       // Keep CDP attached while flushing source maps, but stop media capture
       // first so the video length matches the user's stop action as closely as
@@ -1751,6 +1814,12 @@ async function stopRecording(): Promise<MessageResponse> {
       userEventArtifact,
       screenshotDataUrl,
     );
+
+    const durationMs =
+      typeof startTime === "number" && Number.isFinite(startTime)
+        ? Math.max(0, stopTime - startTime)
+        : 0;
+
     sessionArtifacts[sessionId] = {
       consoleLogs: finalizedArtifacts.consoleLogs,
       networkRequests: finalizedArtifacts.networkRequests,
@@ -1763,7 +1832,7 @@ async function stopRecording(): Promise<MessageResponse> {
       storage: finalizedArtifacts.storageSnapshots,
       dom: finalizedArtifacts.domSnapshots,
       screenshotDataUrl,
-      duration: startTime ? Math.max(0, stopTime - startTime) : 0,
+      duration: durationMs,
       url: tabUrl || "",
       startTime,
       stopTime,
@@ -1774,7 +1843,7 @@ async function stopRecording(): Promise<MessageResponse> {
       phase: "recorded",
       startTime,
       stopTime,
-      elapsedMs: sessionArtifacts[sessionId].duration,
+      elapsedMs: durationMs,
       tabUrl,
       consoleLogCount: finalizedArtifacts.consoleLogCount,
       networkRequestCount: finalizedArtifacts.networkRequestCount,
@@ -1797,6 +1866,7 @@ async function stopRecording(): Promise<MessageResponse> {
     resetActiveRecordingState();
     await saveArtifactsToStorage();
     await saveStateToStorage();
+    await resumeInstantReplayEvidence(recordingTabId);
 
     const settings = await getUploadSettings();
     const resolved = requireRegisteredStorageProvider(settings.activeStorageProvider);
@@ -1809,6 +1879,8 @@ async function stopRecording(): Promise<MessageResponse> {
 
     return { ok: true };
   } catch (error) {
+    activeRecording.inPageDrainSessionId = null;
+    await resumeInstantReplayEvidence(recordingTabId);
     await saveStateToStorage();
     return { ok: false, error: (error as Error).message };
   }
@@ -1820,6 +1892,7 @@ async function removeRecording(): Promise<MessageResponse> {
   }
 
   const sessionId = activeRecording.sessionId;
+  const recordingTabId = activeRecording.tabId;
 
   try {
     activeRecording.isRecording = false;
@@ -1844,6 +1917,7 @@ async function removeRecording(): Promise<MessageResponse> {
     resetActiveRecordingState();
     await saveArtifactsToStorage();
     await saveStateToStorage();
+    await resumeInstantReplayEvidence(recordingTabId);
 
     void chrome.runtime
       .sendMessage({
@@ -1860,6 +1934,9 @@ async function removeRecording(): Promise<MessageResponse> {
     cdp.releaseSourceMaps();
     await saveArtifactsToStorage();
     await saveStateToStorage();
+    // Discard may have paused IR via an earlier successful start; resume even
+    // when teardown throws so evidence is not left permanently paused.
+    await resumeInstantReplayEvidence(recordingTabId);
     return { ok: false, error: (error as Error).message };
   }
 }
@@ -1922,7 +1999,11 @@ async function deleteUploadHistoryEntry(
 
   const popupState = await saveStateToStorage();
   notifyPopupStateUpdated(popupState);
-  return { ok: true, state: popupState || undefined, uploadHistory: nextHistory };
+  return {
+    ok: true,
+    state: popupState || undefined,
+    uploadHistory: nextHistory,
+  };
 }
 
 async function deleteSession(data: Record<string, unknown> | undefined): Promise<MessageResponse> {
@@ -2038,38 +2119,18 @@ async function updateUploadSettingsFromMessage(
     };
   }
 
-  const requestedProfile = normalizeEnum<CaptureProfile>(
-    data?.captureProfile,
-    ["lean", "balanced", "full", "custom"],
-    existingSettings.captureProfile,
-  );
-  const profileSettings = getCaptureProfileSettings(
-    requestedProfile === "custom" ? "full" : requestedProfile,
-  );
-  // Choosing a named preset is an explicit reset to that preset, even when the stored profile name is already selected.
-  const baseCaptureSettings = requestedProfile !== "custom" ? profileSettings : existingSettings;
-  // UI clients mark manual advanced edits by switching the requested profile to Custom before saving.
-  // Named profile saves may include the expanded preset fields, but they should remain on that named profile.
-  const nextCaptureProfile = requestedProfile;
+  // Field-level merge only — capture/privacy profile presets are retired.
   const nextCaptureResponseBodyMode = normalizeEnum<ResponseBodyCaptureMode>(
     data?.captureResponseBodyMode,
     ["off", "text", "text-json", "eligible"],
-    baseCaptureSettings.captureResponseBodies ? baseCaptureSettings.captureResponseBodyMode : "off",
+    existingSettings.captureResponseBodies ? existingSettings.captureResponseBodyMode : "off",
   );
   const nextCaptureResponseBodies =
     typeof data?.captureResponseBodies === "boolean"
       ? data.captureResponseBodies
-      : nextCaptureResponseBodyMode !== "off";
-  const requestedPrivacyProfile = normalizeEnum<PrivacyProfile>(
-    data?.privacyProfile,
-    ["standard", "strict", "custom"],
-    existingSettings.privacyProfile,
-  );
-  const privacyProfileSettings = getPrivacyProfileSettings(
-    requestedPrivacyProfile === "custom" ? "standard" : requestedPrivacyProfile,
-  );
-  const basePrivacySettings =
-    requestedPrivacyProfile !== "custom" ? privacyProfileSettings : existingSettings;
+      : Object.hasOwn(data || {}, "captureResponseBodyMode")
+        ? nextCaptureResponseBodyMode !== "off"
+        : existingSettings.captureResponseBodies;
 
   const settings: UploadSettingsStore = {
     activeStorageProvider: nextActiveStorageProvider,
@@ -2083,124 +2144,123 @@ async function updateUploadSettingsFromMessage(
       : hasZipPassword
         ? (data.zipPassword as string)
         : existingSettings.zipPassword,
-    captureProfile: nextCaptureProfile,
-    privacyProfile: requestedPrivacyProfile,
+    // Non-UI fixed profile for redaction rule membership + privacy.json.
+    privacyProfile: "custom",
     redactSensitiveHeaders: normalizeBoolean(
       data?.redactSensitiveHeaders,
-      basePrivacySettings.redactSensitiveHeaders,
+      existingSettings.redactSensitiveHeaders,
     ),
     redactSensitiveQueryParams: normalizeBoolean(
       data?.redactSensitiveQueryParams,
-      basePrivacySettings.redactSensitiveQueryParams,
+      existingSettings.redactSensitiveQueryParams,
     ),
     redactRequestBodyFields: normalizeBoolean(
       data?.redactRequestBodyFields,
-      basePrivacySettings.redactRequestBodyFields,
+      existingSettings.redactRequestBodyFields,
     ),
     redactResponseBodyFields: normalizeBoolean(
       data?.redactResponseBodyFields,
-      basePrivacySettings.redactResponseBodyFields,
+      existingSettings.redactResponseBodyFields,
     ),
     redactConsoleValues: normalizeBoolean(
       data?.redactConsoleValues,
-      basePrivacySettings.redactConsoleValues,
+      existingSettings.redactConsoleValues,
     ),
     redactWebSocketPayloads: normalizeEnum(
       data?.redactWebSocketPayloads,
       ["off", "sensitive-fields", "all"],
-      basePrivacySettings.redactWebSocketPayloads,
+      existingSettings.redactWebSocketPayloads,
     ),
     redactEventMetadata: normalizeBoolean(
       data?.redactEventMetadata,
-      basePrivacySettings.redactEventMetadata,
+      existingSettings.redactEventMetadata,
     ),
     maskDomSelectors: normalizeMaskDomSelectors(
       Object.hasOwn(data || {}, "maskDomSelectors")
         ? data?.maskDomSelectors
-        : basePrivacySettings.maskDomSelectors,
+        : existingSettings.maskDomSelectors,
     ),
-    captureConsole: normalizeBoolean(data?.captureConsole, baseCaptureSettings.captureConsole),
+    captureConsole: normalizeBoolean(data?.captureConsole, existingSettings.captureConsole),
     captureConsoleArgs: normalizeBoolean(
       data?.captureConsoleArgs,
-      baseCaptureSettings.captureConsoleArgs,
+      existingSettings.captureConsoleArgs,
     ),
     consolePreviewDepth: normalizeEnum<ConsolePreviewDepth>(
       data?.consolePreviewDepth,
       ["none", "shallow", "full"],
-      baseCaptureSettings.consolePreviewDepth,
+      existingSettings.consolePreviewDepth,
     ),
     captureConsoleStacks: normalizeEnum<ConsoleStackMode>(
       data?.captureConsoleStacks,
       ["off", "errors", "warnings-errors", "all"],
-      baseCaptureSettings.captureConsoleStacks,
+      existingSettings.captureConsoleStacks,
     ),
     captureConsoleSourceSnippets: normalizeEnum<ConsoleSourceSnippetMode>(
       data?.captureConsoleSourceSnippets,
       ["off", "errors", "warnings-errors", "all"],
-      baseCaptureSettings.captureConsoleSourceSnippets,
+      existingSettings.captureConsoleSourceSnippets,
     ),
     maxConsoleEntryBytes: normalizeOptionalNumber(
       data?.maxConsoleEntryBytes,
-      baseCaptureSettings.maxConsoleEntryBytes,
+      existingSettings.maxConsoleEntryBytes,
       1024,
       512 * 1024,
     ),
-    captureNetwork: normalizeBoolean(data?.captureNetwork, baseCaptureSettings.captureNetwork),
+    captureNetwork: normalizeBoolean(data?.captureNetwork, existingSettings.captureNetwork),
     captureRequestHeaders: normalizeEnum<HeaderCaptureMode>(
       data?.captureRequestHeaders,
       ["off", "minimal", "full"],
-      baseCaptureSettings.captureRequestHeaders,
+      existingSettings.captureRequestHeaders,
     ),
     captureResponseHeaders: normalizeEnum<HeaderCaptureMode>(
       data?.captureResponseHeaders,
       ["off", "minimal", "full"],
-      baseCaptureSettings.captureResponseHeaders,
+      existingSettings.captureResponseHeaders,
     ),
     captureRequestBodies: normalizeBoolean(
       data?.captureRequestBodies,
-      baseCaptureSettings.captureRequestBodies,
+      existingSettings.captureRequestBodies,
     ),
     captureResponseBodies: nextCaptureResponseBodies,
     captureResponseBodyMode: nextCaptureResponseBodies ? nextCaptureResponseBodyMode : "off",
     maxResponseBodyBytes: normalizeOptionalNumber(
       data?.maxResponseBodyBytes,
-      baseCaptureSettings.maxResponseBodyBytes,
+      existingSettings.maxResponseBodyBytes,
       0,
       10 * 1024 * 1024,
     ),
     captureRedirectHeaders: normalizeEnum<RedirectHeaderCaptureMode>(
       data?.captureRedirectHeaders,
       ["off", "location", "full"],
-      baseCaptureSettings.captureRedirectHeaders,
+      existingSettings.captureRedirectHeaders,
     ),
     captureInitiator: normalizeEnum<InitiatorCaptureMode>(
       data?.captureInitiator,
       ["off", "summary", "short-stack", "full-stack"],
-      baseCaptureSettings.captureInitiator,
+      existingSettings.captureInitiator,
     ),
     suppressRecorderInternalRequests: normalizeBoolean(
       data?.suppressRecorderInternalRequests,
-      baseCaptureSettings.suppressRecorderInternalRequests,
+      existingSettings.suppressRecorderInternalRequests,
     ),
     captureWebSockets: normalizeBoolean(
       data?.captureWebSockets,
-      baseCaptureSettings.captureWebSockets,
+      existingSettings.captureWebSockets,
     ),
     captureWebSocketFrames: normalizeBoolean(
       data?.captureWebSocketFrames,
-      baseCaptureSettings.captureWebSocketFrames,
+      existingSettings.captureWebSocketFrames,
     ),
     maxWebSocketFrameBytes: normalizeOptionalNumber(
       data?.maxWebSocketFrameBytes,
-      baseCaptureSettings.maxWebSocketFrameBytes,
+      existingSettings.maxWebSocketFrameBytes,
       0,
       1024 * 1024,
     ),
     captureWebSocketInitiator: normalizeBoolean(
       data?.captureWebSocketInitiator,
-      baseCaptureSettings.captureWebSocketInitiator,
+      existingSettings.captureWebSocketInitiator,
     ),
-    // Inspector capture toggles are profile-independent; preserve existing values when absent.
     captureStorage: normalizeBoolean(data?.captureStorage, existingSettings.captureStorage),
     redactStorageValues: normalizeBoolean(
       data?.redactStorageValues,
@@ -2218,7 +2278,17 @@ async function updateUploadSettingsFromMessage(
       data?.instantReplayEnabled,
       existingSettings.instantReplayEnabled,
     ),
-    // Capture mechanism is profile-independent; default to stored value, fall back to "cdp" (R9.1).
+    instantReplayWindowSeconds: normalizeInstantReplayWindowSeconds(
+      Object.hasOwn(data || {}, "instantReplayWindowSeconds")
+        ? data?.instantReplayWindowSeconds
+        : existingSettings.instantReplayWindowSeconds,
+      existingSettings.instantReplayWindowSeconds,
+    ),
+    instantReplayAllowedDomains: normalizeInstantReplayAllowedDomains(
+      Object.hasOwn(data || {}, "instantReplayAllowedDomains")
+        ? data?.instantReplayAllowedDomains
+        : existingSettings.instantReplayAllowedDomains,
+    ),
     captureMode: normalizeEnum<CaptureMode>(
       data?.captureMode,
       ["cdp", "in-page"],
@@ -2231,27 +2301,61 @@ async function updateUploadSettingsFromMessage(
     settings.captureStorage = true;
     settings.captureDomSnapshots = true;
   }
-  // Registration follows the setting, and the permission prompt happens here
-  // rather than at capture time — the user is at the keyboard now, and a prompt
-  // that appears mid-bug-report is a prompt that gets dismissed.
-  const registration = await syncInstantReplayRegistration(
-    settings.instantReplayEnabled,
-    createRegistrationDeps(),
-  ).catch((error: Error) => ({ ok: false as const, error: error.message }));
 
-  if (!registration.ok) {
-    // The user said yes but the browser said no. Persist the honest state
-    // rather than a checkbox that claims a feature which is not running.
-    settings.instantReplayEnabled = false;
+  // Instant Replay is a permission decision: sync registration before we claim
+  // the setting is on. Refusal keeps the feature off.
+  const irSettingsChanged =
+    Object.hasOwn(data || {}, "instantReplayEnabled") ||
+    Object.hasOwn(data || {}, "instantReplayWindowSeconds") ||
+    Object.hasOwn(data || {}, "instantReplayAllowedDomains") ||
+    settings.instantReplayEnabled !== existingSettings.instantReplayEnabled;
+
+  if (
+    Object.hasOwn(data || {}, "instantReplayEnabled") ||
+    settings.instantReplayEnabled !== existingSettings.instantReplayEnabled
+  ) {
+    const registration = await syncInstantReplayRegistration(
+      settings.instantReplayEnabled,
+      createRegistrationDeps(),
+    );
+    if (!registration.ok) {
+      settings.instantReplayEnabled = false;
+      await saveUploadSettings(settings);
+      await saveStateToStorage();
+      return {
+        ok: false,
+        error: registration.error,
+        settings: getSettingsSnapshot(settings),
+      };
+    }
+    settings.instantReplayEnabled = registration.enabled;
+  } else if (settings.instantReplayEnabled) {
+    // Window/allowlist change while enabled: keep registration in sync.
+    const registration = await syncInstantReplayRegistration(true, createRegistrationDeps());
+    if (!registration.ok) {
+      settings.instantReplayEnabled = false;
+      await saveUploadSettings(settings);
+      await saveStateToStorage();
+      return {
+        ok: false,
+        error: registration.error,
+        settings: getSettingsSnapshot(settings),
+      };
+    }
   }
 
   await saveUploadSettings(settings);
   await saveStateToStorage();
 
+  if (irSettingsChanged || settings.instantReplayEnabled) {
+    await irCdpHub.sync().catch((error) => {
+      console.warn("[GN Tracing] Instant Replay CDP sync failed:", error);
+    });
+  }
+
   return {
     ok: true,
     settings: getSettingsSnapshot(settings),
-    ...(registration.ok ? {} : { message: registration.error }),
   };
 }
 
@@ -2423,6 +2527,304 @@ async function runSessionUpload(sessionId: string, authToken: string): Promise<v
   }
 }
 
+// ===== Instant Replay (DOM content script + CDP on allowlisted tabs) =====
+
+/**
+ * Pulls DOM frames from the content script and console/network rings from the
+ * IR CDP hub (non-destructive).
+ */
+async function collectInstantReplay(tabId: number | undefined) {
+  if (typeof tabId !== "number") {
+    return parseCollectInstantReplayResponse(undefined);
+  }
+  let collected: CollectInstantReplayResult;
+  try {
+    const response = await chrome.tabs.sendMessage(tabId, {
+      action: COLLECT_INSTANT_REPLAY_ACTION,
+    });
+    collected = parseCollectInstantReplayResponse(response);
+  } catch {
+    collected = parseCollectInstantReplayResponse(undefined);
+  }
+
+  if (!collected.ok) {
+    return collected;
+  }
+
+  // CDP rings when the hub is attached to this tab (allowlisted + focused).
+  const hubEvidence = irCdpHub.isAttachedTo(tabId) ? irCdpHub.peekEvidenceBundle() : null;
+
+  return {
+    ...collected,
+    evidence: hubEvidence ?? collected.evidence,
+  };
+}
+
+/** Clear DOM buffer + CDP rings after a successful IR package upload. */
+async function commitInstantReplay(tabId: number | undefined): Promise<void> {
+  if (typeof tabId === "number") {
+    try {
+      await chrome.tabs.sendMessage(tabId, {
+        action: COMMIT_INSTANT_REPLAY_ACTION,
+      });
+    } catch {
+      // Tab may have navigated; nothing left to clear.
+    }
+  }
+  if (typeof tabId === "number" && irCdpHub.isAttachedTo(tabId)) {
+    irCdpHub.clearBuffersAfterCommit();
+  }
+}
+
+/** Record takes the debugger — detach IR CDP first. */
+async function pauseInstantReplayEvidence(tabId: number | null): Promise<void> {
+  await irCdpHub.pauseForRecording(tabId);
+}
+
+/** After Record stops, re-attach IR CDP if allowlist still matches. */
+async function resumeInstantReplayEvidence(_tabId: number | null): Promise<void> {
+  await irCdpHub.resumeAfterRecording();
+}
+
+/**
+ * Persist a screenshot / Instant Replay upload into local history (same family
+ * as a normal recording upload outcome).
+ */
+async function persistReportUploadHistory(input: {
+  recordingUrl: string;
+  pageUrl?: string;
+  indexFileId?: string | null;
+  targetFolderId?: string | null;
+  durationMs?: number;
+  provider: StorageProviderId;
+}): Promise<void> {
+  const recordingUrl = normalizeRecordingUrl(input.recordingUrl);
+  if (!recordingUrl) {
+    return;
+  }
+  const entry = buildReportUploadHistoryEntry({
+    ...input,
+    recordingUrl,
+  });
+  const history = [entry, ...(await getUploadHistory())].slice(0, MAX_UPLOAD_HISTORY_ITEMS);
+  await saveUploadHistory(history);
+  notifyPopupStateUpdated(await saveStateToStorage());
+}
+
+/**
+ * Capture-after-the-fact Instant Replay: collect the rolling DOM buffer + CDP
+ * console/network rings on the active allowlisted tab, package without video,
+ * and upload. Does not start MediaRecorder (CDP may already be attached for IR).
+ */
+async function handleCaptureInstantReplay(tabId: number | undefined): Promise<MessageResponse> {
+  const settings = await getUploadSettings();
+  if (!settings.instantReplayEnabled) {
+    return {
+      ok: false,
+      error:
+        "Instant Replay is off. Enable it in the popup or Settings, grant host permission, add an allowed domain, then browse a bit before capturing.",
+    };
+  }
+  if (!settings.instantReplayAllowedDomains || settings.instantReplayAllowedDomains.length === 0) {
+    return {
+      ok: false,
+      error:
+        "Add at least one allowed domain for Instant Replay (popup or Settings), open that site, then capture.",
+    };
+  }
+
+  const targetTabId =
+    typeof tabId === "number"
+      ? tabId
+      : (await chrome.tabs.query({ active: true, currentWindow: true }))[0]?.id;
+
+  if (typeof targetTabId !== "number") {
+    return {
+      ok: false,
+      error: "Open a browser tab before capturing Instant Replay.",
+    };
+  }
+
+  let tab: chrome.tabs.Tab;
+  try {
+    tab = await chrome.tabs.get(targetTabId);
+  } catch (error) {
+    return {
+      ok: false,
+      error: `Could not read the active tab: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    };
+  }
+
+  const target = getRecordingTabTarget(tab);
+  if (target.error) {
+    return { ok: false, error: target.error };
+  }
+
+  const collected = await collectInstantReplay(targetTabId);
+  if (!collected.ok) {
+    return { ok: false, error: collected.error };
+  }
+
+  const resolved = requireRegisteredStorageProvider(settings.activeStorageProvider);
+  if (!resolved.ok) {
+    return { ok: false, error: resolved.error };
+  }
+  const authToken = await resolved.provider.getAuthToken();
+  if (!authToken) {
+    return {
+      ok: false,
+      error: `Not connected to ${providerDisplayName(resolved.provider.id)}. Please connect first.`,
+    };
+  }
+
+  const storageProviderId = resolveRegisteredUploadProviderId(settings.activeStorageProvider);
+  const targetFolderId =
+    storageProviderId === "dropbox"
+      ? settings.folderPath.length > 0
+        ? `/${settings.folderPath.join("/")}`
+        : null
+      : settings.folderId;
+
+  // Optional viewport still for package context (not a full screen recording).
+  // Buffer was collected non-destructively; still failure still packages IR.
+  let imageDataUrl: string | null = null;
+  let viewport = {
+    width: 1280,
+    height: 800,
+    devicePixelRatio: 1 as number | undefined,
+  };
+  try {
+    if (typeof tab.windowId === "number") {
+      imageDataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, {
+        format: "jpeg",
+        quality: 85,
+      });
+    }
+    const [injected] = await chrome.scripting.executeScript({
+      target: { tabId: targetTabId },
+      func: () => ({
+        width: window.innerWidth,
+        height: window.innerHeight,
+        devicePixelRatio: window.devicePixelRatio,
+      }),
+    });
+    if (injected?.result && typeof injected.result === "object") {
+      viewport = injected.result as typeof viewport;
+    }
+  } catch {
+    // IR-only package is valid when the raster still is unavailable.
+  }
+
+  const capturedAt = Date.now();
+  const screenshots =
+    imageDataUrl && imageDataUrl.startsWith("data:image/")
+      ? [
+          {
+            screenshot: {
+              id: `ir-${capturedAt.toString(36)}`,
+              capturedAt,
+              url: target.url,
+              title: typeof tab.title === "string" ? tab.title : undefined,
+              viewport: {
+                width: viewport.width,
+                height: viewport.height,
+                devicePixelRatio: viewport.devicePixelRatio,
+              },
+              source: {
+                kind: "image" as const,
+                path: "",
+                mimeType: "image/jpeg",
+              },
+              annotations: [],
+              caption: "Instant Replay capture",
+            },
+            imageDataUrl,
+          },
+        ]
+      : [];
+
+  // Temporarily load privacy settings for IR redaction (not mid-recording).
+  const privacySettings = pickPrivacyRedactionSettings(settings);
+  const previousPrivacy = activeRecording.privacySettings;
+  const previousRecordingSettings = activeRecording.recordingSettings;
+  activeRecording.privacySettings = privacySettings;
+  activeRecording.recordingSettings = settings;
+
+  const packageArtifacts = buildInstantReplayPackageArtifacts({
+    instantReplayJson: JSON.stringify(collected.artifact),
+    evidence: collected.evidence,
+    privacySettings,
+    redact: {
+      network: (entry) => redactInPageNetworkEntry({ ...entry }),
+      websocket: (entry) =>
+        redactInPageWebSocketEntry({
+          ...entry,
+          frames: entry.frames.map((frame) => ({ ...frame })),
+        }),
+      storage: (snapshot) =>
+        redactInPageStorageSnapshot({
+          ...snapshot,
+          localStorage: snapshot.localStorage.map((item) => ({ ...item })),
+          sessionStorage: snapshot.sessionStorage.map((item) => ({ ...item })),
+          cookies: snapshot.cookies.map((cookie) => ({ ...cookie })),
+        }),
+    },
+  });
+
+  activeRecording.privacySettings = previousPrivacy;
+  activeRecording.recordingSettings = previousRecordingSettings;
+
+  try {
+    await ensureOffscreenDocumentForPackaging();
+    const result = (await chrome.runtime.sendMessage({
+      target: "offscreen",
+      type: "UPLOAD_SCREENSHOT_PACKAGE",
+      data: {
+        authToken,
+        storageProvider: storageProviderId,
+        targetFolderId,
+        targetFolderPath: settings.folderPath,
+        zipPassword: settings.zipPassword || null,
+        url: target.url,
+        screenshots,
+        artifacts: packageArtifacts,
+      },
+    })) as MessageResponse & Partial<UploadSuccessResult>;
+
+    if (!result?.ok) {
+      // Buffer intentionally left intact for retry.
+      return {
+        ok: false,
+        error: result?.error || "Instant Replay upload failed.",
+      };
+    }
+
+    await commitInstantReplay(targetTabId);
+    await closeOffscreenDocumentIfIdle();
+
+    const recordingUrl = normalizeRecordingUrl(result.recordingUrl) ?? undefined;
+    if (recordingUrl) {
+      await persistReportUploadHistory({
+        recordingUrl,
+        pageUrl: target.url ?? undefined,
+        indexFileId: result.indexFileId ?? null,
+        targetFolderId: result.targetFolderId ?? targetFolderId,
+        durationMs: collected.artifact.coveredMs,
+        provider: storageProviderId,
+      });
+    }
+
+    return {
+      ok: true,
+      recordingUrl,
+    };
+  } catch (error) {
+    return { ok: false, error: (error as Error).message };
+  }
+}
+
 // ===== Screenshot reports =====
 //
 // A separate, lighter path from the recording flow: capture the visible tab,
@@ -2437,7 +2839,10 @@ async function handleCaptureScreenshot(tabId: number | undefined): Promise<Messa
       : (await chrome.tabs.query({ active: true, currentWindow: true }))[0]?.id;
 
   if (typeof targetTabId !== "number") {
-    return { ok: false, error: "Open a browser tab before capturing a screenshot." };
+    return {
+      ok: false,
+      error: "Open a browser tab before capturing a screenshot.",
+    };
   }
 
   const result = await captureScreenshotForAnnotation(targetTabId, {
@@ -2459,7 +2864,9 @@ async function handleCaptureScreenshot(tabId: number | undefined): Promise<Messa
     },
     setPending: writePendingScreenshot,
     openEditor: async () => {
-      await chrome.tabs.create({ url: chrome.runtime.getURL("annotate/annotate.html") });
+      await chrome.tabs.create({
+        url: chrome.runtime.getURL("annotate/annotate.html"),
+      });
     },
   });
 
@@ -2473,29 +2880,6 @@ async function handleGetPendingScreenshot(): Promise<
   return pending
     ? { ok: true, screenshot: pending }
     : { ok: false, error: "No screenshot is waiting to be annotated." };
-}
-
-/**
- * Pulls whatever the instant-replay buffer holds in the reported tab.
- *
- * Best effort throughout: the content script may not be registered, the tab may
- * have navigated, or the recorder may have disabled itself on a heavy page. A
- * screenshot report without pre-bug history is still a useful report, so none
- * of those failures stop the upload — they just leave the artifact out.
- */
-async function collectInstantReplay(tabId: number | undefined): Promise<string | null> {
-  if (typeof tabId !== "number") {
-    return null;
-  }
-  try {
-    const response = (await chrome.tabs.sendMessage(tabId, {
-      action: "COLLECT_INSTANT_REPLAY",
-    })) as { ok?: boolean; artifact?: unknown } | undefined;
-
-    return response?.ok && response.artifact ? JSON.stringify(response.artifact) : null;
-  } catch {
-    return null;
-  }
 }
 
 async function handleSaveAnnotatedScreenshot(
@@ -2533,9 +2917,45 @@ async function handleSaveAnnotatedScreenshot(
       : settings.folderId;
 
   const merged = mergeAnnotatedScreenshot(pending, annotated);
-  const instantReplay = settings.instantReplayEnabled
+  const instantReplayCollected = settings.instantReplayEnabled
     ? await collectInstantReplay(pending.tabId)
     : null;
+  let screenshotArtifacts: Record<string, string> = {};
+  if (
+    instantReplayCollected &&
+    instantReplayCollected.ok &&
+    hasInstantReplayFrames(instantReplayCollected.artifact)
+  ) {
+    const privacySettings = pickPrivacyRedactionSettings(settings);
+    const previousPrivacy = activeRecording.privacySettings;
+    const previousRecordingSettings = activeRecording.recordingSettings;
+    activeRecording.privacySettings = privacySettings;
+    activeRecording.recordingSettings = settings;
+    screenshotArtifacts = buildInstantReplayPackageArtifacts({
+      instantReplayJson: JSON.stringify(instantReplayCollected.artifact),
+      evidence: instantReplayCollected.evidence,
+      privacySettings,
+      redact: {
+        network: (entry) => redactInPageNetworkEntry({ ...entry }),
+        websocket: (entry) =>
+          redactInPageWebSocketEntry({
+            ...entry,
+            frames: entry.frames.map((frame) => ({ ...frame })),
+          }),
+        storage: (snapshot) =>
+          redactInPageStorageSnapshot({
+            ...snapshot,
+            localStorage: snapshot.localStorage.map((item) => ({ ...item })),
+            sessionStorage: snapshot.sessionStorage.map((item) => ({
+              ...item,
+            })),
+            cookies: snapshot.cookies.map((cookie) => ({ ...cookie })),
+          }),
+      },
+    });
+    activeRecording.privacySettings = previousPrivacy;
+    activeRecording.recordingSettings = previousRecordingSettings;
+  }
 
   try {
     await ensureOffscreenDocumentForPackaging();
@@ -2550,7 +2970,7 @@ async function handleSaveAnnotatedScreenshot(
         zipPassword: settings.zipPassword || null,
         url: merged.screenshot.url,
         screenshots: [{ screenshot: merged.screenshot, imageDataUrl: merged.imageDataUrl }],
-        artifacts: instantReplay ? { instantReplay } : {},
+        artifacts: screenshotArtifacts,
       },
     })) as MessageResponse & Partial<UploadSuccessResult>;
 
@@ -2558,12 +2978,32 @@ async function handleSaveAnnotatedScreenshot(
       return { ok: false, error: result?.error || "Screenshot upload failed." };
     }
 
+    // Commit IR buffer only after a successful upload (collect is non-destructive).
+    if (screenshotArtifacts.instantReplay) {
+      await commitInstantReplay(pending.tabId);
+    }
+
     // The capture is a picture of the user's screen; it has no reason to
     // outlive the report it belongs to.
     await clearPendingScreenshot();
     await closeOffscreenDocumentIfIdle();
 
-    return { ok: true, recordingUrl: normalizeRecordingUrl(result.recordingUrl) ?? undefined };
+    const recordingUrl = normalizeRecordingUrl(result.recordingUrl) ?? undefined;
+    if (recordingUrl) {
+      await persistReportUploadHistory({
+        recordingUrl,
+        pageUrl: merged.screenshot.url,
+        indexFileId: result.indexFileId ?? null,
+        targetFolderId: result.targetFolderId ?? targetFolderId,
+        durationMs: 0,
+        provider: storageProviderId,
+      });
+    }
+
+    return {
+      ok: true,
+      recordingUrl,
+    };
   } catch (error) {
     return { ok: false, error: (error as Error).message };
   }

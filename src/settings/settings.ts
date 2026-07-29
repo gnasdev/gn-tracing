@@ -7,22 +7,14 @@ import { attachPageNav } from "../shared/page-nav";
 import { getPrivacyProfileSettings, normalizeMaskDomSelectors } from "../shared/privacy-redaction";
 import { attachThemeToggle, type ThemeToggleController } from "../shared/theme";
 import { attachLanguageSwitch, type UiLanguage } from "../shared/ui-language";
-import type {
-  CaptureProfile,
-  MessageResponse,
-  PrivacyProfile,
-  PrivacyRedactionSettings,
-  UploadHistoryEntry,
-  UploadSettings,
-} from "../types/messages";
+import type { MessageResponse, UploadHistoryEntry, UploadSettings } from "../types/messages";
 
 const DEFAULT_SETTINGS: UploadSettings = {
   activeStorageProvider: "google-drive",
   folderInput: "/gn-tracing",
   folderId: null,
   zipPasswordConfigured: false,
-  captureProfile: "full",
-  ...getPrivacyProfileSettings("standard"),
+  ...getPrivacyProfileSettings("custom"),
   captureConsole: true,
   captureConsoleArgs: true,
   consolePreviewDepth: "full",
@@ -43,108 +35,18 @@ const DEFAULT_SETTINGS: UploadSettings = {
   captureWebSocketFrames: true,
   maxWebSocketFrameBytes: null,
   captureWebSocketInitiator: true,
-  captureStorage: false,
+  captureStorage: true,
   redactStorageValues: true,
-  captureDomSnapshots: false,
+  captureDomSnapshots: true,
   redactDomTextContent: true,
+  // Instant Replay enable/window are owned by the popup (host-permission UX).
+  // Settings must round-trip the stored values so a capture-section save does
+  // not silently turn always-on IR off.
   instantReplayEnabled: false,
-  captureMode: "in-page",
+  instantReplayWindowSeconds: 120,
+  instantReplayAllowedDomains: [] as string[],
+  captureMode: "cdp",
 };
-
-type CapturePresetSettings = Omit<
-  UploadSettings,
-  | "activeStorageProvider"
-  | "folderInput"
-  | "folderId"
-  | "zipPasswordConfigured"
-  | "captureProfile"
-  | "captureStorage"
-  | "redactStorageValues"
-  | "captureDomSnapshots"
-  | "redactDomTextContent"
-  // Instant replay is a permission decision, not a capture-fidelity dial, so a
-  // capture preset must never switch it on behind the user's back.
-  | "instantReplayEnabled"
-  | "captureMode"
-  | keyof PrivacyRedactionSettings
->;
-
-function getCapturePresetSettings(
-  profile: Exclude<CaptureProfile, "custom">,
-): CapturePresetSettings {
-  if (profile === "lean") {
-    return {
-      captureConsole: true,
-      captureConsoleArgs: false,
-      consolePreviewDepth: "none",
-      captureConsoleStacks: "errors",
-      captureConsoleSourceSnippets: "errors",
-      maxConsoleEntryBytes: 16384,
-      captureNetwork: true,
-      captureRequestHeaders: "minimal",
-      captureResponseHeaders: "minimal",
-      captureRequestBodies: false,
-      captureResponseBodies: false,
-      captureResponseBodyMode: "off",
-      maxResponseBodyBytes: 0,
-      captureRedirectHeaders: "location",
-      captureInitiator: "summary",
-      suppressRecorderInternalRequests: true,
-      captureWebSockets: true,
-      captureWebSocketFrames: false,
-      maxWebSocketFrameBytes: 0,
-      captureWebSocketInitiator: false,
-    };
-  }
-
-  if (profile === "balanced") {
-    return {
-      captureConsole: true,
-      captureConsoleArgs: true,
-      consolePreviewDepth: "shallow",
-      captureConsoleStacks: "warnings-errors",
-      captureConsoleSourceSnippets: "warnings-errors",
-      maxConsoleEntryBytes: 32768,
-      captureNetwork: true,
-      captureRequestHeaders: "full",
-      captureResponseHeaders: "full",
-      captureRequestBodies: true,
-      captureResponseBodies: true,
-      captureResponseBodyMode: "eligible",
-      maxResponseBodyBytes: 1024 * 1024,
-      captureRedirectHeaders: "location",
-      captureInitiator: "summary",
-      suppressRecorderInternalRequests: true,
-      captureWebSockets: true,
-      captureWebSocketFrames: true,
-      maxWebSocketFrameBytes: 65536,
-      captureWebSocketInitiator: false,
-    };
-  }
-
-  return {
-    captureConsole: true,
-    captureConsoleArgs: true,
-    consolePreviewDepth: "full",
-    captureConsoleStacks: "all",
-    captureConsoleSourceSnippets: "all",
-    maxConsoleEntryBytes: null,
-    captureNetwork: true,
-    captureRequestHeaders: "full",
-    captureResponseHeaders: "full",
-    captureRequestBodies: true,
-    captureResponseBodies: true,
-    captureResponseBodyMode: "eligible",
-    maxResponseBodyBytes: null,
-    captureRedirectHeaders: "full",
-    captureInitiator: "full-stack",
-    suppressRecorderInternalRequests: true,
-    captureWebSockets: true,
-    captureWebSocketFrames: true,
-    maxWebSocketFrameBytes: null,
-    captureWebSocketInitiator: true,
-  };
-}
 
 type SettingsLanguage = UiLanguage;
 
@@ -172,45 +74,20 @@ const TRANSLATIONS: Record<SettingsLanguage, Record<string, string>> = {
     "feedback.success": "Feedback submitted.",
     "feedback.failed": "Could not submit feedback.",
     "page.title": "Settings",
-    "page.lead": "Choose what each recording captures before you start a session.",
+    "page.lead":
+      "Choose what each recording captures before you start a session. Save each section when you finish editing it.",
     "actions.save": "Save Settings",
-    "sections.captureProfile": "Capture Profile",
+    "actions.saveSection": "Save section",
+    "actions.savingSection": "Saving…",
     "sections.privacyRedaction": "Privacy & Redaction",
     "sections.privacyData": "Data redaction",
     "sections.visualMasking": "Visual masking",
-    "sections.googleDrive": "Cloud storage",
-    "sections.storage": "Cloud storage",
-    "fields.storageProvider.label": "Storage provider",
-    "hints.storageProviderConnect":
-      "Default upload provider when that cloud is already connected. Open Connect clouds from the popup (or the Connect page) to link Google Drive or Dropbox.",
-    "options.providerGoogleDrive": "Google Drive",
-    "options.providerDropbox": "Dropbox",
-    "placeholders.folder": "/gn-tracing",
-    "placeholders.folderDrive": "/gn-tracing, folder ID, or Drive link",
-    "placeholders.folderDropbox": "/gn-tracing or blank for root",
+    "sections.capture": "Capture",
     "sections.console": "Console",
     "sections.network": "Network",
     "sections.websocket": "WebSocket",
-    "sections.inspector": "Inspector capture (preview)",
-    "sections.instantReplay": "Instant replay",
-    "fields.instantReplay.label": "Keep the last 120 seconds of page activity",
-    "hints.instantReplay":
-      "Off by default. When on, GN Tracing keeps a rolling DOM snapshot buffer of pages you browse so a screenshot report can include what happened before the bug — no need to reproduce it. Turning this on asks for permission to run on every site. Nothing leaves your browser until you file a report, the buffer is discarded every eight minutes, and it disables itself on pages too heavy to snapshot without slowing them down.",
-    "profile.lean.label": "Lean",
-    "profile.lean.help": "Metadata, minimal headers, compact console, no bodies.",
-    "profile.balanced.label": "Balanced",
-    "profile.balanced.help": "Useful debug details with bounded payloads.",
-    "profile.full.label": "Full debug",
-    "profile.full.help": "Maximum detail with blank byte limits.",
-    "profile.custom.label": "Custom",
-    "profile.custom.help": "Use the advanced choices below.",
-    "privacy.standard.label": "Standard",
-    "privacy.standard.help": "Redact high-confidence secrets across artifacts.",
-    "privacy.strict.label": "Strict",
-    "privacy.strict.help": "Also redact personal and opaque identifiers.",
-    "privacy.custom.label": "Custom",
-    "privacy.custom.help": "Use the privacy choices below.",
-    "fields.folder.label": "Upload folder",
+    "sections.inspector": "Inspector capture",
+    "sections.captureMode": "Capture mode",
     "fields.redactSensitiveHeaders.label": "Redact sensitive headers",
     "fields.redactSensitiveQueryParams.label": "Redact sensitive query params",
     "fields.redactRequestBodyFields.label": "Redact request body fields",
@@ -266,26 +143,16 @@ const TRANSLATIONS: Record<SettingsLanguage, Record<string, string>> = {
     "options.fullStack": "Full stack",
     "placeholders.noLimit": "No limit",
     "placeholders.maskDomSelectors": "[data-private]\n.customer-email",
-    "hints.folderDefault": "Using upload folder: /gn-tracing.",
-    "hints.folderRoot": "Using cloud root folder.",
-    "hints.folderPath": "Using folder: {value}.",
-    "hints.folderId": "Resolved folder ID: {value}",
-    "hints.folderDropbox": "Dropbox path (e.g. /gn-tracing). Created on upload if missing.",
-    "hints.folderDrive": "Google Drive: /folder/path, folder ID, or Drive folder link.",
-
     "hints.visualMasking":
       "Selectors are applied before capture when possible. They do not cover canvas, video, or closed shadow DOM.",
     "hints.inspectorCapture":
       "Storage and DOM capture turn on automatically while network/request capture is enabled, and lock to it. They capture more sensitive data (storage, cookies, DOM text) and increase package size. Turn off network capture to disable them, and keep redaction on to mask values that match sensitive patterns.",
     "hints.captureMode":
-      "In-page is the default and avoids the chrome.debugger banner, but has lower fidelity (no cross-origin response bodies, no real source maps). Switch to CDP for full fidelity if you accept the debugging banner.",
+      "CDP is the default for full-fidelity capture (DevTools-like network, response bodies, real source maps) and may show the chrome.debugger banner. Switch to in-page to avoid the banner; network is then limited to fetch/XHR/WebSocket with no cross-origin response bodies or real source maps.",
     "messages.settingsSaved": "Settings saved.",
-    "messages.profileSaved": "Capture profile saved.",
-    "messages.privacyProfileSaved": "Privacy profile saved.",
+    "messages.sectionSaved": "Section saved.",
     "messages.loadFailed": "Failed to load settings",
     "messages.saveFailed": "Failed to save settings",
-    "messages.profileFailed": "Failed to save profile",
-    "messages.privacyProfileFailed": "Failed to save privacy profile",
     "info.buttonLabel": "Explain this field",
     "info.dialogTitleFallback": "Setting help",
   },
@@ -312,45 +179,20 @@ const TRANSLATIONS: Record<SettingsLanguage, Record<string, string>> = {
     "feedback.success": "Đã gửi góp ý.",
     "feedback.failed": "Không gửi được góp ý.",
     "page.title": "Cài đặt",
-    "page.lead": "Chọn dữ liệu cần capture trước khi bắt đầu phiên ghi.",
+    "page.lead":
+      "Chọn dữ liệu cần capture trước khi bắt đầu phiên ghi. Lưu từng section sau khi chỉnh.",
     "actions.save": "Lưu cài đặt",
-    "sections.captureProfile": "Hồ sơ capture",
+    "actions.saveSection": "Lưu section",
+    "actions.savingSection": "Đang lưu…",
     "sections.privacyRedaction": "Privacy & Redaction",
     "sections.privacyData": "Che dữ liệu",
     "sections.visualMasking": "Che giao diện",
-    "sections.googleDrive": "Lưu trữ đám mây",
-    "sections.storage": "Lưu trữ đám mây",
-    "fields.storageProvider.label": "Nhà cung cấp lưu trữ",
-    "hints.storageProviderConnect":
-      "Provider upload mặc định khi cloud đó đã connect. Mở Connect clouds từ popup (hoặc trang Connect) để liên kết Google Drive hoặc Dropbox.",
-    "options.providerGoogleDrive": "Google Drive",
-    "options.providerDropbox": "Dropbox",
-    "placeholders.folder": "/gn-tracing",
-    "placeholders.folderDrive": "/gn-tracing, folder ID, hoặc link Drive",
-    "placeholders.folderDropbox": "/gn-tracing hoặc để trống cho root",
+    "sections.capture": "Capture",
     "sections.console": "Console",
     "sections.network": "Network",
     "sections.websocket": "WebSocket",
-    "sections.inspector": "Thu thập inspector (xem trước)",
-    "sections.instantReplay": "Instant replay",
-    "fields.instantReplay.label": "Giữ lại 120 giây hoạt động gần nhất của trang",
-    "hints.instantReplay":
-      "Mặc định tắt. Khi bật, GN Tracing giữ một bộ đệm ảnh chụp DOM cuộn theo thời gian cho các trang bạn duyệt, để báo cáo ảnh màn hình có thể kèm những gì xảy ra trước khi lỗi xuất hiện — không cần tái hiện lại. Bật lên sẽ xin quyền chạy trên mọi trang. Không có gì rời khỏi trình duyệt cho tới khi bạn gửi báo cáo, bộ đệm bị xoá mỗi tám phút, và tính năng tự tắt trên những trang quá nặng để tránh làm chậm trang.",
-    "profile.lean.label": "Gọn nhẹ",
-    "profile.lean.help": "Metadata, header tối thiểu, console gọn, không lưu body.",
-    "profile.balanced.label": "Cân bằng",
-    "profile.balanced.help": "Đủ dữ liệu debug phổ biến với payload có giới hạn.",
-    "profile.full.label": "Debug đầy đủ",
-    "profile.full.help": "Giữ tối đa chi tiết, các giới hạn byte để trống.",
-    "profile.custom.label": "Tùy chỉnh",
-    "profile.custom.help": "Dùng các lựa chọn chi tiết bên dưới.",
-    "privacy.standard.label": "Chuẩn",
-    "privacy.standard.help": "Che các secret có độ chắc cao trong artifacts.",
-    "privacy.strict.label": "Nghiêm ngặt",
-    "privacy.strict.help": "Che thêm thông tin cá nhân và định danh dài.",
-    "privacy.custom.label": "Tùy chỉnh",
-    "privacy.custom.help": "Dùng các lựa chọn privacy bên dưới.",
-    "fields.folder.label": "Thư mục upload",
+    "sections.inspector": "Thu thập inspector",
+    "sections.captureMode": "Chế độ capture",
     "fields.redactSensitiveHeaders.label": "Che header nhạy cảm",
     "fields.redactSensitiveQueryParams.label": "Che query param nhạy cảm",
     "fields.redactRequestBodyFields.label": "Che field request body",
@@ -406,82 +248,22 @@ const TRANSLATIONS: Record<SettingsLanguage, Record<string, string>> = {
     "options.fullStack": "Stack đầy đủ",
     "placeholders.noLimit": "Không giới hạn",
     "placeholders.maskDomSelectors": "[data-private]\n.customer-email",
-    "hints.folderDefault": "Đang dùng thư mục upload: /gn-tracing.",
-    "hints.folderRoot": "Đang dùng thư mục gốc trên cloud.",
-    "hints.folderPath": "Đang dùng thư mục: {value}.",
-    "hints.folderId": "Folder ID đã resolve: {value}",
-    "hints.folderDropbox": "Đường dẫn Dropbox (vd. /gn-tracing). Tạo khi upload nếu chưa có.",
-    "hints.folderDrive": "Google Drive: /folder/path, folder ID, hoặc link thư mục Drive.",
-
     "hints.visualMasking":
       "Selector được áp dụng trước khi capture nếu có thể. Không che canvas, video hoặc closed shadow DOM.",
     "hints.inspectorCapture":
       "Capture storage và DOM tự động bật và khoá theo khi network/request capture đang bật. Chúng capture thêm dữ liệu nhạy cảm (storage, cookie, text DOM) và làm tăng kích thước package. Tắt network capture để tắt chúng, và giữ redaction bật để che các giá trị khớp pattern nhạy cảm.",
     "hints.captureMode":
-      "In-page là mặc định, không hiện banner chrome.debugger nhưng fidelity thấp hơn (không có response body cross-origin, không có source map thật). Chuyển sang CDP nếu cần fidelity đầy đủ và chấp nhận banner debug.",
+      "CDP là mặc định cho capture fidelity đầy đủ (network kiểu DevTools, response body, source map thật) và có thể hiện banner chrome.debugger. Chọn in-page để tránh banner; khi đó network chỉ bắt fetch/XHR/WebSocket, không có response body cross-origin hay source map thật.",
     "messages.settingsSaved": "Đã lưu cài đặt.",
-    "messages.profileSaved": "Đã lưu hồ sơ capture.",
-    "messages.privacyProfileSaved": "Đã lưu hồ sơ privacy.",
+    "messages.sectionSaved": "Đã lưu section.",
     "messages.loadFailed": "Không tải được cài đặt",
     "messages.saveFailed": "Không lưu được cài đặt",
-    "messages.profileFailed": "Không lưu được hồ sơ capture",
-    "messages.privacyProfileFailed": "Không lưu được hồ sơ privacy",
     "info.buttonLabel": "Giải thích field này",
     "info.dialogTitleFallback": "Giải thích cài đặt",
   },
 };
 
 const FIELD_HELP: Record<string, Record<SettingsLanguage, { title: string; body: string }>> = {
-  "profile:lean": {
-    en: {
-      title: "Lean profile",
-      body: "Use this when a tester only needs the replay flow, basic errors, and request metadata. It keeps packages smaller but may miss request bodies or detailed payload evidence.",
-    },
-    vi: {
-      title: "Hồ sơ gọn nhẹ",
-      body: "Dùng khi tester chỉ cần replay flow, lỗi cơ bản và metadata request. Gói sẽ nhỏ hơn nhưng có thể thiếu request body hoặc bằng chứng payload chi tiết.",
-    },
-  },
-  "profile:balanced": {
-    en: {
-      title: "Balanced profile",
-      body: "Use this for most QC sessions. It keeps common debug evidence such as headers, selected bodies, WebSocket payloads, and warning/error context without collecting every possible detail.",
-    },
-    vi: {
-      title: "Hồ sơ cân bằng",
-      body: "Phù hợp cho đa số phiên QC. Chế độ này giữ các bằng chứng debug thường dùng như headers, một phần body, payload WebSocket và ngữ cảnh warning/error mà không gom mọi chi tiết.",
-    },
-  },
-  "profile:full": {
-    en: {
-      title: "Full debug profile",
-      body: "Use this for hard-to-reproduce bugs or internal debugging. It captures the most detail and leaves byte limits blank, so package size can grow quickly on busy pages.",
-    },
-    vi: {
-      title: "Hồ sơ debug đầy đủ",
-      body: "Dùng cho bug khó tái hiện hoặc debug nội bộ. Chế độ này capture nhiều chi tiết nhất và để trống giới hạn byte, nên package có thể lớn nhanh trên trang nhiều dữ liệu.",
-    },
-  },
-  "profile:custom": {
-    en: {
-      title: "Custom profile",
-      body: "Use this when a tester needs a specific evidence set, such as full headers but no response bodies. Changing any advanced field switches the profile to Custom.",
-    },
-    vi: {
-      title: "Hồ sơ tùy chỉnh",
-      body: "Dùng khi tester cần bộ bằng chứng cụ thể, ví dụ giữ full headers nhưng không lưu response bodies. Khi chỉnh field nâng cao, profile sẽ chuyển sang Tùy chỉnh.",
-    },
-  },
-  "folder-input": {
-    en: {
-      title: "Upload folder",
-      body: "Controls where recording packages are uploaded for the active storage provider. Google Drive accepts a path, folder ID, or Drive folder link. Dropbox accepts a path (or blank for root). Use a shared project path so QC reports stay grouped.",
-    },
-    vi: {
-      title: "Thư mục upload",
-      body: "Quyết định nơi upload recording package theo nhà cung cấp lưu trữ đang chọn. Google Drive chấp nhận đường dẫn, folder ID hoặc link Drive. Dropbox chấp nhận đường dẫn (hoặc để trống cho root). Dùng path dự án chung để gom report QC.",
-    },
-  },
   "capture-console-input": {
     en: {
       title: "Capture console artifact",
@@ -714,7 +496,6 @@ const FIELD_HELP: Record<string, Record<SettingsLanguage, { title: string; body:
   },
 };
 
-const saveBtn = document.getElementById("save-settings-btn") as HTMLButtonElement;
 const infoPopover = document.getElementById("setting-info-popover") as HTMLElement;
 const infoPopoverTitle = document.getElementById("setting-info-title")!;
 const infoPopoverBody = document.getElementById("setting-info-body")!;
@@ -722,12 +503,6 @@ const toastEl = document.getElementById("toast")!;
 const toastIconEl = document.getElementById("toast-icon")!;
 const toastMessageEl = document.getElementById("toast-message")!;
 const toastCloseBtn = document.getElementById("toast-close-btn") as HTMLButtonElement;
-const storageProviderInput = document.getElementById(
-  "storage-provider-input",
-) as HTMLSelectElement | null;
-const folderInput = document.getElementById("folder-input") as HTMLInputElement;
-const folderHint = document.getElementById("folder-hint")!;
-
 const redactSensitiveHeadersInput = document.getElementById(
   "redact-sensitive-headers-input",
 ) as HTMLInputElement;
@@ -819,8 +594,9 @@ const captureDomSnapshotsInput = document.getElementById(
 const redactDomTextContentInput = document.getElementById(
   "redact-dom-text-content-input",
 ) as HTMLInputElement;
-const instantReplayInput = document.getElementById("instant-replay-input") as HTMLInputElement;
 const captureModeInput = document.getElementById("capture-mode-input") as HTMLSelectElement;
+
+type SettingsSectionId = "privacy" | "capture" | "captureMode";
 
 let currentSettings: UploadSettings | null = null;
 let currentLanguage: SettingsLanguage = "en";
@@ -834,10 +610,6 @@ function t(key: string, replacements: Record<string, string> = {}): string {
 }
 
 function getLabelForHelpKey(helpKey: string): string {
-  if (helpKey.startsWith("profile:")) {
-    return t(`profile.${helpKey.slice("profile:".length)}.label`);
-  }
-
   const label = document
     .querySelector(`[for="${helpKey}"] [data-i18n], #${helpKey}`)
     ?.closest("label");
@@ -860,10 +632,6 @@ function applyTranslations(): void {
     button.title = t("info.buttonLabel");
   });
 
-  if (currentSettings) {
-    updateFolderHint(currentSettings);
-  }
-
   if (activeInfoHelpKey && isPopoverOpen(infoPopover) && activeInfoButton) {
     fillInfoPopover(activeInfoHelpKey);
     positionInfoPopover(activeInfoButton);
@@ -875,7 +643,11 @@ function addFieldInfoButton(label: HTMLLabelElement, helpKey: string): void {
     return;
   }
 
-  const labelText = label.querySelector<HTMLElement>("span[data-i18n]");
+  // Prefer explicit check-text / label span so both toggle rows and labeled controls work.
+  const labelText =
+    label.querySelector<HTMLElement>(".settings-check-text[data-i18n]") ||
+    label.querySelector<HTMLElement>(".setting-field-label-row [data-i18n]") ||
+    label.querySelector<HTMLElement>("span[data-i18n]");
   if (!labelText) {
     return;
   }
@@ -1040,7 +812,6 @@ function withDefaultSettings(settings: Partial<UploadSettings>): UploadSettings 
     folderInput: settings.folderInput ?? DEFAULT_SETTINGS.folderInput,
     folderId: settings.folderId ?? DEFAULT_SETTINGS.folderId,
     zipPasswordConfigured: settings.zipPasswordConfigured ?? DEFAULT_SETTINGS.zipPasswordConfigured,
-    captureProfile: settings.captureProfile ?? DEFAULT_SETTINGS.captureProfile,
     privacyProfile: settings.privacyProfile ?? DEFAULT_SETTINGS.privacyProfile,
     redactSensitiveHeaders:
       settings.redactSensitiveHeaders ?? DEFAULT_SETTINGS.redactSensitiveHeaders,
@@ -1091,6 +862,11 @@ function withDefaultSettings(settings: Partial<UploadSettings>): UploadSettings 
     captureDomSnapshots: settings.captureDomSnapshots ?? DEFAULT_SETTINGS.captureDomSnapshots,
     redactDomTextContent: settings.redactDomTextContent ?? DEFAULT_SETTINGS.redactDomTextContent,
     instantReplayEnabled: settings.instantReplayEnabled ?? DEFAULT_SETTINGS.instantReplayEnabled,
+    instantReplayWindowSeconds:
+      settings.instantReplayWindowSeconds ?? DEFAULT_SETTINGS.instantReplayWindowSeconds,
+    instantReplayAllowedDomains: Array.isArray(settings.instantReplayAllowedDomains)
+      ? [...settings.instantReplayAllowedDomains]
+      : [...DEFAULT_SETTINGS.instantReplayAllowedDomains],
     captureMode: settings.captureMode ?? DEFAULT_SETTINGS.captureMode,
   };
 }
@@ -1101,32 +877,6 @@ function showMessage(message: string, success = false): void {
   });
 }
 
-function getProfileInput(): HTMLInputElement {
-  return document.querySelector('input[name="capture-profile"]:checked') as HTMLInputElement;
-}
-
-function getPrivacyProfileInput(): HTMLInputElement {
-  return document.querySelector('input[name="privacy-profile"]:checked') as HTMLInputElement;
-}
-
-function setProfile(profile: string): void {
-  const input = document.querySelector(
-    `input[name="capture-profile"][value="${profile}"]`,
-  ) as HTMLInputElement | null;
-  if (input) {
-    input.checked = true;
-  }
-}
-
-function setPrivacyProfile(profile: string): void {
-  const input = document.querySelector(
-    `input[name="privacy-profile"][value="${profile}"]`,
-  ) as HTMLInputElement | null;
-  if (input) {
-    input.checked = true;
-  }
-}
-
 function getOptionalNumber(input: HTMLInputElement): number | null {
   if (input.value.trim() === "") {
     return null;
@@ -1135,46 +885,9 @@ function getOptionalNumber(input: HTMLInputElement): number | null {
   return Number.isFinite(value) ? value : null;
 }
 
-function updateFolderHint(settings: UploadSettings): void {
-  const provider = settings.activeStorageProvider || "google-drive";
-  if (provider === "dropbox") {
-    folderHint.textContent =
-      settings.folderInput && settings.folderInput !== "/"
-        ? t("hints.folderPath", { value: settings.folderInput })
-        : t("hints.folderDropbox");
-    return;
-  }
-  if (settings.folderId) {
-    folderHint.textContent = t("hints.folderId", { value: settings.folderId });
-    return;
-  }
-  folderHint.textContent =
-    settings.folderInput && settings.folderInput !== "/"
-      ? t("hints.folderPath", { value: settings.folderInput })
-      : t("hints.folderRoot");
-}
-
-function syncFolderPlaceholder(provider: string): void {
-  if (provider === "dropbox") {
-    folderInput.placeholder = t("placeholders.folderDropbox");
-  } else {
-    folderInput.placeholder = t("placeholders.folderDrive");
-  }
-}
-
 function renderSettings(settings: UploadSettings): void {
   const normalizedSettings = withDefaultSettings(settings);
   currentSettings = normalizedSettings;
-  setProfile(normalizedSettings.captureProfile);
-  setPrivacyProfile(normalizedSettings.privacyProfile);
-  if (storageProviderInput) {
-    const provider = normalizedSettings.activeStorageProvider || "google-drive";
-    storageProviderInput.value =
-      provider === "dropbox" || provider === "google-drive" ? provider : "google-drive";
-    syncFolderPlaceholder(storageProviderInput.value);
-  }
-  folderInput.value = normalizedSettings.folderInput || "/";
-  updateFolderHint(normalizedSettings);
 
   redactSensitiveHeadersInput.checked = normalizedSettings.redactSensitiveHeaders;
   redactSensitiveQueryParamsInput.checked = normalizedSettings.redactSensitiveQueryParams;
@@ -1221,7 +934,6 @@ function renderSettings(settings: UploadSettings): void {
   redactStorageValuesInput.checked = normalizedSettings.redactStorageValues;
   captureDomSnapshotsInput.checked = normalizedSettings.captureDomSnapshots;
   redactDomTextContentInput.checked = normalizedSettings.redactDomTextContent;
-  instantReplayInput.checked = normalizedSettings.instantReplayEnabled;
   captureModeInput.value = normalizedSettings.captureMode;
   syncInspectorCaptureCoupling();
 }
@@ -1240,43 +952,27 @@ function syncInspectorCaptureCoupling(): void {
   captureDomSnapshotsInput.disabled = coupled;
 }
 
-function getSettingsPayload(): Record<string, unknown> {
-  const captureProfile = getProfileInput()?.value || "custom";
-  const privacyProfile = getPrivacyProfileInput()?.value || "custom";
-  const payload: Record<string, unknown> = {
-    activeStorageProvider: storageProviderInput?.value || "google-drive",
-    folderInput: folderInput.value.trim() === "/" ? "" : folderInput.value.trim(),
-    captureProfile,
-    privacyProfile,
-    // Inspector toggles are profile-independent, so always persist their current state.
+function getPrivacySectionPayload(): Record<string, unknown> {
+  return {
+    privacyProfile: "custom",
+    redactSensitiveHeaders: redactSensitiveHeadersInput.checked,
+    redactSensitiveQueryParams: redactSensitiveQueryParamsInput.checked,
+    redactRequestBodyFields: redactRequestBodyFieldsInput.checked,
+    redactResponseBodyFields: redactResponseBodyFieldsInput.checked,
+    redactConsoleValues: redactConsoleValuesInput.checked,
+    redactWebSocketPayloads: redactWebSocketPayloadsInput.value,
+    redactEventMetadata: redactEventMetadataInput.checked,
+    maskDomSelectors: normalizeMaskDomSelectors(maskDomSelectorsInput.value),
+  };
+}
+
+function getCaptureSectionPayload(): Record<string, unknown> {
+  return {
     // Coupling: network/request capture forces storage + DOM capture on.
     captureStorage: captureStorageInput.checked || captureNetworkInput.checked,
     redactStorageValues: redactStorageValuesInput.checked,
     captureDomSnapshots: captureDomSnapshotsInput.checked || captureNetworkInput.checked,
     redactDomTextContent: redactDomTextContentInput.checked,
-    instantReplayEnabled: instantReplayInput.checked,
-    captureMode: captureModeInput.value,
-  };
-
-  if (privacyProfile === "custom") {
-    Object.assign(payload, {
-      redactSensitiveHeaders: redactSensitiveHeadersInput.checked,
-      redactSensitiveQueryParams: redactSensitiveQueryParamsInput.checked,
-      redactRequestBodyFields: redactRequestBodyFieldsInput.checked,
-      redactResponseBodyFields: redactResponseBodyFieldsInput.checked,
-      redactConsoleValues: redactConsoleValuesInput.checked,
-      redactWebSocketPayloads: redactWebSocketPayloadsInput.value,
-      redactEventMetadata: redactEventMetadataInput.checked,
-      maskDomSelectors: normalizeMaskDomSelectors(maskDomSelectorsInput.value),
-    });
-  }
-
-  if (captureProfile !== "custom") {
-    return payload;
-  }
-
-  return {
-    ...payload,
     captureConsole: captureConsoleInput.checked,
     captureConsoleArgs: captureConsoleArgsInput.checked,
     consolePreviewDepth: consolePreviewDepthInput.value,
@@ -1300,6 +996,22 @@ function getSettingsPayload(): Record<string, unknown> {
   };
 }
 
+function getCaptureModeSectionPayload(): Record<string, unknown> {
+  return {
+    captureMode: captureModeInput.value,
+  };
+}
+
+function getSectionPayload(section: SettingsSectionId): Record<string, unknown> {
+  if (section === "privacy") {
+    return getPrivacySectionPayload();
+  }
+  if (section === "capture") {
+    return getCaptureSectionPayload();
+  }
+  return getCaptureModeSectionPayload();
+}
+
 async function loadSettings(): Promise<void> {
   try {
     const result = (await chrome.runtime.sendMessage({
@@ -1318,84 +1030,32 @@ async function loadSettings(): Promise<void> {
   }
 }
 
-async function saveSettings(): Promise<void> {
-  saveBtn.disabled = true;
+async function saveSection(section: SettingsSectionId, button: HTMLButtonElement): Promise<void> {
+  const previousLabel = button.textContent;
+  button.disabled = true;
+  button.textContent = t("actions.savingSection");
   try {
     const result = (await chrome.runtime.sendMessage({
       action: "UPDATE_SETTINGS",
-      data: getSettingsPayload(),
-    })) as MessageResponse & { settings?: UploadSettings };
+      data: getSectionPayload(section),
+    })) as MessageResponse & { settings?: UploadSettings; message?: string };
     if (!result.ok || !result.settings) {
       showMessage(result.error || t("messages.saveFailed"));
       return;
     }
     renderSettings(result.settings);
-    showMessage(t("messages.settingsSaved"), true);
+    if (typeof result.message === "string" && result.message.trim()) {
+      showMessage(result.message, false);
+      return;
+    }
+    showMessage(t("messages.sectionSaved"), true);
   } catch (error) {
     showMessage((error as Error).message);
   } finally {
-    saveBtn.disabled = false;
+    button.disabled = false;
+    button.textContent = previousLabel || t("actions.saveSection");
   }
 }
-
-/**
- * Apply a capture/privacy preset to the form only. Persistence happens when
- * the user clicks Save Settings — profile card changes never auto-save.
- */
-function applyCaptureProfileLocal(profile: string): void {
-  const captureProfile = profile as CaptureProfile;
-  if (captureProfile === "custom") {
-    setProfile("custom");
-    return;
-  }
-  renderSettings({
-    ...withDefaultSettings(currentSettings || DEFAULT_SETTINGS),
-    ...getCapturePresetSettings(captureProfile),
-    captureProfile,
-  });
-}
-
-function applyPrivacyProfileLocal(profile: string): void {
-  const privacyProfile = profile as PrivacyProfile;
-  if (privacyProfile === "custom") {
-    setPrivacyProfile("custom");
-    return;
-  }
-  renderSettings({
-    ...withDefaultSettings(currentSettings || DEFAULT_SETTINGS),
-    ...getPrivacyProfileSettings(privacyProfile),
-    privacyProfile,
-  });
-}
-
-document.querySelectorAll<HTMLLabelElement>(".profile-option").forEach((label) => {
-  label.addEventListener("click", () => {
-    const input = label.querySelector<HTMLInputElement>('input[name="capture-profile"]');
-    if (!input) {
-      const privacyInput = label.querySelector<HTMLInputElement>('input[name="privacy-profile"]');
-      if (!privacyInput) {
-        return;
-      }
-      privacyInput.checked = true;
-      applyPrivacyProfileLocal(privacyInput.value);
-      return;
-    }
-    input.checked = true;
-    applyCaptureProfileLocal(input.value);
-  });
-});
-
-document.querySelectorAll<HTMLInputElement>('input[name="capture-profile"]').forEach((input) => {
-  input.addEventListener("change", () => {
-    applyCaptureProfileLocal(input.value);
-  });
-});
-
-document.querySelectorAll<HTMLInputElement>('input[name="privacy-profile"]').forEach((input) => {
-  input.addEventListener("change", () => {
-    applyPrivacyProfileLocal(input.value);
-  });
-});
 
 document.querySelectorAll("input, select, textarea").forEach((input) => {
   input.addEventListener("change", () => {
@@ -1403,70 +1063,16 @@ document.querySelectorAll("input, select, textarea").forEach((input) => {
     if (input.getAttribute("id") === "capture-network-input") {
       syncInspectorCaptureCoupling();
     }
-    const profile = getProfileInput();
-    const privacyProfile = getPrivacyProfileInput();
-    const inputName = input.getAttribute("name");
-    const inputId = input.getAttribute("id") || "";
-    // Inspector capture toggles are profile-independent; toggling them must not switch profiles.
-    const isInspectorToggle =
-      inputId === "capture-storage-input" ||
-      inputId === "redact-storage-values-input" ||
-      inputId === "capture-dom-snapshots-input" ||
-      inputId === "redact-dom-text-content-input";
-    // Storage provider / folder are not capture profile fields.
-    const isStorageSetting = inputId === "storage-provider-input" || inputId === "folder-input";
-    if (inputId === "storage-provider-input" && storageProviderInput) {
-      syncFolderPlaceholder(storageProviderInput.value);
-      updateFolderHint({
-        ...withDefaultSettings(currentSettings || DEFAULT_SETTINGS),
-        activeStorageProvider:
-          storageProviderInput.value as UploadSettings["activeStorageProvider"],
-        folderInput: folderInput.value.trim() === "/" ? "" : folderInput.value.trim(),
-      });
-      // Persist provider immediately so the popup Connect targets the same cloud
-      // even if the user has not clicked Save yet.
-      void chrome.runtime
-        .sendMessage({
-          action: "UPDATE_SETTINGS",
-          data: {
-            activeStorageProvider: storageProviderInput.value,
-          },
-        })
-        .then((result: MessageResponse & { settings?: UploadSettings }) => {
-          if (result?.ok && result.settings) {
-            currentSettings = withDefaultSettings(result.settings);
-          }
-        })
-        .catch(() => {
-          // Ignore; full Save still works.
-        });
-    }
-    if (
-      profile &&
-      profile.value !== "custom" &&
-      inputName !== "capture-profile" &&
-      inputName !== "privacy-profile" &&
-      !inputId.startsWith("redact-") &&
-      inputId !== "mask-dom-selectors-input" &&
-      !isInspectorToggle &&
-      !isStorageSetting
-    ) {
-      setProfile("custom");
-    }
-    if (
-      privacyProfile &&
-      privacyProfile.value !== "custom" &&
-      inputName !== "privacy-profile" &&
-      !isInspectorToggle &&
-      (inputId.startsWith("redact-") || inputId === "mask-dom-selectors-input")
-    ) {
-      setPrivacyProfile("custom");
-    }
   });
 });
 
-saveBtn.addEventListener("click", () => {
-  void saveSettings();
+document.querySelectorAll<HTMLButtonElement>(".settings-section-save").forEach((button) => {
+  button.addEventListener("click", () => {
+    const section = button.dataset.section as SettingsSectionId | undefined;
+    if (section === "privacy" || section === "capture" || section === "captureMode") {
+      void saveSection(section, button);
+    }
+  });
 });
 
 document.addEventListener("click", (event) => {
@@ -1533,7 +1139,9 @@ if (feedbackMount) {
       failed: t("feedback.failed"),
     }),
     onResult: (result) => {
-      showToast(result.message, 4200, { variant: result.ok ? "success" : "error" });
+      showToast(result.message, 4200, {
+        variant: result.ok ? "success" : "error",
+      });
     },
   });
 }

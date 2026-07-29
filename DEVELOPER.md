@@ -88,6 +88,18 @@ task worker:sync-dev-vars  # Sync worker/.dev.vars from root .env (run automatic
 task typecheck:all  # Type-check every context (root, replay-core, SDK, MCP, player, worker)
 ```
 
+### Testing
+
+```bash
+task test           # Root Vitest (extension + packages + colocated tests)
+task test:all       # Root + player-standalone + worker unit suites
+npm run test:coverage
+npm run test:e2e:player   # Playwright player e2e (install once: npx playwright install chromium)
+task test:e2e             # Same as test:e2e:player
+```
+
+**Unit vs e2e:** pure/integration tests live next to code (`*.test.ts`) and under `test/`. Player browser e2e lives in `e2e/` and exercises `window.gnCore.network` against a static `player/` server. If browsers cannot run, use `src/shared/player-e2e-acceptance.test.ts` plus network filter/body unit suites as the gating bar. Full strategy: [docs/build-from-scratch/16-testing-strategy.md](./docs/build-from-scratch/16-testing-strategy.md).
+
 Agent integration:
 
 ```bash

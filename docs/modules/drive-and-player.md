@@ -61,7 +61,7 @@ Core source areas:
 - `src/shared/player-host.ts` — fixed hosted player base + namespaced replay URLs
 - `player/*`, `player-standalone/*` — player + per-provider download proxies
 
-Replay inspection, zip password unlock, and package parsing are documented in [Replay Player](./replay-player.md). Privacy profiles live in [Privacy And Redaction](./privacy-and-redaction.md). Google-only token-secret proxy details live in [OAuth Token Proxy](./oauth-token-proxy.md).
+Replay inspection, zip password unlock, and package parsing are documented in [Replay Player](./replay-player.md). Redaction policy lives in [Privacy And Redaction](./privacy-and-redaction.md). Google-only token-secret proxy details live in [OAuth Token Proxy](./oauth-token-proxy.md).
 
 ## 2. Functional & Non-Functional Requirements
 

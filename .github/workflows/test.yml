@@ -1,0 +1,72 @@
+name: test
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - master
+      - dev
+
+jobs:
+  unit:
+    name: unit (root + player-standalone + worker)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Install standalone player dependencies
+        run: npm ci
+        working-directory: player-standalone
+
+      - name: Install worker dependencies
+        run: npm ci
+        working-directory: worker
+
+      - name: Install Task
+        uses: arduino/setup-task@v2
+        with:
+          version: 3.x
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run multi-context unit suite
+        run: task test:all
+
+  e2e-player:
+    name: e2e player (optional label or main)
+    needs: unit
+    if: >
+      github.event_name == 'push' ||
+      contains(github.event.pull_request.labels.*.name, 'e2e')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Rebuild player core vendor
+        run: npm run vendor:player-core
+
+      - name: Run player e2e
+        run: npm run test:e2e:player

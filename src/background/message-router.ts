@@ -10,7 +10,7 @@ import type {
 import type { UploadArtifactChunkResponse } from "./upload-orchestrator";
 
 export interface MessageHandlers {
-  startRecording: (tabId: number) => Promise<MessageResponse>;
+  startRecording: (tabId: number, data?: Record<string, unknown>) => Promise<MessageResponse>;
   stopRecording: () => Promise<MessageResponse>;
   removeRecording: () => Promise<MessageResponse>;
   getRecordingStatus: () => RecordingStatus | null;
@@ -67,6 +67,7 @@ export interface MessageHandlers {
   getPendingScreenshot: () => Promise<MessageResponse & { screenshot?: unknown }>;
   discardPendingScreenshot: () => Promise<MessageResponse>;
   saveAnnotatedScreenshot: (data: Record<string, unknown> | undefined) => Promise<MessageResponse>;
+  captureInstantReplay: (tabId: number | undefined) => Promise<MessageResponse>;
 }
 
 export function registerMessageListeners(handlers: MessageHandlers): void {
@@ -111,7 +112,7 @@ async function handleMessage(
   switch (message.action) {
     case "START_RECORDING":
       return typeof message.tabId === "number"
-        ? handlers.startRecording(message.tabId)
+        ? handlers.startRecording(message.tabId, message.data)
         : { ok: false, error: "Open a browser tab before starting a recording." };
     case "STOP_RECORDING":
       return handlers.stopRecording();
@@ -189,6 +190,8 @@ async function handleMessage(
       return handlers.discardPendingScreenshot();
     case "SAVE_ANNOTATED_SCREENSHOT":
       return handlers.saveAnnotatedScreenshot(message.data);
+    case "CAPTURE_INSTANT_REPLAY":
+      return handlers.captureInstantReplay(message.tabId);
     case "SUBMIT_FEEDBACK":
       return handlers.submitFeedback(message.data);
     default:

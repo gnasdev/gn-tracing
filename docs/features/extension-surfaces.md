@@ -45,8 +45,10 @@ Durable recording truth stays in the service worker because popup windows can cl
 
 The popup is the quick recording surface. It:
 
-- shows **Cloud storage** status for the active provider (Google Drive or Dropbox)
+- shows the **Cloud storage** card: active connected provider select, upload folder path, status, and Connect/Manage clouds
 - revalidates connection state on open using per-provider mirrored connection keys when available
+- persists provider switch and folder edits immediately via `UPDATE_SETTINGS` (per-provider folder paths)
+- also owns package zip-password controls and Instant Replay (enable toggle + lookback window; capture-after-the-fact, not a Record session)
 - hides capture controls and the pending capture queue until the active storage provider is connected
 - checks whether the active tab is recordable before enabling start
 - sends start, stop, remove, upload, delete-session, storage connect/disconnect, and upload-history delete commands to the service worker
@@ -68,24 +70,17 @@ Stop is presented as "Stop & Upload" because a valid token for the active provid
 
 Shared primitives live in `shared/theme.css` (`.btn-spinner`, `.btn.is-loading`, empty cards) and `src/shared/button-loading.ts`.
 
-Capture disclosure copy refers to cloud storage generically (Google Drive or Dropbox). Capture detail and password options live in Settings.
+Capture disclosure copy refers to cloud storage generically (Google Drive or Dropbox). Cloud provider, upload folder, package password, and connect/manage flows live on the **popup** (and the dedicated Manage clouds page). Capture detail and redaction options live in Settings.
 
 ## Settings Page
 
-The Settings page owns configuration that should not crowd the popup:
+The Settings page owns capture/privacy configuration that should not crowd the popup. Layout uses one panel chrome and two field primitives (toggle row + labeled control) across sections:
 
-- **Storage provider** select: Google Drive, Dropbox
-- Upload folder input for the active provider:
-  - Google Drive: root, `/folder/path`, raw folder id, Drive folder URL, or query-string id
-  - Dropbox: path (e.g. `/gn-tracing`) or blank for root
-- optional ZIP password configuration and clear-password flow
-- capture profiles: `lean`, `balanced`, `full`, and `custom`
-- privacy profiles: `standard`, `strict`, and `custom`
-- advanced console, network, response-body, redirect, initiator, WebSocket, byte-limit, and recorder-internal-request controls
-- DOM masking selectors
-- English/Vietnamese labels and tester-oriented help dialogs for capture fields
+1. **Privacy & Redaction** — 2-col layout + per-section Save
+2. **Capture** — 2×2 groups (Console | Network, WebSocket | Inspector) + per-section Save
+3. **Capture mode** — CDP / in-page + per-section Save
 
-Capture profile and privacy profile are separate. Preset capture profiles update evidence depth, while privacy profiles update redaction behavior. Folder hints and placeholders update when the storage provider changes.
+Instant Replay lives on the **popup**: enable the checkbox (requests host permission), set rolling window (15–300s, default 120s), browse normally, then click **Instant Replay** after a bug to package the DOM lookback (not screen video). English/Vietnamese labels cover the control. Defaults are full capture + CDP for **Record**. Cloud storage and package password also stay on the popup.
 
 ## Google Drive Auth Page
 

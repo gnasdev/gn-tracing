@@ -50,7 +50,7 @@ The HTML must include `<script src="popup.js"></script>` (esbuild emits the file
 
 ### `settings/settings.html` and `settings/settings.css`
 
-The Settings page is opened from the popup and lives in its own extension page. It reads and writes `chrome.storage.local` settings (capture profile, privacy profile, Drive folder, ZIP password, DOM masking, advanced capture).
+The Settings page is opened from the popup and lives in its own extension page. It reads and writes capture/privacy settings (redaction toggles, DOM masking, capture mode, advanced capture). Cloud provider and upload folder are edited on the popup storage card.
 
 ### `history/history.html` and `history/history.css`
 

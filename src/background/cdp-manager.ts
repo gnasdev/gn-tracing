@@ -3,6 +3,10 @@
  */
 
 import {
+  drainBodyFetchesThenDetach,
+  shouldFetchResponseBodyForEntry,
+} from "../shared/network-response-body";
+import {
   getPrivacyProfileSettings,
   normalizeMaskDomSelectors,
   REDACTED_VALUE,
@@ -31,6 +35,7 @@ import type {
   StorageSnapshot,
   WebSocketEntry,
 } from "../types/recording";
+import { monotonicSecondsToEpochMs, wallClockOffsetFromNetworkPair } from "./network-clock";
 import { SourceMapResolver } from "./sourcemap-resolver";
 import type { StorageManager } from "./storage-manager";
 
@@ -410,6 +415,12 @@ export class CdpManager {
   #privacySettings: PrivacyRedactionSettings = getPrivacyProfileSettings("standard");
   #recordRedactionHits: (hits: RedactionHit[]) => void = () => {};
   #storageLimitations: string[] = [];
+  /**
+   * wallTime_ms - monotonic_ms from Network.requestWillBeSent pairs. Used to
+   * place WebSocket frame MonotonicTime timestamps on the wall-clock epoch so
+   * Instant Replay rolling trim can keep in-window frames.
+   */
+  #networkWallClockOffsetMs: number | null = null;
   #captureSettings: RuntimeCaptureSettings = {
     captureConsole: true,
     captureNetwork: true,
@@ -482,6 +493,7 @@ export class CdpManager {
     this.#attachedSessions.clear();
     this.#executionContextFrameIds.clear();
     this.#sessionTargetTypes.clear();
+    this.#networkWallClockOffsetMs = null;
     this.#sourceMapResourceUrls.clear();
     this.#sourceMapResolver.clear();
     this.#sourceMapFetches.clear();
@@ -503,18 +515,27 @@ export class CdpManager {
     chrome.debugger.onEvent.removeListener(this.#boundEventHandler);
     chrome.debugger.onDetach.removeListener(this.#boundDetachHandler);
 
-    if (this.#attached && this.#tabId) {
-      try {
-        await chrome.debugger.detach({ tabId: this.#tabId });
-      } catch {
-        // Already detached
-      }
-    }
+    // Body fetches need the debugger attached. Wait for them, finalize pending
+    // entries into storage, then detach — never detach-first (that drops bodies).
+    const tabId = this.#tabId;
+    const shouldDetachDebugger = this.#attached && tabId != null;
+    await drainBodyFetchesThenDetach({
+      bodyFetches: this.#responseBodyFetches.values(),
+      finalizePending: () => {
+        for (const key of Array.from(this.#pendingRequests.keys())) {
+          this.#finalizePendingRequest(key);
+        }
+      },
+      detachDebugger: async () => {
+        if (!shouldDetachDebugger || tabId == null) return;
+        try {
+          await chrome.debugger.detach({ tabId });
+        } catch {
+          // Already detached
+        }
+      },
+    });
 
-    await Promise.allSettled(Array.from(this.#responseBodyFetches.values()));
-    for (const key of Array.from(this.#pendingRequests.keys())) {
-      this.#finalizePendingRequest(key);
-    }
     this.#responseBodyFetches.clear();
     this.#pendingRequestExtraInfo.clear();
     this.#pendingResponseExtraInfo.clear();
@@ -646,14 +667,16 @@ export class CdpManager {
     try {
       await this.#enableDomains(params.sessionId);
       await this.#configureAutoAttach(params.sessionId);
+    } catch {
+      // Ignore child target setup failures and continue recording on the main target.
+    } finally {
+      // Always resume if we paused the child for domain enable (waitForDebuggerOnStart).
       if (params.waitingForDebugger) {
         await this.#sendCommand(
           this.#getDebuggee(params.sessionId),
           "Runtime.runIfWaitingForDebugger",
-        );
+        ).catch(() => {});
       }
-    } catch {
-      // Ignore child target setup failures and continue recording on the main target.
     }
   }
 
@@ -722,6 +745,7 @@ export class CdpManager {
           : null;
         existing.entry.timestamp = params.timestamp;
         existing.entry.wallTime = params.wallTime;
+        this.#noteNetworkWallClock(params.timestamp, params.wallTime);
         this.#applyPendingRequestMetadata(key, existing.entry);
         return;
       }
@@ -762,6 +786,7 @@ export class CdpManager {
       servedFromCache: false,
     };
 
+    this.#noteNetworkWallClock(params.timestamp, params.wallTime);
     this.#applyPendingRequestMetadata(key, entry);
     this.#pendingRequests.set(key, { sessionId: this.#getSessionId(source), entry });
 
@@ -921,33 +946,11 @@ export class CdpManager {
   }
 
   #shouldFetchBody(entry: NetworkEntry): boolean {
-    if (this.#captureSettings.captureResponseBodyMode === "off") return false;
-    if (!entry.mimeType) return false;
-    if (
-      this.#captureSettings.maxResponseBodyBytes != null &&
-      entry.encodedDataLength > this.#captureSettings.maxResponseBodyBytes
-    ) {
-      return false;
-    }
-
-    const textTypes = [
-      "text/",
-      "application/json",
-      "application/javascript",
-      "application/x-javascript",
-      "application/xml",
-      "application/xhtml+xml",
-      "application/manifest+json",
-      "application/ld+json",
-      "image/svg+xml",
-    ];
-    if (this.#captureSettings.captureResponseBodyMode === "text") {
-      return entry.mimeType.startsWith("text/");
-    }
-    if (this.#captureSettings.captureResponseBodyMode === "text-json") {
-      return entry.mimeType.startsWith("text/") || entry.mimeType.includes("json");
-    }
-    return textTypes.some((t) => entry.mimeType?.startsWith(t));
+    return shouldFetchResponseBodyForEntry(
+      this.#captureSettings.captureResponseBodyMode,
+      entry,
+      this.#captureSettings.maxResponseBodyBytes,
+    );
   }
 
   async #fetchResponseBody(source: chrome.debugger.Debuggee, requestId: string): Promise<void> {
@@ -1015,7 +1018,9 @@ export class CdpManager {
     if (ws) {
       ws.entry.frames.push({
         direction: "sent",
-        timestamp: params.timestamp,
+        // Store wall-clock epoch ms (not raw Network.MonotonicTime) so Instant
+        // Replay rolling trim can keep in-window frames.
+        timestamp: this.#webSocketFrameEpochMs(params.timestamp),
         opcode: params.response.opcode,
         payloadData: this.#getWebSocketPayload(params.response.payloadData),
       });
@@ -1031,7 +1036,7 @@ export class CdpManager {
     if (ws) {
       ws.entry.frames.push({
         direction: "received",
-        timestamp: params.timestamp,
+        timestamp: this.#webSocketFrameEpochMs(params.timestamp),
         opcode: params.response.opcode,
         payloadData: this.#getWebSocketPayload(params.response.payloadData),
       });
@@ -1799,6 +1804,28 @@ export class CdpManager {
     return ts < 1e11 ? ts * 1000 : ts;
   }
 
+  /** Learn wall-clock offset from Network events that pair monotonic + wallTime. */
+  #noteNetworkWallClock(
+    monotonicSeconds: number | undefined,
+    wallTimeSeconds: number | undefined,
+  ): void {
+    if (typeof monotonicSeconds !== "number" || typeof wallTimeSeconds !== "number") {
+      return;
+    }
+    const offset = wallClockOffsetFromNetworkPair(monotonicSeconds, wallTimeSeconds);
+    if (offset != null) {
+      this.#networkWallClockOffsetMs = offset;
+    }
+  }
+
+  /** CDP WebSocket frame timestamps are Network.MonotonicTime (seconds). */
+  #webSocketFrameEpochMs(monotonicSeconds: number | undefined): number {
+    if (typeof monotonicSeconds !== "number" || !Number.isFinite(monotonicSeconds)) {
+      return Date.now();
+    }
+    return monotonicSecondsToEpochMs(monotonicSeconds, this.#networkWallClockOffsetMs);
+  }
+
   #mapConsoleType(type: string): string {
     const map: Record<string, string> = {
       log: "log",
@@ -1868,7 +1895,9 @@ export class CdpManager {
   async #configureAutoAttach(sessionId?: string): Promise<void> {
     await this.#sendCommand(this.#getDebuggee(sessionId), "Target.setAutoAttach", {
       autoAttach: true,
-      waitForDebuggerOnStart: false,
+      // Pause new targets until Network/Runtime are enabled so early requests
+      // from iframes/workers are not missed. #onAttachedToTarget always resumes.
+      waitForDebuggerOnStart: true,
       flatten: true,
     }).catch(() => {});
   }

@@ -10,7 +10,7 @@ It captures:
 - WebSocket activity
 - optional storage snapshots (localStorage, sessionStorage, cookies) and static DOM snapshots
 - annotated screenshots — capture a page, draw arrows, boxes and notes on it, and redact anything private
-- optional instant replay: a rolling buffer of the seconds *before* a bug, so it need not be reproduced
+- Instant Replay: opt-in rolling DOM lookback; capture after a bug without re-recording
 - an optional upload to your cloud storage (Google Drive or Dropbox) with a replay link
 
 ## Screenshots
@@ -113,31 +113,39 @@ it and uploads it like any other recording, so the same replay link, MCP tools, 
 written — it is not an overlay the viewer draws. Nobody who opens the zip can recover it, which is the
 only version of "redacted" worth having.
 
-## Instant Replay (opt-in)
+## Instant Replay
 
-With instant replay on, GN Tracing keeps a rolling buffer of the last 120 seconds of DOM snapshots for
-the pages you browse, so a screenshot report can include what the page looked like before the bug —
-no reproduction needed.
+Instant Replay is **opt-in always-on lookback** (jam.dev-style), not a Record session.
 
-It is off by default and turning it on asks for permission to run on every site, because it is the one
-capture that observes pages you have not asked to record. Nothing leaves the browser until you file a
-report, the buffer is discarded every eight minutes, and it disables itself on pages too heavy to
-snapshot without slowing them down.
+1. Enable **Instant Replay** in the popup (grants optional host permission for the DOM content
+   script on http/https pages).
+2. **Add allowed domains** (popup: “Add this site”). Console/network use **CDP** only on those
+   hosts — you will see the Chrome debugger banner while the focused tab matches the allowlist.
+3. Keep browsing on an allowlisted site. GN Tracing holds a rolling **DOM** buffer plus **CDP
+   console / network / websocket / storage** for the last N seconds (default **120s**,
+   **15–300s**) **locally** — not screen video, not uploaded until you capture.
+4. When a bug happens, click **Instant Replay**. The extension packages the lookback (plus a
+   current-tab still when available) and uploads a no-video replay with `instant-replay.json` and
+   `console.json` / `network.json` when CDP captured rows.
+
+Starting **Record** on the same tab hands off the debugger to the full recording; stopping Record
+re-attaches Instant Replay CDP if the site is still allowlisted. Full **Record** remains the path
+for tab video and the full session timeline.
 
 ## Privacy Controls
 
 Sensitive request and response headers are redacted by default.
 
-Request bodies, response bodies, and WebSocket message payloads are captured only when enabled in the popup privacy settings. Response body capture is limited to supported text-based content types and about `1 MB` per response.
+Request bodies, response bodies, and WebSocket message payloads are captured by default (full recording). You can turn individual surfaces off in Settings. Response body capture is limited to supported text-based content types; byte limits are unbounded by default (`null`) and can be capped in Settings. Sensitive fields are redacted by default via per-surface redaction toggles (no privacy profile presets).
 
-### Storage and DOM capture (opt-in)
+### Storage and DOM capture
 
-Two additional evidence sources are available in Settings. Both default to **off** and ship with redaction **on**, so nothing extra is captured until you turn it on:
+Two additional evidence sources are available in Settings. Both default to **on** for full recording and ship with redaction **on**:
 
 - `captureStorage` — snapshots `localStorage`, `sessionStorage`, and cookies at recording start and stop, packaged as `storage.json` and shown in the player `Storage` tab with a start↔stop diff. `redactStorageValues` (default on) replaces values whose key matches a sensitive pattern (password, token, secret, and similar) with a redacted placeholder before the snapshot is buffered.
 - `captureDomSnapshots` — captures a static DOM tree at start, stop, and key marker events (not a continuous recording), packaged as `dom.json` and shown in the player `Elements` tab. `redactDomTextContent` (default on) masks text and attribute values for nodes matching your DOM mask selectors. Oversized snapshots are reduced or skipped, and any skipped capture is noted in the recording's privacy limitations.
 
-Because both expand the captured surface of personal data, keep them off unless a bug genuinely depends on stored state or DOM structure, and prefer the default redaction.
+Both expand the captured surface of personal data; keep redaction on unless you deliberately need raw values for debugging.
 
 ### Capture mode
 

@@ -24,6 +24,9 @@ var gnCore = (() => {
     agentReport: () => agentReport,
     annotate: () => annotate,
     capabilities: () => capabilities,
+    dom: () => dom,
+    instantReplay: () => instantReplay,
+    network: () => network,
     presentation: () => presentation,
     summary: () => summary,
     timelineSeek: () => timelineSeek
@@ -317,6 +320,139 @@ var gnCore = (() => {
 
   // packages/replay-core/src/artifacts.ts
   var DEFAULT_MAX_ENTRY_BYTES = 32 * 1024 * 1024;
+
+  // packages/replay-core/src/dom/hydrate-dom.ts
+  var ELEMENT_NODE = 1;
+  var TEXT_NODE = 3;
+  var COMMENT_NODE = 8;
+  var DOCUMENT_NODE = 9;
+  var DOCUMENT_TYPE_NODE = 10;
+  var VOID_TAGS = /* @__PURE__ */ new Set([
+    "area",
+    "base",
+    "br",
+    "col",
+    "embed",
+    "hr",
+    "img",
+    "input",
+    "link",
+    "meta",
+    "param",
+    "source",
+    "track",
+    "wbr"
+  ]);
+  var FORBIDDEN_TAGS = /* @__PURE__ */ new Set(["script", "noscript", "template"]);
+  function escapeHtmlText(value) {
+    return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+  function escapeAttr(value) {
+    return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+  function isSafeHttpUrl(value) {
+    try {
+      const url = new URL(value);
+      return url.protocol === "http:" || url.protocol === "https:";
+    } catch {
+      return false;
+    }
+  }
+  function isJavascriptUrl(value) {
+    return /^\s*javascript:/i.test(value);
+  }
+  function isEventHandlerAttr(name) {
+    return /^on/i.test(name);
+  }
+  function tagNameOf(node) {
+    return String(node.nodeName || "").toLowerCase();
+  }
+  function serializeAttributes(node) {
+    const attrs = node.attributes;
+    if (!attrs || typeof attrs !== "object") {
+      return "";
+    }
+    const parts = [];
+    for (const [rawName, rawValue] of Object.entries(attrs)) {
+      const name = String(rawName);
+      if (!name || isEventHandlerAttr(name)) {
+        continue;
+      }
+      const lower = name.toLowerCase();
+      const value = rawValue == null ? "" : String(rawValue);
+      if (lower === "href" || lower === "src" || lower === "xlink:href" || lower === "action") {
+        if (isJavascriptUrl(value)) {
+          continue;
+        }
+      }
+      if (lower === "srcdoc") {
+        continue;
+      }
+      parts.push(` ${escapeAttr(name)}="${escapeAttr(value)}"`);
+    }
+    return parts.join("");
+  }
+  function serializeNode(node) {
+    if (!node || typeof node !== "object") {
+      return "";
+    }
+    const dom2 = node;
+    const nodeType = typeof dom2.nodeType === "number" ? dom2.nodeType : ELEMENT_NODE;
+    if (nodeType === TEXT_NODE) {
+      return escapeHtmlText(dom2.nodeValue ?? "");
+    }
+    if (nodeType === COMMENT_NODE) {
+      const body = String(dom2.nodeValue ?? "").replace(/-->/g, "--&gt;");
+      return `<!--${body}-->`;
+    }
+    if (nodeType === DOCUMENT_TYPE_NODE) {
+      return "";
+    }
+    if (nodeType === DOCUMENT_NODE) {
+      const children2 = Array.isArray(dom2.children) ? dom2.children : [];
+      return children2.map((child) => serializeNode(child)).join("");
+    }
+    if (dom2.masked) {
+      return `<div data-gn-masked="1" style="padding:8px;border:1px dashed #888;color:#666;font:12px sans-serif">[masked]</div>`;
+    }
+    const tag = tagNameOf(dom2);
+    if (!tag) {
+      return "";
+    }
+    if (FORBIDDEN_TAGS.has(tag)) {
+      return "";
+    }
+    const attrs = serializeAttributes(dom2);
+    if (VOID_TAGS.has(tag)) {
+      return `<${tag}${attrs}>`;
+    }
+    const children = Array.isArray(dom2.children) ? dom2.children : [];
+    const inner = children.map((child) => serializeNode(child)).join("");
+    return `<${tag}${attrs}>${inner}</${tag}>`;
+  }
+  function hydrateDomNodeToHtml(root, options = {}) {
+    const bodyHtml = serializeNode(root);
+    const title = typeof options.title === "string" && options.title.trim() ? escapeHtmlText(options.title.trim()) : "DOM lookback";
+    let baseTag = "";
+    if (typeof options.baseHref === "string" && isSafeHttpUrl(options.baseHref)) {
+      baseTag = `<base href="${escapeAttr(options.baseHref)}">`;
+    }
+    const csp = `<meta http-equiv="Content-Security-Policy" content="script-src 'none'; object-src 'none'; base-uri 'none'">`;
+    const trimmed = bodyHtml.trim();
+    if (/^<html[\s>]/i.test(trimmed)) {
+      if (/<head[\s>]/i.test(trimmed)) {
+        return trimmed.replace(
+          /<head([^>]*)>/i,
+          `<head$1>${csp}${baseTag}<title>${title}</title>`
+        );
+      }
+      return trimmed.replace(
+        /^<html([^>]*)>/i,
+        `<html$1><head>${csp}${baseTag}<title>${title}</title></head>`
+      );
+    }
+    return `<!DOCTYPE html><html><head>${csp}${baseTag}<meta charset="utf-8"><title>${title}</title><style>html,body{margin:0;padding:0;background:#fff;color:#111;font:14px/1.4 system-ui,sans-serif}</style></head><body>${trimmed}</body></html>`;
+  }
 
   // packages/replay-core/src/views.ts
   function resolveRecordingStartTime(metadata) {
@@ -914,80 +1050,266 @@ var gnCore = (() => {
     });
   }
 
+  // src/shared/network-filter-type.ts
+  var DYNAMIC_ROUTE_EXTENSIONS = /* @__PURE__ */ new Set([".html", ".htm", ".php", ".asp", ".aspx", ".jsp"]);
+  var CANONICAL_TYPE_MAP = {
+    script: "js",
+    stylesheet: "css",
+    image: "img",
+    document: "doc",
+    font: "font",
+    media: "media",
+    texttrack: "media",
+    websocket: "ws",
+    xhr: "fetch",
+    fetch: "fetch",
+    preflight: "fetch",
+    prefetch: "fetch",
+    eventsource: "fetch",
+    manifest: "doc",
+    signedexchange: "doc",
+    ping: "other",
+    cspviolationreport: "other",
+    fedcm: "other"
+  };
+  function getNetworkUrlExtension(url) {
+    try {
+      const pathname = new URL(url || "", "http://x").pathname.toLowerCase();
+      const lastSegment = pathname.split("/").pop() || "";
+      const dot = lastSegment.lastIndexOf(".");
+      if (dot > 0 && dot < lastSegment.length - 1) {
+        return lastSegment.slice(dot);
+      }
+    } catch {
+    }
+    return "";
+  }
+  function detectNetworkFilterFromUrlAndMime(url, mimeType) {
+    const normalizedMimeType = String(mimeType || "").toLowerCase();
+    if (normalizedMimeType.includes("javascript") || normalizedMimeType.includes("ecmascript")) {
+      return "js";
+    }
+    if (normalizedMimeType.includes("css") && !normalizedMimeType.includes("html")) {
+      return "css";
+    }
+    if (normalizedMimeType.includes("html")) return "doc";
+    if (normalizedMimeType.startsWith("image/")) return "img";
+    if (normalizedMimeType.startsWith("font/")) return "font";
+    if (normalizedMimeType.startsWith("audio/") || normalizedMimeType.startsWith("video/")) {
+      return "media";
+    }
+    const ext = getNetworkUrlExtension(url || "");
+    if (ext) {
+      const extMap = {
+        ".js": "js",
+        ".mjs": "js",
+        ".cjs": "js",
+        // Source maps are not scripts; keep them out of the JS filter.
+        ".map": "other",
+        ".css": "css",
+        ".png": "img",
+        ".jpg": "img",
+        ".jpeg": "img",
+        ".gif": "img",
+        ".svg": "img",
+        ".webp": "img",
+        ".ico": "img",
+        ".avif": "img",
+        ".bmp": "img",
+        ".woff": "font",
+        ".woff2": "font",
+        ".ttf": "font",
+        ".eot": "font",
+        ".otf": "font",
+        ".mp4": "media",
+        ".webm": "media",
+        ".mp3": "media",
+        ".ogg": "media",
+        ".wav": "media",
+        ".html": "doc",
+        ".htm": "doc",
+        ".php": "doc",
+        ".asp": "doc",
+        ".aspx": "doc",
+        ".jsp": "doc",
+        ".json": "other",
+        ".xml": "other",
+        ".txt": "other",
+        ".csv": "other",
+        ".pdf": "other",
+        ".zip": "other"
+      };
+      if (extMap[ext]) return extMap[ext];
+    }
+    if (normalizedMimeType.includes("json")) return "fetch";
+    return null;
+  }
+  function getNetworkFilterType(input) {
+    const normalizedResourceType = String(input.resourceType || "").trim().toLowerCase();
+    const url = input.url || "";
+    const mimeType = input.mimeType || "";
+    if (normalizedResourceType && CANONICAL_TYPE_MAP[normalizedResourceType]) {
+      return CANONICAL_TYPE_MAP[normalizedResourceType];
+    }
+    const detected = detectNetworkFilterFromUrlAndMime(url, mimeType);
+    if (detected) return detected;
+    const ext = getNetworkUrlExtension(url);
+    if (ext && !DYNAMIC_ROUTE_EXTENSIONS.has(ext)) {
+      return "other";
+    }
+    return "other";
+  }
+
+  // src/shared/network-response-body.ts
+  function resolveNetworkResponseBodyDisplay(content) {
+    const raw = content.text == null ? "" : String(content.text);
+    if (!raw) {
+      return { kind: "missing", text: "" };
+    }
+    if (content.encoding === "base64") {
+      const decoded = content.decodedText == null ? "" : String(content.decodedText);
+      if (!decoded) {
+        return { kind: "binary", text: "" };
+      }
+      return { kind: "text", text: decoded };
+    }
+    return { kind: "text", text: raw };
+  }
+
   // src/shared/player-presentation.ts
+  function withDomStage(plan, evidence) {
+    const showDomStage = !evidence.hasVideo && evidence.hasDom && evidence.screenshotCount === 0;
+    return { ...plan, showDomStage };
+  }
   function hasLogEvidence(evidence) {
     return evidence.consoleCount > 0 || evidence.networkCount > 0 || evidence.websocketCount > 0 || evidence.activityCount > 0 || evidence.hasStorage || evidence.hasDom;
+  }
+  function defaultTabForDomLookback(evidence) {
+    if (evidence.hasDom && evidence.screenshotCount === 0) {
+      return "elements";
+    }
+    if (evidence.screenshotCount > 0) {
+      return "screenshots";
+    }
+    return "console";
   }
   function resolvePresentationMode(evidence) {
     const hasScreenshots = evidence.screenshotCount > 0;
     const hasLogs = hasLogEvidence(evidence);
     if (evidence.hasVideo) {
-      return {
-        mode: "recording",
-        defaultTab: evidence.hasReportContent ? "report" : evidence.activityCount > 0 ? "activity" : "console",
-        showVideoSection: true,
-        showLayoutSplitter: true,
-        // DevTools-like: keep console/network visible even when the session was quiet.
-        showConsoleTab: true,
-        showNetworkTab: true,
-        showScreenshotsTab: hasScreenshots,
-        showReportTab: evidence.hasReportContent,
-        showActivityTab: evidence.activityCount > 0,
-        showStorageTab: evidence.hasStorage,
-        showElementsTab: evidence.hasDom,
-        noVideoNotice: "none"
-      };
+      return withDomStage(
+        {
+          mode: "recording",
+          defaultTab: evidence.hasReportContent ? "report" : evidence.activityCount > 0 ? "activity" : "console",
+          showVideoSection: true,
+          showLayoutSplitter: true,
+          // DevTools-like: keep console/network visible even when the session was quiet.
+          showConsoleTab: true,
+          showNetworkTab: true,
+          showScreenshotsTab: hasScreenshots,
+          showReportTab: evidence.hasReportContent,
+          showActivityTab: evidence.activityCount > 0,
+          showStorageTab: evidence.hasStorage,
+          showElementsTab: evidence.hasDom,
+          noVideoNotice: "none"
+        },
+        evidence
+      );
     }
-    if (hasScreenshots) {
-      const hasConsoleData = evidence.consoleCount > 0;
-      const hasNetworkData = evidence.networkCount > 0 || evidence.websocketCount > 0;
-      return {
-        mode: "screenshot",
-        defaultTab: "screenshots",
-        showVideoSection: false,
-        showLayoutSplitter: false,
-        // Only surface log tabs when the package actually carried them (forward-compat
-        // if screenshot reports later attach console/network).
-        showConsoleTab: hasConsoleData,
-        showNetworkTab: hasNetworkData,
-        showScreenshotsTab: true,
-        showReportTab: evidence.hasReportContent,
-        showActivityTab: evidence.activityCount > 0,
-        showStorageTab: evidence.hasStorage,
-        showElementsTab: evidence.hasDom,
-        noVideoNotice: "screenshot"
-      };
+    if (hasScreenshots || evidence.hasDom && !evidence.hasVideo) {
+      const irLookback = Boolean(evidence.hasInstantReplay);
+      const hasConsoleData = evidence.consoleCount > 0 || irLookback;
+      const hasNetworkData = evidence.networkCount > 0 || evidence.websocketCount > 0 || irLookback;
+      const domStagePrimary = evidence.hasDom && evidence.screenshotCount === 0;
+      const defaultTab = irLookback && evidence.consoleCount > 0 ? "console" : defaultTabForDomLookback(evidence);
+      return withDomStage(
+        {
+          mode: "screenshot",
+          defaultTab,
+          showVideoSection: domStagePrimary,
+          showLayoutSplitter: domStagePrimary,
+          showConsoleTab: hasConsoleData,
+          showNetworkTab: hasNetworkData,
+          showScreenshotsTab: hasScreenshots,
+          showReportTab: evidence.hasReportContent,
+          showActivityTab: evidence.activityCount > 0,
+          showStorageTab: evidence.hasStorage,
+          showElementsTab: evidence.hasDom,
+          noVideoNotice: domStagePrimary ? "none" : "screenshot"
+        },
+        evidence
+      );
     }
     if (hasLogs) {
-      return {
-        mode: "sdk-logs",
-        defaultTab: evidence.consoleCount > 0 ? "console" : evidence.networkCount > 0 || evidence.websocketCount > 0 ? "network" : evidence.hasStorage ? "storage" : evidence.hasDom ? "elements" : evidence.activityCount > 0 ? "activity" : "console",
-        showVideoSection: true,
-        showLayoutSplitter: true,
+      return withDomStage(
+        {
+          mode: "sdk-logs",
+          defaultTab: evidence.consoleCount > 0 ? "console" : evidence.networkCount > 0 || evidence.websocketCount > 0 ? "network" : evidence.hasStorage ? "storage" : evidence.hasDom ? "elements" : evidence.activityCount > 0 ? "activity" : "console",
+          showVideoSection: true,
+          showLayoutSplitter: true,
+          showConsoleTab: true,
+          showNetworkTab: true,
+          showScreenshotsTab: false,
+          showReportTab: evidence.hasReportContent,
+          showActivityTab: evidence.activityCount > 0,
+          showStorageTab: evidence.hasStorage,
+          showElementsTab: evidence.hasDom,
+          noVideoNotice: "sdk"
+        },
+        evidence
+      );
+    }
+    return withDomStage(
+      {
+        mode: "empty-evidence",
+        defaultTab: evidence.hasReportContent ? "report" : "console",
+        showVideoSection: false,
+        showLayoutSplitter: false,
         showConsoleTab: true,
-        showNetworkTab: true,
+        showNetworkTab: false,
         showScreenshotsTab: false,
         showReportTab: evidence.hasReportContent,
-        showActivityTab: evidence.activityCount > 0,
-        showStorageTab: evidence.hasStorage,
-        showElementsTab: evidence.hasDom,
-        noVideoNotice: "sdk"
+        showActivityTab: false,
+        showStorageTab: false,
+        showElementsTab: false,
+        noVideoNotice: "none"
+      },
+      evidence
+    );
+  }
+
+  // src/shared/instant-replay-policy.ts
+  function hasInstantReplayFrames(artifact) {
+    return Boolean(artifact && Array.isArray(artifact.frames) && artifact.frames.length > 0);
+  }
+  function mapInstantReplayToDomArtifact(artifact) {
+    const snapshots = artifact.frames.map(
+      (frame, index) => frameToDomSnapshot(frame, index)
+    );
+    return { schemaVersion: 1, snapshots };
+  }
+  function frameToDomSnapshot(frame, index) {
+    const seconds = Math.round((frame.relativeMs || 0) / 100) / 10;
+    return {
+      label: `instant-replay:+${seconds}s`,
+      capturedAt: frame.capturedAt,
+      documentUrl: frame.documentUrl || "",
+      root: frame.root ?? { nodeType: 9, nodeName: "#document" }
+    };
+  }
+  function resolveDomArtifactForPlayer(input) {
+    const fromIr = hasInstantReplayFrames(input.instantReplay) ? mapInstantReplayToDomArtifact(input.instantReplay) : null;
+    const fromDom = input.dom && Array.isArray(input.dom.snapshots) && input.dom.snapshots.length > 0 ? input.dom : null;
+    if (fromIr && fromDom) {
+      return {
+        schemaVersion: 1,
+        snapshots: [...fromIr.snapshots, ...fromDom.snapshots]
       };
     }
-    return {
-      mode: "empty-evidence",
-      defaultTab: evidence.hasReportContent ? "report" : "console",
-      showVideoSection: false,
-      showLayoutSplitter: false,
-      showConsoleTab: true,
-      showNetworkTab: false,
-      showScreenshotsTab: false,
-      showReportTab: evidence.hasReportContent,
-      showActivityTab: false,
-      showStorageTab: false,
-      showElementsTab: false,
-      noVideoNotice: "none"
-    };
+    return fromIr ?? fromDom;
+  }
+  function packageHasInspectableDom(input) {
+    return resolveDomArtifactForPlayer(input) !== null;
   }
 
   // src/shared/player-timeline-seek.ts
@@ -1072,6 +1394,19 @@ var gnCore = (() => {
     resolveTimelineDurationMs
   };
   var presentation = { resolvePresentationMode };
+  var instantReplay = {
+    mapInstantReplayToDomArtifact,
+    packageHasInspectableDom,
+    resolveDomArtifactForPlayer
+  };
+  var dom = {
+    hydrateDomNodeToHtml
+  };
+  var network = {
+    getNetworkFilterType,
+    detectNetworkFilterFromUrlAndMime,
+    resolveNetworkResponseBodyDisplay
+  };
   var capabilities = { hasCapability, resolveCapabilities };
   var summary = { buildAgentSummary, renderBugReportMarkdown };
   var annotate = {

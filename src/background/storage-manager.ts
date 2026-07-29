@@ -81,6 +81,11 @@ export class StorageManager {
   #captureSettings: ConsoleCaptureSettings = { ...DEFAULT_CONSOLE_CAPTURE_SETTINGS };
   #privacySettings: PrivacyRedactionSettings = getPrivacyProfileSettings("standard");
   #recordRedactionHits: (hits: RedactionHit[]) => void = () => {};
+  /**
+   * When set (Instant Replay sessions), drop buffered entries older than
+   * `now - rollingWindowMs`. Null means full-session retention (normal record).
+   */
+  #rollingWindowMs: number | null = null;
 
   beginSession(): void {
     this.#consoleLogs = [];
@@ -88,6 +93,56 @@ export class StorageManager {
     this.#webSocketEntries = [];
     this.#storageSnapshots = [];
     this.#domSnapshots = [];
+    this.#rollingWindowMs = null;
+  }
+
+  /**
+   * Enable or clear rolling retention for Instant Replay.
+   * Pass null (or non-positive) to keep the full session (normal recording).
+   */
+  setRollingWindowMs(windowMs: number | null): void {
+    this.#rollingWindowMs =
+      typeof windowMs === "number" && Number.isFinite(windowMs) && windowMs > 0 ? windowMs : null;
+    this.trimToRollingWindow();
+  }
+
+  getRollingWindowMs(): number | null {
+    return this.#rollingWindowMs;
+  }
+
+  /**
+   * Drop entries older than the rolling window. Safe no-op when rolling is off.
+   * Call on push and periodically (keepalive) so idle sessions still slide.
+   */
+  trimToRollingWindow(nowMs: number = Date.now()): void {
+    if (this.#rollingWindowMs == null) {
+      return;
+    }
+    const cutoff = nowMs - this.#rollingWindowMs;
+
+    this.#consoleLogs = this.#consoleLogs.filter(
+      (entry) => this.#toEpochMs(entry.timestamp) >= cutoff,
+    );
+    this.#networkEntries = this.#networkEntries.filter(
+      (entry) => this.#networkEpochMs(entry) >= cutoff,
+    );
+    // Drop sockets with no frames left in the window (including still-open
+    // sockets whose only traffic was older than the retention window).
+    this.#webSocketEntries = this.#webSocketEntries
+      .map((entry) => {
+        if (!entry.frames?.length) {
+          return { ...entry, frames: [] };
+        }
+        const frames = entry.frames.filter((frame) => this.#toEpochMs(frame.timestamp) >= cutoff);
+        return frames.length === entry.frames.length ? entry : { ...entry, frames };
+      })
+      .filter((entry) => entry.frames.length > 0);
+    this.#storageSnapshots = this.#storageSnapshots.filter(
+      (snapshot) => snapshot.phase === "stop" || this.#toEpochMs(snapshot.capturedAt) >= cutoff,
+    );
+    this.#domSnapshots = this.#domSnapshots.filter(
+      (snapshot) => this.#toEpochMs(snapshot.capturedAt) >= cutoff,
+    );
   }
 
   setCaptureSettings(settings: Partial<ConsoleCaptureSettings>): void {
@@ -126,14 +181,17 @@ export class StorageManager {
     }
 
     this.#consoleLogs.push(entry);
+    this.trimToRollingWindow();
   }
 
   addNetworkEntry(entry: NetworkEntry): void {
     this.#networkEntries.push(entry);
+    this.trimToRollingWindow();
   }
 
   addWebSocketEntry(entry: WebSocketEntry): void {
     this.#webSocketEntries.push(entry);
+    this.trimToRollingWindow();
   }
 
   /**
@@ -151,10 +209,12 @@ export class StorageManager {
     } else {
       this.#webSocketEntries.push(entry);
     }
+    this.trimToRollingWindow();
   }
 
   setStorageSnapshot(snapshot: StorageSnapshot): void {
     this.#storageSnapshots.push(snapshot);
+    this.trimToRollingWindow();
   }
 
   /**
@@ -163,6 +223,22 @@ export class StorageManager {
    */
   addDomSnapshot(snapshot: DomSnapshot): void {
     this.#domSnapshots.push(snapshot);
+    this.trimToRollingWindow();
+  }
+
+  /** CDP wallTime is seconds; console timestamps are usually epoch ms. */
+  #toEpochMs(ts: number | undefined): number {
+    if (typeof ts !== "number" || !Number.isFinite(ts)) {
+      return 0;
+    }
+    return ts < 1e11 ? ts * 1000 : ts;
+  }
+
+  #networkEpochMs(entry: NetworkEntry): number {
+    if (typeof entry.wallTime === "number" && Number.isFinite(entry.wallTime)) {
+      return this.#toEpochMs(entry.wallTime);
+    }
+    return this.#toEpochMs(entry.timestamp);
   }
 
   getConsoleLogCount(): number {
@@ -238,7 +314,12 @@ export class StorageManager {
     }
   }
 
-  finalizeCurrentSession(): FinalizedRecordingArtifacts {
+  /**
+   * Serialize current rings without clearing (Instant Replay collect is
+   * non-destructive; clear only after a successful package commit).
+   */
+  peekFinalizedArtifacts(): FinalizedRecordingArtifacts {
+    this.trimToRollingWindow();
     const consoleLogs = this.#consoleLogs.map((entry) => {
       const redacted = redactConsoleEntry(entry, this.#privacySettings);
       this.#recordRedactionHits(redacted.applied);
@@ -252,7 +333,7 @@ export class StorageManager {
       this.#domSnapshots.length > 0
         ? { schemaVersion: 1, snapshots: this.#domSnapshots }
         : undefined;
-    const artifacts: FinalizedRecordingArtifacts = {
+    return {
       consoleLogCount: this.#consoleLogs.length,
       networkRequestCount: this.#networkEntries.length,
       consoleLogs: consoleLogs.length > 0 ? JSON.stringify(consoleLogs) : undefined,
@@ -268,7 +349,11 @@ export class StorageManager {
       storageSnapshots: storage ? JSON.stringify(storage) : undefined,
       domSnapshots: dom ? JSON.stringify(dom) : undefined,
     };
+  }
 
+  finalizeCurrentSession(): FinalizedRecordingArtifacts {
+    // Final slide before serialize so the package never exports older evidence.
+    const artifacts = this.peekFinalizedArtifacts();
     this.beginSession();
     return artifacts;
   }

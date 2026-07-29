@@ -48,7 +48,9 @@ type MessageAction =
   | "CAPTURE_SCREENSHOT"
   | "GET_PENDING_SCREENSHOT"
   | "DISCARD_PENDING_SCREENSHOT"
-  | "SAVE_ANNOTATED_SCREENSHOT";
+  | "SAVE_ANNOTATED_SCREENSHOT"
+  /** Collect always-on Instant Replay buffer on the active tab and upload. */
+  | "CAPTURE_INSTANT_REPLAY";
 
 /**
  * In-page (MAIN world) capture protocol.
@@ -180,7 +182,7 @@ export interface UploadSettings {
   folderInput: string;
   folderId: string | null;
   zipPasswordConfigured: boolean;
-  captureProfile: CaptureProfile;
+  /** Fixed non-UI value for redaction engine / privacy.json (always "custom" after migrate). */
   privacyProfile: PrivacyProfile;
   redactSensitiveHeaders: boolean;
   redactSensitiveQueryParams: boolean;
@@ -215,14 +217,27 @@ export interface UploadSettings {
   redactStorageValues: boolean;
   captureDomSnapshots: boolean;
   redactDomTextContent: boolean;
-  /** Rolling pre-bug DOM buffer; needs host permission, so off by default. */
+  /**
+   * Always-on Instant Replay: rolling DOM lookback via content script + CDP
+   * console/network on allowlisted hosts. Off by default; enabling requests
+   * optional host permission.
+   */
   instantReplayEnabled: boolean;
+  /**
+   * Rolling lookback window for Instant Replay (seconds).
+   * Default 120; clamped to 15–300 in the settings store.
+   */
+  instantReplayWindowSeconds: number;
+  /**
+   * Host patterns where Instant Replay may attach chrome.debugger (CDP).
+   * Empty = no CDP attach (safe default). Supports `*.example.com`.
+   */
+  instantReplayAllowedDomains: string[];
   // Capture mechanism: CDP (full fidelity, debugger banner) or in-page (lower fidelity, no banner).
   captureMode: CaptureMode;
 }
 
 export type CaptureMode = "cdp" | "in-page";
-export type CaptureProfile = "lean" | "balanced" | "full" | "custom";
 
 export type ConsolePreviewDepth = "none" | "shallow" | "full";
 export type ConsoleStackMode = "off" | "errors" | "warnings-errors" | "all";

@@ -14,4 +14,5 @@
 export * from "./dom-snapshot";
 export * from "./in-page-capture";
 export * from "./instant-replay";
+export * from "./instant-replay-evidence";
 export * from "./key-event";

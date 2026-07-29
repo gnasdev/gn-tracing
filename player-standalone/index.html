@@ -177,6 +177,38 @@
             <p id="no-video-notice-title" data-i18n="noVideo.title">This recording has no video</p>
             <p id="no-video-notice-hint" class="no-video-hint" data-i18n="noVideo.hint">It was captured by the in-page SDK, which records console, network, and WebSocket activity without a screen recording.</p>
           </div>
+          <div id="dom-stage" class="dom-stage hidden" aria-label="DOM lookback" data-i18n-aria="domStage.aria">
+            <iframe
+              id="dom-stage-frame"
+              class="dom-stage-frame"
+              title="DOM lookback preview"
+              data-i18n-title="domStage.frameTitle"
+              sandbox=""
+              referrerpolicy="no-referrer"
+            ></iframe>
+            <div class="dom-stage-toolbar">
+              <button type="button" id="dom-stage-prev" class="control-btn" title="Previous frame" data-i18n-title="domStage.prev" aria-label="Previous frame" data-i18n-aria="domStage.prev">
+                <i class="ph ph-caret-left" aria-hidden="true"></i>
+              </button>
+              <input
+                id="dom-stage-scrubber"
+                class="dom-stage-scrubber"
+                type="range"
+                min="0"
+                max="0"
+                value="0"
+                step="1"
+                aria-label="DOM lookback scrubber"
+                data-i18n-aria="domStage.scrubberAria"
+              >
+              <button type="button" id="dom-stage-next" class="control-btn" title="Next frame" data-i18n-title="domStage.next" aria-label="Next frame" data-i18n-aria="domStage.next">
+                <i class="ph ph-caret-right" aria-hidden="true"></i>
+              </button>
+              <span id="dom-stage-time" class="dom-stage-time">+0.0s</span>
+              <span id="dom-stage-url" class="dom-stage-url" title=""></span>
+            </div>
+            <p id="dom-stage-hint" class="dom-stage-hint" data-i18n="domStage.hint">Structural DOM lookback — layout may differ without full page CSS.</p>
+          </div>
           <div id="video-container" class="video-container">
             <!-- biome-ignore lint/a11y/useMediaCaption: Replay videos are raw browser recordings without authored captions. -->
             <video id="video-player"></video>
@@ -253,13 +285,13 @@
 
         <div id="logs-panel" class="logs-panel">
           <div class="tab-bar">
+            <button type="button" id="screenshots-tab" class="tab-btn hidden" data-i18n="tabs.screenshots">Screenshot</button>
             <button type="button" id="report-tab" class="tab-btn hidden" data-i18n="tabs.report">Report</button>
             <button type="button" id="activity-tab" class="tab-btn hidden" data-i18n="tabs.activity">Activity</button>
+            <button type="button" id="elements-tab" class="tab-btn hidden" data-i18n="tabs.elements">Elements</button>
             <button type="button" id="console-tab" class="tab-btn active" data-i18n="tabs.console">Console</button>
             <button type="button" id="network-tab" class="tab-btn" data-i18n="tabs.network">Network</button>
             <button type="button" id="storage-tab" class="tab-btn hidden" data-i18n="tabs.storage">Storage</button>
-            <button type="button" id="elements-tab" class="tab-btn hidden" data-i18n="tabs.elements">Elements</button>
-            <button type="button" id="screenshots-tab" class="tab-btn hidden" data-i18n="tabs.screenshots">Screenshots</button>
           </div>
 
           <div id="report-viewer" class="viewer-container report-viewer hidden">
@@ -347,8 +379,14 @@
 
           <div id="elements-viewer" class="viewer-container elements-viewer hidden" aria-label="DOM snapshot tree" data-i18n-aria="elements.aria">
             <div class="filter-bar elements-toolbar">
-              <label class="elements-snapshot-label" for="elements-snapshot-select" data-i18n="elements.snapshot">Snapshot</label>
-              <select id="elements-snapshot-select" class="elements-snapshot-select" aria-label="Select DOM snapshot" data-i18n-aria="elements.selectAria"></select>
+              <div class="filter-meta elements-toolbar-meta">
+                <label class="elements-snapshot-label" for="elements-snapshot-select" data-i18n="elements.snapshot">Snapshot</label>
+                <select id="elements-snapshot-select" class="elements-snapshot-select" aria-label="Select DOM snapshot" data-i18n-aria="elements.selectAria"></select>
+              </div>
+              <label class="search-input-wrap elements-search-wrap">
+                <i class="ph ph-magnifying-glass" aria-hidden="true"></i>
+                <input id="elements-search" class="search-input" type="search" placeholder="Search elements" data-i18n-placeholder="elements.search" aria-label="Search elements" data-i18n-aria="elements.searchAria">
+              </label>
             </div>
             <div id="elements-tree" class="entries-scroll elements-tree"></div>
           </div>

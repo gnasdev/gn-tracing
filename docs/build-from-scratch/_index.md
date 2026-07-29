@@ -30,6 +30,7 @@ related:
 - [13-release-flow.md](./13-release-flow.md)
 - [14-store-package-validation.md](./14-store-package-validation.md)
 - [15-quality-gates.md](./15-quality-gates.md)
+- [16-testing-strategy.md](./16-testing-strategy.md)
 - [_sync.md](./_sync.md)
 
 ## Reader Path

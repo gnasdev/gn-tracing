@@ -32,7 +32,7 @@ Source-map enrichment is documented as a capture-stop operation. Inline maps and
 
 The replay player is documented as a shared extension/standalone runtime. Extension replay can use an in-memory OAuth token for the package's provider. Standalone replay uses Cloudflare Pages proxies `/api/drive` and `/api/dropbox` (SSRF-hardened; rejects HTML interstitials as non-cacheable errors).
 
-Extension surfaces are documented as thin clients over service-worker state. Popup controls are gated by active cloud storage connection and active-tab recordability. Settings owns storage provider, upload folder, ZIP password, capture profile, privacy profile, DOM masking, and advanced capture controls. The Google Drive auth page protects Drive OAuth from popup teardown; Dropbox connects via popup web auth flow. Upload history is local-only and not written to cloud storage.
+Extension surfaces are documented as thin clients over service-worker state. Popup controls are gated by active cloud storage connection and active-tab recordability. Popup owns storage provider, upload folder, ZIP password, and connect/manage clouds. Settings owns redaction toggles, DOM masking, capture mode (default CDP), and advanced capture controls (no capture/privacy profile presets). The Google Drive auth page protects Drive OAuth from popup teardown; Dropbox connects via popup web auth flow. Upload history is local-only and not written to cloud storage.
 
 Compliance docs and public legal HTML (`privacy`, `terms`, `/app/` homepage) disclose multi-cloud OAuth, user-owned storage, public-by-link sharing, zip passwords, local tokens, and no product telemetry of tokens/package bodies. Multi-issuer OAuth Worker is optional for Google and Dropbox secrets.
 

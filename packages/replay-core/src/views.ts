@@ -12,8 +12,10 @@
  * - console / user events: `timestamp - startTime` (epoch ms)
  * - network: `(wallTime * 1000 || timestamp * 1000) - startTime`
  *
- * WebSocket frames carry CDP monotonic timestamps with no wall-clock anchor, so
- * they are reported as `null` rather than guessed at.
+ * WebSocket frames from older packages may still carry CDP monotonic timestamps
+ * with no wall-clock anchor; newer extension captures convert them to epoch ms
+ * via the network wallTime/timestamp offset. Views still report `atMs: null`
+ * for the connection-level WebSocket row (frame-level scrub is player UI).
  */
 
 import type { PackageMetadata } from "./schema/package";

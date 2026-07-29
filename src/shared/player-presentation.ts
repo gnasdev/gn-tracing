@@ -28,6 +28,12 @@ export interface PresentationEvidence {
   hasDom: boolean;
   /** Report / privacy / legacy stop-time screenshot content for the Report tab. */
   hasReportContent: boolean;
+  /**
+   * Instant Replay lookback frames in the package. When true, the player always
+   * offers Console/Network tabs (IR claims in-page log capture even if a quiet
+   * window left those artifacts empty).
+   */
+  hasInstantReplay?: boolean;
 }
 
 export interface PresentationPlan {
@@ -42,6 +48,11 @@ export interface PresentationPlan {
     | "elements"
     | "screenshots";
   showVideoSection: boolean;
+  /**
+   * Show the structural DOM lookback stage (iframe scrubber) in the media column.
+   * True for no-video packages that have DOM/IR frames and no annotated stills.
+   */
+  showDomStage: boolean;
   showLayoutSplitter: boolean;
   showConsoleTab: boolean;
   showNetworkTab: boolean;
@@ -57,6 +68,15 @@ export interface PresentationPlan {
   noVideoNotice: "none" | "sdk" | "screenshot";
 }
 
+function withDomStage(
+  plan: Omit<PresentationPlan, "showDomStage">,
+  evidence: PresentationEvidence,
+): PresentationPlan {
+  // Video owns the media column. Annotated stills stay primary when present.
+  const showDomStage = !evidence.hasVideo && evidence.hasDom && evidence.screenshotCount === 0;
+  return { ...plan, showDomStage };
+}
+
 function hasLogEvidence(evidence: PresentationEvidence): boolean {
   return (
     evidence.consoleCount > 0 ||
@@ -69,6 +89,20 @@ function hasLogEvidence(evidence: PresentationEvidence): boolean {
 }
 
 /**
+ * When Instant Replay frames were mapped into hasDom (Elements), prefer
+ * Elements as the primary surface if there are no annotated stills.
+ */
+function defaultTabForDomLookback(evidence: PresentationEvidence): PresentationPlan["defaultTab"] {
+  if (evidence.hasDom && evidence.screenshotCount === 0) {
+    return "elements";
+  }
+  if (evidence.screenshotCount > 0) {
+    return "screenshots";
+  }
+  return "console";
+}
+
+/**
  * Pure resolver — no DOM. The player applies the returned plan to chrome.
  */
 export function resolvePresentationMode(evidence: PresentationEvidence): PresentationPlan {
@@ -76,88 +110,107 @@ export function resolvePresentationMode(evidence: PresentationEvidence): Present
   const hasLogs = hasLogEvidence(evidence);
 
   if (evidence.hasVideo) {
-    return {
-      mode: "recording",
-      defaultTab: evidence.hasReportContent
-        ? "report"
-        : evidence.activityCount > 0
-          ? "activity"
-          : "console",
-      showVideoSection: true,
-      showLayoutSplitter: true,
-      // DevTools-like: keep console/network visible even when the session was quiet.
-      showConsoleTab: true,
-      showNetworkTab: true,
-      showScreenshotsTab: hasScreenshots,
-      showReportTab: evidence.hasReportContent,
-      showActivityTab: evidence.activityCount > 0,
-      showStorageTab: evidence.hasStorage,
-      showElementsTab: evidence.hasDom,
-      noVideoNotice: "none",
-    };
+    return withDomStage(
+      {
+        mode: "recording",
+        defaultTab: evidence.hasReportContent
+          ? "report"
+          : evidence.activityCount > 0
+            ? "activity"
+            : "console",
+        showVideoSection: true,
+        showLayoutSplitter: true,
+        // DevTools-like: keep console/network visible even when the session was quiet.
+        showConsoleTab: true,
+        showNetworkTab: true,
+        showScreenshotsTab: hasScreenshots,
+        showReportTab: evidence.hasReportContent,
+        showActivityTab: evidence.activityCount > 0,
+        showStorageTab: evidence.hasStorage,
+        showElementsTab: evidence.hasDom,
+        noVideoNotice: "none",
+      },
+      evidence,
+    );
   }
 
-  if (hasScreenshots) {
-    const hasConsoleData = evidence.consoleCount > 0;
-    const hasNetworkData = evidence.networkCount > 0 || evidence.websocketCount > 0;
-    return {
-      mode: "screenshot",
-      defaultTab: "screenshots",
-      showVideoSection: false,
-      showLayoutSplitter: false,
-      // Only surface log tabs when the package actually carried them (forward-compat
-      // if screenshot reports later attach console/network).
-      showConsoleTab: hasConsoleData,
-      showNetworkTab: hasNetworkData,
-      showScreenshotsTab: true,
-      showReportTab: evidence.hasReportContent,
-      showActivityTab: evidence.activityCount > 0,
-      showStorageTab: evidence.hasStorage,
-      showElementsTab: evidence.hasDom,
-      noVideoNotice: "screenshot",
-    };
+  // Annotated stills and/or Instant Replay lookback mapped into hasDom.
+  if (hasScreenshots || (evidence.hasDom && !evidence.hasVideo)) {
+    const irLookback = Boolean(evidence.hasInstantReplay);
+    // IR packages always expose Console/Network (empty state is fine). Plain
+    // screenshot reports still hide empty log tabs.
+    const hasConsoleData = evidence.consoleCount > 0 || irLookback;
+    const hasNetworkData = evidence.networkCount > 0 || evidence.websocketCount > 0 || irLookback;
+    // When DOM stage is primary (no stills), keep the media column visible for the scrubber.
+    const domStagePrimary = evidence.hasDom && evidence.screenshotCount === 0;
+    // Prefer Console when IR lookback actually captured log rows.
+    const defaultTab =
+      irLookback && evidence.consoleCount > 0 ? "console" : defaultTabForDomLookback(evidence);
+    return withDomStage(
+      {
+        mode: "screenshot",
+        defaultTab,
+        showVideoSection: domStagePrimary,
+        showLayoutSplitter: domStagePrimary,
+        showConsoleTab: hasConsoleData,
+        showNetworkTab: hasNetworkData,
+        showScreenshotsTab: hasScreenshots,
+        showReportTab: evidence.hasReportContent,
+        showActivityTab: evidence.activityCount > 0,
+        showStorageTab: evidence.hasStorage,
+        showElementsTab: evidence.hasDom,
+        noVideoNotice: domStagePrimary ? "none" : "screenshot",
+      },
+      evidence,
+    );
   }
 
   if (hasLogs) {
-    return {
-      mode: "sdk-logs",
-      defaultTab:
-        evidence.consoleCount > 0
-          ? "console"
-          : evidence.networkCount > 0 || evidence.websocketCount > 0
-            ? "network"
-            : evidence.hasStorage
-              ? "storage"
-              : evidence.hasDom
-                ? "elements"
-                : evidence.activityCount > 0
-                  ? "activity"
-                  : "console",
-      showVideoSection: true,
-      showLayoutSplitter: true,
-      showConsoleTab: true,
-      showNetworkTab: true,
-      showScreenshotsTab: false,
-      showReportTab: evidence.hasReportContent,
-      showActivityTab: evidence.activityCount > 0,
-      showStorageTab: evidence.hasStorage,
-      showElementsTab: evidence.hasDom,
-      noVideoNotice: "sdk",
-    };
+    return withDomStage(
+      {
+        mode: "sdk-logs",
+        defaultTab:
+          evidence.consoleCount > 0
+            ? "console"
+            : evidence.networkCount > 0 || evidence.websocketCount > 0
+              ? "network"
+              : evidence.hasStorage
+                ? "storage"
+                : evidence.hasDom
+                  ? "elements"
+                  : evidence.activityCount > 0
+                    ? "activity"
+                    : "console",
+        showVideoSection: true,
+        showLayoutSplitter: true,
+        showConsoleTab: true,
+        showNetworkTab: true,
+        showScreenshotsTab: false,
+        showReportTab: evidence.hasReportContent,
+        showActivityTab: evidence.activityCount > 0,
+        showStorageTab: evidence.hasStorage,
+        showElementsTab: evidence.hasDom,
+        noVideoNotice: "sdk",
+      },
+      evidence,
+    );
   }
 
-  return {
-    mode: "empty-evidence",
-    defaultTab: evidence.hasReportContent ? "report" : "console",
-    showVideoSection: false,
-    showLayoutSplitter: false,
-    showConsoleTab: true,
-    showNetworkTab: false,
-    showScreenshotsTab: false,
-    showReportTab: evidence.hasReportContent,
-    showActivityTab: false,
-    showStorageTab: false,
-    showElementsTab: false,
-    noVideoNotice: "none",
-  };
+  return withDomStage(
+    {
+      mode: "empty-evidence",
+      defaultTab: evidence.hasReportContent ? "report" : "console",
+      showVideoSection: false,
+      showLayoutSplitter: false,
+      showConsoleTab: true,
+      showNetworkTab: false,
+      showScreenshotsTab: false,
+      showReportTab: evidence.hasReportContent,
+      showActivityTab: false,
+      showStorageTab: false,
+      showElementsTab: false,
+      noVideoNotice: "none",
+    },
+    evidence,
+  );
 }

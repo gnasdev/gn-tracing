@@ -38,9 +38,10 @@ related:
 
 ## Planning Docs
 
-- [specs/planning/domain-project-aspects.md](./specs/planning/domain-project-aspects.md)
-- [specs/planning/multi-cloud-storage-providers.md](./specs/planning/multi-cloud-storage-providers.md) — P0–P3 multi-cloud plan (implemented)
-- [specs/planning/mcp-skill-agent-friendly.md](./specs/planning/mcp-skill-agent-friendly.md) — P0–P4 MCP (core + stdio + remote), skill, agent-friendly artifact plan (planned)
+- [specs/planning/instant-replay-jam-style.md](./specs/planning/instant-replay-jam-style.md) — always-on Instant Replay lookback (jam.dev-style)
+- [specs/planning/remove-capture-and-privacy-profiles.md](./specs/planning/remove-capture-and-privacy-profiles.md) — field-level capture/redaction toggles (no presets)
+- [specs/planning/network-response-body-and-js-filter.md](./specs/planning/network-response-body-and-js-filter.md) — response body evidence + player resource filters
+- [specs/planning/comprehensive-unit-and-e2e-tests.md](./specs/planning/comprehensive-unit-and-e2e-tests.md) — unit + Playwright e2e coverage strategy
 
 ## Dependency Map
 

@@ -24,12 +24,29 @@ import {
 import {
   buildAgentSummary,
   hasCapability,
+  hydrateDomNodeToHtml,
   type PackageMetadata,
   type RecordingCapability,
   renderBugReportMarkdown,
   resolveCapabilities,
 } from "../packages/replay-core/src/index";
 import { buildAgentReportMarkdown, buildAgentSummaryForPlayer } from "../src/shared/agent-report";
+import {
+  mapInstantReplayToDomArtifact,
+  packageHasInspectableDom,
+  resolveDomArtifactForPlayer,
+} from "../src/shared/instant-replay-policy";
+import {
+  detectNetworkFilterFromUrlAndMime,
+  getNetworkFilterType,
+  type NetworkFilterBucket,
+  type NetworkFilterInput,
+} from "../src/shared/network-filter-type";
+import {
+  type NetworkResponseBodyDisplay,
+  type NetworkResponseBodyDisplayKind,
+  resolveNetworkResponseBodyDisplay,
+} from "../src/shared/network-response-body";
 import {
   type PresentationEvidence,
   type PresentationMode,
@@ -45,6 +62,10 @@ import {
 } from "../src/shared/player-timeline-seek";
 
 export type {
+  NetworkFilterBucket,
+  NetworkFilterInput,
+  NetworkResponseBodyDisplay,
+  NetworkResponseBodyDisplayKind,
   PackageMetadata,
   PresentationEvidence,
   PresentationMode,
@@ -66,6 +87,25 @@ export const timelineSeek = {
 
 /** Which shell to show for recording vs screenshot vs SDK packages. */
 export const presentation = { resolvePresentationMode };
+
+/** Instant Replay lookback → Elements DOM snapshots (and related helpers). */
+export const instantReplay = {
+  mapInstantReplayToDomArtifact,
+  packageHasInspectableDom,
+  resolveDomArtifactForPlayer,
+};
+
+/** Structural DOM preview for Instant Replay / Elements scrubber. */
+export const dom = {
+  hydrateDomNodeToHtml,
+};
+
+/** Network list filter buckets + response-body empty-state helpers. */
+export const network = {
+  getNetworkFilterType,
+  detectNetworkFilterFromUrlAndMime,
+  resolveNetworkResponseBodyDisplay,
+};
 
 /**
  * What the producer claims it could capture. The player uses this to tell a
