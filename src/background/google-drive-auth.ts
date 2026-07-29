@@ -604,6 +604,9 @@ export class GoogleDriveAuth {
   }
 
   private detectGoogleChrome(): boolean {
+    // Service-worker / Node test contexts may lack `navigator` (e.g. CI unit runs).
+    if (typeof navigator === "undefined") return false;
+
     const uaData = (
       navigator as Navigator & {
         userAgentData?: { brands: Array<{ brand: string }>; mobile: boolean };

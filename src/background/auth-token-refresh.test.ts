@@ -82,4 +82,26 @@ describe("GoogleDriveAuth facade without live OAuth", () => {
       expect(String(error)).toMatch(/chrome\.|identity|not mocked/i);
     }
   });
+
+  it("detects non-Chrome strategy when navigator is absent (CI node)", async () => {
+    const hadNavigator = "navigator" in globalThis;
+    const previous = globalThis.navigator;
+    // Simulate GitHub Actions Node without navigator (ReferenceError path).
+    // @ts-expect-error — delete to match CI bare Node globals
+    delete globalThis.navigator;
+
+    try {
+      const { GoogleDriveAuth } = await import("./google-drive-auth");
+      const auth = new GoogleDriveAuth();
+      await expect(auth.getAuthToken()).resolves.toBeNull();
+    } finally {
+      if (hadNavigator) {
+        Object.defineProperty(globalThis, "navigator", {
+          value: previous,
+          configurable: true,
+          writable: true,
+        });
+      }
+    }
+  });
 });
