@@ -2062,22 +2062,45 @@ body:has(#player-state:not(.hidden)) .player-lang-toggle--global {
   padding-left: 9px;
 }
 
+/* Row tint by level (JS sets console-entry + console-entry--{level}). */
+.console-entry.console-entry--error,
 .console-entry.error-entry {
-  background: var(--bg-danger-soft);
-  border-left: 3px solid var(--danger);
+  background: var(--bg-danger-soft, rgba(220, 38, 38, 0.08));
+  border-left: 3px solid var(--danger, #ef4444);
   padding-left: 9px;
 }
 
+.console-entry.console-entry--warn {
+  background: rgba(245, 158, 11, 0.08);
+  border-left: 3px solid var(--warning, #f59e0b);
+  padding-left: 9px;
+}
+
+.console-entry.console-entry--info,
 .console-entry.browser-entry {
-  background: rgba(79, 140, 255, 0.05);
+  background: rgba(79, 140, 255, 0.06);
+  border-left: 3px solid var(--accent, #4f8cff);
+  padding-left: 9px;
 }
 
-.console-entry.browser-entry:hover {
-  background: rgba(79, 140, 255, 0.08);
+.console-entry.console-entry--debug {
+  background: rgba(148, 163, 184, 0.06);
+  border-left: 3px solid var(--text-muted, #94a3b8);
+  padding-left: 9px;
 }
 
-.console-entry.error-entry:hover {
-  background: rgba(220, 38, 38, 0.1);
+.console-entry.browser-entry:hover,
+.console-entry.console-entry--info:hover {
+  background: rgba(79, 140, 255, 0.1);
+}
+
+.console-entry.error-entry:hover,
+.console-entry.console-entry--error:hover {
+  background: rgba(220, 38, 38, 0.12);
+}
+
+.console-entry.console-entry--warn:hover {
+  background: rgba(245, 158, 11, 0.12);
 }
 
 .console-entry.expanded {
@@ -2107,32 +2130,69 @@ body:has(#player-state:not(.hidden)) .player-lang-toggle--global {
   font-variant-numeric: tabular-nums;
 }
 
+/* Level badge — class names must match JS: console-level console-level-{level} */
 .console-level {
-  font-weight: 600;
+  font-weight: 700;
   white-space: nowrap;
-  min-width: 70px;
+  min-width: 4.5rem;
+  font-size: 10px;
+  letter-spacing: 0.03em;
+  line-height: 1.4;
+  padding: 1px 6px;
+  border-radius: 4px;
+  text-align: center;
+  flex-shrink: 0;
 }
 
+.console-level.console-level-log,
 .console-level.log {
-  color: var(--text-primary);
+  color: var(--text-primary, #e2e8f0);
+  background: rgba(148, 163, 184, 0.15);
 }
+
+.console-level.console-level-warn,
 .console-level.warn {
-  color: var(--warning);
+  color: #fbbf24;
+  background: rgba(245, 158, 11, 0.18);
 }
+
+.console-level.console-level-error,
 .console-level.error {
-  color: var(--danger);
+  color: #fca5a5;
+  background: rgba(239, 68, 68, 0.18);
 }
+
+.console-level.console-level-info,
 .console-level.info {
-  color: var(--accent);
+  color: #93c5fd;
+  background: rgba(79, 140, 255, 0.18);
 }
+
+.console-level.console-level-debug,
 .console-level.debug {
-  color: var(--text-muted);
+  color: var(--text-muted, #94a3b8);
+  background: rgba(148, 163, 184, 0.12);
+}
+
+.console-level.console-level-trace,
+.console-level.trace {
+  color: #a78bfa;
+  background: rgba(139, 92, 246, 0.16);
 }
 
 .console-message {
   flex: 1;
   min-width: 0;
   word-break: break-all;
+}
+
+.console-entry.console-entry--error .console-message,
+.console-entry.error-entry .console-message {
+  color: #fecaca;
+}
+
+.console-entry.console-entry--warn .console-message {
+  color: #fde68a;
 }
 
 .console-detail {

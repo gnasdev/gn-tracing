@@ -7261,15 +7261,29 @@
     }
   }
 
+  function normalizeConsoleLevelClass(level) {
+    const raw = String(level || "log")
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]/g, "");
+    if (raw === "warning") return "warn";
+    if (raw === "err" || raw === "exception" || raw === "assert") return "error";
+    if (raw === "verbose") return "debug";
+    if (["log", "warn", "error", "info", "debug", "trace"].includes(raw)) {
+      return raw;
+    }
+    return "log";
+  }
+
   function getConsoleEntryHtml(pe, closestIdx) {
     const { entry, index, level } = pe;
     const isActive = index === closestIdx;
     const isExpanded = expandedConsoleIndex === index;
     const timeStr = formatTimeMs(entry.relativeMs);
     const levelLabel = getConsoleLevelLabel(entry);
+    const levelClass = normalizeConsoleLevelClass(level);
 
-    let rowClass = "console-entry";
-    if (entry.source === "exception") rowClass += " error-entry";
+    let rowClass = `console-entry console-entry--${levelClass}`;
+    if (entry.source === "exception" || levelClass === "error") rowClass += " error-entry";
     if (entry.source === "browser") rowClass += " browser-entry";
     if (isActive) rowClass += " active-entry";
     if (isExpanded) rowClass += " expanded";
@@ -7280,10 +7294,10 @@
       : "";
 
     return `
-      <div class="${rowClass}" data-index="${index}">
+      <div class="${rowClass}" data-index="${index}" data-level="${levelClass}">
         <button class="toggle-expand" aria-label="${escapeHtml(t("detail.toggleDetails"))}"><i class="ph ${isExpanded ? "ph-caret-down" : "ph-caret-right"}"></i></button>
         <span class="console-time">${timeStr}</span>
-        <span class="console-level console-level-${level}">${levelLabel}</span>
+        <span class="console-level console-level-${levelClass}">${escapeHtml(levelLabel)}</span>
         <span class="console-message">
           <span>${renderArgs(entry)}</span>
           ${sourceLocationHtml}
