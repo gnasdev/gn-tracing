@@ -168,12 +168,12 @@ export function createRecordingStore(options: RecordingStoreOptions): RecordingS
   }
 
   return {
-    open(source, callOptions = {}) {
+    async open(source, callOptions = {}) {
       const locator = parseRecordingSource(source, { allowLocalFiles: options.allowLocalFiles });
       return openLocator(locator, callOptions.password);
     },
 
-    get(recordingId, callOptions = {}) {
+    async get(recordingId, callOptions = {}) {
       const locator = decodeRecordingId(recordingId);
       if (!locator) {
         throw new ReplayError(

@@ -5,7 +5,10 @@
 import type { Screenshot } from "../../packages/replay-core/src/schema/annotation";
 import { DEFAULT_DRAW_COLOR, normalizeDrawColor } from "../shared/drawing";
 import { shouldAcceptInPageEntry } from "../shared/in-page-entry-gate";
-import { normalizeInstantReplayAllowedDomains } from "../shared/instant-replay-domain";
+import {
+  normalizeInstantReplayAllowedDomains,
+  tabUrlMatchesInstantReplayAllowlist,
+} from "../shared/instant-replay-domain";
 import { buildInstantReplayPackageArtifacts } from "../shared/instant-replay-evidence-package";
 import { buildReportUploadHistoryEntry } from "../shared/instant-replay-policy";
 import { normalizeInstantReplayWindowSeconds } from "../shared/instant-replay-window";
@@ -2697,6 +2700,19 @@ async function handleCaptureInstantReplay(tabId: number | undefined): Promise<Me
   const target = getRecordingTabTarget(tab);
   if (target.error) {
     return { ok: false, error: target.error };
+  }
+
+  if (
+    !tabUrlMatchesInstantReplayAllowlist(
+      target.url ?? tab.url,
+      settings.instantReplayAllowedDomains,
+    )
+  ) {
+    return {
+      ok: false,
+      error:
+        "This tab's domain is not on the Instant Replay allowlist. Add the site in Instant Replay settings, then capture again.",
+    };
   }
 
   // Freeze lookback before opening the editor so annotation time does not

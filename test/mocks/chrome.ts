@@ -74,6 +74,23 @@ export interface MockStorageArea {
   readonly store: Record<string, unknown>;
 }
 
+/** Listener shape of `chrome.runtime.onMessage`. */
+export type OnMessageListener = (
+  message: unknown,
+  sender: chrome.runtime.MessageSender,
+  sendResponse: (response?: unknown) => void,
+) => unknown;
+
+/** Listener shape of `chrome.debugger.onEvent`. */
+export type DebuggerEventListener = (
+  source: chrome.debugger.Debuggee,
+  method: string,
+  params?: object,
+) => void;
+
+/** Listener shape of `chrome.debugger.onDetach`. */
+export type DebuggerDetachListener = (source: chrome.debugger.Debuggee, reason: string) => void;
+
 /** The shape of the mocked `chrome` global. */
 export interface ChromeMock {
   storage: {
@@ -82,7 +99,7 @@ export interface ChromeMock {
   };
   runtime: {
     sendMessage: MockSpy;
-    onMessage: MockEvent;
+    onMessage: MockEvent<OnMessageListener>;
     getURL: MockSpy<[string], string>;
     lastError: { message: string } | undefined;
   };
@@ -100,8 +117,8 @@ export interface ChromeMock {
     attach: MockSpy;
     detach: MockSpy;
     sendCommand: MockSpy;
-    onEvent: MockEvent;
-    onDetach: MockEvent;
+    onEvent: MockEvent<DebuggerEventListener>;
+    onDetach: MockEvent<DebuggerDetachListener>;
   };
   action: {
     setBadgeText: MockSpy;
@@ -179,43 +196,39 @@ function createSpy<Args extends unknown[] = unknown[], Return = unknown>(
 }
 
 /** Create a listener-registry event stub backed by recording spies. */
-function createEvent(
+function createEvent<
+  Listener extends (...args: never[]) => unknown = (...args: never[]) => unknown,
+>(
   counter: InvocationOrderCounter,
   registry: Resettable[],
   events: MockEvent[],
-): MockEvent {
-  const listeners: Array<(...args: never[]) => unknown> = [];
+): MockEvent<Listener> {
+  const listeners: Listener[] = [];
 
-  const event: MockEvent = {
-    addListener: createSpy<[(...args: never[]) => unknown], void>(counter, registry, (listener) => {
+  const event: MockEvent<Listener> = {
+    addListener: createSpy<[Listener], void>(counter, registry, (listener) => {
       if (!listeners.includes(listener)) {
         listeners.push(listener);
       }
     }),
-    removeListener: createSpy<[(...args: never[]) => unknown], void>(
-      counter,
-      registry,
-      (listener) => {
-        const index = listeners.indexOf(listener);
-        if (index !== -1) {
-          listeners.splice(index, 1);
-        }
-      },
-    ),
-    hasListener: createSpy<[(...args: never[]) => unknown], boolean>(
-      counter,
-      registry,
-      (listener) => listeners.includes(listener),
+    removeListener: createSpy<[Listener], void>(counter, registry, (listener) => {
+      const index = listeners.indexOf(listener);
+      if (index !== -1) {
+        listeners.splice(index, 1);
+      }
+    }),
+    hasListener: createSpy<[Listener], boolean>(counter, registry, (listener) =>
+      listeners.includes(listener),
     ),
     listeners,
     emit: (...args) => {
       for (const listener of [...listeners]) {
-        (listener as (...a: unknown[]) => unknown)(...args);
+        (listener as unknown as (...a: unknown[]) => unknown)(...args);
       }
     },
   };
 
-  events.push(event);
+  events.push(event as unknown as MockEvent);
   return event;
 }
 
@@ -355,7 +368,7 @@ export function createChromeMock(): ChromeMock {
   const runtime = guardNamespace(
     {
       sendMessage: createSpy(counter, spies),
-      onMessage: createEvent(counter, spies, events),
+      onMessage: createEvent<OnMessageListener>(counter, spies, events),
       getURL: createSpy<[string], string>(
         counter,
         spies,
@@ -389,8 +402,8 @@ export function createChromeMock(): ChromeMock {
       attach: createSpy(counter, spies, () => Promise.resolve()),
       detach: createSpy(counter, spies, () => Promise.resolve()),
       sendCommand: createSpy(counter, spies, () => Promise.resolve({})),
-      onEvent: createEvent(counter, spies, events),
-      onDetach: createEvent(counter, spies, events),
+      onEvent: createEvent<DebuggerEventListener>(counter, spies, events),
+      onDetach: createEvent<DebuggerDetachListener>(counter, spies, events),
     },
     "chrome.debugger",
   );

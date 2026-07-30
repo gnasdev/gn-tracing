@@ -297,8 +297,8 @@ body.popup-dialog-open #app {
   display: none;
 }
 
-/* ---------- Shared popup dialogs (IR settings / manage clouds / history) ---------- */
-/* Above feedback popover (70); toast stays on top so save feedback remains visible. */
+/* ---------- Shared popup dialogs (feedback / IR / clouds / history / settings) ---------- */
+/* Toast stays above dialogs so save/submit feedback remains visible. */
 .popup-dialog-root {
   position: fixed;
   inset: 0;
@@ -1670,25 +1670,10 @@ body.popup-dialog-open #app {
   border: 0;
 }
 
-/*
- * Feedback popover must stay fully inside the 360px popup.
- * Detach positioning from the icon wrap so left/right inset against #app.
- */
+/* Feedback trigger sits in the topbar; the form opens as a shared popup dialog. */
 #header .gn-feedback {
   position: static;
 }
-
-#header .gn-feedback-popover {
-  left: 0;
-  right: 0;
-  width: auto;
-  max-width: none;
-  /* Below topbar (brand row + bottom border padding). */
-  top: 48px;
-  z-index: 80;
-}
-
-/* Match sibling .icon-btn (lang / theme / settings) — no size override. */
 
 .community-actions {
   display: flex;

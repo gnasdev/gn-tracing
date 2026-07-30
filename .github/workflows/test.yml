@@ -19,7 +19,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version-file: ".nvmrc"
           cache: npm
 
       - name: Install root dependencies
@@ -42,6 +42,43 @@ jobs:
       - name: Run multi-context unit suite
         run: task test:all
 
+  static:
+    name: static checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: ".nvmrc"
+          cache: npm
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Install standalone player dependencies
+        run: npm ci
+        working-directory: player-standalone
+
+      - name: Install worker dependencies
+        run: npm ci
+        working-directory: worker
+
+      - name: Install Task
+        uses: arduino/setup-task@v2
+        with:
+          version: 3.x
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run static checks
+        run: |
+          task typecheck:all
+          npm run check
+          # TODO: enforce knip once dead code in phase 2.6 is cleaned up.
+          npm run deadcode || true
+
   e2e-player:
     name: e2e player (optional label or main)
     needs: unit
@@ -56,7 +93,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version-file: ".nvmrc"
           cache: npm
 
       - name: Install dependencies

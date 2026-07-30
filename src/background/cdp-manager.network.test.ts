@@ -11,8 +11,15 @@ import {
   makeCdpRequestWillBeSent,
   makeCdpResponseReceived,
 } from "../../test/factories";
+import type { ChromeMock } from "../../test/mocks/chrome";
 import { CdpManager } from "./cdp-manager";
 import { StorageManager } from "./storage-manager";
+
+// The installed chrome mock (see test/setup.ts) exposes spy helpers
+// (`calls`, `mockImplementation`, `emit`) that the real chrome types lack.
+function chromeMock(): ChromeMock {
+  return chrome as unknown as ChromeMock;
+}
 
 function parseNetworkEntries(storage: StorageManager): Array<Record<string, unknown>> {
   const artifacts = storage.finalizeCurrentSession();
@@ -44,23 +51,23 @@ describe("CdpManager network capture (shipped collector)", () => {
     });
 
     // Domain enable / auto-attach / getResponseBody all go through sendCommand.
-    chrome.debugger.sendCommand.mockImplementation(
-      async (_target: unknown, method: string, params?: { requestId?: string }) => {
-        if (method === "Network.getResponseBody") {
-          return {
-            body: `{"id":"${params?.requestId ?? "unknown"}"}`,
-            base64Encoded: false,
-          };
-        }
-        return {};
-      },
-    );
+    chromeMock().debugger.sendCommand.mockImplementation(async (...args: unknown[]) => {
+      const method = args[1] as string;
+      const params = args[2] as { requestId?: string } | undefined;
+      if (method === "Network.getResponseBody") {
+        return {
+          body: `{"id":"${params?.requestId ?? "unknown"}"}`,
+          base64Encoded: false,
+        };
+      }
+      return {};
+    });
 
     await cdp.attach(tabId);
   });
 
   function emit(method: string, params: object): void {
-    chrome.debugger.onEvent.emit(debuggee, method, params);
+    chromeMock().debugger.onEvent.emit(debuggee, method, params);
   }
 
   it("stores eligible JSON response body after loadingFinished", async () => {
@@ -87,7 +94,7 @@ describe("CdpManager network capture (shipped collector)", () => {
       base64Encoded: false,
     });
     expect(
-      chrome.debugger.sendCommand.calls.some((c) => c.args[1] === "Network.getResponseBody"),
+      chromeMock().debugger.sendCommand.calls.some((c) => c.args[1] === "Network.getResponseBody"),
     ).toBe(true);
   });
 
@@ -121,7 +128,9 @@ describe("CdpManager network capture (shipped collector)", () => {
     await cdp.detach();
 
     expect(
-      chrome.debugger.sendCommand.calls.filter((c) => c.args[1] === "Network.getResponseBody"),
+      chromeMock().debugger.sendCommand.calls.filter(
+        (c) => c.args[1] === "Network.getResponseBody",
+      ),
     ).toHaveLength(0);
     const entries = parseNetworkEntries(storage);
     expect(entries).toHaveLength(1);
@@ -137,7 +146,9 @@ describe("CdpManager network capture (shipped collector)", () => {
     await cdp.detach();
 
     expect(
-      chrome.debugger.sendCommand.calls.filter((c) => c.args[1] === "Network.getResponseBody"),
+      chromeMock().debugger.sendCommand.calls.filter(
+        (c) => c.args[1] === "Network.getResponseBody",
+      ),
     ).toHaveLength(0);
   });
 
@@ -156,28 +167,28 @@ describe("CdpManager network capture (shipped collector)", () => {
     expect(entries[0]?.responseBody).toBeUndefined();
   });
 
-  it("waits for in-flight body fetch before chrome.debugger.detach", async () => {
+  it("waits for in-flight body fetch before chromeMock().debugger.detach", async () => {
     let releaseBody: (() => void) | undefined;
     const bodyGate = new Promise<void>((resolve) => {
       releaseBody = resolve;
     });
 
-    chrome.debugger.sendCommand.mockImplementation(
-      async (_target: unknown, method: string, params?: { requestId?: string }) => {
-        if (method === "Network.getResponseBody") {
-          await bodyGate;
-          return { body: `{"late":"${params?.requestId}"}`, base64Encoded: false };
-        }
-        return {};
-      },
-    );
+    chromeMock().debugger.sendCommand.mockImplementation(async (...args: unknown[]) => {
+      const method = args[1] as string;
+      const params = args[2] as { requestId?: string } | undefined;
+      if (method === "Network.getResponseBody") {
+        await bodyGate;
+        return { body: `{"late":"${params?.requestId}"}`, base64Encoded: false };
+      }
+      return {};
+    });
 
     // Re-attach so the new sendCommand mock is used for body fetch only.
     await cdp.detach();
     storage.beginSession();
     await cdp.attach(tabId);
-    const detachCountAfterAttach = chrome.debugger.detach.callCount;
-    const bodyCallsBefore = chrome.debugger.sendCommand.calls.filter(
+    const detachCountAfterAttach = chromeMock().debugger.detach.callCount;
+    const bodyCallsBefore = chromeMock().debugger.sendCommand.calls.filter(
       (c) => c.args[1] === "Network.getResponseBody",
     ).length;
 
@@ -191,18 +202,19 @@ describe("CdpManager network capture (shipped collector)", () => {
     await Promise.resolve();
     await Promise.resolve();
     // Debugger detach must not run while the body promise is still open.
-    expect(chrome.debugger.detach.callCount).toBe(detachCountAfterAttach);
+    expect(chromeMock().debugger.detach.callCount).toBe(detachCountAfterAttach);
 
     releaseBody?.();
     await detachPromise;
 
-    expect(chrome.debugger.detach.callCount).toBe(detachCountAfterAttach + 1);
-    const bodyCalls = chrome.debugger.sendCommand.calls.filter(
+    expect(chromeMock().debugger.detach.callCount).toBe(detachCountAfterAttach + 1);
+    const bodyCalls = chromeMock().debugger.sendCommand.calls.filter(
       (c) => c.args[1] === "Network.getResponseBody",
     );
     expect(bodyCalls.length).toBeGreaterThan(bodyCallsBefore);
     const lastBody = bodyCalls[bodyCalls.length - 1];
-    const lastDetach = chrome.debugger.detach.calls[chrome.debugger.detach.calls.length - 1];
+    const lastDetach =
+      chromeMock().debugger.detach.calls[chromeMock().debugger.detach.calls.length - 1];
     expect(lastBody).toBeTruthy();
     expect(lastDetach).toBeTruthy();
     // Body fetch must have been ordered before the final debugger.detach.
@@ -236,7 +248,9 @@ describe("CdpManager network capture (shipped collector)", () => {
     await cdp.detach();
 
     expect(
-      chrome.debugger.sendCommand.calls.filter((c) => c.args[1] === "Network.getResponseBody"),
+      chromeMock().debugger.sendCommand.calls.filter(
+        (c) => c.args[1] === "Network.getResponseBody",
+      ),
     ).toHaveLength(0);
   });
 });

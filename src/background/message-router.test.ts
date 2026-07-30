@@ -4,7 +4,12 @@
  * chrome.runtime.onMessage mock — no reimplementation of the switch table.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { ChromeMock } from "../../test/mocks/chrome";
 import { type MessageHandlers, registerMessageListeners } from "./message-router";
+
+function chromeMock(): ChromeMock {
+  return chrome as unknown as ChromeMock;
+}
 
 function makeHandlers(overrides: Partial<MessageHandlers> = {}): MessageHandlers {
   const base: MessageHandlers = {
@@ -52,8 +57,10 @@ async function dispatch(
   sender: chrome.runtime.MessageSender = {},
 ): Promise<unknown> {
   return new Promise((resolve) => {
-    const handled = chrome.runtime.onMessage.emit(message as never, sender, (response: unknown) =>
-      resolve(response),
+    const handled = chromeMock().runtime.onMessage.emit(
+      message as never,
+      sender,
+      (response: unknown) => resolve(response),
     );
     // Our mock emit always calls listeners; collect via sendResponse.
     void handled;
@@ -127,7 +134,7 @@ describe("registerMessageListeners", () => {
   it("ignores messages targeted at non-service-worker surfaces", async () => {
     // Listener returns false and does not call sendResponse — Promise stays pending
     // unless we only check that handlers were not invoked.
-    chrome.runtime.onMessage.emit(
+    chromeMock().runtime.onMessage.emit(
       { action: "STOP_RECORDING", target: "offscreen" } as never,
       {},
       () => {},
@@ -137,7 +144,7 @@ describe("registerMessageListeners", () => {
 
   it("routes offscreen UPLOAD_PROGRESS to patchUploadProgress", async () => {
     const sendResponse = vi.fn();
-    chrome.runtime.onMessage.emit(
+    chromeMock().runtime.onMessage.emit(
       {
         target: "offscreen",
         type: "UPLOAD_PROGRESS",

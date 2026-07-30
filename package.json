@@ -5,6 +5,10 @@
   "license": "GPL-3.0-or-later",
   "scripts": {
     "prepare": "husky",
+    "build": "node esbuild.config.mjs --env development",
+    "build:production": "node esbuild.config.mjs --env production",
+    "dev": "node esbuild.config.mjs --watch",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
@@ -26,6 +30,7 @@
     "@biomejs/biome": "^2.4.15",
     "@playwright/test": "^1.62.0",
     "@types/chrome": "^0.0.287",
+    "@types/node": "^26.1.2",
     "@vitest/coverage-v8": "4.1.9",
     "concurrently": "^8.2.2",
     "esbuild": "^0.28.0",
@@ -37,5 +42,8 @@
   },
   "dependencies": {
     "webm-duration-fix": "^1.0.4"
+  },
+  "engines": {
+    "node": ">=20.0.0"
   }
 }

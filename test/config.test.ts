@@ -3,11 +3,12 @@
  *
  * Verifies that every per-context Vitest config derives the Shared_Config-owned
  * settings (coverage provider/reporters/thresholds, the globals flag, and the
- * include/exclude globs) from `vitest.shared.ts` and declares locally only the
+ * shared exclude globs) from `vitest.shared.ts` and declares locally only the
  * key that distinguishes the Context: `environment` (root `node`, player
- * `jsdom`) or the worker `poolOptions` pool selection. The root config also
- * declares `setupFiles` to install the Chrome mock harness, which is the only
- * additional per-context key permitted by the design.
+ * `jsdom`) or the worker `cloudflareTest` plugin. The root config also
+ * declares `setupFiles` to install the Chrome mock harness and scopes `include`
+ * to root Context sources, which are the only additional per-context keys
+ * permitted by the design.
  *
  * The root config is imported and its resolved `test` block is inspected
  * directly. The player and worker configs pull in cross-context dependencies
@@ -23,8 +24,10 @@ import rootConfig from "../vitest.config";
 import { sharedTestConfig } from "../vitest.shared";
 
 // The settings that `vitest.shared.ts` owns. A per-context config must inherit
-// each of these unchanged and must never redeclare them.
-const SHARED_OWNED_KEYS = ["globals", "coverage", "include", "exclude"] as const;
+// each of these unchanged and must never redeclare them. `include` and
+// `coverage.exclude` are per-context levers (root scopes include to its own
+// sources; each sibling scopes coverage to its own directory).
+const SHARED_OWNED_KEYS = ["globals", "coverage", "exclude"] as const;
 
 // Source-level tokens that would indicate a per-context config is redeclaring a
 // Shared_Config-owned setting rather than inheriting it via the spread.
@@ -79,16 +82,25 @@ describe("Vitest config inheritance", () => {
       });
     });
 
-    it("inherits the canonical include and shared exclude globs", () => {
-      expect(rootTest?.include).toEqual(["**/*.{test,spec}.ts"]);
+    it("inherits the canonical shared exclude globs and scopes include for the root Context", () => {
+      expect(rootTest?.include).toEqual([
+        "src/**/*.{test,spec}.ts",
+        "packages/**/*.{test,spec}.ts",
+        "test/**/*.{test,spec}.ts",
+      ]);
       expect(rootTest?.exclude).toEqual(["**/node_modules/**", "**/dist/**", "**/.wrangler/**"]);
     });
 
-    it("overrides only environment and setupFiles", () => {
+    it("overrides only environment, include, and setupFiles", () => {
       const sharedKeys = Object.keys(sharedTestConfig as object);
       const extraKeys = Object.keys(rootTest ?? {}).filter((key) => !sharedKeys.includes(key));
       expect(extraKeys.sort()).toEqual(["environment", "setupFiles"]);
       expect(rootTest?.environment).toBe("node");
+      expect(rootTest?.include).toEqual([
+        "src/**/*.{test,spec}.ts",
+        "packages/**/*.{test,spec}.ts",
+        "test/**/*.{test,spec}.ts",
+      ]);
     });
   });
 
@@ -116,7 +128,7 @@ describe("Vitest config inheritance", () => {
     });
   });
 
-  describe("worker config (workers pool)", () => {
+  describe("worker config (cloudflareTest plugin)", () => {
     const source = readConfigSource("../worker/vitest.config.ts");
 
     it("derives from the shared base config", () => {
@@ -124,9 +136,9 @@ describe("Vitest config inheritance", () => {
       expect(source).toContain("...sharedTestConfig");
     });
 
-    it("declares only the workers pool selection to distinguish the Context", () => {
-      expect(source).toContain("poolOptions");
-      expect(source).toContain("workers");
+    it("configures the Cloudflare Workers test pool via the cloudflareTest plugin", () => {
+      expect(source).toContain("cloudflareTest");
+      expect(source).toContain("plugins:");
     });
 
     it("overrides only the coverage provider (Istanbul), as the workerd runtime cannot run V8 coverage", () => {

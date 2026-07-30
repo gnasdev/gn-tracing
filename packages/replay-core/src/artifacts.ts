@@ -57,7 +57,12 @@ export interface RecordingPackage {
   readonly index: RecordingIndex | null;
   /** Artifact ids present in this package. */
   readonly availableArtifacts: ArtifactId[];
-  hasArtifact(id: ArtifactId): boolean;
+  /**
+   * Whether an artifact is present. Accepts any string so callers can assert
+   * the absence of ids outside the current {@link ArtifactId} union (e.g.
+   * capabilities the producer intentionally did not capture).
+   */
+  hasArtifact(id: string): boolean;
   readEntryBytes(name: string): Promise<Uint8Array>;
   /** Reads and parses an artifact, or returns null when it is absent. */
   readArtifact<T>(id: ArtifactId): Promise<T | null>;
@@ -173,17 +178,20 @@ export async function openRecordingPackage(
   // Older packages nested the payload under `metadata` (see player.js).
   const metadata = metadataRaw.metadata ?? metadataRaw;
 
-  function resolveArtifactPath(id: ArtifactId): string | null {
-    const manifestPath = manifest?.artifacts?.[id];
+  function resolveArtifactPath(id: string): string | null {
+    // Unknown ids simply miss every lookup, so a single cast keeps the
+    // ArtifactId-keyed maps while allowing absence checks for any string.
+    const artifactId = id as ArtifactId;
+    const manifestPath = manifest?.artifacts?.[artifactId];
     if (manifestPath && byName.has(manifestPath)) {
       return manifestPath;
     }
-    const indexKey = ARTIFACT_INDEX_KEYS[id];
+    const indexKey = ARTIFACT_INDEX_KEYS[artifactId];
     const indexPath = indexKey ? index?.artifacts?.[indexKey] : undefined;
     if (indexPath && byName.has(indexPath)) {
       return indexPath;
     }
-    const conventional = ARTIFACT_FILENAMES[id];
+    const conventional = ARTIFACT_FILENAMES[artifactId];
     return byName.has(conventional) ? conventional : null;
   }
 

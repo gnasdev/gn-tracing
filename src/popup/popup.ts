@@ -9,6 +9,7 @@ import {
   hostnameFromTabUrl,
   normalizeInstantReplayAllowedDomains,
   normalizeInstantReplayDomainPattern,
+  tabUrlMatchesInstantReplayAllowlist,
 } from "../shared/instant-replay-domain";
 import {
   INSTANT_REPLAY_WINDOW_SECONDS_DEFAULT,
@@ -160,6 +161,8 @@ const POPUP_TRANSLATIONS: Record<PopupLanguage, Record<string, string>> = {
     "instantReplay.disabledSaved": "Instant Replay disabled.",
     "instantReplay.captureFailed": "Could not capture Instant Replay.",
     "instantReplay.disabledTitle": "Enable Instant Replay in settings first",
+    "instantReplay.domainNotAllowedTitle":
+      "Instant Replay only works on allowed domains — add this site first",
     "footer.feedback": "Feedback",
     "feedback.sectionAria": "Send feedback",
     "feedback.label": "Feedback",
@@ -313,6 +316,8 @@ const POPUP_TRANSLATIONS: Record<PopupLanguage, Record<string, string>> = {
     "instantReplay.disabledSaved": "Đã tắt Instant Replay.",
     "instantReplay.captureFailed": "Không capture được Instant Replay.",
     "instantReplay.disabledTitle": "Bật Instant Replay trong cài đặt trước",
+    "instantReplay.domainNotAllowedTitle":
+      "Instant Replay chỉ dùng trên domain được phép — hãy thêm site này trước",
     "footer.feedback": "Góp ý",
     "feedback.sectionAria": "Gửi góp ý",
     "feedback.label": "Góp ý",
@@ -547,7 +552,12 @@ let instantReplayWindowSaveInFlight = false;
 let instantReplayEnableSaveInFlight = false;
 let instantReplayCaptureInFlight = false;
 let instantReplayDomainSaveInFlight = false;
-type PopupDialogId = "instant-replay" | "manage-clouds" | "upload-history" | "settings";
+type PopupDialogId =
+  | "feedback"
+  | "instant-replay"
+  | "manage-clouds"
+  | "upload-history"
+  | "settings";
 const popupDialogHost = new PopupDialogHost<PopupDialogId>();
 type PopupDialogEntry = {
   root: HTMLElement | null;
@@ -601,9 +611,10 @@ const uploadHistoryPageBtn = document.getElementById(
   "upload-history-page-btn",
 ) as HTMLButtonElement;
 
-const feedbackWrap = document.getElementById("feedback-wrap") as HTMLElement | null;
 const feedbackToggleBtn = document.getElementById("feedback-toggle-btn") as HTMLButtonElement;
-const feedbackPanel = document.getElementById("feedback-panel")!;
+const feedbackDialog = document.getElementById("feedback-dialog");
+const feedbackPanel = document.getElementById("feedback-panel");
+const feedbackCloseBtn = document.getElementById("feedback-close-btn") as HTMLButtonElement | null;
 const feedbackMessageInput = document.getElementById("feedback-message") as HTMLTextAreaElement;
 const feedbackSubmitBtn = document.getElementById("feedback-submit-btn") as HTMLButtonElement;
 const feedbackCancelBtn = document.getElementById("feedback-cancel-btn") as HTMLButtonElement;
@@ -618,6 +629,8 @@ const uploadHistoryAnimationTimeouts = new Map<string, ReturnType<typeof setTime
 let isUploadHistoryAnimationReady = false;
 let latestPopupState: PopupState | null = null;
 let activeTabRecordingError: string | null = null;
+/** Latest active-tab URL for Instant Replay allowlist checks (http/https only). */
+let activeTabUrl: string | null = null;
 let toggleActionInFlight = false;
 let toggleActionMode: "start" | "stop" | null = null;
 let activeTabRecordingCheckId = 0;
@@ -1131,6 +1144,10 @@ function setPopupDialogOpen(id: PopupDialogId, open: boolean): void {
   }
 }
 
+function setFeedbackDialogOpen(open: boolean): void {
+  setPopupDialogOpen("feedback", open);
+}
+
 function setInstantReplaySettingsOpen(open: boolean): void {
   setPopupDialogOpen("instant-replay", open);
 }
@@ -1148,6 +1165,11 @@ function setSettingsDialogOpen(open: boolean): void {
 }
 
 function registerPopupDialogs(): void {
+  popupDialogEntries.set("feedback", {
+    root: feedbackDialog,
+    trigger: feedbackToggleBtn,
+    focusOnOpen: feedbackMessageInput ?? feedbackCloseBtn,
+  });
   popupDialogEntries.set("instant-replay", {
     root: instantReplayDialog,
     trigger: instantReplaySettingsBtn,
@@ -1194,17 +1216,24 @@ function updateInstantReplayControls(options: { recordingActive?: boolean } = {}
   }
 
   if (instantReplayBtn) {
+    const domainAllowed = tabUrlMatchesInstantReplayAllowlist(
+      activeTabUrl,
+      instantReplayAllowedDomains,
+    );
     const blocked =
       recordingActive ||
       toggleActionInFlight ||
       instantReplayCaptureInFlight ||
       !instantReplayEnabled ||
+      !domainAllowed ||
       Boolean(activeTabRecordingError);
     instantReplayBtn.disabled = blocked;
     if (activeTabRecordingError && !recordingActive) {
       instantReplayBtn.setAttribute("title", activeTabRecordingError);
     } else if (!instantReplayEnabled) {
       instantReplayBtn.setAttribute("title", t("instantReplay.disabledTitle"));
+    } else if (!domainAllowed) {
+      instantReplayBtn.setAttribute("title", t("instantReplay.domainNotAllowedTitle"));
     } else {
       instantReplayBtn.setAttribute("title", t("actions.captureInstantReplay"));
     }
@@ -1640,10 +1669,16 @@ async function captureInstantReplayNow(): Promise<void> {
     }
 
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    activeTabUrl = tab?.url || tab?.pendingUrl || null;
     const target = getRecordingTabTarget(tab);
     if (target.error) {
       activeTabRecordingError = target.error;
       showError(target.error);
+      return;
+    }
+    if (!tabUrlMatchesInstantReplayAllowlist(activeTabUrl, instantReplayAllowedDomains)) {
+      setInstantReplaySettingsOpen(true);
+      showError(t("instantReplay.domainNotAllowedTitle"));
       return;
     }
 
@@ -2437,11 +2472,13 @@ async function refreshActiveTabRecordingAvailability(): Promise<void> {
     if (checkId !== activeTabRecordingCheckId) {
       return;
     }
+    activeTabUrl = tab?.url || tab?.pendingUrl || null;
     activeTabRecordingError = getRecordingTabTarget(tab).error;
   } catch (error) {
     if (checkId !== activeTabRecordingCheckId) {
       return;
     }
+    activeTabUrl = null;
     activeTabRecordingError = (error as Error).message || t("messages.cannotInspectTab");
   } finally {
     if (checkId === activeTabRecordingCheckId) {
@@ -2451,6 +2488,11 @@ async function refreshActiveTabRecordingAvailability(): Promise<void> {
 
   if (getActiveStorageConnection(latestPopupState).isConnected) {
     updateRecordingUI(latestPopupState?.recording ?? null);
+  } else {
+    // Still refresh IR enablement from the resolved active-tab URL.
+    updateInstantReplayControls({
+      recordingActive: Boolean(latestPopupState?.recording?.isRecording),
+    });
   }
 }
 
@@ -2702,16 +2744,20 @@ function wirePopupDialogDismiss(root: HTMLElement | null, close: () => void): vo
   });
 }
 
+wirePopupDialogDismiss(feedbackDialog, () => setFeedbackDialogOpen(false));
 wirePopupDialogDismiss(instantReplayDialog, () => setInstantReplaySettingsOpen(false));
 wirePopupDialogDismiss(manageCloudsDialog, () => setManageCloudsDialogOpen(false));
 wirePopupDialogDismiss(uploadHistoryDialog, () => setUploadHistoryDialogOpen(false));
 wirePopupDialogDismiss(settingsDialog, () => setSettingsDialogOpen(false));
+feedbackCloseBtn?.addEventListener("click", () => {
+  setFeedbackDialogOpen(false);
+});
 settingsCloseBtn?.addEventListener("click", () => {
   setSettingsDialogOpen(false);
 });
 
 // Keep clicks inside dialog panels from reaching the backdrop.
-for (const panel of [instantReplayPanel, manageCloudsPanel, uploadHistoryPanel]) {
+for (const panel of [feedbackPanel, instantReplayPanel, manageCloudsPanel, uploadHistoryPanel]) {
   panel?.addEventListener("click", (event) => {
     event.stopPropagation();
   });
@@ -3372,41 +3418,13 @@ async function initPopup(): Promise<void> {
   });
 }
 
-function setFeedbackPanelOpen(open: boolean): void {
-  feedbackPanel.classList.toggle("hidden", !open);
-  feedbackToggleBtn.setAttribute("aria-expanded", open ? "true" : "false");
-  feedbackWrap?.classList.toggle("is-open", open);
-  if (open) {
-    feedbackMessageInput.focus();
-  }
-}
-
 feedbackToggleBtn.addEventListener("click", (event) => {
   event.stopPropagation();
-  const open = feedbackPanel.classList.contains("hidden");
-  setFeedbackPanelOpen(open);
+  setFeedbackDialogOpen(!isPopupDialogOpen("feedback"));
 });
 
 feedbackCancelBtn.addEventListener("click", () => {
-  setFeedbackPanelOpen(false);
-});
-
-document.addEventListener("click", (event) => {
-  if (feedbackPanel.classList.contains("hidden")) {
-    return;
-  }
-  const target = event.target as Node | null;
-  if (target && feedbackWrap?.contains(target)) {
-    return;
-  }
-  setFeedbackPanelOpen(false);
-});
-
-document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && !feedbackPanel.classList.contains("hidden")) {
-    setFeedbackPanelOpen(false);
-    feedbackToggleBtn.focus();
-  }
+  setFeedbackDialogOpen(false);
 });
 
 feedbackSubmitBtn.addEventListener("click", async () => {
@@ -3419,6 +3437,9 @@ feedbackSubmitBtn.addEventListener("click", async () => {
   feedbackSubmitBtn.disabled = true;
   feedbackMessageInput.disabled = true;
   feedbackCancelBtn.disabled = true;
+  if (feedbackCloseBtn) {
+    feedbackCloseBtn.disabled = true;
+  }
   feedbackSubmitBtn.textContent = t("feedback.sending");
 
   try {
@@ -3437,7 +3458,7 @@ feedbackSubmitBtn.addEventListener("click", async () => {
     }
 
     feedbackMessageInput.value = "";
-    setFeedbackPanelOpen(false);
+    setFeedbackDialogOpen(false);
     showToast(result.message || t("feedback.success"), 4200, {
       variant: "success",
     });
@@ -3448,6 +3469,9 @@ feedbackSubmitBtn.addEventListener("click", async () => {
     feedbackSubmitBtn.disabled = false;
     feedbackMessageInput.disabled = false;
     feedbackCancelBtn.disabled = false;
+    if (feedbackCloseBtn) {
+      feedbackCloseBtn.disabled = false;
+    }
     feedbackSubmitBtn.textContent = t("feedback.submit");
   }
 });

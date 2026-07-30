@@ -26,7 +26,7 @@
             class="icon-btn gn-feedback-btn"
             aria-expanded="false"
             aria-haspopup="dialog"
-            aria-controls="feedback-panel"
+            aria-controls="feedback-dialog"
             aria-label="Feedback"
             title="Feedback"
           >
@@ -34,30 +34,6 @@
               <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
             </svg>
           </button>
-          <div
-            id="feedback-panel"
-            class="gn-feedback-popover feedback-panel hidden"
-            role="dialog"
-            aria-label="Send feedback"
-            data-i18n-aria="feedback.sectionAria"
-          >
-            <label class="gn-feedback-label feedback-label" for="feedback-message" data-i18n="feedback.label">Feedback</label>
-            <textarea
-              id="feedback-message"
-              class="gn-feedback-message feedback-message"
-              rows="4"
-              maxlength="4000"
-              data-i18n-placeholder="feedback.placeholder"
-              placeholder="Describe a bug, idea, or question…"
-            ></textarea>
-            <p class="gn-feedback-hint feedback-hint" data-i18n="feedback.hint">
-              Creates a public GitHub issue. Includes extension version, browser, OS, and locale only. Do not include secrets or passwords.
-            </p>
-            <div class="gn-feedback-actions feedback-actions">
-              <button type="button" id="feedback-submit-btn" class="btn btn-start btn-small" data-i18n="feedback.submit">Submit</button>
-              <button type="button" id="feedback-cancel-btn" class="btn btn-secondary btn-small" data-i18n="feedback.cancel">Cancel</button>
-            </div>
-          </div>
         </div>
         <button id="lang-toggle-btn" class="icon-btn gn-lang-toggle" type="button" aria-label="Switch language">VI</button>
         <button id="theme-toggle-btn" class="icon-btn" type="button" aria-label="Theme: System" title="Theme: System (follows OS). Click to cycle System → Light → Dark.">
@@ -348,6 +324,68 @@
           <path d="M6 6l12 12M18 6 6 18"/>
         </svg>
       </button>
+    </div>
+
+    <div
+      id="feedback-dialog"
+      class="popup-dialog-root hidden"
+      aria-hidden="true"
+    >
+      <button
+        type="button"
+        class="popup-dialog-backdrop"
+        data-popup-dialog-dismiss
+        tabindex="-1"
+        aria-label="Close"
+        data-i18n-aria="dialog.close"
+      ></button>
+      <div
+        id="feedback-panel"
+        class="popup-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="feedback-dialog-title"
+      >
+        <div class="popup-dialog-header">
+          <div class="section-title" id="feedback-dialog-title">
+            <svg class="section-title-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+            </svg>
+            <span data-i18n="feedback.label">Feedback</span>
+          </div>
+          <button
+            type="button"
+            id="feedback-close-btn"
+            class="icon-btn popup-dialog-close"
+            aria-label="Close"
+            title="Close"
+            data-i18n-aria="dialog.close"
+            data-i18n-title="dialog.close"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
+              <path d="M6 6l12 12M18 6 6 18"/>
+            </svg>
+          </button>
+        </div>
+        <div class="popup-dialog-body">
+          <label class="sr-only" for="feedback-message" data-i18n="feedback.label">Feedback</label>
+          <textarea
+            id="feedback-message"
+            class="gn-feedback-message feedback-message"
+            rows="5"
+            maxlength="4000"
+            data-i18n-placeholder="feedback.placeholder"
+            placeholder="Describe a bug, idea, or question…"
+          ></textarea>
+          <p class="gn-feedback-hint feedback-hint" data-i18n="feedback.hint">
+            Creates a public GitHub issue. Includes extension version, browser, OS, and locale only. Do not include secrets or passwords.
+          </p>
+          <div class="gn-feedback-actions feedback-actions">
+            <button type="button" id="feedback-submit-btn" class="btn btn-start btn-small" data-i18n="feedback.submit">Submit</button>
+            <button type="button" id="feedback-cancel-btn" class="btn btn-secondary btn-small" data-i18n="feedback.cancel">Cancel</button>
+          </div>
+        </div>
+      </div>
     </div>
 
     <div

@@ -8,10 +8,22 @@
  * other contexts, and declares only the worker pool that distinguishes it.
  */
 
-import { defineWorkersConfig } from "@cloudflare/vitest-pool-workers/config";
+import { cloudflareTest } from "@cloudflare/vitest-pool-workers";
+import { defineConfig } from "vitest/config";
 import { sharedTestConfig } from "../vitest.shared";
 
-export default defineWorkersConfig({
+export default defineConfig({
+  plugins: [
+    cloudflareTest({
+      wrangler: { configPath: "./wrangler.toml" },
+      miniflare: {
+        // `@cloudflare/vitest-pool-workers` requires the Node.js compat flag
+        // to run the Worker under `workerd`. Declared here (test-only) so the
+        // production `wrangler.toml` runtime config stays unchanged.
+        compatibilityFlags: ["nodejs_compat"],
+      },
+    }),
+  ],
   test: {
     ...sharedTestConfig,
     coverage: {
@@ -39,17 +51,6 @@ export default defineWorkersConfig({
         "**/node_modules/**",
         "**/.wrangler/**",
       ],
-    },
-    poolOptions: {
-      workers: {
-        wrangler: { configPath: "./wrangler.toml" },
-        miniflare: {
-          // `@cloudflare/vitest-pool-workers` requires the Node.js compat flag
-          // to run the Worker under `workerd`. Declared here (test-only) so the
-          // production `wrangler.toml` runtime config stays unchanged.
-          compatibilityFlags: ["nodejs_compat"],
-        },
-      },
     },
   },
 });

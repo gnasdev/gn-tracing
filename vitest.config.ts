@@ -42,6 +42,15 @@ export default defineConfig({
   },
   test: {
     ...sharedTestConfig,
+    // Scope this (root) context to extension sources, shared packages, and root
+    // test helpers only. Player-standalone and worker have their own configs and
+    // are run separately by `task test:all`; without this override the root run
+    // would execute every repo test under the wrong runtime.
+    include: [
+      "src/**/*.{test,spec}.ts",
+      "packages/**/*.{test,spec}.ts",
+      "test/**/*.{test,spec}.ts",
+    ],
     environment: "node",
     setupFiles: ["./test/setup.ts", "./test/property-config.ts"],
   },

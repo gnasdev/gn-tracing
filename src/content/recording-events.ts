@@ -374,7 +374,11 @@ ${validSelectors.join(",\n")} {
       viewportWidth: number;
       viewportHeight: number;
       accumulatedDeltaY: number;
-      flushTimer: ReturnType<typeof window.setTimeout>;
+      // number (not ReturnType<typeof window.setTimeout>): with @types/node
+      // loaded by the test tsconfig, the merged setTimeout overloads make
+      // ReturnType resolve to NodeJS.Timeout, while window.setTimeout returns
+      // a number in the browser.
+      flushTimer: number;
     } | null = null;
 
     const flushWheelBurst = (): void => {

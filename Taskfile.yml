@@ -23,9 +23,10 @@ tasks:
       - node esbuild.config.mjs --watch
 
   typecheck:
-    desc: Run root TypeScript checks.
+    desc: Run root TypeScript checks (production sources and test files).
     cmds:
       - npx tsc --noEmit
+      - npx tsc --noEmit -p tsconfig.test.json
 
   lint:
     desc: Run Biome lint checks across supported source files.

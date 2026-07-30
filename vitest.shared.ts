@@ -8,7 +8,7 @@
  * distinguishes it, so the contexts stay aligned and do not drift.
  */
 
-import type { UserConfig } from "vitest/config";
+import type { TestUserConfig } from "vitest/config";
 
 /**
  * Coverage threshold floor enforced during a coverage run. These ratchet upward
@@ -21,7 +21,7 @@ const coverageThresholds = {
   statements: 60,
 } as const;
 
-export const sharedTestConfig: UserConfig["test"] = {
+export const sharedTestConfig: TestUserConfig = {
   globals: true,
   coverage: {
     provider: "v8",
@@ -35,16 +35,16 @@ export const sharedTestConfig: UserConfig["test"] = {
     // exercised by the suite, and the excludes below drop everything that is
     // not this Context's own production logic.
     //
-    // The root extension Context's test discovery spans the whole repo, so it
-    // also executes the player/worker suites; the cross-context directory
-    // excludes below keep those Contexts' sources out of the root coverage
-    // report. Each sibling Context (player, worker) therefore re-scopes
-    // `coverage.exclude` in its own config to drop only its OWN directory from
-    // this list (so it measures its own source) while still excluding the other
-    // Context. `coverage.exclude` is intentionally a per-context lever and is
-    // NOT one of the Shared_Config-owned settings (coverage provider/reporters/
-    // thresholds and the test include/exclude globs) that must be inherited
-    // unchanged.
+    // The root extension Context overrides `include` in `vitest.config.ts` so it
+    // does not execute the player/worker suites under the wrong runtime. The
+    // cross-context directory excludes below still keep those Contexts' sources
+    // out of the root coverage report. Each sibling Context (player, worker)
+    // therefore re-scopes `coverage.exclude` in its own config to drop only its
+    // OWN directory from this list (so it measures its own source) while still
+    // excluding the other Context. `coverage.exclude` is intentionally a
+    // per-context lever and is NOT one of the Shared_Config-owned settings
+    // (coverage provider/reporters/thresholds and the test include/exclude globs)
+    // that must be inherited unchanged.
     exclude: [
       // Other test Contexts own their own coverage runs; never fold their
       // sources (or their executed test files) into this Context's denominator.
