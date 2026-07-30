@@ -80,6 +80,10 @@ import {
 import { registerMessageListeners } from "./message-router";
 import { RecorderManager } from "./recorder-manager";
 import {
+  clearScreenshotPackageStaging,
+  putScreenshotPackageStaging,
+} from "./screenshot-package-staging-idb";
+import {
   buildInstantReplayPending,
   captureScreenshotForAnnotation,
   clearPendingScreenshot,
@@ -2670,20 +2674,39 @@ async function handleSaveAnnotatedScreenshot(
       typeof irResolution.artifact.coveredMs === "number" ? irResolution.artifact.coveredMs : 0;
   }
 
+  // Bulk still + IR JSON in IndexedDB (shared with offscreen origin). Message
+  // only carries stagingId — chrome.runtime.sendMessage rejects ~64MiB bodies.
+  const stagingId = `annotate-${pending.id}-${Date.now()}`;
+  try {
+    await putScreenshotPackageStaging(stagingId, {
+      imageDataUrl: merged.imageDataUrl,
+      artifacts: screenshotArtifacts as Record<string, string>,
+    });
+  } catch (error) {
+    return {
+      ok: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Could not stage Instant Replay package for upload.",
+    };
+  }
+
   try {
     await ensureOffscreenDocumentForPackaging();
     const result = (await chrome.runtime.sendMessage({
       target: "offscreen",
       type: "UPLOAD_SCREENSHOT_PACKAGE",
       data: {
+        stagingId,
         authToken,
         storageProvider: storageProviderId,
         targetFolderId,
         targetFolderPath: settings.folderPath,
         zipPassword: settings.zipPassword || null,
         url: merged.screenshot.url,
-        screenshots: [{ screenshot: merged.screenshot, imageDataUrl: merged.imageDataUrl }],
-        artifacts: screenshotArtifacts,
+        // Still + artifacts stay in IDB; only annotation metadata crosses the channel.
+        screenshots: [{ screenshot: merged.screenshot }],
       },
     })) as MessageResponse & Partial<UploadSuccessResult>;
 
@@ -2726,6 +2749,8 @@ async function handleSaveAnnotatedScreenshot(
     };
   } catch (error) {
     return { ok: false, error: (error as Error).message };
+  } finally {
+    await clearScreenshotPackageStaging(stagingId).catch(() => undefined);
   }
 }
 

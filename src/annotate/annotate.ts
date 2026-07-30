@@ -19,6 +19,7 @@ import type {
   Screenshot,
 } from "../../packages/replay-core/src/schema/annotation";
 import { setButtonLoading } from "../shared/button-loading";
+import { resolveReplayOpenUrl } from "../shared/player-host";
 import {
   assertReadyToSave,
   createShape,
@@ -404,7 +405,10 @@ const TOOL_SHORTCUTS: Record<string, EditorTool> = {
 
       setStatus(annotateT("uploaded"));
       if (response.recordingUrl) {
-        await chrome.tabs.create({ url: response.recordingUrl });
+        // Same rewrite as popup history: development builds open the local
+        // player even if the upload path returned a production host.
+        const openUrl = resolveReplayOpenUrl(response.recordingUrl) || response.recordingUrl;
+        await chrome.tabs.create({ url: openUrl });
       }
       window.close();
     } catch (error) {

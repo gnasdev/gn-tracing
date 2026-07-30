@@ -11,6 +11,7 @@ import {
   type AttachableArtifactId,
   buildRecordingPackage,
 } from "../../packages/replay-core/src/write";
+import { getScreenshotPackageStaging } from "../background/screenshot-package-staging-idb";
 import {
   DROPBOX_UPLOAD_SESSION_THRESHOLD_BYTES,
   makeDropboxPublicReadable,
@@ -453,9 +454,14 @@ export interface ScreenshotUploadData {
   targetFolderId?: string | null;
   zipPassword?: string | null;
   url?: string;
-  /** Screenshots with their raw image bytes as base64 data URLs. */
-  screenshots: Array<{ screenshot: Screenshot; imageDataUrl: string }>;
-  /** JSON artifacts the service worker already redacted, as strings. */
+  /**
+   * Bulk still + IR/evidence JSON in IndexedDB (extension origin, shared with
+   * the service worker). Avoids the 64MiB runtime message cap.
+   */
+  stagingId?: string;
+  /** Screenshots; imageDataUrl may be omitted when stagingId supplies it. */
+  screenshots: Array<{ screenshot: Screenshot; imageDataUrl?: string }>;
+  /** Inline JSON artifacts for small/legacy packages without stagingId. */
   artifacts?: Partial<Record<string, string>>;
 }
 
@@ -466,6 +472,9 @@ export interface ScreenshotUploadData {
  * a flag on it. That function's whole shape — session snapshots, WebM seek
  * repair, byte-split video parts, three-step progress — is about media, and
  * none of it applies here.
+ *
+ * Production Save path parks bulk bytes in IndexedDB (`stagingId`); this
+ * document reads them once and packages without chunked message round-trips.
  */
 async function uploadScreenshotPackage(data: ScreenshotUploadData): Promise<{
   ok: boolean;
@@ -476,8 +485,26 @@ async function uploadScreenshotPackage(data: ScreenshotUploadData): Promise<{
   error?: string;
 }> {
   const screenshotsIn = Array.isArray(data.screenshots) ? data.screenshots : [];
+  const stagingId = typeof data.stagingId === "string" && data.stagingId ? data.stagingId : "";
+
+  let resolvedArtifacts: Partial<Record<string, string>> = { ...(data.artifacts ?? {}) };
+  let stagedImageDataUrl: string | null = null;
+
+  if (stagingId) {
+    const staged = await getScreenshotPackageStaging(stagingId);
+    if (!staged) {
+      return {
+        ok: false,
+        error: "Screenshot package staging is no longer available.",
+      };
+    }
+    stagedImageDataUrl = staged.imageDataUrl || null;
+    resolvedArtifacts = { ...staged.artifacts };
+  }
+
   const hasInstantReplayArtifact =
-    typeof data.artifacts?.instantReplay === "string" && data.artifacts.instantReplay.length > 0;
+    typeof resolvedArtifacts.instantReplay === "string" &&
+    resolvedArtifacts.instantReplay.length > 0;
   // Instant Replay packages may ship lookback without a raster still when
   // captureVisibleTab is unavailable; require at least one of the two.
   if (screenshotsIn.length === 0 && !hasInstantReplayArtifact) {
@@ -499,7 +526,9 @@ async function uploadScreenshotPackage(data: ScreenshotUploadData): Promise<{
 
     const screenshots: ScreenshotInput[] = [];
     for (const item of screenshotsIn) {
-      const blob = createBlobFromDataUrl(item.imageDataUrl);
+      const imageDataUrl =
+        (typeof item.imageDataUrl === "string" && item.imageDataUrl) || stagedImageDataUrl || "";
+      const blob = createBlobFromDataUrl(imageDataUrl);
       if (!blob) {
         return { ok: false, error: `Screenshot ${item.screenshot.id} has no image data.` };
       }
@@ -512,7 +541,7 @@ async function uploadScreenshotPackage(data: ScreenshotUploadData): Promise<{
 
     const encoder = new TextEncoder();
     const artifacts: Partial<Record<AttachableArtifactId, Uint8Array>> = {};
-    for (const [key, value] of Object.entries(data.artifacts ?? {})) {
+    for (const [key, value] of Object.entries(resolvedArtifacts)) {
       if (typeof value === "string" && value) {
         artifacts[key as AttachableArtifactId] = encoder.encode(value);
       }

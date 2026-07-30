@@ -137,7 +137,8 @@ export async function handleUploadHistoryAction(
   if (action === "copy-link") {
     const url = actionTarget.getAttribute("data-url");
     if (url) {
-      await options.copyLink(url, actionTarget);
+      // Same host rewrite as open-replay (dev builds → local player).
+      await options.copyLink(resolveReplayOpenUrl(url) || url, actionTarget);
     }
     return true;
   }

@@ -1,5 +1,8 @@
 /**
  * Upload orchestrator types, constants, and pure helpers for Drive upload sessions and artifact chunking.
+ *
+ * Screenshot / Instant Replay package bulk data uses IndexedDB staging
+ * (`screenshot-package-staging-idb`) instead of this chunk protocol.
  */
 import type { MessageResponse } from "../types/messages";
 import type { SessionArtifacts } from "./service-worker";
@@ -64,12 +67,13 @@ export function getUploadArtifactChunk(
 
   const value = sessionArtifacts[sessionId]?.[key] || "";
   const totalLength = value.length;
-  const chunk = value.slice(offset, offset + UPLOAD_ARTIFACT_CHUNK_CHARS);
+  const safeOffset = Math.max(0, Math.min(offset, totalLength));
+  const chunk = value.slice(safeOffset, safeOffset + UPLOAD_ARTIFACT_CHUNK_CHARS);
 
   return {
     ok: true,
     chunk,
-    nextOffset: offset + chunk.length,
+    nextOffset: safeOffset + chunk.length,
     totalLength,
   };
 }

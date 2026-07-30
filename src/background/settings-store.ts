@@ -5,7 +5,7 @@ import {
   INSTANT_REPLAY_WINDOW_SECONDS_DEFAULT,
   normalizeInstantReplayWindowSeconds,
 } from "../shared/instant-replay-window";
-import { buildExternalPlayerUrl } from "../shared/player-host";
+import { buildExternalPlayerUrl, resolveReplayOpenUrl } from "../shared/player-host";
 import { getPrivacyProfileSettings, normalizeMaskDomSelectors } from "../shared/privacy-redaction";
 import {
   normalizeStorageProviderId,
@@ -622,6 +622,10 @@ function sortUploadHistory(items: UploadHistoryEntry[]): UploadHistoryEntry[] {
  * Normalize history / upload recording URLs to the external player host.
  * Legacy chrome-extension://…/player/player.html links (from older builds that
  * shipped an in-extension player) are rewritten to namespaced hosted URLs.
+ *
+ * Development builds also rewrite production player origins onto the baked
+ * local player host so Instant Replay / screenshot annotate return and open
+ * the dev player (not tracing.gnas.dev).
  */
 export function normalizeRecordingUrl(recordingUrl: string | null | undefined): string | null {
   if (!recordingUrl) {
@@ -631,22 +635,26 @@ export function normalizeRecordingUrl(recordingUrl: string | null | undefined): 
   try {
     const parsed = new URL(recordingUrl);
     const ref = parseStorageRecordingRef(parsed);
+    let normalized = recordingUrl;
     if (
       parsed.protocol === "chrome-extension:" ||
       parsed.pathname.endsWith("/player/player.html")
     ) {
       if (ref) {
-        return buildExternalPlayerUrl(ref.fileId, ref.provider);
+        normalized = buildExternalPlayerUrl(ref.fileId, ref.provider);
       }
-    }
-    if (parsed.protocol === "http:" && ["localhost", "127.0.0.1"].includes(parsed.hostname)) {
+    } else if (
+      parsed.protocol === "http:" &&
+      ["localhost", "127.0.0.1"].includes(parsed.hostname)
+    ) {
       if (ref) {
-        return buildExternalPlayerUrl(ref.fileId, ref.provider);
+        normalized = buildExternalPlayerUrl(ref.fileId, ref.provider);
       }
     }
-    return recordingUrl;
+    // Development-only: map production hosts → local player (no-op in production).
+    return resolveReplayOpenUrl(normalized) || normalized;
   } catch {
-    return recordingUrl;
+    return resolveReplayOpenUrl(recordingUrl) || recordingUrl;
   }
 }
 

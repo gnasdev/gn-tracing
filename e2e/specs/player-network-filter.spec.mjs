@@ -11,10 +11,15 @@ const cases = JSON.parse(
 test.describe("player gnCore network filter (browser)", () => {
   test("player shell loads and exposes gnCore.network", async ({ page }) => {
     await page.goto("http://127.0.0.1:5199/player.html");
-    await expect(page.locator("#network-filters")).toBeVisible({ timeout: 15_000 });
+    // Network filters live inside #player-state (hidden on intro until a package loads).
+    await expect(page.locator("#app")).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator("#network-filters")).toBeAttached();
     await expect(page.locator('#network-filters [data-filter="js"]')).toHaveAttribute(
       "data-filter",
       "js",
+    );
+    await page.waitForFunction(
+      () => typeof globalThis.gnCore?.network?.getNetworkFilterType === "function",
     );
     const hasApi = await page.evaluate(() => {
       return typeof globalThis.gnCore?.network?.getNetworkFilterType === "function";

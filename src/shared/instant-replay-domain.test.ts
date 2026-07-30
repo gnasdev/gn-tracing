@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  getInstantReplayCaptureBlockReason,
   hostnameFromTabUrl,
   hostnameMatchesDomainPattern,
   hostnameMatchesInstantReplayAllowlist,
@@ -47,5 +48,54 @@ describe("allowlist matching", () => {
     expect(tabUrlMatchesInstantReplayAllowlist("https://a.other.test/", list)).toBe(true);
     expect(tabUrlMatchesInstantReplayAllowlist("https://nope.com/", list)).toBe(false);
     expect(hostnameFromTabUrl("chrome://extensions")).toBeNull();
+  });
+});
+
+describe("getInstantReplayCaptureBlockReason", () => {
+  const ready = {
+    recordingActive: false,
+    toggleActionInFlight: false,
+    captureInFlight: false,
+    instantReplayEnabled: true,
+    activeTabUrl: "https://app.example.com/path",
+    allowedDomains: ["app.example.com"],
+    activeTabRecordingError: null as string | null,
+    tabCheckInFlight: false,
+  };
+
+  it("enables when IR is on, domain matches, and tab is ok", () => {
+    expect(getInstantReplayCaptureBlockReason(ready)).toBeNull();
+  });
+
+  it("blocks when domain is missing even if IR is enabled", () => {
+    expect(
+      getInstantReplayCaptureBlockReason({
+        ...ready,
+        allowedDomains: [],
+      }),
+    ).toBe("domain");
+    expect(
+      getInstantReplayCaptureBlockReason({
+        ...ready,
+        activeTabUrl: null,
+      }),
+    ).toBe("domain");
+  });
+
+  it("ignores transient tab-check probes that leave a checking string", () => {
+    expect(
+      getInstantReplayCaptureBlockReason({
+        ...ready,
+        activeTabRecordingError: "Checking whether this tab can be recorded.",
+        tabCheckInFlight: true,
+      }),
+    ).toBeNull();
+    expect(
+      getInstantReplayCaptureBlockReason({
+        ...ready,
+        activeTabRecordingError: "Cannot record browser system pages.",
+        tabCheckInFlight: false,
+      }),
+    ).toBe("tab");
   });
 });

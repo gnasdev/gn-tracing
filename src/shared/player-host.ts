@@ -38,20 +38,50 @@ export function getPlayerHostUrl(): string {
   return PLAYER_HOST_URL;
 }
 
+/** Known production player origins (custom domain + Pages default). */
+export const PRODUCTION_PLAYER_ORIGINS = [
+  "https://tracing.gnas.dev",
+  "http://tracing.gnas.dev",
+  "https://gn-tracing-player.pages.dev",
+  "http://gn-tracing-player.pages.dev",
+] as const;
+
 /** Exported for tests. */
 export function resolvePlayerHostUrl(
   configuredHost: string,
   appEnv: string,
   localPort: number = 5176,
 ): string {
+  const isDev = normalizeAppEnv(appEnv) === "development";
+  const localHost = `http://localhost:${localPort || 5176}/`;
   const configured = ensureTrailingSlash(String(configuredHost || "").trim());
   if (configured) {
+    // Development builds must never emit the production player host, even when
+    // PLAYER_HOST_URL_DEV is mis-set to tracing.gnas.dev (common when copying
+    // .env from production). Preview/custom hosts still win.
+    if (isDev && isProductionPlayerOrigin(configured)) {
+      return localHost;
+    }
     return configured;
   }
-  if (normalizeAppEnv(appEnv) === "development") {
-    return `http://localhost:${localPort || 5176}/`;
+  if (isDev) {
+    return localHost;
   }
   return PRODUCTION_PLAYER_HOST_URL;
+}
+
+/** True when the URL's origin is a known production player host. */
+export function isProductionPlayerOrigin(urlOrHost: string): boolean {
+  const raw = String(urlOrHost || "").trim();
+  if (!raw) {
+    return false;
+  }
+  try {
+    const parsed = new URL(raw.includes("://") ? raw : `https://${raw}`);
+    return (PRODUCTION_PLAYER_ORIGINS as readonly string[]).includes(parsed.origin);
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -110,13 +140,7 @@ export function rewritePlayerHostForDevelopment(
     return raw;
   }
 
-  const prodOrigins = new Set([
-    "https://tracing.gnas.dev",
-    "http://tracing.gnas.dev",
-    "https://gn-tracing-player.pages.dev",
-    "http://gn-tracing-player.pages.dev",
-  ]);
-  if (!prodOrigins.has(parsed.origin)) {
+  if (!(PRODUCTION_PLAYER_ORIGINS as readonly string[]).includes(parsed.origin)) {
     return raw;
   }
 

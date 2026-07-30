@@ -60,6 +60,23 @@ describe("resolvePlayerHostUrl", () => {
     const { resolvePlayerHostUrl } = await import("./player-host");
     expect(resolvePlayerHostUrl("", "production", 5176)).toBe("https://tracing.gnas.dev/");
   });
+
+  it("ignores production host configuration in development builds", async () => {
+    const { resolvePlayerHostUrl } = await import("./player-host");
+    expect(resolvePlayerHostUrl("https://tracing.gnas.dev/", "development", 5176)).toBe(
+      "http://localhost:5176/",
+    );
+    expect(resolvePlayerHostUrl("https://gn-tracing-player.pages.dev", "dev", 4000)).toBe(
+      "http://localhost:4000/",
+    );
+  });
+
+  it("keeps non-production custom hosts in development", async () => {
+    const { resolvePlayerHostUrl } = await import("./player-host");
+    expect(resolvePlayerHostUrl("https://player-preview.example/", "development", 5176)).toBe(
+      "https://player-preview.example/",
+    );
+  });
 });
 
 describe("rewritePlayerHostForDevelopment", () => {

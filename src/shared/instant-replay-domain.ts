@@ -140,3 +140,45 @@ export function tabUrlMatchesInstantReplayAllowlist(
 ): boolean {
   return hostnameMatchesInstantReplayAllowlist(hostnameFromTabUrl(url), allowlist);
 }
+
+/** Why the popup Capture Instant Replay button should stay disabled. */
+export type InstantReplayCaptureBlockReason =
+  | "recording"
+  | "busy"
+  | "disabled"
+  | "domain"
+  | "tab"
+  | null;
+
+/**
+ * Pure enablement policy for the Instant Replay Capture control.
+ * Transient tab-check probes must pass `tabCheckInFlight: true` so a leftover
+ * "checking…" string is never treated as a hard tab error.
+ */
+export function getInstantReplayCaptureBlockReason(input: {
+  recordingActive: boolean;
+  toggleActionInFlight: boolean;
+  captureInFlight: boolean;
+  instantReplayEnabled: boolean;
+  activeTabUrl: string | null | undefined;
+  allowedDomains: readonly string[];
+  activeTabRecordingError: string | null | undefined;
+  tabCheckInFlight?: boolean;
+}): InstantReplayCaptureBlockReason {
+  if (input.recordingActive) {
+    return "recording";
+  }
+  if (input.toggleActionInFlight || input.captureInFlight) {
+    return "busy";
+  }
+  if (!input.instantReplayEnabled) {
+    return "disabled";
+  }
+  if (!tabUrlMatchesInstantReplayAllowlist(input.activeTabUrl, input.allowedDomains)) {
+    return "domain";
+  }
+  if (input.activeTabRecordingError && !input.tabCheckInFlight) {
+    return "tab";
+  }
+  return null;
+}

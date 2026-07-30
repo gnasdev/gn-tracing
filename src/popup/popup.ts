@@ -7,6 +7,7 @@ import { DEFAULT_DRAW_COLOR, DRAW_COLOR_PRESETS, normalizeDrawColor } from "../s
 import { buildFeedbackDiagnostics, validateFeedbackMessage } from "../shared/feedback";
 import { Icons } from "../shared/icons";
 import {
+  getInstantReplayCaptureBlockReason,
   hostnameFromTabUrl,
   normalizeInstantReplayAllowedDomains,
   normalizeInstantReplayDomainPattern,
@@ -164,7 +165,6 @@ const POPUP_TRANSLATIONS: Record<PopupLanguage, Record<string, string>> = {
     "instantReplay.domainInvalid":
       "Could not read a host from the active tab (open an http/https page).",
     "instantReplay.removeDomain": "Remove {domain}",
-    "instantReplay.enableFirst": "Enable Instant Replay first, then add this site.",
     "instantReplay.hint":
       "When on, keeps a rolling DOM lookback. Console/network use CDP (debugger banner) only on allowed domains. After a bug, click Instant Replay to annotate, then save to upload. Nothing leaves your browser until you save.",
     "instantReplay.saveFailed": "Could not update Instant Replay settings.",
@@ -330,7 +330,6 @@ const POPUP_TRANSLATIONS: Record<PopupLanguage, Record<string, string>> = {
     "instantReplay.domainExists": "{domain} đã có trong danh sách.",
     "instantReplay.domainInvalid": "Không đọc được host từ tab hiện tại (mở trang http/https).",
     "instantReplay.removeDomain": "Gỡ {domain}",
-    "instantReplay.enableFirst": "Bật Instant Replay trước, rồi mới thêm site.",
     "instantReplay.hint":
       "Khi bật, giữ lookback DOM. Console/network dùng CDP (banner debugger) chỉ trên domain được phép. Gặp bug thì bấm Capture để chú thích, rồi lưu để upload. Không rời máy cho đến khi bạn lưu.",
     "instantReplay.saveFailed": "Không cập nhật được Instant Replay.",
@@ -338,7 +337,7 @@ const POPUP_TRANSLATIONS: Record<PopupLanguage, Record<string, string>> = {
     "instantReplay.enabledSaved": "Đã bật Instant Replay.",
     "instantReplay.disabledSaved": "Đã tắt Instant Replay.",
     "instantReplay.captureFailed": "Không capture được Instant Replay.",
-    "instantReplay.disabledTitle": "Bật Instant Replay trong cài đặt trước",
+    "instantReplay.disabledTitle": "Bật Instant Replay trước",
     "instantReplay.domainNotAllowedTitle":
       "Instant Replay chỉ dùng trên domain được phép — hãy thêm site này trước",
     "footer.feedback": "Góp ý",
@@ -1290,6 +1289,13 @@ function registerPopupDialogs(): void {
     root: instantReplayDialog,
     trigger: instantReplaySettingsBtn,
     focusOnOpen: instantReplayWindowInput ?? instantReplaySettingsCloseBtn,
+    onOpen: () => {
+      // Re-paint allowlist/window controls when the dialog opens so add/remove
+      // buttons reflect the latest enabled/recording/in-flight flags.
+      updateInstantReplayControls({
+        recordingActive: Boolean(latestPopupState?.recording?.isRecording),
+      });
+    },
   });
   popupDialogEntries.set("manage-clouds", {
     root: manageCloudsDialog,
@@ -1346,23 +1352,22 @@ function updateInstantReplayControls(options: { recordingActive?: boolean } = {}
   }
 
   if (instantReplayBtn) {
-    const domainAllowed = tabUrlMatchesInstantReplayAllowlist(
+    const blockReason = getInstantReplayCaptureBlockReason({
+      recordingActive,
+      toggleActionInFlight,
+      captureInFlight: instantReplayCaptureInFlight,
+      instantReplayEnabled,
       activeTabUrl,
-      instantReplayAllowedDomains,
-    );
-    const blocked =
-      recordingActive ||
-      toggleActionInFlight ||
-      instantReplayCaptureInFlight ||
-      !instantReplayEnabled ||
-      !domainAllowed ||
-      Boolean(activeTabRecordingError);
-    instantReplayBtn.disabled = blocked;
-    if (activeTabRecordingError && !recordingActive) {
+      allowedDomains: instantReplayAllowedDomains,
+      activeTabRecordingError,
+      tabCheckInFlight: activeTabRecordingCheckInFlight,
+    });
+    instantReplayBtn.disabled = blockReason !== null;
+    if (blockReason === "tab" && activeTabRecordingError) {
       instantReplayBtn.setAttribute("title", activeTabRecordingError);
-    } else if (!instantReplayEnabled) {
+    } else if (blockReason === "disabled") {
       instantReplayBtn.setAttribute("title", t("instantReplay.disabledTitle"));
-    } else if (!domainAllowed) {
+    } else if (blockReason === "domain") {
       instantReplayBtn.setAttribute("title", t("instantReplay.domainNotAllowedTitle"));
     } else {
       instantReplayBtn.setAttribute("title", t("actions.captureInstantReplayTitle"));
@@ -1393,8 +1398,9 @@ function updateInstantReplayControls(options: { recordingActive?: boolean } = {}
 
   if (instantReplayWindowInput && !instantReplayWindowSaveInFlight) {
     setInstantReplayWindowDisplay(instantReplayWindowSeconds);
-    instantReplayWindowInput.disabled =
-      recordingActive || !instantReplayEnabled || instantReplayCaptureInFlight;
+    // Window/allowlist are configuration — editable even when IR is off.
+    // Enable lives outside this dialog; locking config on enabled left users stuck.
+    instantReplayWindowInput.disabled = recordingActive || instantReplayCaptureInFlight;
   }
 
   renderInstantReplayDomainsList();
@@ -1406,11 +1412,10 @@ function renderInstantReplayDomainsList(options: { flash?: boolean } = {}): void
     return;
   }
   const recordingActive = Boolean(latestPopupState?.recording?.isRecording);
+  // Allowlist edits must work while IR is disabled: Enable is outside the
+  // settings dialog, so gating on enabled made add/remove unreachable.
   const removeDisabled =
-    recordingActive ||
-    !instantReplayEnabled ||
-    instantReplayDomainSaveInFlight ||
-    instantReplayCaptureInFlight;
+    recordingActive || instantReplayDomainSaveInFlight || instantReplayCaptureInFlight;
   if (instantReplayAllowedDomains.length === 0) {
     instantReplayDomainsList.innerHTML = `<p class="instant-replay-domains-empty">${escapeHtml(
       t("instantReplay.domainsEmpty"),
@@ -1477,20 +1482,14 @@ async function syncInstantReplayAddSiteButtonLabel(recordingActive: boolean): Pr
   if (!instantReplayAddSiteBtn) {
     return;
   }
+  const addDisabled =
+    recordingActive || instantReplayDomainSaveInFlight || instantReplayCaptureInFlight;
   // Don't clobber temporary "Added" / "Already added" feedback.
   if (instantReplayAddButtonFeedbackTimeout) {
-    instantReplayAddSiteBtn.disabled =
-      recordingActive ||
-      !instantReplayEnabled ||
-      instantReplayDomainSaveInFlight ||
-      instantReplayCaptureInFlight;
+    instantReplayAddSiteBtn.disabled = addDisabled;
     return;
   }
-  instantReplayAddSiteBtn.disabled =
-    recordingActive ||
-    !instantReplayEnabled ||
-    instantReplayDomainSaveInFlight ||
-    instantReplayCaptureInFlight;
+  instantReplayAddSiteBtn.disabled = addDisabled;
   instantReplayAddSiteBtn.classList.remove("is-added");
   instantReplayAddSiteBtn.textContent = t("instantReplay.addThisSite");
 }
@@ -1544,15 +1543,15 @@ async function addCurrentSiteToInstantReplayAllowlist(): Promise<void> {
   if (instantReplayDomainSaveInFlight) {
     return;
   }
-  if (!instantReplayEnabled) {
-    showToast(t("instantReplay.enableFirst"), 2800, { variant: "error" });
-    return;
-  }
   instantReplayDomainSaveInFlight = true;
   updateInstantReplayControls();
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    const host = hostnameFromTabUrl(tab?.url);
+    // Keep Capture enablement in sync with the tab we just inspected. Without
+    // this, activeTabUrl can stay null and Capture stays disabled after add.
+    activeTabUrl = tab?.url || tab?.pendingUrl || null;
+    activeTabRecordingError = getRecordingTabTarget(tab).error;
+    const host = hostnameFromTabUrl(activeTabUrl);
     const pattern = normalizeInstantReplayDomainPattern(host);
     if (!pattern) {
       showToast(t("instantReplay.domainInvalid"), 3600, { variant: "error" });
@@ -1592,10 +1591,6 @@ async function addCurrentSiteToInstantReplayAllowlist(): Promise<void> {
 
 async function removeDomainFromInstantReplayAllowlist(domain: string): Promise<void> {
   if (instantReplayDomainSaveInFlight) {
-    return;
-  }
-  if (!instantReplayEnabled) {
-    showToast(t("instantReplay.enableFirst"), 2800, { variant: "error" });
     return;
   }
   const pattern = normalizeInstantReplayDomainPattern(domain) || domain.trim().toLowerCase();
@@ -1666,6 +1661,15 @@ async function saveInstantReplayEnabled(enabled: boolean): Promise<void> {
       1400,
       { variant: "success" },
     );
+    // Host permission may have just been granted — re-read the active tab URL
+    // so Capture can match the allowlist (tab.url is often hidden before grant).
+    if (instantReplayEnabled) {
+      try {
+        await refreshActiveTabRecordingAvailability();
+      } catch {
+        // Best-effort; Capture enablement still re-paints in finally.
+      }
+    }
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     showToast(detail || t("instantReplay.saveFailed"), 3200, { variant: "error" });
@@ -2582,7 +2586,9 @@ function renderStopAndUploadLoading(recording: RecordingStatus | null): void {
 async function refreshActiveTabRecordingAvailability(): Promise<void> {
   const checkId = ++activeTabRecordingCheckId;
   activeTabRecordingCheckInFlight = true;
-  activeTabRecordingError = t("messages.checkingTab");
+  // Keep the previous error/url while probing. Writing a "checking…" string into
+  // activeTabRecordingError made Instant Replay Capture look permanently blocked
+  // under frequent tabs.onUpdated noise.
   if (
     getActiveStorageConnection(latestPopupState).isConnected &&
     !latestPopupState?.recording?.isRecording
@@ -2607,6 +2613,10 @@ async function refreshActiveTabRecordingAvailability(): Promise<void> {
     if (checkId === activeTabRecordingCheckId) {
       activeTabRecordingCheckInFlight = false;
     }
+  }
+
+  if (checkId !== activeTabRecordingCheckId) {
+    return;
   }
 
   if (getActiveStorageConnection(latestPopupState).isConnected) {
@@ -2895,9 +2905,12 @@ instantReplayAddSiteBtn?.addEventListener("click", () => {
 });
 
 instantReplayDomainsList?.addEventListener("click", (event) => {
-  const target = event.target as HTMLElement | null;
-  const removeBtn = target?.closest<HTMLButtonElement>("[data-ir-domain-remove]");
-  if (!removeBtn || removeBtn.disabled) {
+  const target = event.target;
+  if (!(target instanceof Element)) {
+    return;
+  }
+  const removeBtn = target.closest<HTMLButtonElement>("[data-ir-domain-remove]");
+  if (!removeBtn || removeBtn.disabled || !instantReplayDomainsList.contains(removeBtn)) {
     return;
   }
   event.preventDefault();
@@ -3221,7 +3234,8 @@ sessionList.addEventListener("click", async (event) => {
     }
     target.disabled = true;
     try {
-      await navigator.clipboard.writeText(url);
+      // Match open-replay: development builds copy the local player host.
+      await navigator.clipboard.writeText(resolveReplayOpenUrl(url) || url);
       showSuccess(t("messages.copySuccess"));
     } catch (error) {
       showError((error as Error).message || t("messages.copyFailed"));
@@ -3522,17 +3536,29 @@ async function initPopup(): Promise<void> {
   const unsubscribe = subscribeToStateChanges((state) => {
     handleStateUpdate(state);
   });
-  const refreshRecordingTarget = () => {
+  const onActiveTabChanged = () => {
     void refreshActiveTabRecordingAvailability();
   };
-  chrome.tabs.onActivated.addListener(refreshRecordingTarget);
-  chrome.tabs.onUpdated.addListener(refreshRecordingTarget);
+  const onTabUpdated = (tabId: number, changeInfo: chrome.tabs.TabChangeInfo) => {
+    // Ignore favicon/title noise from background tabs — those used to thrash
+    // Capture enablement via repeated availability probes.
+    if (changeInfo.status !== "complete" && typeof changeInfo.url !== "string") {
+      return;
+    }
+    void chrome.tabs.query({ active: true, currentWindow: true }).then(([tab]) => {
+      if (tab?.id === tabId) {
+        void refreshActiveTabRecordingAvailability();
+      }
+    });
+  };
+  chrome.tabs.onActivated.addListener(onActiveTabChanged);
+  chrome.tabs.onUpdated.addListener(onTabUpdated);
 
   window.addEventListener("unload", () => {
     stopRecordingTimer();
     unsubscribe();
-    chrome.tabs.onActivated.removeListener(refreshRecordingTarget);
-    chrome.tabs.onUpdated.removeListener(refreshRecordingTarget);
+    chrome.tabs.onActivated.removeListener(onActiveTabChanged);
+    chrome.tabs.onUpdated.removeListener(onTabUpdated);
   });
 }
 

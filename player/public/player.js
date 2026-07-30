@@ -9430,13 +9430,28 @@
       activeReplayProvider = replayRef.provider;
       showLoading();
       setLoadingMessage(t("loading.package"));
-      // Google: /api/drive. Dropbox: /api/dropbox.
-      recordingFiles = await loadRecordingFilesFromIndex(replayRecordingId);
-      await loadRecordingFromFiles();
+      try {
+        // Google: /api/drive. Dropbox: /api/dropbox.
+        // Package download can fail before loadRecordingFromFiles' own try/catch.
+        recordingFiles = await loadRecordingFilesFromIndex(replayRecordingId);
+        await loadRecordingFromFiles();
+      } catch (err) {
+        markPendingLoadingEntriesFailed();
+        console.error("Failed to load recording package:", err);
+        elements.errorMessage.textContent = err?.message || t("error.loadFailed");
+        showError();
+      }
     } else if (videos && metadataFileId) {
       showLoading();
-      recordingFiles = buildDirectRecordingFiles(urlParams);
-      await loadRecordingFromFiles();
+      try {
+        recordingFiles = buildDirectRecordingFiles(urlParams);
+        await loadRecordingFromFiles();
+      } catch (err) {
+        markPendingLoadingEntriesFailed();
+        console.error("Failed to load recording:", err);
+        elements.errorMessage.textContent = err?.message || t("error.loadFailed");
+        showError();
+      }
     } else if (!hasParams) {
       console.info("[GN Tracing Player] Showing intro state without replay params");
       showIntro();

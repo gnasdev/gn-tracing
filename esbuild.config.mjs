@@ -228,6 +228,13 @@ function normalizeAppEnv(value) {
   return normalized || "production";
 }
 
+const PRODUCTION_PLAYER_ORIGINS = new Set([
+  "https://tracing.gnas.dev",
+  "http://tracing.gnas.dev",
+  "https://gn-tracing-player.pages.dev",
+  "http://gn-tracing-player.pages.dev",
+]);
+
 /** Ensure player host is an absolute URL ending with `/`. */
 function normalizePlayerHostUrl(value) {
   const raw = String(value || "")
@@ -238,6 +245,11 @@ function normalizePlayerHostUrl(value) {
   }
   try {
     const url = new URL(raw.includes("://") ? raw : `https://${raw}`);
+    // Development builds must not bake the production player host (common when
+    // PLAYER_HOST_URL_DEV is copied from PLAYER_HOST_URL in .env).
+    if (!isProductionBuild && PRODUCTION_PLAYER_ORIGINS.has(url.origin)) {
+      return DEFAULT_DEV_PLAYER_HOST_URL;
+    }
     return `${url.origin}${url.pathname === "/" ? "" : url.pathname.replace(/\/+$/, "")}/`;
   } catch {
     return isProductionBuild ? DEFAULT_PRODUCTION_PLAYER_HOST_URL : DEFAULT_DEV_PLAYER_HOST_URL;

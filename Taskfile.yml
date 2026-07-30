@@ -79,14 +79,14 @@ tasks:
       - node scripts/sync-player.js
 
   player:dev:
-    desc: Run SolidJS player dev server (TypeScript 7 + Vite).
+    desc: Run hosted player dev server (Vite + public/player.js runtime).
     dir: player
     cmds:
       - node scripts/sync-player.js
       - npm exec -- vite --port 5176
 
   player:build:
-    desc: Sync theme and build the SolidJS player (development mode).
+    desc: Sync theme and build the hosted player (development mode).
     deps:
       - player:sync
     dir: player
@@ -95,7 +95,7 @@ tasks:
       - npm exec -- vite build --mode development
 
   player:dist:
-    desc: Sync theme and build the SolidJS player (production mode).
+    desc: Sync theme and build the hosted player (production mode).
     deps:
       - player:sync
     dir: player
