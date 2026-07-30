@@ -20,6 +20,8 @@ local_protocol = "http"
 GOOGLE_CLIENT_ID = ""
 DROPBOX_CLIENT_ID = ""
 ALLOWED_EXTENSION_ORIGINS = ""
+# When "true", empty ALLOWED_EXTENSION_ORIGINS is a misconfiguration (fail closed).
+STRICT_ORIGIN = ""
 GITHUB_REPO_OWNER = "gnasdev"
 GITHUB_REPO_NAME = "gn-tracing"
 GITHUB_FEEDBACK_LABELS = "feedback"

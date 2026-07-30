@@ -1,0 +1,30 @@
+{
+  "name": "gn-tracing-player",
+  "version": "1.1.0",
+  "description": "Standalone SolidJS player for GN Tracing recordings",
+  "license": "GPL-3.0-or-later",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port 5176",
+    "build": "tsc --noEmit -p tsconfig.json && vite build",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage"
+  },
+  "dependencies": {
+    "solid-js": "^1.9.14"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.0",
+    "@vitest/coverage-v8": "4.1.9",
+    "jsdom": "29.1.1",
+    "typescript": "7.0.2",
+    "vite": "^7.3.6",
+    "vite-plugin-solid": "^2.11.14",
+    "vitest": "4.1.9"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

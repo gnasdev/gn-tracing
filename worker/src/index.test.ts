@@ -300,6 +300,38 @@ describe("Feedback proxy", () => {
   });
 });
 
+describe("OAuth token proxy - STRICT_ORIGIN", () => {
+  it("returns 500 when STRICT_ORIGIN is on and allow-list is empty", async () => {
+    const res = await worker.fetch(
+      makeTokenRequest("/token"),
+      makeEnv({ STRICT_ORIGIN: "true", ALLOWED_EXTENSION_ORIGINS: "" }),
+    );
+    expect(res.status).toBe(500);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("server_misconfigured");
+  });
+
+  it("still allows listed origins when STRICT_ORIGIN is on", async () => {
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ access_token: "ok" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const res = await worker.fetch(
+      makeTokenRequest("/token"),
+      makeEnv({
+        STRICT_ORIGIN: "true",
+        ALLOWED_EXTENSION_ORIGINS: PLACEHOLDER_ORIGIN,
+      }),
+    );
+    expect(res.status).toBe(200);
+  });
+});
+
 describe("OAuth token proxy - configuration handling", () => {
   it("returns 500 when Google secret is missing on Google path", async () => {
     const res = await worker.fetch(
