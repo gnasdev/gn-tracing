@@ -10,7 +10,7 @@ on:
 
 jobs:
   unit:
-    name: unit (root + player-standalone + worker)
+    name: unit (root + player + worker)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -27,7 +27,7 @@ jobs:
 
       - name: Install standalone player dependencies
         run: npm ci
-        working-directory: player-standalone
+        working-directory: player
 
       - name: Install worker dependencies
         run: npm ci
@@ -60,7 +60,7 @@ jobs:
 
       - name: Install standalone player dependencies
         run: npm ci
-        working-directory: player-standalone
+        working-directory: player
 
       - name: Install worker dependencies
         run: npm ci

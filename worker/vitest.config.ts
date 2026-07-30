@@ -42,7 +42,7 @@ export default defineConfig({
       // exclude this Context's own source, so we drop it here while still
       // excluding the other Context and all non-source.
       exclude: [
-        "player-standalone/**",
+        "player/**",
         "**/*.{test,spec}.ts",
         "**/*.config.{ts,mts,mjs,js}",
         "test/**",

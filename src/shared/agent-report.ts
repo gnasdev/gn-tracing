@@ -6,7 +6,7 @@
  * matters for the non-technical path: a QA tester who cannot install an MCP
  * server can still hand an agent a complete, correctly framed summary.
  *
- * Reaches `player-standalone/public/player.js` through the single core bundle built by
+ * Reaches `player/public/player.js` through the single core bundle built by
  * `scripts/build-player-core-vendor.mjs` (`window.gnCore.agentReport`).
  * `player.js` is plain, unbundled JavaScript, so a global is the only way it
  * can reach typed shared code.

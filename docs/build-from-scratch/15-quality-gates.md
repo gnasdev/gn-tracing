@@ -48,7 +48,7 @@ npm run deadcode     # npx knip --no-progress
 - An unused export that should be removed.
 - A stale `entry` line in `knip.json` (entry file renamed or deleted).
 
-`ignore` paths cover the prebuilt `player/player.js` (third-party-style artifact), `dist/`, `player-standalone/`, `shared/`, and `store-assets/`.
+`ignore` paths cover the prebuilt `player/player.js` (third-party-style artifact), `dist/`, `player/`, `shared/`, and `store-assets/`.
 
 ## 15.3 Husky Pre-commit Hook
 
@@ -66,7 +66,7 @@ npm run docs:check
 
 # 3. Vitest for the impacted tests.
 npx vitest related --run --passWithNoTests \
-  -- "$(git diff --cached --name-only --diff-filter=ACM | grep '\.ts$' | grep -v '^player-standalone/' | grep -v '^worker/' || true)"
+  -- "$(git diff --cached --name-only --diff-filter=ACM | grep '\.ts$' | grep -v '^player/' | grep -v '^worker/' || true)"
 ```
 
 Three guardrails:
@@ -75,7 +75,7 @@ Three guardrails:
 - `docs:check` enforces LF endings, no trailing whitespace, and valid relative `.md` links (chapter `15.4`).
 - `vitest related` runs only the tests that touch the staged files, which keeps pre-commit fast.
 
-`player-standalone/` and `worker/` are intentionally excluded from the root Vitest call because they own their own test runners; their pre-commit guards are managed in their own `package.json` `prepare` scripts.
+`player/` and `worker/` are intentionally excluded from the root Vitest call because they own their own test runners; their pre-commit guards are managed in their own `package.json` `prepare` scripts.
 
 ## 15.4 `docs:check` and the Markdown Rules
 
@@ -106,13 +106,13 @@ There is no pre-push hook by default. The release pipeline is protected by `.git
 
 ```yaml
 - npm ci
-- (cd player-standalone && npm ci)
+- (cd player && npm ci)
 - (cd worker && npm ci)
 - npm run typecheck
-- (cd player-standalone && npm run typecheck)
+- (cd player && npm run typecheck)
 - (cd worker && npm run typecheck)
 - npm run test:coverage
-- (cd player-standalone && npm run test)
+- (cd player && npm run test)
 - (cd worker && npm run test)
 ```
 

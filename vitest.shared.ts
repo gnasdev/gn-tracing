@@ -48,7 +48,7 @@ export const sharedTestConfig: TestUserConfig = {
     exclude: [
       // Other test Contexts own their own coverage runs; never fold their
       // sources (or their executed test files) into this Context's denominator.
-      "player-standalone/**",
+      "player/**",
       "worker/**",
       // Non-source: test files, test helpers/fixtures, config, build scripts,
       // and emitted bundles carry no production logic to measure.

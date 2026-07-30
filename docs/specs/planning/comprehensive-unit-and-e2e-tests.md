@@ -2,7 +2,7 @@
 
 ## Bối Cảnh
 
-Repo hiện đã có **~700 unit test Vitest** trên ba context (`root`, `player-standalone`, `worker`) và quality gate `task test:all` + coverage floor 60%/55%. Hạ tầng mock Chrome (`test/mocks/chrome.ts`), factories, và fast-check đã có. Replay-core/MCP/SDK được cover khá tốt.
+Repo hiện đã có **~700 unit test Vitest** trên ba context (`root`, `player`, `worker`) và quality gate `task test:all` + coverage floor 60%/55%. Hạ tầng mock Chrome (`test/mocks/chrome.ts`), factories, và fast-check đã có. Replay-core/MCP/SDK được cover khá tốt.
 
 Tuy nhiên “toàn diện” chưa đạt vì:
 
@@ -251,7 +251,7 @@ jobs:
   unit:
     runs-on: ubuntu-latest
     steps:
-      - checkout, setup-node, npm ci (root + player-standalone + worker)
+      - checkout, setup-node, npm ci (root + player + worker)
       - task test:all
       - npm run test:coverage (root) với threshold hiện có
   e2e-player:

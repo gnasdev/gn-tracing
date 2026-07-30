@@ -28,7 +28,7 @@ The guide covers, end-to-end:
 - `esbuild.config.mjs` orchestration: three build contexts (service worker, UI pages, content scripts), `define` constants, watch mode, static asset copying.
 - Static extension assets (HTML/CSS, icons, theme, vendored player assets).
 - Source code layers (`src/background/`, `src/popup/`, `src/offscreen/`, `src/annotate/`, `src/drive-auth/`, `src/storage-auth/`, `src/content/`, `src/shared/`, `src/types/`).
-- Hosted player (`player-standalone/`, Vite, `sync-player.js`, `/api/drive` proxy).
+- Hosted player (`player/`, Vite, `sync-player.js`, `/api/drive` proxy).
 - OAuth Worker (`worker/`, Wrangler, `ALLOWED_EXTENSION_ORIGINS`, secrets).
 - The full `Taskfile.yml` alias catalog.
 - `.env.example` walkthrough.

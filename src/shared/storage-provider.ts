@@ -12,7 +12,7 @@
  * fail closed without calling Microsoft hosts (OneDrive support removed).
  *
  * The standalone/extension player reimplements the same parse rules in
- * `player-standalone/public/player.js` (`resolveReplayRecordingRef`) — update both when changing
+ * `player/public/player.js` (`resolveReplayRecordingRef`) — update both when changing
  * URL semantics.
  */
 

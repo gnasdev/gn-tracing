@@ -162,18 +162,12 @@ async function makePopupCapture(name, fixtureScript) {
 
 async function makePlayerCapture(name, mode) {
   const playerHtml = await fs.readFile(
-    path.join(rootDir, "player-standalone", "public", "player.html"),
+    path.join(rootDir, "player", "public", "player.html"),
     "utf8",
   );
-  const playerCss = await fs.readFile(
-    path.join(rootDir, "player-standalone", "public", "player.css"),
-    "utf8",
-  );
+  const playerCss = await fs.readFile(path.join(rootDir, "player", "public", "player.css"), "utf8");
   const iconCss = await fs
-    .readFile(
-      path.join(rootDir, "player-standalone", "public", "icons", "phosphor-icons.css"),
-      "utf8",
-    )
+    .readFile(path.join(rootDir, "player", "public", "icons", "phosphor-icons.css"), "utf8")
     .catch(() => "");
   const body = readBody(playerHtml);
   const script = mode === "intro" ? playerIntroScript() : playerReplayScript();

@@ -5,17 +5,17 @@ type: module
 status: active
 tags: ["player", "replay", "google-drive", "dropbox"]
 source_paths:
-  - "player/player.js"
-  - "player/player.css"
-  - "player/player.html"
+  - "player/public/player.js"
+  - "player/public/player.css"
+  - "player/public/player.html"
   - "player/core-entry.ts"
   - "src/shared/player-presentation.ts"
-  - "player-standalone/src/main.ts"
-  - "player-standalone/src/drive-adapter.ts"
-  - "player-standalone/src/extension-detector.ts"
-  - "player-standalone/functions/api/drive.js"
-  - "player-standalone/functions/api/dropbox.js"
-  - "player-standalone/scripts/sync-player.js"
+  - "player/src/main.ts"
+  - "player/src/drive-adapter.ts"
+  - "player/src/extension-detector.ts"
+  - "player/functions/api/drive.js"
+  - "player/functions/api/dropbox.js"
+  - "player/scripts/sync-player.js"
 related:
   - "./drive-and-player.md"
   - "./recording-runtime.md"
@@ -30,7 +30,7 @@ related:
 
 - Trạng thái: active
 - Phạm vi: extension/standalone replay player, multi-cloud artifact download, zip package parsing, password unlock, loading progress, and inspection UI
-- Nguồn code: `player/player.js`, `player/player.css`, `player/player.html`, `player-standalone/src/`, `player-standalone/functions/api/{drive,dropbox}.js`, `player-standalone/scripts/sync-player.js`
+- Nguồn code: `player/public/player.js`, `player/public/player.css`, `player/public/player.html`, `player/src/`, `player/functions/api/{drive,dropbox}.js`, `player/scripts/sync-player.js`
 - Tuân thủ: Không áp dụng
 - Links: [Cloud Storage And Player](./drive-and-player.md), [Recording Runtime](./recording-runtime.md), [Privacy And Redaction](./privacy-and-redaction.md), [Shared Data Models](../shared/data-models.md), [API Conventions](../shared/api-conventions.md)
 
@@ -144,7 +144,7 @@ Parsed Error object stacks stored on `SerializedRemoteObject.stackTrace` are ren
 
 ## Vendored Rendering Components
 
-Object and JSON values can be rendered with prebuilt [luna](https://github.com/liriliri/luna) components vendored under `player/vendor/luna/` (`luna-object-viewer`, `luna-json-editor`). These standalone IIFE/UMD bundles expose globals (for example `window.LunaObjectViewer`) and are loaded by `<link>`/`<script>` tags before `player.js` in both `player/player.html` and `player-standalone/index.html`. `sync-player.js` mirrors the whole `vendor/` directory into the standalone player, and the extension build copies `player/vendor` into `dist/player/vendor`.
+Object and JSON values can be rendered with prebuilt [luna](https://github.com/liriliri/luna) components vendored under `player/vendor/luna/` (`luna-object-viewer`, `luna-json-editor`). These standalone IIFE/UMD bundles expose globals (for example `window.LunaObjectViewer`) and are loaded by `<link>`/`<script>` tags before `player.js` in both `player/player.html` and `player/index.html`. `sync-player.js` mirrors the whole `vendor/` directory into the standalone player, and the extension build copies `player/vendor` into `dist/player/vendor`.
 
 The components are MIT-licensed; the upstream license text is kept at `player/vendor/luna/LICENSE` and exact versions are pinned in `player/vendor/luna/VERSIONS.md`. The player wraps each component in a thin adapter that falls back to the legacy hand-rolled renderer when the global is unavailable, so missing or failed vendor bundles never throw. The JSON viewer is configured read-only because the player only replays.
 

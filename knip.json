@@ -12,7 +12,7 @@
     "scripts/*.mjs"
   ],
   "project": ["src/**/*.ts", "scripts/**/*.mjs"],
-  "ignore": ["dist/**", "graphify-out/**", "player-standalone/**", "shared/**", "store-assets/**"],
+  "ignore": ["dist/**", "graphify-out/**", "player/**", "shared/**", "store-assets/**"],
   "ignoreBinaries": ["vite", "task", "watch", "knip", "blue,green,magenta"],
   "ignoreExportsUsedInFile": true
 }

@@ -12,9 +12,9 @@ git update-index --again
 
 # --- Run tests related to staged files (Requirement 8) ---
 # Collect staged TypeScript files (added/copied/modified/renamed) for the root
-# extension context. The player-standalone and worker contexts own their own
+# extension context. The player and worker contexts own their own
 # test runners, so their files are excluded here.
-staged_ts="$(git diff --cached --name-only --diff-filter=ACMR -- '*.ts' | grep -Ev '^(player-standalone|worker)/' || true)"
+staged_ts="$(git diff --cached --name-only --diff-filter=ACMR -- '*.ts' | grep -Ev '^(player|worker)/' || true)"
 
 # When no staged file belongs to the root context, there is nothing to run, so
 # allow the commit to proceed without invoking the test runner (Req 8.2).

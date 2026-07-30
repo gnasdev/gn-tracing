@@ -33,7 +33,7 @@ Even though this guide focuses on building the extension, the project has three 
 ├── manifest.template.json
 ├── .env.example
 ├── .gitignore
-├── player-standalone/            hosted replay player (chapter 07)
+├── player/            hosted replay player (chapter 07)
 │   ├── package.json
 │   ├── vite.config.ts
 │   └── ...
@@ -240,7 +240,7 @@ coverage/
   "ignore": [
     "player/player.js",
     "dist",
-    "player-standalone",
+    "player",
     "shared",
     "store-assets"
   ]

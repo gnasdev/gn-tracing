@@ -3,7 +3,7 @@
  *
  * Single behavioral source of truth:
  * - Unit tests import this module directly.
- * - Browser player loads timeline helpers via `window.gnCore` (player-standalone core bundle)
+ * - Browser player loads timeline helpers via `window.gnCore` (player core bundle)
  *   built by `npm run vendor:player-core` as `globalThis.gnCore.timelineSeek`.
  *
  * After package bytes are in memory, Drive and Dropbox share this contract —

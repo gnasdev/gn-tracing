@@ -44,7 +44,7 @@ describe("webm seek single-path wiring", () => {
   });
 
   it("player uses gnMakeWebmSeekable before createObjectURL (same contract)", () => {
-    const source = readRepo("player-standalone/public/player.js");
+    const source = readRepo("player/public/player.js");
     expect(source).toContain("gnMakeWebmSeekable");
     expect(source).toContain("async function prepareSeekableVideoBlob");
     expect(source).toContain("ensurePlayableVideoBlobType");
@@ -66,9 +66,7 @@ describe("webm seek single-path wiring", () => {
     const pure = readRepo("src/shared/player-timeline-seek.ts");
     expect(pure).toContain("export function reconcileSeekClock");
     expect(pure).toContain("export function resolveTimelineDurationMs");
-    expect(existsRepo("player-standalone", "public", "vendor", "gn-core", "gn-core.iife.js")).toBe(
-      true,
-    );
+    expect(existsRepo("player", "public", "vendor", "gn-core", "gn-core.iife.js")).toBe(true);
     // Old dual stack must be gone.
     expect(source).not.toContain("ysFixWebmDuration");
     expect(source).not.toContain("GnWebmDurationFix");
@@ -83,7 +81,7 @@ describe("webm seek single-path wiring", () => {
   it("static player.html loads seek vendors before player runtime", () => {
     // Hosted Solid app (index.html) imports TS modules via Vite; vendor IIFEs
     // remain for the static e2e shell under public/player.html.
-    const staticHtml = readRepo("player-standalone/public/player.html");
+    const staticHtml = readRepo("player/public/player.html");
     const vendorScript =
       /<script\b[^>]*\bsrc=["'][^"']*vendor\/webm-seek-fix\/webm-seek-fix\.iife\.js["']/;
     const timelineVendor = /<script\b[^>]*\bsrc=["'][^"']*vendor\/gn-core\/gn-core\.iife\.js["']/;
@@ -101,35 +99,27 @@ describe("webm seek single-path wiring", () => {
     expect(stTimeline).toBeGreaterThan(stVendor);
     expect(stPlayer).toBeGreaterThan(stTimeline);
 
-    const solidShell = readRepo("player-standalone/index.html");
+    const solidShell = readRepo("player/index.html");
     expect(solidShell).toMatch(/src\/main\.tsx/);
   });
 
   it("vendor artifact exposes gnMakeWebmSeekable and no second duration stack", () => {
-    expect(
-      existsRepo("player-standalone", "public", "vendor", "webm-seek-fix", "webm-seek-fix.iife.js"),
-    ).toBe(true);
-    expect(existsRepo("player-standalone", "public", "vendor", "webm-seek-fix", "LICENSE")).toBe(
+    expect(existsRepo("player", "public", "vendor", "webm-seek-fix", "webm-seek-fix.iife.js")).toBe(
       true,
     );
+    expect(existsRepo("player", "public", "vendor", "webm-seek-fix", "LICENSE")).toBe(true);
+    expect(existsRepo("player", "public", "vendor", "webm-seek-fix", "fix-webm-duration.js")).toBe(
+      false,
+    );
     expect(
-      existsRepo("player-standalone", "public", "vendor", "webm-seek-fix", "fix-webm-duration.js"),
-    ).toBe(false);
-    expect(
-      existsRepo(
-        "player-standalone",
-        "public",
-        "vendor",
-        "webm-seek-fix",
-        "webm-duration-fix.iife.js",
-      ),
+      existsRepo("player", "public", "vendor", "webm-seek-fix", "webm-duration-fix.iife.js"),
     ).toBe(false);
 
-    const vendor = readRepo("player-standalone/public/vendor/webm-seek-fix/webm-seek-fix.iife.js");
+    const vendor = readRepo("player/public/vendor/webm-seek-fix/webm-seek-fix.iife.js");
     expect(vendor).toContain("gnMakeWebmSeekable");
     expect(vendor).toMatch(/webm-duration-fix|makeMetadataSeekable|Decoder/);
 
-    const publicPlayer = readRepo("player-standalone/public/player.js");
+    const publicPlayer = readRepo("player/public/player.js");
     expect(publicPlayer).toContain("gnMakeWebmSeekable");
     expect(publicPlayer).not.toContain("ysFixWebmDuration");
   });

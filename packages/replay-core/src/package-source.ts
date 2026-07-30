@@ -4,7 +4,7 @@
  * A package is mostly video, so the reader is built around *ranged* reads: pull
  * the tail to find the zip directory, then pull only the JSON entries an agent
  * actually asked for. Both hosted download proxies
- * (`player-standalone/functions/api/*.js`) forward the `Range` header upstream,
+ * (`player/functions/api/*.js`) forward the `Range` header upstream,
  * so this works against a real replay link.
  *
  * When a server ignores `Range` and answers `200`, the full body is cached once

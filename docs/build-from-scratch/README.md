@@ -15,7 +15,7 @@ related:
 This directory is a step-by-step guide for rebuilding the entire GN Tracing system from an empty repository:
 
 - the Chromium Manifest V3 extension (root + `esbuild`)
-- the hosted replay player (`player-standalone` + Vite + Cloudflare Pages)
+- the hosted replay player (`player` + Vite + Cloudflare Pages)
 - the OAuth token-exchange Worker (`worker/` + Wrangler + Cloudflare Workers)
 
 Each chapter contains commands you can copy-paste, file references so you can verify against the existing checkout, and a short "What you should have now" checkpoint before moving on.
@@ -36,7 +36,7 @@ If you want release-grade packaging, also walk chapters `13` → `15` last.
 4. [Extension Build](./04-extension-build-esbuild.md) — `esbuild.config.mjs`, three contexts, define constants, watch mode.
 5. [Static Assets](./05-extension-static-assets.md) — copy HTML/CSS, icons, theme, player assets into `dist/`.
 6. [Source Layers](./06-extension-source-layers.md) — the `src/`, `popup/`, `settings/`, `history/`, `offscreen/`, `drive-auth/`, `shared/` tree.
-7. [Standalone Player](./07-standalone-player.md) — `player-standalone/` Vite app, `sync-player.js`, Drive proxy.
+7. [Standalone Player](./07-standalone-player.md) — `player/` Vite app, `sync-player.js`, Drive proxy.
 8. [OAuth Worker](./08-oauth-worker.md) — `worker/` Wrangler config, `ALLOWED_EXTENSION_ORIGINS`, secrets.
 9. [Taskfile Commands](./09-taskfile-commands.md) — the entire `Taskfile.yml` alias catalog.
 10. [Environment & Secrets](./10-environment-and-secrets.md) — every variable in `.env.example`.

@@ -16,7 +16,7 @@ related:
 
 - Trạng thái: active
 - Phạm vi: public terms language for extension use, multi-cloud upload, hosted player, liability, and contact
-- Nguồn code: `player-standalone/public/terms/index.html`
+- Nguồn code: `player/public/terms/index.html`
 - Tuân thủ: OAuth consent screens / Chrome Web Store public legal URLs
 - Links: [Privacy Policy](./privacy-policy.md), [Chrome Web Store Submission](./chrome-web-store-submission.md), [Cloud Storage And Player](../modules/drive-and-player.md)
 
@@ -27,7 +27,7 @@ related:
 - OAuth application homepage (branding): `https://tracing.gnas.dev/app/`
 
 The canonical HTML page is deployed with the standalone player on Cloudflare Pages
-(`player-standalone/public/terms/index.html`). Update that page when these terms change.
+(`player/public/terms/index.html`). Update that page when these terms change.
 
 ## Summary For Maintainers
 

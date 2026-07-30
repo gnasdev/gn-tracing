@@ -103,10 +103,10 @@ describe("cleanup hygiene: inject entry scripts stay wired", () => {
     // STATIC_ASSET_ENTRIES must not copy player assets into dist/player.
     expect(esbuildSource).not.toMatch(/dest:\s*["']dist\/player\//);
     expect(esbuildSource).not.toMatch(/src:\s*["']player\/player\.(html|js|css)["']/);
-    // Player lives only under player-standalone (no root player/ tree).
-    expect(existsSync(join(ROOT, "player"))).toBe(false);
-    expect(existsSync(join(ROOT, "player-standalone/public/player.js"))).toBe(true);
-    expect(existsSync(join(ROOT, "player-standalone/package.json"))).toBe(true);
+    // Hosted player lives under player/ (Vite app); legacy player-standalone/ is gone.
+    expect(existsSync(join(ROOT, "player-standalone"))).toBe(false);
+    expect(existsSync(join(ROOT, "player/public/player.js"))).toBe(true);
+    expect(existsSync(join(ROOT, "player/package.json"))).toBe(true);
   });
 });
 

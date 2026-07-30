@@ -151,7 +151,7 @@ Full **Record** sessions collect console, network, WebSocket, and optional stora
 
 ### Third-party components and attribution
 
-The replay player renders objects and JSON with vendored, prebuilt [luna](https://github.com/liriliri/luna) components (`luna-object-viewer`, `luna-json-editor`) under `player-standalone/public/vendor/luna/`. These are MIT-licensed; the upstream license is kept at [`player-standalone/public/vendor/luna/LICENSE`](./player-standalone/public/vendor/luna/LICENSE) and pinned versions are recorded in `player-standalone/public/vendor/luna/VERSIONS.md`. The player falls back to its built-in renderers if a component is unavailable.
+The replay player renders objects and JSON with vendored, prebuilt [luna](https://github.com/liriliri/luna) components (`luna-object-viewer`, `luna-json-editor`) under `player/public/vendor/luna/`. These are MIT-licensed; the upstream license is kept at [`player/public/vendor/luna/LICENSE`](./player/public/vendor/luna/LICENSE) and pinned versions are recorded in `player/public/vendor/luna/VERSIONS.md`. The player falls back to its built-in renderers if a component is unavailable.
 
 ## Limits
 

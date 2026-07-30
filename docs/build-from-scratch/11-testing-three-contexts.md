@@ -58,7 +58,7 @@ export default mergeConfig(
       environment: "node",
       setupFiles: ["./test/setup.ts", "./test/property-config.ts"],
       coverage: {
-        exclude: ["player-standalone/**", "worker/**"],
+        exclude: ["player/**", "worker/**"],
       },
     },
     define: {
@@ -123,7 +123,7 @@ npm run test:coverage       # with coverage report
 
 ## 11.3 Player Context
 
-`player-standalone/vitest.config.ts`:
+`player/vitest.config.ts`:
 
 ```ts
 import { mergeConfig, defineConfig } from "vitest/config";
@@ -146,7 +146,7 @@ export default mergeConfig(
 
 `jsdom` is required because the player code touches `window`, `document`, and `URLSearchParams`. Test files live alongside the player source (`src/*.test.ts`); a current canonical test is `src/zip-parser.test.ts`.
 
-Run from `player-standalone/`:
+Run from `player/`:
 
 ```bash
 npm run test
@@ -201,7 +201,7 @@ npm run test
 
 1. `npx biome check --write --staged --files-ignore-unknown=true`
 2. `npm run docs:check`
-3. `vitest related --run --passWithNoTests` over staged `.ts` files (skipping `player-standalone/` and `worker/` which own their own runners)
+3. `vitest related --run --passWithNoTests` over staged `.ts` files (skipping `player/` and `worker/` which own their own runners)
 
 This is the safety net that ensures every pushed change touched a corresponding test.
 

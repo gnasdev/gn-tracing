@@ -102,7 +102,7 @@ task store:check
 - `npx tsc --noEmit`
 - `npm audit --omit=dev`
 - `task player:typecheck`
-- `(cd player-standalone && npm audit)`
+- `(cd player && npm audit)`
 - `task dist`
 - `node scripts/check-store-package.mjs`
 

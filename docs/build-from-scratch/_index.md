@@ -75,6 +75,6 @@ Each chapter cross-references the actual implementation files. The most central 
 - [`../../package.json`](../../package.json) — root scripts + dev deps (chapter 02)
 - [`../../.env.example`](../../.env.example) — variable catalog (chapter 10)
 - [`../../vitest.shared.ts`](../../vitest.shared.ts) — shared test base (chapter 11)
-- [`../../player-standalone/vite.config.ts`](../../player-standalone/vite.config.ts) — Vite player (chapter 07)
+- [`../../player/vite.config.ts`](../../player/vite.config.ts) — Vite player (chapter 07)
 - [`../../worker/wrangler.toml`](../../worker/wrangler.toml) — Worker config (chapter 08)
 - [`../../scripts/check-store-package.mjs`](../../scripts/check-store-package.mjs) — Store package rules (chapter 14)

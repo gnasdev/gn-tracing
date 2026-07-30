@@ -105,7 +105,7 @@ describe("Vitest config inheritance", () => {
   });
 
   describe("standalone player config (jsdom)", () => {
-    const source = readConfigSource("../player-standalone/vitest.config.ts");
+    const source = readConfigSource("../player/vitest.config.ts");
 
     it("derives from the shared base config", () => {
       expect(source).toContain("../vitest.shared");

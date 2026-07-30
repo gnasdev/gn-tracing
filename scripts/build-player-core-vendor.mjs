@@ -1,9 +1,9 @@
 /**
- * Bundle `player-standalone/core-entry.ts` as a browser IIFE for `player.js`.
+ * Bundle `player/core-entry.ts` as a browser IIFE for `player.js`.
  *
  * The player is unbundled JavaScript, so a global (`window.gnCore`) is how typed
  * shared code reaches it. Adding a shared module means exporting it from
- * `player-standalone/core-entry.ts` rather than a new build script.
+ * `player/core-entry.ts` rather than a new build script.
  *
  * Usage: node scripts/build-player-core-vendor.mjs
  * Or: npm run vendor:player-core
@@ -15,12 +15,12 @@ import { fileURLToPath } from "node:url";
 import * as esbuild from "esbuild";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const entry = path.join(root, "player-standalone/core-entry.ts");
-const outDir = path.join(root, "player-standalone/public/vendor/gn-core");
+const entry = path.join(root, "player/core-entry.ts");
+const outDir = path.join(root, "player/public/vendor/gn-core");
 const outFile = path.join(outDir, "gn-core.iife.js");
 
 if (!fs.existsSync(entry)) {
-  console.error("Missing player-standalone/core-entry.ts");
+  console.error("Missing player/core-entry.ts");
   process.exit(1);
 }
 

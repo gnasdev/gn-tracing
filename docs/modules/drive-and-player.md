@@ -17,7 +17,6 @@ source_paths:
   - "Taskfile.yml"
   - "DEVELOPER.md"
   - "player"
-  - "player-standalone"
 related:
   - "./recording-runtime.md"
   - "./privacy-and-redaction.md"
@@ -35,7 +34,7 @@ related:
 
 - Trạng thái: active
 - Phạm vi: multi-cloud storage (Google Drive and Dropbox), OAuth per provider, zip package upload, public-by-link share, namespaced replay URLs, release packaging, and built-in/standalone player integration
-- Nguồn code: `src/shared/storage-provider.ts`, `src/background/storage/`, `src/background/*-auth.ts`, `src/offscreen/offscreen.ts`, `src/shared/player-host.ts`, `src/shared/*-api.ts`, `player/`, `player-standalone/`
+- Nguồn code: `src/shared/storage-provider.ts`, `src/background/storage/`, `src/background/*-auth.ts`, `src/offscreen/offscreen.ts`, `src/shared/player-host.ts`, `src/shared/*-api.ts`, `player/`
 - Tuân thủ: Không áp dụng
 - Links: [Recording Runtime](./recording-runtime.md), [Privacy And Redaction](./privacy-and-redaction.md), [Replay Player](./replay-player.md), [OAuth Token Proxy](./oauth-token-proxy.md), [Extension Surfaces](../features/extension-surfaces.md), [Release Packaging](../features/release-and-update-checks.md), [Shared Data Models](../shared/data-models.md), [API Conventions](../shared/api-conventions.md)
 
@@ -59,7 +58,7 @@ Core source areas:
 - `src/offscreen/offscreen.ts` — zip packaging + provider-specific upload/share
 - `src/shared/google-drive-api.ts`, `dropbox-api.ts` — shared API helpers
 - `src/shared/player-host.ts` — fixed hosted player base + namespaced replay URLs
-- `player/*`, `player-standalone/*` — player + per-provider download proxies
+- `player/*` — hosted player + per-provider download proxies
 
 Replay inspection, zip password unlock, and package parsing are documented in [Replay Player](./replay-player.md). Redaction policy lives in [Privacy And Redaction](./privacy-and-redaction.md). Google-only token-secret proxy details live in [OAuth Token Proxy](./oauth-token-proxy.md).
 

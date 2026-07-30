@@ -11,10 +11,10 @@
  *  - Round-trip serialize/parse of `StorageArtifact` (P4-round-trip / R2.5).
  *
  * `diffStorageGroups` lives inside the non-bundled player IIFE
- * (`player-standalone/public/player.js`, ~line 699) and is not importable. To meaningfully test
+ * (`player/public/player.js`, ~line 699) and is not importable. To meaningfully test
  * R5.2 / Property P4 without a build step for the player, the algorithm is
  * mirrored verbatim below. Keep `diffStorageGroups` here byte-for-byte in sync
- * with `player-standalone/public/player.js`.
+ * with `player/public/player.js`.
  *
  * fast-check global config (numRuns, verbose, seed reporting) is applied via the
  * `test/property-config.ts` setup file.

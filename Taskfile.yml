@@ -2,7 +2,7 @@ version: "3"
 
 # Load root .env for deploy/build tasks so CHROME_EXTENSION_ID, Cloudflare
 # tokens, and GOOGLE_* credentials reach scripts that intentionally do not
-# read the file themselves (worker/deploy.sh, player-standalone/deploy.sh).
+# read the file themselves (worker/deploy.sh, player/deploy.sh).
 # Missing .env is ignored; CI can still inject process env.
 dotenv: [".env"]
 
@@ -59,7 +59,7 @@ tasks:
       - cmd: |
           failed=""
           npm run test || failed="$failed root"
-          (cd player-standalone && npm run test) || failed="$failed player"
+          (cd player && npm run test) || failed="$failed player"
           (cd worker && npm run test) || failed="$failed worker"
           if [ -n "$failed" ]; then
             echo "Failed contexts:$failed" >&2
@@ -73,14 +73,14 @@ tasks:
       - npm run test:e2e:player
 
   player:sync:
-    desc: Sync root shared theme/icons into player-standalone/public.
-    dir: player-standalone
+    desc: Sync root shared theme/icons into player/public.
+    dir: player
     cmds:
       - node scripts/sync-player.js
 
   player:dev:
     desc: Run SolidJS player dev server (TypeScript 7 + Vite).
-    dir: player-standalone
+    dir: player
     cmds:
       - node scripts/sync-player.js
       - npm exec -- vite --port 5176
@@ -89,7 +89,7 @@ tasks:
     desc: Sync theme and build the SolidJS player (development mode).
     deps:
       - player:sync
-    dir: player-standalone
+    dir: player
     cmds:
       - npm exec -- tsc --noEmit -p tsconfig.json
       - npm exec -- vite build --mode development
@@ -98,7 +98,7 @@ tasks:
     desc: Sync theme and build the SolidJS player (production mode).
     deps:
       - player:sync
-    dir: player-standalone
+    dir: player
     cmds:
       - npm exec -- tsc --noEmit -p tsconfig.json
       - npm exec -- vite build --mode production
@@ -115,19 +115,19 @@ tasks:
 
   player:preview:
     desc: Preview the built standalone player.
-    dir: player-standalone
+    dir: player
     cmds:
       - npm exec -- vite preview
 
   player:typecheck:
     desc: Run standalone player TypeScript checks.
-    dir: player-standalone
+    dir: player
     cmds:
       - npm exec -- tsc --noEmit
 
   player:deploy:
     desc: Deploy the standalone player to Cloudflare Pages.
-    dir: player-standalone
+    dir: player
     cmds:
       - ./deploy.sh
 
@@ -253,7 +253,7 @@ tasks:
       - npx tsc --noEmit
       - npm audit --omit=dev
       - task: player:typecheck
-      - sh -c 'cd player-standalone && npm audit'
+      - sh -c 'cd player && npm audit'
       - task: dist
       - node scripts/check-store-package.mjs
 

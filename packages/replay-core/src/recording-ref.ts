@@ -3,7 +3,7 @@
  *
  * The extension owns the canonical implementation in
  * `src/shared/storage-provider.ts` and the player reimplements it in
- * `player-standalone/public/player.js` (`resolveReplayRecordingRef`). This module is the third
+ * `player/public/player.js` (`resolveReplayRecordingRef`). This module is the third
  * copy's replacement: a pure, dependency-free version that MCP transports use,
  * kept behaviourally identical by the golden test in `recording-ref.test.ts`.
  *
@@ -42,7 +42,7 @@ const RESERVED_FIRST_SEGMENTS = new Set([
 /** Default origin of the hosted replay player. */
 export const DEFAULT_PLAYER_ORIGIN = "https://tracing.gnas.dev";
 
-/** Same-origin download proxy path per provider (see `player-standalone/functions/api`). */
+/** Same-origin download proxy path per provider (see `player/functions/api`). */
 const PROVIDER_PROXY_PATHS: Record<StorageProviderId, string> = {
   "google-drive": "/api/drive",
   dropbox: "/api/dropbox",

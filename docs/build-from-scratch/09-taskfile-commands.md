@@ -40,7 +40,7 @@ test:all:
     - cmd: |
         failed=""
         npm run test || failed="$failed root"
-        (cd player-standalone && npm run test) || failed="$failed player"
+        (cd player && npm run test) || failed="$failed player"
         (cd worker && npm run test) || failed="$failed worker"
         ...
 ```
@@ -51,14 +51,14 @@ It runs every context, accumulates failures, and exits 1 if any context failed.
 
 | Alias | What it does |
 | --- | --- |
-| `task player:sync` | `node player-standalone/scripts/sync-player.js` |
-| `task player:dev` | `vite --port 5176` inside `player-standalone/` |
+| `task player:sync` | `node player/scripts/sync-player.js` |
+| `task player:dev` | `vite --port 5176` inside `player/` |
 | `task player:build` | sync + `tsc` + `vite build --mode development` |
 | `task player:dist` | sync + `tsc` + `vite build --mode production` |
 | `task player:build:cloudflare` | `player:dist` with `VITE_BASE_PATH` override |
 | `task player:preview` | `vite preview` |
 | `task player:typecheck` | `tsc --noEmit` |
-| `task player:deploy` | `./deploy.sh` inside `player-standalone/` |
+| `task player:deploy` | `./deploy.sh` inside `player/` |
 
 `player:build` and `player:dist` declare `deps: [player:sync]` so the asset mirror runs first unconditionally.
 

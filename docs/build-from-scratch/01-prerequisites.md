@@ -21,7 +21,7 @@ related:
 | Tool | Minimum | Why |
 | --- | --- | --- |
 | Node.js | 18.x or 20.x | runs `esbuild`, `vitest`, `biome`, `wrangler`, all `scripts/*.mjs` |
-| npm | bundled with Node | installs dependencies in root, `player-standalone/`, `worker/` |
+| npm | bundled with Node | installs dependencies in root, `player/`, `worker/` |
 | git | 2.x | required for `CHROME_EXTENSION_PUBLIC_KEY` key handling and tag-driven releases |
 | go-task | 3.x (optional but recommended) | runs every command in `Taskfile.yml`; you can call `node` directly otherwise |
 | Chromium browser | Chrome / Edge / Brave 120+ | needed to load `dist/` unpacked; `manifest.json` declares `minimum_chrome_version: 120` |

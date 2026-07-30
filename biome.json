@@ -11,13 +11,13 @@
       "**",
       "!dist",
       "!node_modules",
-      "!player-standalone/dist",
-      "!player-standalone/node_modules",
+      "!player/dist",
+      "!player/node_modules",
       "!coverage",
       "!graphify-out",
-      "!player-standalone/public/icons",
-      "!player-standalone/public/vendor",
-      "!player-standalone/public/player.js",
+      "!player/public/icons",
+      "!player/public/vendor",
+      "!player/public/player.js",
       "!store-assets"
     ]
   },

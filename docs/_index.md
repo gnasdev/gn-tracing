@@ -103,4 +103,4 @@ related:
 - `extension player` -> provider authenticated media download when a token is available (`GET_STORAGE_TOKEN` / legacy `GET_GOOGLE_DRIVE_TOKEN`)
 - `standalone player` -> same-origin `/api/drive` or `/api/dropbox` proxy when no OAuth token is available; password-protected packages are decrypted in-browser after user unlock
 - `privacy policy` -> service worker, CDP collector, storage manager, and content script: redaction, event sanitization, DOM masking limitations, and `privacy.json` summaries
-- `release workflow` -> root `Taskfile.yml`: extension build, Store package checks, and zip packaging with OAuth/extension identity from repository secrets; standalone player deploy stays manual via `player-standalone/deploy.sh`
+- `release workflow` -> root `Taskfile.yml`: extension build, Store package checks, and zip packaging with OAuth/extension identity from repository secrets; standalone player deploy stays manual via `player/deploy.sh`

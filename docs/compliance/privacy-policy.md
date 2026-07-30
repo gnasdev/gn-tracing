@@ -32,7 +32,7 @@ related:
 - OAuth application homepage (branding, not the replay player): `https://tracing.gnas.dev/app/`
 
 The canonical HTML page is deployed with the standalone player on Cloudflare Pages
-(`player-standalone/public/privacy/index.html`). Keep that page aligned with the language below.
+(`player/public/privacy/index.html`). Keep that page aligned with the language below.
 
 GN Tracing is a browser debugging extension that records a tab when the user explicitly starts a recording. It is designed to help users create a replayable bug report that includes the screen recording and selected debugging artifacts from that tab.
 

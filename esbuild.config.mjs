@@ -1,7 +1,7 @@
 /**
  * Builds the Manifest V3 extension (popup, SW, content, annotate, offscreen).
  *
- * Replay UI lives only in `player-standalone/` (hosted). The extension never
+ * Replay UI lives only in `player/` (hosted). The extension never
  * ships player assets; upload/history links open the external player host
  * (`PLAYER_HOST_URL` / dev localhost Vite).
  */
@@ -74,7 +74,7 @@ const STATIC_ASSET_ENTRIES = [
 const staticAssetWatchers = [];
 
 // The root build emits the unpacked MV3 extension only. Hosted player packaging
-// is owned entirely by `player-standalone/` (Vite).
+// is owned entirely by `player/` (Vite).
 const commonOptions = {
   bundle: true,
   target: "chrome120",

@@ -19,7 +19,7 @@ related:
 
 - Trạng thái: active
 - Phạm vi: product scope, documentation boundaries, and architecture guardrails
-- Nguồn code: `src/`, `popup/`, `offscreen/`, `drive-auth/`, `player/`, `player-standalone/`
+- Nguồn code: `src/`, `popup/`, `offscreen/`, `drive-auth/`, `player/`
 - Tuân thủ: Không áp dụng
 - Links: [Recording Runtime](./modules/recording-runtime.md), [Cloud Storage And Player](./modules/drive-and-player.md), [Privacy And Redaction](./modules/privacy-and-redaction.md), [Replay Player](./modules/replay-player.md), [Extension Surfaces](./features/extension-surfaces.md), [Project Context](./shared/project-context.md)
 
@@ -68,7 +68,7 @@ flowchart LR
 - MV3 extension runtime under `src/`, `popup/`, `offscreen/`, `drive-auth/`, `player/`
 - capture orchestration via service worker, offscreen document, and Chrome Debugger API
 - multi-cloud authentication and upload (Google Drive and Dropbox)
-- built-in replay player and standalone player integration under `player-standalone/`
+- built-in replay player and standalone player integration under `player/`
 - shared privacy/redaction policy, event timeline capture, replay report artifacts, and source-map diagnostics
 - popup, Settings, auth, and upload-history extension surfaces
 - build pipeline that emits the unpacked extension into `dist/`

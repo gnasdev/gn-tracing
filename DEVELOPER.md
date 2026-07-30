@@ -11,7 +11,7 @@ This guide is for contributors working on GN Tracing. The main [README](./README
 - `src/annotate/`: screenshot annotation editor page (state model + page wiring; full tab — not a popup dialog)
 - `src/shared/`: settings form UI, storage provider helpers, cloud API helpers, player URL, history helpers
 - `src/types/`: extension message contracts; recording and privacy models re-export from `packages/replay-core/src/schema/`
-- `player-standalone/`: hosted replay player (tracing.gnas.dev) — **SolidJS + TypeScript 7** SPA (`src/`), package load/ZIP in TS, cloud download proxies, legacy `public/player.css` styles + vendors
+- `player/`: hosted replay player (tracing.gnas.dev) — **SolidJS + TypeScript 7** SPA (`src/`), package load/ZIP in TS, cloud download proxies, legacy `public/player.css` styles + vendors
 - `worker/`: optional Google OAuth token-exchange Worker (secret injection) + remote MCP route (`POST /mcp`)
 - `packages/replay-core/`: the recording format itself, shared by every producer and reader
   - `schema/`: artifact taxonomy, capture models, privacy settings — the single source of truth
@@ -60,7 +60,7 @@ Install dependencies:
 
 ```bash
 npm install
-cd player-standalone
+cd player
 npm install
 ```
 
@@ -90,7 +90,7 @@ task typecheck:all  # Type-check every context (root, replay-core, SDK, MCP, pla
 
 ```bash
 task test           # Root Vitest (extension + packages + colocated tests)
-task test:all       # Root + player-standalone + worker unit suites
+task test:all       # Root + player + worker unit suites
 npm run test:coverage
 npm run test:e2e:player   # Playwright player e2e (install once: npx playwright install chromium)
 task test:e2e             # Same as test:e2e:player

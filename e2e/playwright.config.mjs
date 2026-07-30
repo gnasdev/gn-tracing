@@ -5,7 +5,7 @@ import { defineConfig, devices } from "@playwright/test";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 /**
- * Player e2e against hosted player public assets (player-standalone/public).
+ * Player e2e against hosted player public assets (player/public).
  * Run: npm run test:e2e:player
  * Requires: npm i -D @playwright/test && npx playwright install chromium
  */
@@ -21,7 +21,7 @@ export default defineConfig({
     trace: "on-first-retry",
   },
   webServer: {
-    command: `npx --yes serve "${path.join(root, "player-standalone/public")}" -l 5199 --no-port-switching`,
+    command: `npx --yes serve "${path.join(root, "player/public")}" -l 5199 --no-port-switching`,
     port: 5199,
     reuseExistingServer: !process.env.CI,
     timeout: 60_000,

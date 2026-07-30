@@ -37,7 +37,7 @@ const ALLOWED_SHARED_PATH_PREFIXES = ["s/", "scl/", "sh/", "sm/"] as const;
 /**
  * True when host is Dropbox-owned (exact apex or proper subdomain boundary).
  * Rejects spoof hosts like `notdropbox.com`.
- * Keep in sync with `player-standalone/shared/dropbox-public-url.js`.
+ * Keep in sync with `player/shared/dropbox-public-url.js`.
  */
 export function isDropboxOwnedHost(hostname: string): boolean {
   const host = String(hostname || "")
@@ -52,7 +52,7 @@ export function isDropboxOwnedHost(hostname: string): boolean {
 
 /**
  * True when path (no leading slash) is a known Dropbox shared-link shape.
- * Keep in sync with `player-standalone/shared/dropbox-public-url.js`.
+ * Keep in sync with `player/shared/dropbox-public-url.js`.
  */
 export function isAllowedDropboxSharedLinkPath(pathPart: string): boolean {
   const path = String(pathPart || "")
@@ -105,7 +105,7 @@ export function encodeDropboxReplayIdFromSharedUrl(sharedUrl: string): string {
  * Uses www.dropbox.com with dl=1 so Dropbox redirects to content bytes.
  *
  * Absolute `http(s)://` ids are rejected (open-proxy / SSRF prevention for
- * proxies that call this). Keep in sync with player-standalone shared module.
+ * proxies that call this). Keep in sync with player shared module.
  */
 export function buildDropboxPublicDownloadUrl(replayId: string): string {
   const id = String(replayId || "").trim();

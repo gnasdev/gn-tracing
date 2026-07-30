@@ -11,7 +11,7 @@
  *
  * Root-only resolution: Vitest scopes test discovery and module resolution to
  * `root`, which defaults to the directory of this config file (the repo root).
- * That keeps this Context isolated from the `player-standalone/` and `worker/`
+ * That keeps this Context isolated from the `player/` and `worker/`
  * Contexts, which own their own configs. No `resolve.alias` map is needed: the
  * production extension build (esbuild, see `esbuild.config.mjs`) and
  * `tsconfig.json` use plain relative imports with no path aliases, so the

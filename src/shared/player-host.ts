@@ -1,5 +1,5 @@
 /**
- * Chooses the **external** replay player host (hosted player-standalone).
+ * Chooses the **external** replay player host (hosted player).
  * The extension does not ship player UI; all open/history links use this host.
  *
  * Host is baked at build time from env (see `esbuild.config.mjs`):

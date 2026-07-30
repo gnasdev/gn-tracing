@@ -22,7 +22,7 @@ related:
 
 - Trạng thái: active
 - Phạm vi: documentation coverage and orphan-risk summary
-- Nguồn code: `src/`, `player/`, `player-standalone/`
+- Nguồn code: `src/`, `player/`
 - Tuân thủ: Không áp dụng
 - Links: [Recording Runtime](../modules/recording-runtime.md), [Cloud Storage And Player](../modules/drive-and-player.md), [Privacy And Redaction](../modules/privacy-and-redaction.md), [Replay Player](../modules/replay-player.md), [Extension Surfaces](../features/extension-surfaces.md), [Shared Data Models](../shared/data-models.md), [Privacy Policy](./privacy-policy.md), [Terms of Service](./terms-of-service.md), [Chrome Web Store Submission](./chrome-web-store-submission.md)
 

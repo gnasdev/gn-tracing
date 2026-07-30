@@ -9,13 +9,10 @@ import { describe, expect, it } from "vitest";
 import { resolveNetworkResponseBodyDisplay } from "./network-response-body";
 
 const playerJs = readFileSync(
-  resolve(import.meta.dirname, "../../player-standalone/public/player.js"),
+  resolve(import.meta.dirname, "../../player/public/player.js"),
   "utf8",
 );
-const coreEntry = readFileSync(
-  resolve(import.meta.dirname, "../../player-standalone/core-entry.ts"),
-  "utf8",
-);
+const coreEntry = readFileSync(resolve(import.meta.dirname, "../../player/core-entry.ts"), "utf8");
 
 describe("network response body UI (shipped paths)", () => {
   it("exports resolveNetworkResponseBodyDisplay on gnCore.network", () => {
