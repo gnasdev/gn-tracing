@@ -13,7 +13,6 @@ import {
   type StorageProviderId,
 } from "../shared/storage-provider";
 import type {
-  CaptureMode,
   ConsolePreviewDepth,
   ConsoleSourceSnippetMode,
   ConsoleStackMode,
@@ -94,8 +93,6 @@ export interface UploadSettingsStore extends PrivacyRedactionSettings {
   instantReplayWindowSeconds: number;
   /** Hosts where IR may attach chrome.debugger for console/network lookback. */
   instantReplayAllowedDomains: string[];
-  // Capture mechanism (CDP vs in-page). Default is CDP for full fidelity.
-  captureMode: CaptureMode;
 }
 
 interface PersistedPopupState extends PopupState {}
@@ -138,9 +135,6 @@ export const DEFAULT_CAPTURE_PRIVACY_SETTINGS = {
   instantReplayEnabled: false,
   instantReplayWindowSeconds: INSTANT_REPLAY_WINDOW_SECONDS_DEFAULT,
   instantReplayAllowedDomains: [] as string[],
-  // CDP is the default capture mechanism (full fidelity; debugger banner may show).
-  // In-page remains selectable for lower-fidelity capture without the banner.
-  captureMode: "cdp" as CaptureMode,
 };
 
 const DEFAULT_GOOGLE_FOLDER: ProviderFolderSettings = {
@@ -498,11 +492,7 @@ function normalizeUploadSettingsStore(
     instantReplayAllowedDomains: normalizeInstantReplayAllowedDomains(
       storedUploadSettings?.instantReplayAllowedDomains ?? defaults.instantReplayAllowedDomains,
     ),
-    captureMode: normalizeEnum<CaptureMode>(
-      storedUploadSettings?.captureMode,
-      ["cdp", "in-page"],
-      defaults.captureMode,
-    ),
+    // Legacy `captureMode` (cdp | in-page) is ignored: Record is CDP-only.
   };
 }
 
@@ -612,7 +602,6 @@ export function getSettingsSnapshot(settings: UploadSettingsStore): UploadSettin
     instantReplayEnabled: settings.instantReplayEnabled,
     instantReplayWindowSeconds: settings.instantReplayWindowSeconds,
     instantReplayAllowedDomains: [...settings.instantReplayAllowedDomains],
-    captureMode: settings.captureMode,
   };
 }
 
@@ -629,6 +618,11 @@ function sortUploadHistory(items: UploadHistoryEntry[]): UploadHistoryEntry[] {
   return [...items].sort((left, right) => (right.uploadedAt || 0) - (left.uploadedAt || 0));
 }
 
+/**
+ * Normalize history / upload recording URLs to the external player host.
+ * Legacy chrome-extension://…/player/player.html links (from older builds that
+ * shipped an in-extension player) are rewritten to namespaced hosted URLs.
+ */
 export function normalizeRecordingUrl(recordingUrl: string | null | undefined): string | null {
   if (!recordingUrl) {
     return null;

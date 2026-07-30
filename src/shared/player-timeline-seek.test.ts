@@ -151,7 +151,7 @@ describe("vendored IIFE matches pure module exports", () => {
     const vm = await import("node:vm");
     const { fileURLToPath } = await import("node:url");
     const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-    const vendorPath = path.join(root, "player/vendor/gn-core/gn-core.iife.js");
+    const vendorPath = path.join(root, "player-standalone/public/vendor/gn-core/gn-core.iife.js");
     expect(fs.existsSync(vendorPath)).toBe(true);
     const code = fs.readFileSync(vendorPath, "utf8");
     const sandbox: Record<string, unknown> = { console };

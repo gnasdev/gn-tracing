@@ -6,6 +6,12 @@
  * URL shaping outside the shared player runtime.
  */
 
+declare const chrome:
+  | {
+      runtime?: { getURL?: (path: string) => string };
+    }
+  | undefined;
+
 export function isExtensionContext(): boolean {
   return (
     typeof chrome !== "undefined" &&
@@ -22,9 +28,8 @@ export function detectMode(): "extension" | "standalone" {
 }
 
 export function getBaseUrl(): string {
-  if (isExtensionContext()) {
-    return chrome.runtime.getURL("dist/player/");
-  }
+  // Replay always runs on the hosted player origin (or local Vite). The
+  // extension no longer ships player assets under chrome-extension://.
   return "./";
 }
 

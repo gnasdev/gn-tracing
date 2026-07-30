@@ -9,7 +9,6 @@ import type {
   WebSocketPayloadRedactionMode,
 } from "../../packages/replay-core/src/schema/privacy";
 import type { StorageProviderId } from "../shared/storage-provider";
-import type { ConsoleEntry, NetworkEntry, StorageSnapshot, WebSocketEntry } from "./recording";
 
 export type { PrivacyProfile, PrivacyRedactionSettings, WebSocketPayloadRedactionMode };
 
@@ -28,7 +27,6 @@ type MessageAction =
   | "TOGGLE_DRAWING_OVERLAY"
   | "GET_DRAWING_OVERLAY_STATE"
   | "SET_DRAWING_COLOR"
-  | "RECORDING_INPAGE_ENTRY"
   // Generic multi-cloud storage messages (preferred).
   | "STORAGE_CONNECT"
   | "STORAGE_DISCONNECT"
@@ -51,44 +49,6 @@ type MessageAction =
   | "SAVE_ANNOTATED_SCREENSHOT"
   /** Collect always-on Instant Replay buffer on the active tab and upload. */
   | "CAPTURE_INSTANT_REPLAY";
-
-/**
- * In-page (MAIN world) capture protocol.
- *
- * In `captureMode === "in-page"` the service worker injects a MAIN-world
- * instrumentation script that cannot reach `chrome.runtime` directly. It posts
- * tagged `window.postMessage` events that an ISOLATED-world relay forwards to
- * the service worker as `RECORDING_INPAGE_ENTRY` messages. The captured payload
- * reuses the same artifact schemas the player already reads, so the player does
- * not need to know the capture source (Requirement R9.3).
- */
-export type InPageCaptureKind = "console" | "network" | "websocket" | "storage";
-
-export type InPageCaptureEntry = ConsoleEntry | NetworkEntry | WebSocketEntry | StorageSnapshot;
-
-/** Window-bridge message tag shared by the MAIN-world script and ISOLATED relay. */
-export const IN_PAGE_CAPTURE_MESSAGE_TAG = "__gnTracingInPageCapture" as const;
-
-/** MAIN world → relay: a captured entry to forward to the service worker. */
-export interface InPageCaptureBridgeEntryMessage {
-  [IN_PAGE_CAPTURE_MESSAGE_TAG]: true;
-  direction: "entry";
-  sessionId: string;
-  kind: InPageCaptureKind;
-  entry: InPageCaptureEntry;
-}
-
-/** Relay → MAIN world: lifecycle control forwarded from the service worker. */
-export interface InPageCaptureBridgeControlMessage {
-  [IN_PAGE_CAPTURE_MESSAGE_TAG]: true;
-  direction: "control";
-  type: "START" | "STOP";
-  sessionId?: string;
-}
-
-export type InPageCaptureBridgeMessage =
-  | InPageCaptureBridgeEntryMessage
-  | InPageCaptureBridgeControlMessage;
 
 type RecordingPhase = "idle" | "recording" | "interrupted";
 
@@ -233,11 +193,7 @@ export interface UploadSettings {
    * Empty = no CDP attach (safe default). Supports `*.example.com`.
    */
   instantReplayAllowedDomains: string[];
-  // Capture mechanism: CDP (full fidelity, debugger banner) or in-page (lower fidelity, no banner).
-  captureMode: CaptureMode;
 }
-
-export type CaptureMode = "cdp" | "in-page";
 
 export type ConsolePreviewDepth = "none" | "shallow" | "full";
 export type ConsoleStackMode = "off" | "errors" | "warnings-errors" | "all";
@@ -271,7 +227,7 @@ export interface PopupState {
     provider: StorageProviderId;
     isConnected: boolean;
   };
-  /** @deprecated Prefer `storage`; kept for existing popup/drive-auth UI. */
+  /** @deprecated Prefer `storage`; kept for existing popup state consumers. */
   googleDrive: {
     isConnected: boolean;
   };

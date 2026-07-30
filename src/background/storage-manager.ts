@@ -195,10 +195,10 @@ export class StorageManager {
   }
 
   /**
-   * Inserts or replaces a WebSocket entry keyed by `requestId`. In-page capture
-   * (captureMode === "in-page") emits a cumulative snapshot per frame/close for
-   * the same socket, so the latest snapshot supersedes earlier ones instead of
-   * appending duplicates.
+   * Inserts or replaces a WebSocket entry keyed by `requestId`. Page
+   * instrumentation (SDK / Instant Replay evidence) emits a cumulative snapshot
+   * per frame/close for the same socket, so the latest snapshot supersedes
+   * earlier ones instead of appending duplicates.
    */
   upsertWebSocketEntry(entry: WebSocketEntry): void {
     const existingIndex = this.#webSocketEntries.findIndex(

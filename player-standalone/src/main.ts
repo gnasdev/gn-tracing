@@ -7,7 +7,7 @@
 
 import { setupDriveAdapter } from "./drive-adapter";
 // Configure browser globals before importing the shared player runtime because
-// `player/player.js` reads them during startup.
+// `public/player.js` reads them during startup.
 import { detectMode } from "./extension-detector";
 
 // Set up standalone mode before loading player.js

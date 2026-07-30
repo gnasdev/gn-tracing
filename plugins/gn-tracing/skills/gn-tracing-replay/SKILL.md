@@ -74,8 +74,8 @@ A mapped origin looks like `src/checkout/cart.ts:128`. That path comes from the 
   timeline.
 - **Absent is not empty.** When a tool answers `captured: false`, that artifact was never recorded.
   Check `get_privacy_summary` before concluding "there were no failed requests" — response bodies,
-  storage, and DOM capture are off by default, and a recording made in `in-page` capture mode also
-  loses cross-origin bodies and real source maps.
+  storage, and DOM capture may be off depending on settings, and packages from the browser SDK
+  (or Instant Replay evidence alone) lack CDP source maps and cross-origin response bodies.
 - **Correlation is not causation.** A 500 before an error is a strong lead; confirm it by reading the
   code path that consumes that response.
 - **A screenshot may not be a photograph.** `source: "dom-snapshot"` means the in-page SDK re-rendered

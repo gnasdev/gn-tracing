@@ -44,10 +44,9 @@ export const DEFAULT_SETTINGS: UploadSettings = {
   instantReplayEnabled: false,
   instantReplayWindowSeconds: 120,
   instantReplayAllowedDomains: [] as string[],
-  captureMode: "cdp",
 };
 
-export type SettingsSectionId = "privacy" | "capture" | "captureMode";
+export type SettingsSectionId = "privacy" | "capture";
 
 /** Form-only i18n keys used by the shared settings markup. */
 export const SETTINGS_FORM_TRANSLATIONS: Record<UiLanguage, Record<string, string>> = {
@@ -62,7 +61,6 @@ export const SETTINGS_FORM_TRANSLATIONS: Record<UiLanguage, Record<string, strin
     "sections.network": "Network",
     "sections.websocket": "WebSocket",
     "sections.inspector": "Inspector capture",
-    "sections.captureMode": "Capture mode",
     "fields.redactSensitiveHeaders.label": "Redact sensitive headers",
     "fields.redactSensitiveQueryParams.label": "Redact sensitive query params",
     "fields.redactRequestBodyFields.label": "Redact request body fields",
@@ -94,9 +92,6 @@ export const SETTINGS_FORM_TRANSLATIONS: Record<UiLanguage, Record<string, strin
     "fields.redactStorageValues.label": "Redact storage values",
     "fields.captureDomSnapshots.label": "Capture DOM snapshots",
     "fields.redactDomTextContent.label": "Redact DOM text content",
-    "fields.captureMode.label": "Capture mode",
-    "options.captureModeCdp": "CDP (full fidelity, debugger banner)",
-    "options.captureModeInPage": "In-page (no banner, lower fidelity)",
     "options.none": "None",
     "options.shallow": "Shallow",
     "options.fullWithinLimit": "Full within limit",
@@ -122,8 +117,6 @@ export const SETTINGS_FORM_TRANSLATIONS: Record<UiLanguage, Record<string, strin
       "Selectors are applied before capture when possible. They do not cover canvas, video, or closed shadow DOM.",
     "hints.inspectorCapture":
       "Storage and DOM capture turn on automatically while network/request capture is enabled, and lock to it. They capture more sensitive data (storage, cookies, DOM text) and increase package size. Turn off network capture to disable them, and keep redaction on to mask values that match sensitive patterns.",
-    "hints.captureMode":
-      "CDP is the default for full-fidelity capture (DevTools-like network, response bodies, real source maps) and may show the chrome.debugger banner. Switch to in-page to avoid the banner; network is then limited to fetch/XHR/WebSocket with no cross-origin response bodies or real source maps.",
     "messages.settingsSaved": "Settings saved.",
     "messages.sectionSaved": "Section saved.",
     "messages.loadFailed": "Failed to load settings",
@@ -145,7 +138,6 @@ export const SETTINGS_FORM_TRANSLATIONS: Record<UiLanguage, Record<string, strin
     "sections.network": "Network",
     "sections.websocket": "WebSocket",
     "sections.inspector": "Thu thập inspector",
-    "sections.captureMode": "Chế độ capture",
     "fields.redactSensitiveHeaders.label": "Che header nhạy cảm",
     "fields.redactSensitiveQueryParams.label": "Che query param nhạy cảm",
     "fields.redactRequestBodyFields.label": "Che field request body",
@@ -177,9 +169,6 @@ export const SETTINGS_FORM_TRANSLATIONS: Record<UiLanguage, Record<string, strin
     "fields.redactStorageValues.label": "Che giá trị storage",
     "fields.captureDomSnapshots.label": "Capture snapshot DOM",
     "fields.redactDomTextContent.label": "Che nội dung text DOM",
-    "fields.captureMode.label": "Chế độ capture",
-    "options.captureModeCdp": "CDP (fidelity đầy đủ, có banner debugger)",
-    "options.captureModeInPage": "In-page (không banner, fidelity thấp hơn)",
     "options.none": "Không lưu",
     "options.shallow": "Nông",
     "options.fullWithinLimit": "Đầy đủ trong giới hạn",
@@ -205,8 +194,6 @@ export const SETTINGS_FORM_TRANSLATIONS: Record<UiLanguage, Record<string, strin
       "Selector được áp dụng trước khi capture nếu có thể. Không che canvas, video hoặc closed shadow DOM.",
     "hints.inspectorCapture":
       "Capture storage và DOM tự động bật và khoá theo khi network/request capture đang bật. Chúng capture thêm dữ liệu nhạy cảm (storage, cookie, text DOM) và làm tăng kích thước package. Tắt network capture để tắt chúng, và giữ redaction bật để che các giá trị khớp pattern nhạy cảm.",
-    "hints.captureMode":
-      "CDP là mặc định cho capture fidelity đầy đủ (network kiểu DevTools, response body, source map thật) và có thể hiện banner chrome.debugger. Chọn in-page để tránh banner; khi đó network chỉ bắt fetch/XHR/WebSocket, không có response body cross-origin hay source map thật.",
     "messages.settingsSaved": "Đã lưu cài đặt.",
     "messages.sectionSaved": "Đã lưu section.",
     "messages.loadFailed": "Không tải được cài đặt",
@@ -538,7 +525,6 @@ function withDefaultSettings(settings: Partial<UploadSettings>): UploadSettings 
     instantReplayAllowedDomains: Array.isArray(settings.instantReplayAllowedDomains)
       ? [...settings.instantReplayAllowedDomains]
       : [...DEFAULT_SETTINGS.instantReplayAllowedDomains],
-    captureMode: settings.captureMode ?? DEFAULT_SETTINGS.captureMode,
   };
 }
 
@@ -647,7 +633,6 @@ export function attachSettingsForm(options: AttachSettingsFormOptions): Settings
     root,
     "redact-dom-text-content-input",
   );
-  const captureModeInput = requireEl<HTMLSelectElement>(root, "capture-mode-input");
 
   let activeInfoHelpKey: string | null = null;
   let activeInfoButton: HTMLButtonElement | null = null;
@@ -869,7 +854,6 @@ export function attachSettingsForm(options: AttachSettingsFormOptions): Settings
     redactStorageValuesInput.checked = normalizedSettings.redactStorageValues;
     captureDomSnapshotsInput.checked = normalizedSettings.captureDomSnapshots;
     redactDomTextContentInput.checked = normalizedSettings.redactDomTextContent;
-    captureModeInput.value = normalizedSettings.captureMode;
     syncInspectorCaptureCoupling();
   }
 
@@ -916,20 +900,11 @@ export function attachSettingsForm(options: AttachSettingsFormOptions): Settings
     };
   }
 
-  function getCaptureModeSectionPayload(): Record<string, unknown> {
-    return {
-      captureMode: captureModeInput.value,
-    };
-  }
-
   function getSectionPayload(section: SettingsSectionId): Record<string, unknown> {
     if (section === "privacy") {
       return getPrivacySectionPayload();
     }
-    if (section === "capture") {
-      return getCaptureSectionPayload();
-    }
-    return getCaptureModeSectionPayload();
+    return getCaptureSectionPayload();
   }
 
   async function load(): Promise<void> {
@@ -990,7 +965,7 @@ export function attachSettingsForm(options: AttachSettingsFormOptions): Settings
       "click",
       () => {
         const section = button.dataset.section as SettingsSectionId | undefined;
-        if (section === "privacy" || section === "capture" || section === "captureMode") {
+        if (section === "privacy" || section === "capture") {
           void saveSection(section, button);
         }
       },

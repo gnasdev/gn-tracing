@@ -1,5 +1,6 @@
 /**
- * Chooses the replay player host for extension and development builds.
+ * Chooses the **external** replay player host (hosted player-standalone).
+ * The extension does not ship player UI; all open/history links use this host.
  *
  * Host is baked at build time from env (see `esbuild.config.mjs`):
  * - development / watch → `PLAYER_HOST_URL_DEV` or `http://localhost:$PLAYER_LOCAL_PORT/`

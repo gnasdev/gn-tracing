@@ -1,8 +1,8 @@
 /**
  * Regression guard for the vendored luna-json-editor widget's real instance
- * API, used read-only by `player/player.js`'s `renderJsonReadonly`.
+ * API, used read-only by `public/player.js`'s `renderJsonReadonly`.
  *
- * `player/player.js` drives this bundle directly via its UMD global (it
+ * `public/player.js` drives this bundle directly via its UMD global (it
  * cannot `import` npm modules — see design.md PHẦN A.2), based on method
  * names hand-verified in code comments rather than checked by a compiler. A
  * prior bug called a non-existent `LunaJsonEditor#set()` (the real method is
@@ -33,7 +33,7 @@ import vm from "node:vm";
 import { beforeAll, describe, expect, it } from "vitest";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const vendorDir = path.resolve(__dirname, "../../player/vendor/luna");
+const vendorDir = path.resolve(__dirname, "../public/vendor/luna");
 
 const hasDom = typeof document !== "undefined";
 

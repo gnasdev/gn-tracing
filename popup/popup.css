@@ -184,8 +184,8 @@ body.popup-dialog-open #app {
   gap: 8px;
 }
 
-/* Idle: Start | Instant Replay (+ settings) on row 1, Screenshot full width on row 2.
-   Recording: Stop | Discard on row 1, Screenshot full width on row 2. */
+/* Idle: Record | Screenshot on row 1; IR Capture | Enable | Settings on row 2.
+   Recording: Stop | Screenshot | Discard on row 1; hide IR row. */
 .recording-actions-row {
   display: flex;
   flex-direction: row;
@@ -199,8 +199,48 @@ body.popup-dialog-open #app {
   width: 100%;
 }
 
+.instant-replay-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+}
+
+.instant-replay-section-label {
+  font-size: var(--fs-xs, 11px);
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--text-secondary, color-mix(in srgb, var(--text-primary, #e8eefc) 72%, transparent));
+  padding-inline: 2px;
+}
+
+.section-label-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.section-label-row .section-info-btn {
+  flex-shrink: 0;
+}
+
+.storage-section-label-row {
+  min-width: 0;
+}
+
+.storage-section-label-row #storage-provider-label {
+  min-width: 0;
+}
+
+.section-title .section-info-btn {
+  margin-left: 2px;
+  align-self: center;
+}
+
 #toggle-btn,
-.instant-replay-controls,
 #screenshot-btn {
   flex: 1 1 0;
   width: auto;
@@ -215,44 +255,61 @@ body.popup-dialog-open #app {
   font-size: var(--fs-md);
 }
 
-/* Split control: Instant Replay capture + gear settings */
+/* Segmented Instant Replay group: Capture | Enable | Settings */
 .instant-replay-controls {
   display: flex;
   flex-direction: row;
   align-items: stretch;
   gap: 0;
+  width: 100%;
   min-width: 0;
 }
 
-#instant-replay-btn {
-  flex: 1 1 auto;
-  width: auto;
-  min-width: 0;
-  min-height: 42px;
-  font-size: var(--fs-base);
-  font-weight: 700;
+.instant-replay-controls > .btn {
+  min-height: 40px;
+  font-size: var(--fs-sm, 12px);
+  font-weight: 650;
   letter-spacing: -0.01em;
+  box-shadow: none;
+}
+
+.instant-replay-capture-btn {
+  flex: 1 1 0;
+  min-width: 0;
   border-top-right-radius: 0;
   border-bottom-right-radius: 0;
   border-right-width: 0;
 }
 
+.instant-replay-enable-btn {
+  flex: 1 1 0;
+  min-width: 0;
+  border-radius: 0;
+  border-right-width: 0;
+}
+
+.instant-replay-enable-btn.is-enabled,
+.instant-replay-enable-btn[aria-pressed="true"] {
+  color: var(--success, #16a34a);
+  border-color: color-mix(in srgb, var(--success, #16a34a) 40%, var(--border-default));
+  background: color-mix(in srgb, var(--success, #16a34a) 12%, var(--bg-card));
+}
+
 .instant-replay-settings-btn {
-  flex: 0 0 40px;
-  width: 40px;
-  min-width: 40px;
-  min-height: 42px;
-  padding-inline: 0;
+  flex: 1 1 0;
+  min-width: 0;
   border-top-left-radius: 0;
   border-bottom-left-radius: 0;
-  box-shadow: none;
   position: relative;
 }
 
-.instant-replay-settings-btn svg {
-  width: 16px;
-  height: 16px;
+.instant-replay-settings-btn svg,
+.instant-replay-capture-btn svg,
+.instant-replay-enable-btn svg {
+  width: 15px;
+  height: 15px;
   display: block;
+  flex-shrink: 0;
 }
 
 .instant-replay-settings-btn.is-open,
@@ -260,24 +317,6 @@ body.popup-dialog-open #app {
   color: var(--accent, #3b82f6);
   border-color: color-mix(in srgb, var(--accent, #3b82f6) 45%, var(--border-default));
   background: color-mix(in srgb, var(--accent, #3b82f6) 12%, var(--bg-card));
-}
-
-/* Enabled indicator on the gear (always-on lookback is active). */
-.instant-replay-settings-btn.is-enabled::after {
-  content: "";
-  position: absolute;
-  top: 7px;
-  right: 7px;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--success, #16a34a);
-  box-shadow: 0 0 0 1.5px var(--bg-card);
-}
-
-#screenshot-btn {
-  flex: 1 1 100%;
-  width: 100%;
 }
 
 #remove-recording-btn {
@@ -293,7 +332,7 @@ body.popup-dialog-open #app {
   min-width: 0;
 }
 
-#recording-actions.is-recording .instant-replay-controls {
+#recording-actions.is-recording .recording-actions-secondary {
   display: none;
 }
 
@@ -722,6 +761,7 @@ body.popup-dialog-open #app {
   color: var(--text-secondary);
   font-size: var(--fs-sm, 12px);
   line-height: 1.5;
+  white-space: pre-line;
 }
 
 #recording-unavailable-msg {
@@ -1131,31 +1171,6 @@ body.popup-dialog-open #app {
   border-radius: var(--radius-md);
   background: var(--bg-card);
   box-shadow: var(--shadow-sm);
-}
-
-.instant-replay-enable {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0;
-  color: var(--text-primary);
-  font-size: var(--fs-base);
-  font-weight: 600;
-  line-height: 1.4;
-  cursor: pointer;
-}
-
-.instant-replay-enable input[type="checkbox"] {
-  width: 16px;
-  height: 16px;
-  margin: 0;
-  accent-color: var(--accent, #3b82f6);
-  cursor: pointer;
-}
-
-.instant-replay-enable:has(input[type="checkbox"]:disabled) {
-  opacity: 0.65;
-  cursor: not-allowed;
 }
 
 .instant-replay-window-field {

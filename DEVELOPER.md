@@ -7,14 +7,11 @@ This guide is for contributors working on GN Tracing. The main [README](./README
 - `src/background/`: MV3 service worker composition root, multi-cloud auth, storage provider registry, settings store, capture environment normalization, upload orchestrator, message router, CDP capture, recorder, storage
 - `src/background/storage/`: `StorageProvider` adapters (Google Drive, Dropbox)
 - `src/offscreen/`: tab media recording and cloud package upload work
-- `src/popup/`: extension popup UI — capture controls, settings dialog, history dialog, manage-clouds dialog
-- `src/drive-auth/`: legacy Google Drive auth entry (redirects to storage-auth)
-- `src/storage-auth/`: multi-cloud OAuth connect page opened in a normal tab
-- `src/annotate/`: screenshot annotation editor page (state model + page wiring)
+- `src/popup/`: extension popup UI — capture controls, settings / history / manage-clouds / Instant Replay dialogs (cloud connect runs OAuth via the service worker)
+- `src/annotate/`: screenshot annotation editor page (state model + page wiring; full tab — not a popup dialog)
 - `src/shared/`: settings form UI, storage provider helpers, cloud API helpers, player URL, history helpers
 - `src/types/`: extension message contracts; recording and privacy models re-export from `packages/replay-core/src/schema/`
-- `player/`: player assets used by the extension build. `core-entry.ts` is the single bundle (`window.gnCore`) through which the unbundled `player.js` reaches typed shared code
-- `player-standalone/`: hosted replay player app + per-provider download proxies
+- `player-standalone/`: hosted replay player (tracing.gnas.dev) — **SolidJS + TypeScript 7** SPA (`src/`), package load/ZIP in TS, cloud download proxies, legacy `public/player.css` styles + vendors
 - `worker/`: optional Google OAuth token-exchange Worker (secret injection) + remote MCP route (`POST /mcp`)
 - `packages/replay-core/`: the recording format itself, shared by every producer and reader
   - `schema/`: artifact taxonomy, capture models, privacy settings — the single source of truth
@@ -33,20 +30,20 @@ This guide is for contributors working on GN Tracing. The main [README](./README
 
 GN Tracing is a Manifest V3 extension with three main surfaces:
 
-1. The popup starts and stops recording, shows state, and hosts settings / history / manage-clouds dialogs.
+1. The popup starts and stops recording, shows state, and hosts settings / history / manage-clouds dialogs (cloud connect uses `STORAGE_CONNECT` → `chrome.identity` in the service worker).
 2. The service worker coordinates capture, attaches CDP to the active tab, and stores live UI state in `chrome.storage.session`.
 3. The offscreen document records tab media, uploads packages to the active cloud provider, and reports progress.
-4. `storage-auth` (and legacy `drive-auth`) open only for OAuth connect flows that cannot run inside the popup.
+4. Screenshot / Instant Replay annotation still opens the dedicated `annotate/` tab (too large for the popup shell).
 
 ```mermaid
 flowchart LR
   Popup["Popup dialogs"] --> SW["Service worker"]
-  StorageAuth["storage-auth OAuth"] --> SW
   SW --> Registry["StorageProvider registry"]
   Registry --> G["Google Drive"]
   Registry --> D["Dropbox"]
   SW --> CDP["Chrome Debugger Protocol"]
   SW --> Offscreen["Offscreen document"]
+  SW --> Annotate["annotate tab"]
   Offscreen --> Cloud["User cloud zip + public share"]
   Cloud --> Player["tracing.gnas.dev"]
 ```
@@ -243,7 +240,7 @@ CHROME_EXTENSION_PUBLIC_KEY=
 - Treat MV3 service worker restarts as normal. UI state should recover from `chrome.storage.session` and runtime checks.
 - Keep user-facing docs aligned with multi-cloud: record, stop, upload to the active provider, open namespaced replay link.
 - Biome owns formatting, linting, and import organization for its supported source types. Markdown docs are covered by `npm run docs:check`, and the Husky pre-commit hook runs Biome over staged supported files plus the docs check before re-staging safe fixes.
-- `task player:build`, `task player:dist`, and `task player:deploy` sync shared player assets automatically. Use `task player:sync` only when you need to refresh the mirrored standalone assets without building.
+- `task player:dev` runs the SolidJS player on port 5176. `task player:build` / `player:dist` typecheck with TypeScript 7 then Vite-build. Theme/icons still sync from root `shared/` via `task player:sync`.
 - If manifest permissions, auth, cloud upload, or player loading changes, manually verify the affected browser × provider matrix.
 - Keep source comments in English and focused on runtime boundaries, browser API constraints, async lifecycle, or non-obvious contracts.
 - **Telemetry-free:** do not log OAuth tokens, refresh tokens, or package file bodies. High-level auth failure messages in `console.warn` / `console.error` are acceptable (network errors, HTTP status, OAuth `error` / `error_description` strings). Auth error logs must never include full token-endpoint response JSON or grant payloads.

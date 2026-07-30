@@ -52,8 +52,13 @@ type PopupLanguage = UiLanguage;
 const POPUP_TRANSLATIONS: Record<PopupLanguage, Record<string, string>> = {
   en: {
     "actions.startRecording": "Start Recording",
-    "actions.captureInstantReplay": "Instant Replay",
+    "actions.captureInstantReplay": "Capture",
+    "actions.captureInstantReplayTitle": "Capture Instant Replay lookback",
     "actions.capturingInstantReplay": "Capturing…",
+    "actions.enableInstantReplay": "Enable",
+    "actions.enableInstantReplayOn": "On",
+    "actions.enableInstantReplayTitle": "Turn always-on Instant Replay on or off",
+    "actions.instantReplaySettings": "Settings",
     "actions.stopUpload": "Stop & Upload",
     "actions.stopping": "Stopping...",
     "actions.stoppingTitle": "Stopping recording and preparing upload",
@@ -86,7 +91,10 @@ const POPUP_TRANSLATIONS: Record<PopupLanguage, Record<string, string>> = {
     "storage.manageClouds": "Manage clouds",
     "storage.manageCloudsTitle": "Manage clouds",
     "storage.manageCloudsLead":
-      "Connect Google Drive or Dropbox. OAuth may briefly close this popup — reopen it after signing in.",
+      "Connect Google Drive or Dropbox. The extension can only access files it uploads — not your full cloud drive. OAuth may briefly close this popup; reopen it after signing in.",
+    "storage.cloudInfoTitle": "Cloud storage access",
+    "storage.cloudInfoBody":
+      "Connecting a cloud only authorizes GN Tracing for files this extension uploads (and related package metadata). It does not get full access to browse or read your entire Drive or Dropbox. OAuth uses limited scopes so recordings stay in the extension’s own files.",
     "storage.connected": "Connected",
     "storage.notConnectedStatus": "Not connected",
     "storage.working": "Working…",
@@ -135,10 +143,13 @@ const POPUP_TRANSLATIONS: Record<PopupLanguage, Record<string, string>> = {
     "password.clearSuccess": "Zip password removed.",
     "password.saveFailed": "Could not update zip password.",
     "password.required": "Enter a password to save.",
-    "instantReplay.sectionTitle": "Instant replay",
+    "instantReplay.sectionTitle": "Instant Replay",
+    "instantReplay.groupAria": "Instant Replay",
     "instantReplay.settingsTitle": "Instant Replay settings",
     "instantReplay.settingsAria": "Instant Replay settings",
-    "instantReplay.enableLabel": "Enable Instant Replay",
+    "instantReplay.infoTitle": "Instant Replay",
+    "instantReplay.infoBody":
+      "Instant Replay quietly remembers the last few minutes of the page while you browse — so when something breaks, you can save that moment without recording the whole session.\n\n• Enable — start (or stop) this background memory.\n• Capture — save the recent lookback, then annotate and upload if you want.\n• Settings — how long to keep, and which sites may collect console/network (Chrome may show a “debugging this tab” banner on those sites).\n\nNothing is uploaded until you capture and save. Until then, it stays only on your computer.",
     "instantReplay.windowLabel": "Keep last",
     "instantReplay.domainsLabel": "Allowed domains (CDP)",
     "instantReplay.addThisSite": "Add this site",
@@ -160,7 +171,7 @@ const POPUP_TRANSLATIONS: Record<PopupLanguage, Record<string, string>> = {
     "instantReplay.enabledSaved": "Instant Replay enabled.",
     "instantReplay.disabledSaved": "Instant Replay disabled.",
     "instantReplay.captureFailed": "Could not capture Instant Replay.",
-    "instantReplay.disabledTitle": "Enable Instant Replay in settings first",
+    "instantReplay.disabledTitle": "Enable Instant Replay first",
     "instantReplay.domainNotAllowedTitle":
       "Instant Replay only works on allowed domains — add this site first",
     "footer.feedback": "Feedback",
@@ -197,7 +208,7 @@ const POPUP_TRANSLATIONS: Record<PopupLanguage, Record<string, string>> = {
     "messages.removeFailed": "Failed to remove recording",
     "messages.screenshotFailed": "Could not capture a screenshot of this tab",
     "actions.screenshot": "Screenshot",
-    "actions.screenshotTitle": "Capture and annotate a screenshot",
+    "actions.screenshotTitle": "Capture and annotate a screenshot of this tab",
     "messages.removed": "Recording removed.",
     "messages.copySuccess": "Replay link copied.",
     "messages.copyFailed": "Failed to copy replay link",
@@ -209,8 +220,13 @@ const POPUP_TRANSLATIONS: Record<PopupLanguage, Record<string, string>> = {
   },
   vi: {
     "actions.startRecording": "Bắt đầu ghi",
-    "actions.captureInstantReplay": "Instant Replay",
+    "actions.captureInstantReplay": "Capture",
+    "actions.captureInstantReplayTitle": "Capture lookback Instant Replay",
     "actions.capturingInstantReplay": "Đang capture…",
+    "actions.enableInstantReplay": "Bật",
+    "actions.enableInstantReplayOn": "Đang bật",
+    "actions.enableInstantReplayTitle": "Bật/tắt Instant Replay luôn chạy",
+    "actions.instantReplaySettings": "Cài đặt",
     "actions.stopUpload": "Dừng & Upload",
     "actions.stopping": "Đang dừng...",
     "actions.stoppingTitle": "Đang dừng ghi và chuẩn bị upload",
@@ -243,7 +259,10 @@ const POPUP_TRANSLATIONS: Record<PopupLanguage, Record<string, string>> = {
     "storage.manageClouds": "Quản lý cloud",
     "storage.manageCloudsTitle": "Quản lý cloud",
     "storage.manageCloudsLead":
-      "Kết nối Google Drive hoặc Dropbox. OAuth có thể đóng popup — mở lại sau khi đăng nhập.",
+      "Kết nối Google Drive hoặc Dropbox. Extension chỉ truy cập file do chính nó upload — không đọc toàn bộ cloud. OAuth có thể đóng popup; mở lại sau khi đăng nhập.",
+    "storage.cloudInfoTitle": "Quyền truy cập cloud",
+    "storage.cloudInfoBody":
+      "Kết nối cloud chỉ cấp quyền cho GN Tracing với các file extension này upload (và metadata package liên quan). Extension không được quyền duyệt hay đọc toàn bộ Drive/Dropbox của bạn. OAuth dùng scope hạn chế để recording nằm trong file của extension.",
     "storage.connected": "Đã kết nối",
     "storage.notConnectedStatus": "Chưa kết nối",
     "storage.working": "Đang xử lý…",
@@ -292,10 +311,13 @@ const POPUP_TRANSLATIONS: Record<PopupLanguage, Record<string, string>> = {
     "password.clearSuccess": "Đã xóa mật khẩu zip.",
     "password.saveFailed": "Không cập nhật được mật khẩu zip.",
     "password.required": "Nhập mật khẩu để lưu.",
-    "instantReplay.sectionTitle": "Instant replay",
+    "instantReplay.sectionTitle": "Instant Replay",
+    "instantReplay.groupAria": "Instant Replay",
     "instantReplay.settingsTitle": "Cài đặt Instant Replay",
     "instantReplay.settingsAria": "Cài đặt Instant Replay",
-    "instantReplay.enableLabel": "Bật Instant Replay",
+    "instantReplay.infoTitle": "Instant Replay",
+    "instantReplay.infoBody":
+      "Instant Replay âm thầm nhớ vài phút gần nhất trên trang bạn đang xem. Khi lỗi xảy ra, bạn lưu lại khoảnh khắc đó — không cần ghi cả phiên.\n\n• Enable — bật/tắt bộ nhớ nền này.\n• Capture — lưu lookback vừa rồi; có thể chú thích rồi upload nếu muốn.\n• Settings — giữ bao lâu, và site nào được thu console/network (trên các site đó Chrome có thể hiện banner “đang gỡ lỗi tab”).\n\nChưa bấm Capture và lưu thì không có gì rời máy — dữ liệu chỉ nằm trên máy bạn.",
     "instantReplay.windowLabel": "Giữ lại",
     "instantReplay.domainsLabel": "Domain được phép (CDP)",
     "instantReplay.addThisSite": "Thêm site này",
@@ -309,7 +331,7 @@ const POPUP_TRANSLATIONS: Record<PopupLanguage, Record<string, string>> = {
     "instantReplay.removeDomain": "Gỡ {domain}",
     "instantReplay.enableFirst": "Bật Instant Replay trước, rồi mới thêm site.",
     "instantReplay.hint":
-      "Khi bật, giữ lookback DOM. Console/network dùng CDP (banner debugger) chỉ trên domain được phép. Gặp bug thì bấm Instant Replay để chú thích, rồi lưu để upload. Không rời máy cho đến khi bạn lưu.",
+      "Khi bật, giữ lookback DOM. Console/network dùng CDP (banner debugger) chỉ trên domain được phép. Gặp bug thì bấm Capture để chú thích, rồi lưu để upload. Không rời máy cho đến khi bạn lưu.",
     "instantReplay.saveFailed": "Không cập nhật được Instant Replay.",
     "instantReplay.windowSaved": "Đã lưu cửa sổ Instant Replay.",
     "instantReplay.enabledSaved": "Đã bật Instant Replay.",
@@ -352,7 +374,7 @@ const POPUP_TRANSLATIONS: Record<PopupLanguage, Record<string, string>> = {
     "messages.removeFailed": "Không hủy được bản ghi",
     "messages.screenshotFailed": "Không chụp được màn hình tab này",
     "actions.screenshot": "Chụp màn hình",
-    "actions.screenshotTitle": "Chụp và chú thích ảnh màn hình",
+    "actions.screenshotTitle": "Chụp và chú thích màn hình tab này",
     "messages.removed": "Đã hủy bản ghi.",
     "messages.copySuccess": "Đã sao chép link replay.",
     "messages.copyFailed": "Không sao chép được link replay",
@@ -416,12 +438,132 @@ function applyStaticTranslations(): void {
   settingsPageBtn.setAttribute("aria-label", t("actions.openSettings"));
   settingsPageBtn.setAttribute("title", t("actions.openSettings"));
   settingsForm?.refreshFieldInfoLabels();
+  refreshSectionInfoButtons();
   themeToggleUi?.refreshLabels();
   const feedbackToggle = document.getElementById("feedback-toggle-btn");
   if (feedbackToggle) {
     feedbackToggle.setAttribute("aria-label", t("footer.feedback"));
     feedbackToggle.setAttribute("title", t("footer.feedback"));
   }
+}
+
+const SECTION_INFO: Record<string, { titleKey: string; bodyKey: string }> = {
+  "instant-replay": {
+    titleKey: "instantReplay.infoTitle",
+    bodyKey: "instantReplay.infoBody",
+  },
+  "manage-cloud": {
+    titleKey: "storage.cloudInfoTitle",
+    bodyKey: "storage.cloudInfoBody",
+  },
+};
+
+let activeSectionInfoKey: string | null = null;
+let activeSectionInfoButton: HTMLButtonElement | null = null;
+
+function isSectionInfoPopoverOpen(): boolean {
+  return Boolean(settingInfoPopover?.matches(":popover-open"));
+}
+
+function positionSectionInfoPopover(anchor: HTMLElement): void {
+  if (!settingInfoPopover) {
+    return;
+  }
+  const gap = 8;
+  const margin = 12;
+  const rect = anchor.getBoundingClientRect();
+  const popRect = settingInfoPopover.getBoundingClientRect();
+  let top = rect.bottom + gap;
+  let left = rect.left;
+  if (top + popRect.height > window.innerHeight - margin) {
+    top = rect.top - popRect.height - gap;
+  }
+  if (left + popRect.width > window.innerWidth - margin) {
+    left = window.innerWidth - popRect.width - margin;
+  }
+  top = Math.max(margin, top);
+  left = Math.max(margin, left);
+  settingInfoPopover.style.top = `${Math.round(top)}px`;
+  settingInfoPopover.style.left = `${Math.round(left)}px`;
+}
+
+function closeSectionInfoPopover(): void {
+  if (settingInfoPopover && isSectionInfoPopoverOpen()) {
+    settingInfoPopover.hidePopover();
+  }
+  if (activeSectionInfoButton) {
+    activeSectionInfoButton.setAttribute("aria-expanded", "false");
+  }
+  activeSectionInfoKey = null;
+  activeSectionInfoButton = null;
+}
+
+function openSectionInfoPopover(sectionKey: string, anchor: HTMLButtonElement): void {
+  if (!settingInfoPopover || !settingInfoPopoverTitle || !settingInfoPopoverBody) {
+    return;
+  }
+  const help = SECTION_INFO[sectionKey];
+  if (!help) {
+    return;
+  }
+  if (activeSectionInfoKey === sectionKey && isSectionInfoPopoverOpen()) {
+    closeSectionInfoPopover();
+    return;
+  }
+  if (activeSectionInfoButton && activeSectionInfoButton !== anchor) {
+    activeSectionInfoButton.setAttribute("aria-expanded", "false");
+  }
+  settingInfoPopoverTitle.textContent = t(help.titleKey);
+  settingInfoPopoverBody.textContent = t(help.bodyKey);
+  activeSectionInfoKey = sectionKey;
+  activeSectionInfoButton = anchor;
+  anchor.setAttribute("aria-expanded", "true");
+  if (!isSectionInfoPopoverOpen()) {
+    settingInfoPopover.showPopover();
+  }
+  positionSectionInfoPopover(anchor);
+}
+
+function refreshSectionInfoButtons(): void {
+  document.querySelectorAll<HTMLButtonElement>(".section-info-btn").forEach((button) => {
+    button.setAttribute("aria-label", t("info.buttonLabel"));
+    button.title = t("info.buttonLabel");
+  });
+  if (
+    activeSectionInfoKey &&
+    settingInfoPopover &&
+    isSectionInfoPopoverOpen() &&
+    activeSectionInfoButton
+  ) {
+    const help = SECTION_INFO[activeSectionInfoKey];
+    if (help && settingInfoPopoverTitle && settingInfoPopoverBody) {
+      settingInfoPopoverTitle.textContent = t(help.titleKey);
+      settingInfoPopoverBody.textContent = t(help.bodyKey);
+      positionSectionInfoPopover(activeSectionInfoButton);
+    }
+  }
+}
+
+function attachSectionInfoButtons(): void {
+  document.addEventListener("click", (event) => {
+    const button = (event.target as HTMLElement | null)?.closest<HTMLButtonElement>(
+      ".section-info-btn",
+    );
+    if (!button?.dataset.sectionInfo) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    openSectionInfoPopover(button.dataset.sectionInfo, button);
+  });
+  settingInfoPopover?.addEventListener("toggle", (event) => {
+    const toggleEvent = event as ToggleEvent;
+    if (toggleEvent.newState === "closed" && activeSectionInfoButton) {
+      activeSectionInfoButton.setAttribute("aria-expanded", "false");
+      activeSectionInfoKey = null;
+      activeSectionInfoButton = null;
+    }
+  });
 }
 
 /**
@@ -507,6 +649,10 @@ const zipPasswordCancelBtn = document.getElementById(
 ) as HTMLButtonElement;
 const zipPasswordClearBtn = document.getElementById("zip-password-clear-btn") as HTMLButtonElement;
 const instantReplayBtn = document.getElementById("instant-replay-btn") as HTMLButtonElement | null;
+const instantReplayEnableBtn = document.getElementById(
+  "instant-replay-enable-btn",
+) as HTMLButtonElement | null;
+const instantReplayControls = document.getElementById("instant-replay-controls");
 const instantReplaySettingsBtn = document.getElementById(
   "instant-replay-settings-btn",
 ) as HTMLButtonElement | null;
@@ -532,9 +678,8 @@ const settingsDialog = document.getElementById("settings-dialog");
 const settingsCloseBtn = document.getElementById("settings-close-btn") as HTMLButtonElement | null;
 const settingsFormRoot = document.getElementById("settings-form-root");
 const settingInfoPopover = document.getElementById("setting-info-popover");
-const instantReplayEnabledInput = document.getElementById(
-  "instant-replay-enabled",
-) as HTMLInputElement | null;
+const settingInfoPopoverTitle = document.getElementById("setting-info-title");
+const settingInfoPopoverBody = document.getElementById("setting-info-body");
 const instantReplayWindowInput = document.getElementById(
   "instant-replay-window",
 ) as HTMLInputElement | null;
@@ -1173,7 +1318,7 @@ function registerPopupDialogs(): void {
   popupDialogEntries.set("instant-replay", {
     root: instantReplayDialog,
     trigger: instantReplaySettingsBtn,
-    focusOnOpen: instantReplayEnabledInput ?? instantReplaySettingsCloseBtn,
+    focusOnOpen: instantReplayWindowInput ?? instantReplaySettingsCloseBtn,
   });
   popupDialogEntries.set("manage-clouds", {
     root: manageCloudsDialog,
@@ -1210,9 +1355,23 @@ function updateInstantReplayControls(options: { recordingActive?: boolean } = {}
     setInstantReplaySettingsOpen(false);
   }
 
-  if (instantReplayEnabledInput && !instantReplayEnableSaveInFlight) {
-    instantReplayEnabledInput.checked = instantReplayEnabled;
-    instantReplayEnabledInput.disabled = recordingActive || instantReplayCaptureInFlight;
+  if (instantReplayControls) {
+    instantReplayControls.setAttribute("aria-label", t("instantReplay.groupAria"));
+  }
+
+  if (instantReplayEnableBtn) {
+    const enableBusy =
+      recordingActive || instantReplayCaptureInFlight || instantReplayEnableSaveInFlight;
+    instantReplayEnableBtn.disabled = enableBusy;
+    instantReplayEnableBtn.classList.toggle("is-enabled", instantReplayEnabled);
+    instantReplayEnableBtn.setAttribute("aria-pressed", instantReplayEnabled ? "true" : "false");
+    instantReplayEnableBtn.setAttribute("title", t("actions.enableInstantReplayTitle"));
+    const enableLabel = instantReplayEnableBtn.querySelector("span");
+    if (enableLabel && !instantReplayEnableSaveInFlight) {
+      enableLabel.textContent = instantReplayEnabled
+        ? t("actions.enableInstantReplayOn")
+        : t("actions.enableInstantReplay");
+    }
   }
 
   if (instantReplayBtn) {
@@ -1235,15 +1394,22 @@ function updateInstantReplayControls(options: { recordingActive?: boolean } = {}
     } else if (!domainAllowed) {
       instantReplayBtn.setAttribute("title", t("instantReplay.domainNotAllowedTitle"));
     } else {
-      instantReplayBtn.setAttribute("title", t("actions.captureInstantReplay"));
+      instantReplayBtn.setAttribute("title", t("actions.captureInstantReplayTitle"));
+    }
+    const captureLabel = instantReplayBtn.querySelector("span");
+    if (captureLabel && !instantReplayCaptureInFlight) {
+      captureLabel.textContent = t("actions.captureInstantReplay");
     }
   }
 
   if (instantReplaySettingsBtn) {
     instantReplaySettingsBtn.disabled = recordingActive || instantReplayCaptureInFlight;
-    instantReplaySettingsBtn.classList.toggle("is-enabled", instantReplayEnabled);
     instantReplaySettingsBtn.setAttribute("title", t("instantReplay.settingsTitle"));
     instantReplaySettingsBtn.setAttribute("aria-label", t("instantReplay.settingsAria"));
+    const settingsLabel = instantReplaySettingsBtn.querySelector(".instant-replay-settings-label");
+    if (settingsLabel) {
+      settingsLabel.textContent = t("actions.instantReplaySettings");
+    }
   }
 
   if (instantReplayPanel) {
@@ -1498,11 +1664,13 @@ async function removeDomainFromInstantReplayAllowlist(domain: string): Promise<v
 }
 
 async function saveInstantReplayEnabled(enabled: boolean): Promise<void> {
-  if (!instantReplayEnabledInput || instantReplayEnableSaveInFlight) {
+  if (instantReplayEnableSaveInFlight) {
     return;
   }
   instantReplayEnableSaveInFlight = true;
-  instantReplayEnabledInput.disabled = true;
+  if (instantReplayEnableBtn) {
+    instantReplayEnableBtn.disabled = true;
+  }
   try {
     const result = (await chrome.runtime.sendMessage({
       action: "UPDATE_SETTINGS",
@@ -1510,13 +1678,11 @@ async function saveInstantReplayEnabled(enabled: boolean): Promise<void> {
     })) as MessageResponse & { settings?: PopupState["settings"] };
 
     if (!result?.ok || !result.settings) {
-      instantReplayEnabledInput.checked = instantReplayEnabled;
       showToast(result?.error || t("instantReplay.saveFailed"), 3200, { variant: "error" });
       return;
     }
 
     instantReplayEnabled = Boolean(result.settings.instantReplayEnabled);
-    instantReplayEnabledInput.checked = instantReplayEnabled;
     if (latestPopupState?.settings) {
       latestPopupState = {
         ...latestPopupState,
@@ -1533,7 +1699,6 @@ async function saveInstantReplayEnabled(enabled: boolean): Promise<void> {
     );
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
-    instantReplayEnabledInput.checked = instantReplayEnabled;
     showToast(detail || t("instantReplay.saveFailed"), 3200, { variant: "error" });
   } finally {
     instantReplayEnableSaveInFlight = false;
@@ -2763,8 +2928,8 @@ for (const panel of [feedbackPanel, instantReplayPanel, manageCloudsPanel, uploa
   });
 }
 
-instantReplayEnabledInput?.addEventListener("change", () => {
-  void saveInstantReplayEnabled(Boolean(instantReplayEnabledInput.checked));
+instantReplayEnableBtn?.addEventListener("click", () => {
+  void saveInstantReplayEnabled(!instantReplayEnabled);
 });
 
 instantReplayAddSiteBtn?.addEventListener("click", () => {
@@ -3488,6 +3653,7 @@ themeToggleUi = attachThemeToggle("theme-toggle-btn", "theme-toggle-icon", {
 });
 
 registerPopupDialogs();
+attachSectionInfoButtons();
 
 if (settingsFormRoot) {
   settingsForm = attachSettingsForm({

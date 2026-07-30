@@ -1,6 +1,6 @@
 /**
  * Shared UI language preference for extension surfaces
- * (popup, settings, history, storage-auth / drive-auth).
+ * (popup and its embedded dialogs).
  *
  * Storage is shared so picking EN/VI on one page carries to the others.
  * Markup expects a single click-to-toggle control in the topbar:

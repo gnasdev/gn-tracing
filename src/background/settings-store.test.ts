@@ -61,7 +61,7 @@ describe("getUploadSettings", () => {
     expect(settings.captureRequestBodies).toBe(false);
     // Missing capture fields fall back to full defaults, not lean.
     expect(settings.captureResponseBodies).toBe(true);
-    expect(settings.captureMode).toBe("cdp");
+    expect((settings as { captureMode?: unknown }).captureMode).toBeUndefined();
     expect(settings.privacyProfile).toBe("custom");
     expect(mockChrome().storage.local.get.callCount).toBe(1);
   });
@@ -70,7 +70,7 @@ describe("getUploadSettings", () => {
     const { getUploadSettings } = await importStore();
     const settings = await getUploadSettings();
 
-    expect(settings.captureMode).toBe("cdp");
+    expect((settings as { captureMode?: unknown }).captureMode).toBeUndefined();
     expect(settings.privacyProfile).toBe("custom");
     expect(settings.folderInput).toBe("/gn-tracing");
     expect(settings.zipPassword).toBe("");
@@ -111,7 +111,7 @@ describe("getUploadSettings", () => {
   });
 
   it("persists and reloads instantReplayAllowedDomains across getUploadSettings", async () => {
-    const { getUploadSettings, saveUploadSettings, getSettingsSnapshot } = await importStore();
+    const { getUploadSettings, saveUploadSettings } = await importStore();
     const settings = await getUploadSettings();
     settings.instantReplayEnabled = true;
     settings.instantReplayAllowedDomains = ["app.example.com", "*.other.test"];
@@ -143,7 +143,8 @@ describe("getUploadSettings", () => {
     expect(settings.privacyProfile).toBe("custom");
     // Explicit redaction toggle preserved; not reset by strict/standard preset.
     expect(settings.redactSensitiveHeaders).toBe(false);
-    expect(settings.captureMode).toBe("in-page");
+    // Legacy captureMode is ignored — Record is CDP-only.
+    expect((settings as { captureMode?: unknown }).captureMode).toBeUndefined();
     // Missing capture fields still use full defaults.
     expect(settings.captureRequestBodies).toBe(true);
     expect(settings.captureStorage).toBe(true);
@@ -163,7 +164,7 @@ describe("getUploadSettings", () => {
     expect((settings as { captureProfile?: unknown }).captureProfile).toBeUndefined();
     // Lean legacy key must not force lean capture defaults.
     expect(settings.captureRequestBodies).toBe(true);
-    expect(settings.captureMode).toBe("cdp");
+    expect((settings as { captureMode?: unknown }).captureMode).toBeUndefined();
 
     // The session-derived settings are written back to local storage.
     const local = mockChrome().storage.local;
@@ -191,7 +192,7 @@ describe("getUploadSettings", () => {
     const { getUploadSettings } = await importStore();
     const settings = await getUploadSettings();
 
-    expect(settings.captureMode).toBe("cdp");
+    expect((settings as { captureMode?: unknown }).captureMode).toBeUndefined();
     expect(settings.folderInput).toBe("/gn-tracing");
     expect(settings.captureStorage).toBe(true);
   });
@@ -203,7 +204,7 @@ describe("getUploadSettings", () => {
 
     expect("captureProfile" in snapshot).toBe(false);
     expect(snapshot.privacyProfile).toBe("custom");
-    expect(snapshot.captureMode).toBe("cdp");
+    expect("captureMode" in snapshot).toBe(false);
     expect(snapshot.captureStorage).toBe(true);
     expect(snapshot.captureDomSnapshots).toBe(true);
   });
@@ -216,7 +217,6 @@ describe("saveUploadSettings", () => {
     const updated = {
       ...defaults,
       zipPassword: "new-password",
-      captureMode: "in-page" as const,
     };
 
     await saveUploadSettings(updated);

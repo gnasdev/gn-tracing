@@ -10,12 +10,12 @@
  *    constructed editor instance enforces `options.readOnly === true` because
  *    the player only replays and must not allow edits.
  *
- * The adapters live inside the non-bundled player IIFE (`player/player.js`,
+ * The adapters live inside the non-bundled player IIFE (`player-standalone/public/player.js`,
  * ~line 1590) and are not importable. Following the same convention as
  * `src/shared/storage-artifact.test.ts` (which mirrors `diffStorageGroups`),
  * the adapter branching logic is mirrored verbatim below. Keep the mirrored
  * `renderObjectValue` / `renderJsonReadonly` byte-for-byte in sync with the
- * canonical implementation in `player/player.js`. The legacy helpers
+ * canonical implementation in `player-standalone/public/player.js`. The legacy helpers
  * (`renderRemoteObject`, `highlightJson`, `remoteObjectToPlain`) are stubbed
  * with observable behavior since they are exercised by other paths; only the
  * adapter branch selection and read-only enforcement are under test here.
@@ -63,7 +63,7 @@ function remoteObjectToPlain(value: unknown): unknown {
 }
 
 // ---------------------------------------------------------------------------
-// Mirror of player/player.js luna render adapters (~line 1590). Must stay in
+// Mirror of player.js luna render adapters (~line 1590). Must stay in
 // sync with the canonical implementation.
 // ---------------------------------------------------------------------------
 function renderObjectValueLegacy(container: FakeElement, value: unknown) {

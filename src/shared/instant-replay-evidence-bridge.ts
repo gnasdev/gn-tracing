@@ -1,7 +1,7 @@
 /**
  * postMessage bridge between Instant Replay ISOLATED orchestrator and MAIN-world
- * evidence capture. Tag is intentionally distinct from Record's in-page capture
- * bridge so START/STOP Record cannot clear IR rings.
+ * evidence capture. Tag is IR-specific so unrelated page messaging cannot clear
+ * IR rings.
  */
 
 import type { InstantReplayEvidenceBundle } from "../../packages/replay-core/src/capture/instant-replay-evidence";

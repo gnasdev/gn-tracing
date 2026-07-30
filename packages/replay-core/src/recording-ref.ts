@@ -3,7 +3,7 @@
  *
  * The extension owns the canonical implementation in
  * `src/shared/storage-provider.ts` and the player reimplements it in
- * `player/player.js` (`resolveReplayRecordingRef`). This module is the third
+ * `player-standalone/public/player.js` (`resolveReplayRecordingRef`). This module is the third
  * copy's replacement: a pure, dependency-free version that MCP transports use,
  * kept behaviourally identical by the golden test in `recording-ref.test.ts`.
  *

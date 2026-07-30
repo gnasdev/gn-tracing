@@ -1,6 +1,6 @@
-import fs from "fs";
-import path from "path";
-import { fileURLToPath } from "url";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const distDir = path.join(root, "dist");
@@ -118,6 +118,10 @@ if (!fs.existsSync(popupPath)) {
 const files = walk(distDir);
 for (const file of files) {
   const rel = path.relative(distDir, file);
+  const relPosix = rel.split(path.sep).join("/");
+  if (relPosix === "player" || relPosix.startsWith("player/")) {
+    fail(`extension store package must not include player assets: ${rel}`);
+  }
   if (file.endsWith(".map")) {
     fail(`production artifact contains source map: ${rel}`);
   }
@@ -127,16 +131,11 @@ for (const file of files) {
   }
 
   const content = fs.readFileSync(file, "utf8");
-  // Vendored third-party player UI (luna) is packaged locally; it may use
-  // `new Function` for named constructors and is not remote code.
-  const isVendoredPlayer = rel.split(path.sep).join("/").startsWith("player/vendor/");
-  if (!isVendoredPlayer) {
-    if (/\beval\s*\(/.test(content)) {
-      fail(`eval() found in ${rel}`);
-    }
-    if (/new\s+Function\s*\(/.test(content)) {
-      fail(`new Function() found in ${rel}`);
-    }
+  if (/\beval\s*\(/.test(content)) {
+    fail(`eval() found in ${rel}`);
+  }
+  if (/new\s+Function\s*\(/.test(content)) {
+    fail(`new Function() found in ${rel}`);
   }
   if (file.endsWith(".html") && /<script[^>]+src=["']https?:\/\//i.test(content)) {
     fail(`remote script tag found in ${rel}`);

@@ -1,15 +1,16 @@
 /**
- * Builds the Manifest V3 extension and copies the static replay player assets.
+ * Builds the Manifest V3 extension (popup, SW, content, annotate, offscreen).
  *
- * The root package owns extension bundling; the standalone player has its own
- * Vite build under `player-standalone/`.
+ * Replay UI lives only in `player-standalone/` (hosted). The extension never
+ * ships player assets; upload/history links open the external player host
+ * (`PLAYER_HOST_URL` / dev localhost Vite).
  */
 
-import crypto from "crypto";
+import crypto from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import * as esbuild from "esbuild";
-import fs from "fs";
-import path from "path";
-import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const envVars = loadEnvFile(path.resolve(__dirname, ".env"));
@@ -66,26 +67,14 @@ const STATIC_ASSET_ENTRIES = [
   { type: "text", src: "annotate/annotate.html", dest: "dist/annotate/annotate.html" },
   { type: "file", src: "annotate/annotate.css", dest: "dist/annotate/annotate.css" },
   { type: "text", src: "offscreen/offscreen.html", dest: "dist/offscreen/offscreen.html" },
-  { type: "text", src: "drive-auth/drive-auth.html", dest: "dist/drive-auth/drive-auth.html" },
-  {
-    type: "text",
-    src: "storage-auth/storage-auth.html",
-    dest: "dist/storage-auth/storage-auth.html",
-  },
   { type: "dir", src: "icons", dest: "dist/icons" },
   { type: "file", src: "shared/theme.css", dest: "dist/shared/theme.css" },
   { type: "file", src: "shared/theme-init.js", dest: "dist/shared/theme-init.js" },
-  { type: "file", src: "player/player.html", dest: "dist/player/player.html" },
-  { type: "file", src: "player/player.css", dest: "dist/player/player.css" },
-  { type: "file", src: "player/player.js", dest: "dist/player/player.js" },
-  { type: "dir", src: "player/icons", dest: "dist/player/icons" },
-  { type: "dir", src: "player/vendor", dest: "dist/player/vendor" },
 ];
 const staticAssetWatchers = [];
 
-// The root build emits the unpacked MV3 extension. Player assets are copied as
-// static files because the extension and hosted player intentionally share the
-// same browser runtime under `player/`.
+// The root build emits the unpacked MV3 extension only. Hosted player packaging
+// is owned entirely by `player-standalone/` (Vite).
 const commonOptions = {
   bundle: true,
   target: "chrome120",
@@ -319,11 +308,11 @@ function generateManifest(outputPath) {
   console.log("✓ manifest.json generated");
 }
 
-// Surfaces whether the OAuth token exchange (used by the popup and the
-// /drive-auth page) will go through the Cloudflare Worker or directly to
-// Google. Direct-to-Google only works for public/installed OAuth clients; a
-// "Web application" client requires the Worker or Google returns
-// "client_secret is missing".
+// Surfaces whether the OAuth token exchange (used by the service worker when
+// the popup Manage clouds dialog connects a provider) will go through the
+// Cloudflare Worker or directly to Google. Direct-to-Google only works for
+// public/installed OAuth clients; a "Web application" client requires the
+// Worker or Google returns "client_secret is missing".
 function logPlayerHostStatus() {
   console.log(
     `✓ Replay player host (${appEnv}): ${playerHostUrl}` +
@@ -338,8 +327,8 @@ function logTokenProxyStatus() {
   }
 
   const message =
-    "GOOGLE_TOKEN_PROXY_URL is not set — the extension (including the drive-auth page) " +
-    "will call https://oauth2.googleapis.com/token directly. This fails with " +
+    "GOOGLE_TOKEN_PROXY_URL is not set — the extension will call " +
+    "https://oauth2.googleapis.com/token directly. This fails with " +
     '"client_secret is missing" if the OAuth client is a Web application. Set ' +
     "GOOGLE_TOKEN_PROXY_URL to the deployed Worker URL and rebuild to route auth through it.";
   if (isProductionBuild) {
@@ -399,8 +388,6 @@ async function build() {
       { in: "src/popup/popup.ts", out: "popup/popup" },
       { in: "src/offscreen/offscreen.ts", out: "offscreen/offscreen" },
       { in: "src/annotate/annotate.ts", out: "annotate/annotate" },
-      { in: "src/drive-auth/drive-auth.ts", out: "drive-auth/drive-auth" },
-      { in: "src/storage-auth/storage-auth.ts", out: "storage-auth/storage-auth" },
     ],
     outdir: "dist",
     format: "iife",
@@ -410,8 +397,6 @@ async function build() {
     ...commonOptions,
     entryPoints: [
       { in: "src/content/recording-events.ts", out: "content/recording-events" },
-      { in: "src/content/in-page-capture.ts", out: "content/in-page-capture" },
-      { in: "src/content/in-page-relay.ts", out: "content/in-page-relay" },
       { in: "src/content/drawing-overlay.ts", out: "content/drawing-overlay" },
       { in: "src/content/instant-replay.ts", out: "content/instant-replay" },
       { in: "src/content/instant-replay-evidence.ts", out: "content/instant-replay-evidence" },

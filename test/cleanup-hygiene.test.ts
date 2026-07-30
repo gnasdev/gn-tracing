@@ -3,11 +3,13 @@
  *
  * These tests drive real shipped config + source on disk (not re-implemented
  * knip). They prove:
- * 1. Dynamically injected content/storage-auth entry scripts remain present
- *    and are listed in knip + esbuild (must not be deleted as "dead files").
+ * 1. Dynamically injected content entry scripts remain present and are listed
+ *    in knip + esbuild (must not be deleted as "dead files").
  * 2. Confirmed-dead helpers from the code-quality review stay gone.
  * 3. The storage package barrel only re-exports the minimal public surface.
  * 4. Root ignore rules cover nested build/deps, secrets, wrangler, and agent noise.
+ * 5. Legacy standalone auth pages (drive-auth / storage-auth) stay removed —
+ *    cloud connect lives in the popup Manage clouds dialog.
  */
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -45,9 +47,13 @@ function walkTs(relativeDir: string): string[] {
 const REQUIRED_ENTRY_SCRIPTS = [
   "src/content/recording-events.ts",
   "src/content/drawing-overlay.ts",
-  "src/content/in-page-capture.ts",
-  "src/content/in-page-relay.ts",
+] as const;
+
+const REMOVED_AUTH_PAGE_PATHS = [
+  "src/drive-auth/drive-auth.ts",
   "src/storage-auth/storage-auth.ts",
+  "drive-auth/drive-auth.html",
+  "storage-auth/storage-auth.html",
 ] as const;
 
 const DEAD_HELPER_SYMBOLS = [
@@ -59,7 +65,7 @@ const DEAD_HELPER_SYMBOLS = [
 ] as const;
 
 describe("cleanup hygiene: inject entry scripts stay wired", () => {
-  it("keeps content and storage-auth entry files on disk", () => {
+  it("keeps content entry files on disk", () => {
     for (const rel of REQUIRED_ENTRY_SCRIPTS) {
       expect(existsSync(join(ROOT, rel)), `missing entry script ${rel}`).toBe(true);
     }
@@ -78,6 +84,29 @@ describe("cleanup hygiene: inject entry scripts stay wired", () => {
     for (const rel of REQUIRED_ENTRY_SCRIPTS) {
       expect(esbuildSource, `esbuild missing ${rel}`).toContain(rel);
     }
+  });
+
+  it("does not ship standalone drive-auth / storage-auth pages", () => {
+    for (const rel of REMOVED_AUTH_PAGE_PATHS) {
+      expect(existsSync(join(ROOT, rel)), `legacy auth page still present: ${rel}`).toBe(false);
+    }
+    const esbuildSource = readRoot("esbuild.config.mjs");
+    expect(esbuildSource).not.toMatch(/drive-auth|storage-auth/);
+    const knip = JSON.parse(readRoot("knip.json")) as { entry: string[] };
+    expect(knip.entry.some((e) => e.includes("drive-auth") || e.includes("storage-auth"))).toBe(
+      false,
+    );
+  });
+
+  it("does not package the replay player into the extension build", () => {
+    const esbuildSource = readRoot("esbuild.config.mjs");
+    // STATIC_ASSET_ENTRIES must not copy player assets into dist/player.
+    expect(esbuildSource).not.toMatch(/dest:\s*["']dist\/player\//);
+    expect(esbuildSource).not.toMatch(/src:\s*["']player\/player\.(html|js|css)["']/);
+    // Player lives only under player-standalone (no root player/ tree).
+    expect(existsSync(join(ROOT, "player"))).toBe(false);
+    expect(existsSync(join(ROOT, "player-standalone/public/player.js"))).toBe(true);
+    expect(existsSync(join(ROOT, "player-standalone/package.json"))).toBe(true);
   });
 });
 
@@ -170,10 +199,12 @@ describe("cleanup hygiene: content directory still has injectables", () => {
     expect(files).toEqual(
       expect.arrayContaining([
         "src/content/drawing-overlay.ts",
-        "src/content/in-page-capture.ts",
-        "src/content/in-page-relay.ts",
         "src/content/recording-events.ts",
+        "src/content/instant-replay.ts",
+        "src/content/instant-replay-evidence.ts",
       ]),
     );
+    expect(files).not.toEqual(expect.arrayContaining(["src/content/in-page-capture.ts"]));
+    expect(files).not.toEqual(expect.arrayContaining(["src/content/in-page-relay.ts"]));
   });
 });

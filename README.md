@@ -147,16 +147,11 @@ Two additional evidence sources are available in Settings. Both default to **on*
 
 Both expand the captured surface of personal data; keep redaction on unless you deliberately need raw values for debugging.
 
-### Capture mode
-
-`captureMode` selects how evidence is collected and defaults to `"cdp"`:
-
-- `"cdp"` — full-fidelity capture through the Chrome Debugger Protocol. The browser shows a "debugging this tab" banner while recording.
-- `"in-page"` — opt-in, lower-fidelity capture that injects in-page instrumentation instead of attaching the debugger, so no debugging banner appears. Trade-offs: no cross-origin response bodies and no real source maps, and a page's Content Security Policy can block the injection. These limitations are recorded in the recording's privacy summary, and if CSP blocks injection the recording recommends switching back to `"cdp"`.
+Full **Record** sessions collect console, network, WebSocket, and optional storage/DOM evidence through the Chrome Debugger Protocol (CDP). While recording, Chrome may show a "debugging this tab" banner. (Instant Replay evidence and the browser SDK use separate page instrumentation; they are not alternate Record capture modes.)
 
 ### Third-party components and attribution
 
-The replay player renders objects and JSON with vendored, prebuilt [luna](https://github.com/liriliri/luna) components (`luna-object-viewer`, `luna-json-editor`) under `player/vendor/luna/`. These are MIT-licensed; the upstream license is kept at [`player/vendor/luna/LICENSE`](./player/vendor/luna/LICENSE) and pinned versions are recorded in `player/vendor/luna/VERSIONS.md`. The player falls back to its built-in renderers if a component is unavailable.
+The replay player renders objects and JSON with vendored, prebuilt [luna](https://github.com/liriliri/luna) components (`luna-object-viewer`, `luna-json-editor`) under `player-standalone/public/vendor/luna/`. These are MIT-licensed; the upstream license is kept at [`player-standalone/public/vendor/luna/LICENSE`](./player-standalone/public/vendor/luna/LICENSE) and pinned versions are recorded in `player-standalone/public/vendor/luna/VERSIONS.md`. The player falls back to its built-in renderers if a component is unavailable.
 
 ## Limits
 

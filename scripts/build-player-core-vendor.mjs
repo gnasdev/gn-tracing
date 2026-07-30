@@ -1,14 +1,9 @@
 /**
- * Bundle `player/core-entry.ts` as a browser IIFE for `player/player.js`.
+ * Bundle `player-standalone/core-entry.ts` as a browser IIFE for `player.js`.
  *
- * Replaces the per-module vendoring scripts this repo used to carry (one for
- * `agent-report`, one for `player-timeline-seek`, each with its own global).
- * The player is unbundled JavaScript, so a global is still how typed shared
- * code reaches it — but there is now exactly one, and adding a shared module
- * means adding an export to `player/core-entry.ts` rather than a build script.
- *
- * `vendor/webm-seek-fix/` keeps its own script: it bundles an npm dependency
- * and copies that dependency's licence, which is a different job.
+ * The player is unbundled JavaScript, so a global (`window.gnCore`) is how typed
+ * shared code reaches it. Adding a shared module means exporting it from
+ * `player-standalone/core-entry.ts` rather than a new build script.
  *
  * Usage: node scripts/build-player-core-vendor.mjs
  * Or: npm run vendor:player-core
@@ -20,12 +15,12 @@ import { fileURLToPath } from "node:url";
 import * as esbuild from "esbuild";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const entry = path.join(root, "player/core-entry.ts");
-const outDir = path.join(root, "player/vendor/gn-core");
+const entry = path.join(root, "player-standalone/core-entry.ts");
+const outDir = path.join(root, "player-standalone/public/vendor/gn-core");
 const outFile = path.join(outDir, "gn-core.iife.js");
 
 if (!fs.existsSync(entry)) {
-  console.error("Missing player/core-entry.ts");
+  console.error("Missing player-standalone/core-entry.ts");
   process.exit(1);
 }
 

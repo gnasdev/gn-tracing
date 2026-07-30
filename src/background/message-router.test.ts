@@ -31,7 +31,6 @@ function makeHandlers(overrides: Partial<MessageHandlers> = {}): MessageHandlers
     toggleDrawingOverlay: vi.fn(async () => ({ ok: true })),
     getDrawingOverlayState: vi.fn(async () => ({ ok: true, active: false })),
     setDrawingColor: vi.fn(async () => ({ ok: true })),
-    handleRecordingInPageEntry: vi.fn(() => ({ ok: true })),
     uploadSessionToGoogleDrive: vi.fn(async () => ({ ok: true })),
     getUploadState: vi.fn(() => []),
     storageConnect: vi.fn(async () => ({ ok: true })),

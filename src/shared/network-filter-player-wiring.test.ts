@@ -6,8 +6,14 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { getNetworkFilterType } from "./network-filter-type";
 
-const playerJs = readFileSync(resolve(import.meta.dirname, "../../player/player.js"), "utf8");
-const coreEntry = readFileSync(resolve(import.meta.dirname, "../../player/core-entry.ts"), "utf8");
+const playerJs = readFileSync(
+  resolve(import.meta.dirname, "../../player-standalone/public/player.js"),
+  "utf8",
+);
+const coreEntry = readFileSync(
+  resolve(import.meta.dirname, "../../player-standalone/core-entry.ts"),
+  "utf8",
+);
 
 describe("player network filter wiring", () => {
   it("core-entry exports getNetworkFilterType on network namespace", () => {

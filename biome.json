@@ -15,10 +15,9 @@
       "!player-standalone/node_modules",
       "!coverage",
       "!graphify-out",
-      "!player/icons",
       "!player-standalone/public/icons",
-      "!player/vendor",
       "!player-standalone/public/vendor",
+      "!player-standalone/public/player.js",
       "!store-assets"
     ]
   },

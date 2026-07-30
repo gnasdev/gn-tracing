@@ -4,7 +4,6 @@
 
 import type { Screenshot } from "../../packages/replay-core/src/schema/annotation";
 import { DEFAULT_DRAW_COLOR, normalizeDrawColor } from "../shared/drawing";
-import { shouldAcceptInPageEntry } from "../shared/in-page-entry-gate";
 import {
   normalizeInstantReplayAllowedDomains,
   tabUrlMatchesInstantReplayAllowlist,
@@ -26,7 +25,6 @@ import {
 import { getRecordingTabTarget } from "../shared/recording-target";
 import { normalizeStorageProviderId, type StorageProviderId } from "../shared/storage-provider";
 import type {
-  CaptureMode,
   ConsolePreviewDepth,
   ConsoleSourceSnippetMode,
   ConsoleStackMode,
@@ -45,7 +43,6 @@ import type {
 } from "../types/messages";
 import type {
   CaptureEnvironment,
-  ConsoleEntry,
   CookieRecord,
   NetworkEntry,
   RecordingDrawingArtifact,
@@ -89,7 +86,6 @@ import {
   isInstantReplayPending,
   mergeAnnotatedScreenshot,
   openAnnotateEditorTab,
-  type PendingCapture,
   readPendingScreenshot,
   readPendingStillForAnnotate,
   resolveInstantReplayForSave,
@@ -149,11 +145,6 @@ void googleAuth.initialize();
 interface ActiveRecordingState {
   sessionId: string | null;
   isRecording: boolean;
-  /**
-   * While set, bridged in-page entries for this session are still accepted
-   * after `isRecording` flips false (stop drain window).
-   */
-  inPageDrainSessionId: string | null;
   tabId: number | null;
   startTime: number | null;
   stopTime: number | null;
@@ -205,20 +196,10 @@ const MAX_DRAWING_CLEARS = 100;
 const MAX_SCREENSHOT_DATA_URL_CHARS = 1536 * 1024;
 const RECORDING_EVENTS_SCRIPT = "content/recording-events.js";
 const DRAWING_OVERLAY_SCRIPT = "content/drawing-overlay.js";
-// In-page capture (captureMode === "in-page") content scripts. The relay runs in
-// the ISOLATED world (it needs `chrome.runtime`), while the capture script runs
-// in the page's MAIN world so it can see the real console/fetch/XHR/WebSocket.
-const IN_PAGE_RELAY_SCRIPT = "content/in-page-relay.js";
-const IN_PAGE_CAPTURE_SCRIPT = "content/in-page-capture.js";
-// After STOP, give the MAIN→relay→service-worker bridge a brief window to deliver
-// any in-flight entries (notably the final "stop" storage snapshot) before the
-// session is finalized into artifacts.
-const IN_PAGE_DRAIN_DELAY_MS = 200;
 
 const activeRecording: ActiveRecordingState = {
   sessionId: null,
   isRecording: false,
-  inPageDrainSessionId: null,
   tabId: null,
   startTime: null,
   stopTime: null,
@@ -274,7 +255,6 @@ function getElapsedMs(now = Date.now()): number {
 function resetActiveRecordingState(): void {
   activeRecording.sessionId = null;
   activeRecording.isRecording = false;
-  activeRecording.inPageDrainSessionId = null;
   activeRecording.tabId = null;
   activeRecording.startTime = null;
   activeRecording.stopTime = null;
@@ -467,7 +447,7 @@ async function buildPopupState(): Promise<PopupState> {
       provider: activeProvider,
       isConnected: storageConnected,
     },
-    // Shim: existing popup/drive-auth UI still reads googleDrive.isConnected.
+    // Shim: existing popup state still reads googleDrive.isConnected.
     // Prefer `storage` for the active provider; googleDrive always mirrors Drive.
     googleDrive: {
       isConnected: googleDriveState.isConnected,
@@ -716,7 +696,6 @@ registerMessageListeners({
   toggleDrawingOverlay,
   getDrawingOverlayState,
   setDrawingColor,
-  handleRecordingInPageEntry,
   uploadSessionToGoogleDrive,
   getUploadState: () => sortSessions(sessions),
   storageConnect: async (data) => {
@@ -841,11 +820,6 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     // complete while keeping the recording alive.
     void startRecordingEventCapture(tabId, activeRecording.sessionId);
     void startDrawingOverlay(tabId, activeRecording.sessionId);
-    if (activeRecording.recordingSettings?.captureMode === "in-page") {
-      // Re-inject the in-page capture pair after navigation tears down the
-      // previous MAIN-world instrumentation.
-      void startInPageCapture(tabId, activeRecording.sessionId);
-    }
   }
 });
 
@@ -1214,84 +1188,9 @@ function buildDrawingArtifact(
 }
 
 /**
- * Injects the in-page capture pair for `captureMode === "in-page"` and starts it.
- *
- * The ISOLATED-world relay is injected first (it bridges `chrome.runtime` to the
- * page via `window.postMessage`), then the MAIN-world capture script. MAIN-world
- * injection can be rejected when the page's Content Security Policy forbids it
- * (R9.6): when that happens we record a limitation that suggests switching to
- * `captureMode: "cdp"` and keep the recording alive with reduced fidelity rather
- * than aborting. Returns `true` when MAIN-world capture is active.
- */
-async function startInPageCapture(tabId: number, sessionId: string): Promise<boolean> {
-  try {
-    await chrome.scripting.executeScript({
-      target: { tabId },
-      files: [IN_PAGE_RELAY_SCRIPT],
-    });
-  } catch (error) {
-    addActivePrivacyLimitation(
-      'In-page capture could not be installed in the recorded tab. Switch captureMode to "cdp" for full-fidelity capture.',
-    );
-    console.warn("[GN Tracing] In-page relay injection unavailable:", error);
-    return false;
-  }
-
-  try {
-    await chrome.scripting.executeScript({
-      target: { tabId },
-      files: [IN_PAGE_CAPTURE_SCRIPT],
-      world: "MAIN",
-    });
-  } catch (error) {
-    // A strict page CSP can block MAIN-world script injection (R9.6).
-    addActivePrivacyLimitation(
-      'In-page capture was blocked by the page Content Security Policy, so console/network/storage were not captured. Switch captureMode to "cdp" for full-fidelity capture.',
-    );
-    console.warn("[GN Tracing] In-page MAIN-world injection blocked by CSP:", error);
-    return false;
-  }
-
-  // The relay (ISOLATED) forwards this control message to the MAIN-world script.
-  await chrome.tabs
-    .sendMessage(tabId, {
-      target: "in-page-capture",
-      type: "START",
-      sessionId,
-    })
-    .catch(() => {});
-  return true;
-}
-
-/**
- * Signals the in-page capture to stop. The MAIN-world cleanup restores every
- * monkey-patched global (R9.4) and emits the final "stop" storage snapshot over
- * the bridge before tearing down.
- */
-async function stopInPageCapture(tabId: number | null, sessionId: string): Promise<void> {
-  if (tabId == null) {
-    return;
-  }
-  await chrome.tabs
-    .sendMessage(tabId, {
-      target: "in-page-capture",
-      type: "STOP",
-      sessionId,
-    })
-    .catch(() => {});
-}
-
-function waitForInPageDrain(): Promise<void> {
-  return new Promise((resolve) => {
-    setTimeout(resolve, IN_PAGE_DRAIN_DELAY_MS);
-  });
-}
-
-/**
- * Redacts an in-page-captured `NetworkEntry` before buffering, mirroring the
- * service-worker-side redaction the CDP path applies at capture time (URL,
- * request/response headers, and request body fields). In-page mode never reads
- * response bodies (R9.5), so there is nothing further to redact there.
+ * Redacts network rows from Instant Replay page instrumentation (and any other
+ * non-CDP evidence path) before packaging — mirrors CDP capture-time redaction
+ * for URL, request/response headers, and request body fields.
  */
 function redactInPageNetworkEntry(entry: NetworkEntry): NetworkEntry {
   const settings = activeRecording.privacySettings;
@@ -1352,7 +1251,7 @@ function redactInPageWebSocketPayload(payload: string): string {
   return payload;
 }
 
-/** Redacts an in-page-captured `WebSocketEntry` (URL + frame payloads). */
+/** Redacts a WebSocket entry from page instrumentation (URL + frame payloads). */
 function redactInPageWebSocketEntry(entry: WebSocketEntry): WebSocketEntry {
   const settings = activeRecording.privacySettings;
   const urlResult = redactUrl(entry.url, settings, "websocket", "websocket.url");
@@ -1413,8 +1312,8 @@ function redactInPageCookie(cookie: CookieRecord): CookieRecord {
 }
 
 /**
- * Redacts an in-page-captured `StorageSnapshot` before buffering, honoring the
- * `redactStorageValues` toggle exactly as the CDP storage-capture path does.
+ * Redacts a storage snapshot from page instrumentation, honoring
+ * `redactStorageValues` the same way the CDP storage-capture path does.
  */
 function redactInPageStorageSnapshot(snapshot: StorageSnapshot): StorageSnapshot {
   const redactValues = activeRecording.recordingSettings?.redactStorageValues ?? true;
@@ -1428,58 +1327,6 @@ function redactInPageStorageSnapshot(snapshot: StorageSnapshot): StorageSnapshot
   );
   snapshot.cookies = snapshot.cookies.map((cookie) => redactInPageCookie(cookie));
   return snapshot;
-}
-
-/**
- * Routes a bridged in-page capture entry (RECORDING_INPAGE_ENTRY) into the
- * `StorageManager`, applying service-worker-side redaction first — mirroring the
- * `RECORDING_USER_EVENT` flow. Only entries for the active session and tab are
- * accepted. Console entries are buffered as-is because `finalizeCurrentSession()`
- * redacts them via `redactConsoleEntry` (consistent with the CDP path).
- */
-function handleRecordingInPageEntry(
-  data: Record<string, unknown> | undefined,
-  sender: chrome.runtime.MessageSender,
-): MessageResponse {
-  const sessionId = typeof data?.sessionId === "string" ? data.sessionId : "";
-  if (
-    !shouldAcceptInPageEntry({
-      sessionId,
-      activeSessionId: activeRecording.sessionId,
-      senderTabId: sender.tab?.id,
-      activeTabId: activeRecording.tabId,
-      isRecording: activeRecording.isRecording,
-      drainSessionId: activeRecording.inPageDrainSessionId,
-    })
-  ) {
-    return { ok: true };
-  }
-
-  const entry = data?.entry;
-  if (!entry || typeof entry !== "object") {
-    return { ok: true };
-  }
-
-  switch (data?.kind) {
-    case "console":
-      storage.addConsoleEntry(entry as ConsoleEntry);
-      break;
-    case "network":
-      storage.addNetworkEntry(redactInPageNetworkEntry(entry as NetworkEntry));
-      break;
-    case "websocket":
-      // In-page WebSocket capture emits a cumulative snapshot per frame/close, so
-      // replace any prior entry for the same socket by requestId to avoid dupes.
-      storage.upsertWebSocketEntry(redactInPageWebSocketEntry(entry as WebSocketEntry));
-      break;
-    case "storage":
-      storage.setStorageSnapshot(redactInPageStorageSnapshot(entry as StorageSnapshot));
-      break;
-    default:
-      break;
-  }
-
-  return { ok: true };
 }
 
 async function captureVisibleTabScreenshot(tabId: number | null): Promise<string | undefined> {
@@ -1683,25 +1530,13 @@ async function startRecording(
     cdp.setCaptureSettings(settings);
     cdp.setPrivacySettings(activeRecording.privacySettings, recordActiveRedactionHits);
 
-    const inPageMode = settings.captureMode === "in-page";
-    if (inPageMode) {
-      // R9.2: in-page mode must NOT attach chrome.debugger (no debugger banner).
-      // Video capture via the recorder is independent of CDP, so it still runs.
-      await recorder.startCapture(tabId, sessionId);
-      await startInPageCapture(tabId, sessionId);
-      // R9.5: declare the fidelity ceiling inherent to in-page instrumentation.
-      addActivePrivacyLimitation(
-        "In-page capture mode: cross-origin response bodies and real source maps are unavailable.",
-      );
-    } else {
-      await Promise.all([cdp.attach(tabId), recorder.startCapture(tabId, sessionId)]);
+    await Promise.all([cdp.attach(tabId), recorder.startCapture(tabId, sessionId)]);
 
-      if (settings.captureStorage) {
-        await cdp.captureStorageSnapshot("start");
-      }
-      if (settings.captureDomSnapshots) {
-        await cdp.captureDomSnapshot("start");
-      }
+    if (settings.captureStorage) {
+      await cdp.captureStorageSnapshot("start");
+    }
+    if (settings.captureDomSnapshots) {
+      await cdp.captureDomSnapshot("start");
     }
 
     // Align wall-clock origin with the first captured video frame timeline.
@@ -1751,12 +1586,6 @@ async function stopRecording(): Promise<MessageResponse> {
   const recordingTabId = activeRecording.tabId;
 
   try {
-    // Keep accepting bridged in-page entries while the drain window is open
-    // (stop storage snapshot + late fetch/XHR). Gate uses drainSessionId, not
-    // isRecording alone — otherwise the 200ms drain drops everything.
-    if (activeRecording.recordingSettings?.captureMode === "in-page") {
-      activeRecording.inPageDrainSessionId = sessionId;
-    }
     activeRecording.isRecording = false;
     activeRecording.stopTime = stopTime;
 
@@ -1765,43 +1594,30 @@ async function stopRecording(): Promise<MessageResponse> {
     await recorder.stopCapture();
     const screenshotDataUrl = await captureVisibleTabScreenshot(activeRecording.tabId);
 
-    const inPageMode = activeRecording.recordingSettings?.captureMode === "in-page";
     let sourceMapDiagnostics: SourceMapDiagnosticsArtifact | null = null;
 
-    if (inPageMode) {
-      // R9.2: no debugger was attached in in-page mode, so skip all CDP teardown
-      // (flush/detach/source maps). Signal the in-page capture to stop: its
-      // cleanup restores patched globals (R9.4) and emits the final "stop"
-      // storage snapshot over the bridge.
-      await stopInPageCapture(activeRecording.tabId, sessionId);
-      // Allow the MAIN→relay→service-worker bridge to deliver in-flight entries
-      // (notably the stop storage snapshot) before finalizing the session.
-      await waitForInPageDrain();
-      activeRecording.inPageDrainSessionId = null;
-    } else {
-      // Keep CDP attached while flushing source maps, but stop media capture
-      // first so the video length matches the user's stop action as closely as
-      // possible.
-      await cdp.flushSourceMaps();
-      if (activeRecording.recordingSettings?.captureStorage) {
-        await cdp.captureStorageSnapshot("stop");
-      }
-      if (activeRecording.recordingSettings?.captureDomSnapshots) {
-        await cdp.captureDomSnapshot("stop");
-      }
-      for (const limitation of cdp.getStorageLimitations()) {
-        addActivePrivacyLimitation(limitation);
-      }
-      try {
-        await cdp.detach();
-      } catch {
-        // Capture has already stopped, so detach failures should not block finalization.
-      }
-      const sourceMapDiagnosticsSnapshot = cdp.getSourceMapDiagnostics();
-      storage.resolveSourceMaps(cdp.sourceMapResolver, sourceMapDiagnosticsSnapshot);
-      sourceMapDiagnostics = buildSourceMapDiagnosticsArtifact(stopTime);
-      cdp.releaseSourceMaps();
+    // Keep CDP attached while flushing source maps, but stop media capture
+    // first so the video length matches the user's stop action as closely as
+    // possible.
+    await cdp.flushSourceMaps();
+    if (activeRecording.recordingSettings?.captureStorage) {
+      await cdp.captureStorageSnapshot("stop");
     }
+    if (activeRecording.recordingSettings?.captureDomSnapshots) {
+      await cdp.captureDomSnapshot("stop");
+    }
+    for (const limitation of cdp.getStorageLimitations()) {
+      addActivePrivacyLimitation(limitation);
+    }
+    try {
+      await cdp.detach();
+    } catch {
+      // Capture has already stopped, so detach failures should not block finalization.
+    }
+    const sourceMapDiagnosticsSnapshot = cdp.getSourceMapDiagnostics();
+    storage.resolveSourceMaps(cdp.sourceMapResolver, sourceMapDiagnosticsSnapshot);
+    sourceMapDiagnostics = buildSourceMapDiagnosticsArtifact(stopTime);
+    cdp.releaseSourceMaps();
 
     const finalizedArtifacts = storage.finalizeCurrentSession();
     const report = buildRecordingReport(stopTime);
@@ -1886,7 +1702,6 @@ async function stopRecording(): Promise<MessageResponse> {
 
     return { ok: true };
   } catch (error) {
-    activeRecording.inPageDrainSessionId = null;
     await resumeInstantReplayEvidence(recordingTabId);
     await saveStateToStorage();
     return { ok: false, error: (error as Error).message };
@@ -1906,10 +1721,6 @@ async function removeRecording(): Promise<MessageResponse> {
 
     await stopDrawingOverlay(activeRecording.tabId);
     await stopRecordingEventCapture(activeRecording.tabId);
-    if (activeRecording.recordingSettings?.captureMode === "in-page") {
-      // R9.4: restore patched page globals even when the recording is discarded.
-      await stopInPageCapture(activeRecording.tabId, sessionId);
-    }
     await Promise.allSettled([recorder.stopCapture(true), cdp.detach()]);
 
     storage.clear();
@@ -2296,11 +2107,7 @@ async function updateUploadSettingsFromMessage(
         ? data?.instantReplayAllowedDomains
         : existingSettings.instantReplayAllowedDomains,
     ),
-    captureMode: normalizeEnum<CaptureMode>(
-      data?.captureMode,
-      ["cdp", "in-page"],
-      existingSettings.captureMode,
-    ),
+    // Legacy `captureMode` in UPDATE_SETTINGS payloads is ignored (CDP-only).
   };
   // Coupling (product rule): enabling network/request capture also forces
   // storage and DOM snapshot capture on. Redaction toggles are left intact.

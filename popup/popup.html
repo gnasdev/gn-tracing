@@ -67,19 +67,80 @@
             </svg>
             <span data-i18n="actions.startRecording">Start Recording</span>
           </button>
-          <div id="instant-replay-controls" class="instant-replay-controls">
+          <button
+            id="screenshot-btn"
+            class="btn btn-secondary"
+            type="button"
+            title="Capture and annotate a screenshot"
+            data-i18n-title="actions.screenshotTitle"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 8V6a2 2 0 012-2h2"/>
+              <path d="M16 4h2a2 2 0 012 2v2"/>
+              <path d="M20 16v2a2 2 0 01-2 2h-2"/>
+              <path d="M8 20H6a2 2 0 01-2-2v-2"/>
+              <circle cx="12" cy="12" r="3"/>
+            </svg>
+            <span data-i18n="actions.screenshot">Screenshot</span>
+          </button>
+          <button id="remove-recording-btn" class="btn btn-danger hidden" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 7h16"/>
+              <path d="M10 11v6"/>
+              <path d="M14 11v6"/>
+              <path d="M6 7l1 14h10l1-14"/>
+              <path d="M9 7V4h6v3"/>
+            </svg>
+            <span data-i18n="actions.discard">Discard</span>
+          </button>
+        </div>
+        <div class="recording-actions-row recording-actions-secondary">
+          <div class="instant-replay-section">
+            <div class="section-label-row">
+              <div class="instant-replay-section-label" data-i18n="instantReplay.sectionTitle">
+                Instant Replay
+              </div>
+              <button
+                type="button"
+                class="field-info-btn section-info-btn"
+                data-section-info="instant-replay"
+                data-i18n-aria="info.buttonLabel"
+                data-i18n-title="info.buttonLabel"
+                aria-label="Explain this section"
+                title="Explain this section"
+                aria-haspopup="dialog"
+                aria-expanded="false"
+                aria-controls="setting-info-popover"
+              >i</button>
+            </div>
+          <div id="instant-replay-controls" class="instant-replay-controls" role="group" data-i18n-aria="instantReplay.groupAria" aria-label="Instant Replay">
             <button
               id="instant-replay-btn"
-              class="btn btn-secondary"
+              class="btn btn-secondary instant-replay-capture-btn"
               type="button"
-              title="Capture Instant Replay lookback"
-              data-i18n-title="actions.captureInstantReplay"
+              title="Save the rolling lookback buffer"
+              data-i18n-title="actions.captureInstantReplayTitle"
             >
               <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <circle cx="12" cy="12" r="9"/>
                 <path d="M12 7v5l3 2"/>
               </svg>
-              <span data-i18n="actions.captureInstantReplay">Instant Replay</span>
+              <span data-i18n="actions.captureInstantReplay">Capture</span>
+            </button>
+            <button
+              id="instant-replay-enable-btn"
+              class="btn btn-secondary instant-replay-enable-btn"
+              type="button"
+              aria-pressed="false"
+              title="Turn always-on lookback on or off"
+              data-i18n-title="actions.enableInstantReplayTitle"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M7 12a5 5 0 0 1 10 0"/>
+                <path d="M12 7v10"/>
+                <circle cx="12" cy="12" r="9"/>
+              </svg>
+              <span data-i18n="actions.enableInstantReplay">Enable</span>
             </button>
             <button
               id="instant-replay-settings-btn"
@@ -97,30 +158,10 @@
                 <path d="M12 15.5A3.5 3.5 0 1 0 12 8a3.5 3.5 0 0 0 0 7.5Z"/>
                 <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06A1.7 1.7 0 0 0 15 19.37a1.7 1.7 0 0 0-1 .58V20a2 2 0 1 1-4 0v-.08a1.7 1.7 0 0 0-1-.58a1.7 1.7 0 0 0-1.88.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.63 15a1.7 1.7 0 0 0-.58-1H4a2 2 0 1 1 0-4h.08a1.7 1.7 0 0 0 .58-1a1.7 1.7 0 0 0-.34-1.88l-.06-.06a2 2 0 1 1 2.83-2.83l.06-.06A1.7 1.7 0 0 0 9 4.63a1.7 1.7 0 0 0 1-.58V4a2 2 0 1 1 4 0v.08a1.7 1.7 0 0 0 1 .58a1.7 1.7 0 0 0 1.88-.34l.06.06a2 2 0 1 1 2.83-2.83l-.06.06A1.7 1.7 0 0 0 19.37 9c.16.35.37.68.63 1H20a2 2 0 1 1 0 4h-.08a1.7 1.7 0 0 0-.52 1Z"/>
               </svg>
+              <span class="instant-replay-settings-label" data-i18n="actions.instantReplaySettings">Settings</span>
             </button>
           </div>
-          <button id="remove-recording-btn" class="btn btn-danger hidden" type="button">
-            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M4 7h16"/>
-              <path d="M10 11v6"/>
-              <path d="M14 11v6"/>
-              <path d="M6 7l1 14h10l1-14"/>
-              <path d="M9 7V4h6v3"/>
-            </svg>
-            <span data-i18n="actions.discard">Discard</span>
-          </button>
-        </div>
-        <div class="recording-actions-row recording-actions-secondary">
-          <button id="screenshot-btn" class="btn btn-secondary" type="button" title="Capture and annotate a screenshot" data-i18n-title="actions.screenshotTitle">
-            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M4 8V6a2 2 0 012-2h2"/>
-              <path d="M16 4h2a2 2 0 012 2v2"/>
-              <path d="M20 16v2a2 2 0 01-2 2h-2"/>
-              <path d="M8 20H6a2 2 0 01-2-2v-2"/>
-              <circle cx="12" cy="12" r="3"/>
-            </svg>
-            <span data-i18n="actions.screenshot">Screenshot</span>
-          </button>
+          </div>
         </div>
         <div id="recording-unavailable-msg" class="hidden" role="status"></div>
       </div>
@@ -164,7 +205,21 @@
     <div id="connected-google-drive-slot">
       <div id="google-drive-section" class="storage-connect-card">
         <div class="storage-connect-header">
-          <span id="storage-provider-label" data-i18n="storage.uploadTo">Upload to</span>
+          <div class="section-label-row storage-section-label-row">
+            <span id="storage-provider-label" data-i18n="storage.uploadTo">Upload to</span>
+            <button
+              type="button"
+              class="field-info-btn section-info-btn"
+              data-section-info="manage-cloud"
+              data-i18n-aria="info.buttonLabel"
+              data-i18n-title="info.buttonLabel"
+              aria-label="Explain this section"
+              title="Explain this section"
+              aria-haspopup="dialog"
+              aria-expanded="false"
+              aria-controls="setting-info-popover"
+            >i</button>
+          </div>
           <div class="storage-header-actions">
             <button type="button" id="storage-edit-btn" class="btn btn-secondary btn-small hidden" data-i18n="storage.edit">
               Edit
@@ -431,10 +486,6 @@
           </button>
         </div>
         <div class="popup-dialog-body">
-          <label class="settings-check instant-replay-enable">
-            <input id="instant-replay-enabled" type="checkbox">
-            <span data-i18n="instantReplay.enableLabel">Enable Instant Replay</span>
-          </label>
           <div id="instant-replay-window-row" class="instant-replay-window-field">
             <div class="instant-replay-window-label-row">
               <label for="instant-replay-window" data-i18n="instantReplay.windowLabel">Keep last</label>
@@ -520,6 +571,18 @@
               <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/>
             </svg>
             <span data-i18n="storage.manageCloudsTitle">Manage clouds</span>
+            <button
+              type="button"
+              class="field-info-btn section-info-btn"
+              data-section-info="manage-cloud"
+              data-i18n-aria="info.buttonLabel"
+              data-i18n-title="info.buttonLabel"
+              aria-label="Explain this section"
+              title="Explain this section"
+              aria-haspopup="dialog"
+              aria-expanded="false"
+              aria-controls="setting-info-popover"
+            >i</button>
           </div>
           <button
             type="button"
@@ -537,7 +600,7 @@
         </div>
         <div class="popup-dialog-body">
           <p class="popup-dialog-lead" data-i18n="storage.manageCloudsLead">
-            Connect Google Drive or Dropbox. OAuth may briefly close this popup — reopen it after signing in.
+            Connect Google Drive or Dropbox. The extension can only access files it uploads — not your full cloud drive. OAuth may briefly close this popup; reopen it after signing in.
           </p>
           <div id="popup-provider-list" class="popup-provider-list" role="list"></div>
         </div>
@@ -873,25 +936,6 @@
                 </label>
                 <p class="setting-hint" data-i18n="hints.inspectorCapture">Storage and DOM capture are on by default with full recording. They capture more sensitive data (storage, cookies, DOM text) and increase package size. Keep redaction on to mask values that match sensitive patterns. They lock on while network capture is enabled.</p>
               </div>
-            </div>
-          </section>
-
-          <section class="settings-panel" aria-labelledby="popup-section-capture-mode" data-settings-section="captureMode">
-            <div class="settings-panel-header">
-              <h2 id="popup-section-capture-mode" data-i18n="sections.captureMode">Capture mode</h2>
-              <button type="button" class="btn btn-start btn-small settings-section-save" data-section="captureMode" data-i18n="actions.saveSection">Save section</button>
-            </div>
-            <div class="settings-group">
-              <label class="setting-field" for="capture-mode-input">
-                <span class="setting-field-label-row">
-                  <span data-i18n="fields.captureMode.label">Capture mode</span>
-                </span>
-                <select id="capture-mode-input">
-                  <option value="cdp" selected data-i18n="options.captureModeCdp">CDP (full fidelity, debugger banner)</option>
-                  <option value="in-page" data-i18n="options.captureModeInPage">In-page (no banner, lower fidelity)</option>
-                </select>
-              </label>
-              <p class="setting-hint" data-i18n="hints.captureMode">CDP is the default and captures with full fidelity, but shows a chrome.debugger banner. In-page mode avoids the banner but has lower fidelity (no cross-origin response bodies, no real source maps).</p>
             </div>
           </section>
         </div>

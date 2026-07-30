@@ -5,10 +5,11 @@
  * exercises the same same-origin path used by Cloudflare Pages.
  */
 
-import path from "path";
-import { fileURLToPath } from "url";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import type { Connect } from "vite";
 import { defineConfig } from "vite";
+import solid from "vite-plugin-solid";
 // Shared with Cloudflare Pages functions — single source for proxy URL allowlists.
 import { buildDropboxPublicDownloadUrl } from "./shared/dropbox-public-url.js";
 
@@ -159,7 +160,7 @@ async function fetchDriveDownload(
 
 function createDriveProxyMiddleware(): Connect.NextHandleFunction {
   return async (req, res, next) => {
-    if (!req.url || !req.url.startsWith("/api/drive")) {
+    if (!req.url?.startsWith("/api/drive")) {
       next();
       return;
     }
@@ -230,7 +231,7 @@ const driveProxyMiddleware = createDriveProxyMiddleware();
 
 function createDropboxProxyMiddleware(): Connect.NextHandleFunction {
   return async (req, res, next) => {
-    if (!req.url || !req.url.startsWith("/api/dropbox")) {
+    if (!req.url?.startsWith("/api/dropbox")) {
       next();
       return;
     }
@@ -373,10 +374,17 @@ function driveProxyPlugin() {
 
 export default defineConfig(({ mode }) => ({
   base: mode === "production" ? basePath : "/",
-  plugins: [driveProxyPlugin()],
+  plugins: [solid(), driveProxyPlugin()],
+  resolve: {
+    alias: {
+      "@shared": path.resolve(__dirname, "../src/shared"),
+      "@replay-core": path.resolve(__dirname, "../packages/replay-core/src"),
+    },
+  },
   build: {
     outDir: "dist",
     emptyOutDir: true,
+    target: "es2022",
     rollupOptions: {
       input: {
         // Hosted player SPA at domain root. OAuth branding page is static /app/.
@@ -386,9 +394,8 @@ export default defineConfig(({ mode }) => ({
         entryFileNames: "assets/[name]-[hash].js",
         chunkFileNames: "assets/[name]-[hash].js",
         assetFileNames: (assetInfo) => {
-          const info = assetInfo.name.split(".");
-          const ext = info[info.length - 1];
-          if (/\\.(css|js)$/i.test(assetInfo.name)) {
+          const name = assetInfo.name || "asset";
+          if (/\.(css)$/i.test(name)) {
             return `assets/[name]-[hash][extname]`;
           }
           return `assets/[name][extname]`;

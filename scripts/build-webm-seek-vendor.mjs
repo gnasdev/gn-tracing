@@ -12,7 +12,7 @@ import { fileURLToPath } from "node:url";
 import * as esbuild from "esbuild";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const outDir = path.join(root, "player/vendor/webm-seek-fix");
+const outDir = path.join(root, "player-standalone/public/vendor/webm-seek-fix");
 const libEntry = path.join(root, "node_modules/webm-duration-fix/lib/index.js");
 const bundledLib = path.join(outDir, "webm-duration-fix.bundle.js");
 const outFile = path.join(outDir, "webm-seek-fix.iife.js");

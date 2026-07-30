@@ -18,7 +18,7 @@ var gnCore = (() => {
   };
   var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
-  // player/core-entry.ts
+  // player-standalone/core-entry.ts
   var core_entry_exports = {};
   __export(core_entry_exports, {
     agentReport: () => agentReport,
@@ -1312,6 +1312,78 @@ var gnCore = (() => {
     );
   }
 
+  // src/shared/player-timeline-seek.ts
+  var SEEK_COMMIT_TOLERANCE_MS = 350;
+  function getFiniteDurationMs(value) {
+    const durationMs = Number(value);
+    return Number.isFinite(durationMs) && durationMs > 0 ? durationMs : 0;
+  }
+  function reconcileSeekClock(input, options = {}) {
+    const mediaMs = Number(input.mediaTimeMs);
+    if (!Number.isFinite(mediaMs)) {
+      return {
+        pendingSeekTimeMs: input.pendingSeekTimeMs,
+        currentTimeMs: input.currentTimeMs,
+        shouldRetrySeek: false,
+        committed: false
+      };
+    }
+    if (input.pendingSeekTimeMs == null) {
+      return {
+        pendingSeekTimeMs: null,
+        currentTimeMs: mediaMs,
+        shouldRetrySeek: false,
+        committed: false
+      };
+    }
+    const targetMs = input.pendingSeekTimeMs;
+    const delta = Math.abs(mediaMs - targetMs);
+    if (delta <= SEEK_COMMIT_TOLERANCE_MS) {
+      return {
+        pendingSeekTimeMs: input.isDragging ? targetMs : null,
+        currentTimeMs: mediaMs,
+        shouldRetrySeek: false,
+        committed: !input.isDragging
+      };
+    }
+    const maxRetries = options.maxRetries ?? 3;
+    const retryCount = options.retryCount ?? 0;
+    const shouldRetrySeek = Boolean(
+      options.allowRetry && !input.isDragging && retryCount < maxRetries
+    );
+    return {
+      pendingSeekTimeMs: targetMs,
+      currentTimeMs: targetMs,
+      shouldRetrySeek,
+      committed: false
+    };
+  }
+  function resolveTimelineDurationMs(input) {
+    const meta = getFiniteDurationMs(input.metadataDurationMs);
+    const video = getFiniteDurationMs(input.videoDurationMs);
+    const previous = getFiniteDurationMs(input.durationMs);
+    if (input.locked) {
+      const lockedBase = Math.max(previous, meta);
+      if (video > lockedBase + 1e3) {
+        return { durationMs: video, locked: true };
+      }
+      return {
+        durationMs: lockedBase > 0 ? lockedBase : Math.max(previous, video, meta),
+        locked: true
+      };
+    }
+    const durationMs = Math.max(meta, video, previous);
+    return { durationMs, locked: false };
+  }
+  function ratioToTimeMs(ratio, durationMs) {
+    const safeRatio = Math.max(0, Math.min(1, Number(ratio) || 0));
+    const duration = getFiniteDurationMs(durationMs);
+    if (duration <= 0) {
+      return 0;
+    }
+    return safeRatio * duration;
+  }
+
   // src/shared/still-viewer-transform.ts
   var STILL_ZOOM_MIN = 0.25;
   var STILL_ZOOM_MAX = 4;
@@ -1388,79 +1460,7 @@ var gnCore = (() => {
     };
   }
 
-  // src/shared/player-timeline-seek.ts
-  var SEEK_COMMIT_TOLERANCE_MS = 350;
-  function getFiniteDurationMs(value) {
-    const durationMs = Number(value);
-    return Number.isFinite(durationMs) && durationMs > 0 ? durationMs : 0;
-  }
-  function reconcileSeekClock(input, options = {}) {
-    const mediaMs = Number(input.mediaTimeMs);
-    if (!Number.isFinite(mediaMs)) {
-      return {
-        pendingSeekTimeMs: input.pendingSeekTimeMs,
-        currentTimeMs: input.currentTimeMs,
-        shouldRetrySeek: false,
-        committed: false
-      };
-    }
-    if (input.pendingSeekTimeMs == null) {
-      return {
-        pendingSeekTimeMs: null,
-        currentTimeMs: mediaMs,
-        shouldRetrySeek: false,
-        committed: false
-      };
-    }
-    const targetMs = input.pendingSeekTimeMs;
-    const delta = Math.abs(mediaMs - targetMs);
-    if (delta <= SEEK_COMMIT_TOLERANCE_MS) {
-      return {
-        pendingSeekTimeMs: input.isDragging ? targetMs : null,
-        currentTimeMs: mediaMs,
-        shouldRetrySeek: false,
-        committed: !input.isDragging
-      };
-    }
-    const maxRetries = options.maxRetries ?? 3;
-    const retryCount = options.retryCount ?? 0;
-    const shouldRetrySeek = Boolean(
-      options.allowRetry && !input.isDragging && retryCount < maxRetries
-    );
-    return {
-      pendingSeekTimeMs: targetMs,
-      currentTimeMs: targetMs,
-      shouldRetrySeek,
-      committed: false
-    };
-  }
-  function resolveTimelineDurationMs(input) {
-    const meta = getFiniteDurationMs(input.metadataDurationMs);
-    const video = getFiniteDurationMs(input.videoDurationMs);
-    const previous = getFiniteDurationMs(input.durationMs);
-    if (input.locked) {
-      const lockedBase = Math.max(previous, meta);
-      if (video > lockedBase + 1e3) {
-        return { durationMs: video, locked: true };
-      }
-      return {
-        durationMs: lockedBase > 0 ? lockedBase : Math.max(previous, video, meta),
-        locked: true
-      };
-    }
-    const durationMs = Math.max(meta, video, previous);
-    return { durationMs, locked: false };
-  }
-  function ratioToTimeMs(ratio, durationMs) {
-    const safeRatio = Math.max(0, Math.min(1, Number(ratio) || 0));
-    const duration = getFiniteDurationMs(durationMs);
-    if (duration <= 0) {
-      return 0;
-    }
-    return safeRatio * duration;
-  }
-
-  // player/core-entry.ts
+  // player-standalone/core-entry.ts
   var agentReport = { buildAgentReportMarkdown, buildAgentSummaryForPlayer };
   var timelineSeek = {
     SEEK_COMMIT_TOLERANCE_MS,

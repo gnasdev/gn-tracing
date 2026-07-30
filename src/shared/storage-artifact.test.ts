@@ -11,10 +11,10 @@
  *  - Round-trip serialize/parse of `StorageArtifact` (P4-round-trip / R2.5).
  *
  * `diffStorageGroups` lives inside the non-bundled player IIFE
- * (`player/player.js`, ~line 699) and is not importable. To meaningfully test
+ * (`player-standalone/public/player.js`, ~line 699) and is not importable. To meaningfully test
  * R5.2 / Property P4 without a build step for the player, the algorithm is
  * mirrored verbatim below. Keep `diffStorageGroups` here byte-for-byte in sync
- * with `player/player.js`.
+ * with `player-standalone/public/player.js`.
  *
  * fast-check global config (numRuns, verbose, seed reporting) is applied via the
  * `test/property-config.ts` setup file.
@@ -27,7 +27,7 @@ import type { CookieRecord, StorageArtifact, StorageKeyValue } from "../types/re
 import { REDACTED_VALUE, redactJsonValue } from "./privacy-redaction";
 
 // ---------------------------------------------------------------------------
-// Mirror of player/player.js `diffStorageGroups` (~line 699). Must stay in sync
+// Mirror of player.js `diffStorageGroups` (~line 699). Must stay in sync
 // with the canonical implementation. Builds a one-row-per-key diff between two
 // storage groups; every key present in start∪stop yields exactly one row.
 // ---------------------------------------------------------------------------

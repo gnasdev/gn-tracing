@@ -42,10 +42,6 @@ export interface MessageHandlers {
   setDrawingColor: (
     data?: Record<string, unknown>,
   ) => Promise<MessageResponse & { color?: string }>;
-  handleRecordingInPageEntry: (
-    data: Record<string, unknown> | undefined,
-    sender: chrome.runtime.MessageSender,
-  ) => MessageResponse;
   uploadSessionToGoogleDrive: (
     data: Record<string, unknown> | undefined,
   ) => Promise<MessageResponse>;
@@ -140,8 +136,6 @@ async function handleMessage(
       return handlers.getDrawingOverlayState();
     case "SET_DRAWING_COLOR":
       return handlers.setDrawingColor(message.data);
-    case "RECORDING_INPAGE_ENTRY":
-      return handlers.handleRecordingInPageEntry(message.data, sender);
     case "UPLOAD_TO_GOOGLE_DRIVE":
       return handlers.uploadSessionToGoogleDrive(message.data);
     case "GET_UPLOAD_STATE":

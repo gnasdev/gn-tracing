@@ -73,33 +73,34 @@ tasks:
       - npm run test:e2e:player
 
   player:sync:
-    desc: Sync shared player assets into the standalone player.
+    desc: Sync root shared theme/icons into player-standalone/public.
     dir: player-standalone
     cmds:
       - node scripts/sync-player.js
 
   player:dev:
-    desc: Run and watch the standalone player dev server.
+    desc: Run SolidJS player dev server (TypeScript 7 + Vite).
     dir: player-standalone
     cmds:
-      - npx concurrently -n sync,vite 'node scripts/sync-player.js --watch' 'npm exec -- vite --port 5176'
+      - node scripts/sync-player.js
+      - npm exec -- vite --port 5176
 
   player:build:
-    desc: Sync and build the standalone player with the development environment.
+    desc: Sync theme and build the SolidJS player (development mode).
     deps:
       - player:sync
     dir: player-standalone
     cmds:
-      - npm exec -- tsc
+      - npm exec -- tsc --noEmit -p tsconfig.json
       - npm exec -- vite build --mode development
 
   player:dist:
-    desc: Sync and build the standalone player with the production environment.
+    desc: Sync theme and build the SolidJS player (production mode).
     deps:
       - player:sync
     dir: player-standalone
     cmds:
-      - npm exec -- tsc
+      - npm exec -- tsc --noEmit -p tsconfig.json
       - npm exec -- vite build --mode production
 
   player:build:cloudflare:
