@@ -2,6 +2,7 @@
  * Shared renderer and click handling helpers for upload-history lists.
  */
 import type { UploadHistoryEntry } from "../types/messages";
+import { Icons } from "./icons";
 import { resolveReplayOpenUrl } from "./player-host";
 import { buildCloudRemoteOpenUrl, resolveHistoryProvider } from "./storage-provider";
 
@@ -220,42 +221,19 @@ function renderHistoryActionButton(params: {
 }
 
 function getReplayIcon(): string {
-  return `
-    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <circle cx="12" cy="12" r="9"/>
-      <path d="m10 8 6 4-6 4V8Z" fill="currentColor" stroke="none"/>
-    </svg>
-  `;
+  return Icons.play();
 }
 
 function getCopyIcon(): string {
-  return `
-    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <rect x="9" y="7" width="11" height="13" rx="2"/>
-      <path d="M5 15H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1"/>
-    </svg>
-  `;
+  return Icons.copy();
 }
 
 function getFolderIcon(): string {
-  return `
-    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M3 7h7l2 2h9v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"/>
-      <path d="M3 7V5a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v2"/>
-    </svg>
-  `;
+  return Icons.folder();
 }
 
 function getDeleteIcon(): string {
-  return `
-    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M4 7h16"/>
-      <path d="M10 11v6"/>
-      <path d="M14 11v6"/>
-      <path d="M6 7l1 14h10l1-14"/>
-      <path d="M9 7V4h6v3"/>
-    </svg>
-  `;
+  return Icons.trash();
 }
 
 export function formatDateTime(timestamp: number | null): string {

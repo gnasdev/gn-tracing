@@ -18,6 +18,8 @@
       "!player/public/icons",
       "!player/public/vendor",
       "!player/public/player.js",
+      "!icons/phosphor-icons.css",
+      "!icons/Phosphor.woff2",
       "!store-assets"
     ]
   },

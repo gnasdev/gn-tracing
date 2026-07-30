@@ -8,6 +8,7 @@
 import type { MessageResponse } from "../types/messages";
 import { setButtonLoading } from "./button-loading";
 import { buildFeedbackDiagnostics, validateFeedbackMessage } from "./feedback";
+import { Icons } from "./icons";
 
 export interface FeedbackUiLabels {
   button: string;
@@ -51,11 +52,7 @@ export interface AttachFeedbackPopoverOptions {
   onResult?: (result: { ok: boolean; message: string }) => void;
 }
 
-const FEEDBACK_ICON = `
-  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-  </svg>
-`.trim();
+const FEEDBACK_ICON = Icons.feedback();
 
 function ensureIds(prefix: string): {
   wrapId: string;
@@ -114,7 +111,7 @@ export function attachFeedbackPopover(options: AttachFeedbackPopoverOptions): Fe
     wrap.appendChild(button);
   } else if (!button.classList.contains("gn-feedback-btn")) {
     button.classList.add("gn-feedback-btn", "icon-btn");
-    if (button.childElementCount === 0 && !button.querySelector("svg")) {
+    if (button.childElementCount === 0 && !button.querySelector(".ph, svg")) {
       button.innerHTML = FEEDBACK_ICON;
     }
     if (button.parentElement !== wrap) {

@@ -5,6 +5,7 @@
 import { buttonSpinnerHtml } from "../shared/button-loading";
 import { DEFAULT_DRAW_COLOR, DRAW_COLOR_PRESETS, normalizeDrawColor } from "../shared/drawing";
 import { buildFeedbackDiagnostics, validateFeedbackMessage } from "../shared/feedback";
+import { Icons } from "../shared/icons";
 import {
   hostnameFromTabUrl,
   normalizeInstantReplayAllowedDomains,
@@ -1066,53 +1067,23 @@ function renderSessionActionButton(params: {
 }
 
 function getUploadIcon(): string {
-  return `
-    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M12 16V4"/>
-      <path d="m7 9 5-5 5 5"/>
-      <path d="M5 18h14"/>
-      <path d="M7 21h10"/>
-    </svg>
-  `;
+  return Icons.upload();
 }
 
 function getReplayIcon(): string {
-  return `
-    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <circle cx="12" cy="12" r="9"/>
-      <path d="m10 8 6 4-6 4V8Z" fill="currentColor" stroke="none"/>
-    </svg>
-  `;
+  return Icons.play();
 }
 
 function getFolderIcon(): string {
-  return `
-    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M3 7h7l2 2h9v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"/>
-      <path d="M3 7V5a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v2"/>
-    </svg>
-  `;
+  return Icons.folder();
 }
 
 function getCopyIcon(): string {
-  return `
-    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <rect x="9" y="7" width="11" height="13" rx="2"/>
-      <path d="M5 15H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1"/>
-    </svg>
-  `;
+  return Icons.copy();
 }
 
 function getDeleteIcon(): string {
-  return `
-    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M4 7h16"/>
-      <path d="M10 11v6"/>
-      <path d="M14 11v6"/>
-      <path d="M6 7l1 14h10l1-14"/>
-      <path d="M9 7V4h6v3"/>
-    </svg>
-  `;
+  return Icons.trash();
 }
 
 function renderProgressItems(
@@ -1461,9 +1432,7 @@ function renderInstantReplayDomainsList(options: { flash?: boolean } = {}): void
             title="${escapeHtml(t("instantReplay.removeDomain", { domain }))}"
             ${removeDisabled ? "disabled" : ""}
           >
-            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
-              <path d="M6 6l12 12M18 6 6 18"/>
-            </svg>
+            ${Icons.x()}
           </button>
         </span>`;
       })
@@ -2572,22 +2541,11 @@ function setCaptureUiVisibility(isVisible: boolean): void {
 }
 
 function getStartRecordingIcon(): string {
-  return `
-    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <circle cx="12" cy="12" r="7"/>
-      <circle cx="12" cy="12" r="3" fill="currentColor" stroke="none"/>
-    </svg>
-  `;
+  return Icons.record();
 }
 
 function getStopRecordingIcon(): string {
-  return `
-    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M7 7h10v10H7z"/>
-      <path d="M17 12h2.5A2.5 2.5 0 0 1 22 14.5V17"/>
-      <path d="m19 15 3 2-3 2"/>
-    </svg>
-  `;
+  return Icons.stop();
 }
 
 function getLoadingIcon(): string {
@@ -2955,12 +2913,7 @@ function setDrawButtonActive(active: boolean): void {
   const label = active ? t("drawing.drawing") : t("drawing.draw");
   drawToggleBtn.classList.toggle("active", active);
   drawToggleBtn.innerHTML = `
-    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M12 19l7-7 3 3-7 7-3-3z"/>
-      <path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/>
-      <path d="M2 2l7.586 7.586"/>
-      <circle cx="11" cy="11" r="2"/>
-    </svg>
+    ${Icons.pencil()}
     <span>${escapeHtml(label)}</span>
   `;
 }

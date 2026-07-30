@@ -4,6 +4,7 @@
 <head>
   <meta charset="UTF-8">
   <link rel="stylesheet" href="../shared/theme.css">
+  <link rel="stylesheet" href="../icons/phosphor-icons.css">
   <script src="../shared/theme-init.js"></script>
   <link rel="stylesheet" href="popup.css">
 </head>
@@ -30,14 +31,12 @@
             aria-label="Feedback"
             title="Feedback"
           >
-            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-            </svg>
+            <i class="ph ph-chat-circle-dots" aria-hidden="true"></i>
           </button>
         </div>
         <button id="lang-toggle-btn" class="icon-btn gn-lang-toggle" type="button" aria-label="Switch language">VI</button>
         <button id="theme-toggle-btn" class="icon-btn" type="button" aria-label="Theme: System" title="Theme: System (follows OS). Click to cycle System → Light → Dark.">
-          <span id="theme-toggle-icon" class="theme-toggle-icon" aria-hidden="true"></span>
+          <i id="theme-toggle-icon" class="ph ph-desktop" aria-hidden="true"></i>
         </button>
         <button
           id="settings-page-btn"
@@ -49,10 +48,7 @@
           aria-expanded="false"
           aria-controls="settings-dialog"
         >
-          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M12 15.5A3.5 3.5 0 1 0 12 8a3.5 3.5 0 0 0 0 7.5Z"/>
-            <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06A1.7 1.7 0 0 0 15 19.37a1.7 1.7 0 0 0-1 .58V20a2 2 0 1 1-4 0v-.08a1.7 1.7 0 0 0-1-.58a1.7 1.7 0 0 0-1.88.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.63 15a1.7 1.7 0 0 0-.58-1H4a2 2 0 1 1 0-4h.08a1.7 1.7 0 0 0 .58-1a1.7 1.7 0 0 0-.34-1.88l-.06-.06a2 2 0 1 1 2.83-2.83l.06-.06A1.7 1.7 0 0 0 9 4.63a1.7 1.7 0 0 0 1-.58V4a2 2 0 1 1 4 0v.08a1.7 1.7 0 0 0 1 .58a1.7 1.7 0 0 0 1.88-.34l.06.06a2 2 0 1 1 2.83-2.83l-.06.06A1.7 1.7 0 0 0 19.37 9c.16.35.37.68.63 1H20a2 2 0 1 1 0 4h-.08a1.7 1.7 0 0 0-.52 1Z"/>
-          </svg>
+          <i class="ph ph-gear" aria-hidden="true"></i>
         </button>
       </div>
     </header>
@@ -61,10 +57,7 @@
       <div id="recording-actions">
         <div class="recording-actions-row recording-actions-primary">
           <button id="toggle-btn" class="btn btn-start" type="button">
-            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="12" cy="12" r="7"/>
-              <circle cx="12" cy="12" r="3" fill="currentColor" stroke="none"/>
-            </svg>
+            <i class="ph ph-record" aria-hidden="true"></i>
             <span data-i18n="actions.startRecording">Start Recording</span>
           </button>
           <button
@@ -74,23 +67,11 @@
             title="Capture and annotate a screenshot"
             data-i18n-title="actions.screenshotTitle"
           >
-            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M4 8V6a2 2 0 012-2h2"/>
-              <path d="M16 4h2a2 2 0 012 2v2"/>
-              <path d="M20 16v2a2 2 0 01-2 2h-2"/>
-              <path d="M8 20H6a2 2 0 01-2-2v-2"/>
-              <circle cx="12" cy="12" r="3"/>
-            </svg>
+            <i class="ph ph-camera" aria-hidden="true"></i>
             <span data-i18n="actions.screenshot">Screenshot</span>
           </button>
           <button id="remove-recording-btn" class="btn btn-danger hidden" type="button">
-            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M4 7h16"/>
-              <path d="M10 11v6"/>
-              <path d="M14 11v6"/>
-              <path d="M6 7l1 14h10l1-14"/>
-              <path d="M9 7V4h6v3"/>
-            </svg>
+            <i class="ph ph-trash" aria-hidden="true"></i>
             <span data-i18n="actions.discard">Discard</span>
           </button>
         </div>
@@ -121,10 +102,7 @@
               title="Save the rolling lookback buffer"
               data-i18n-title="actions.captureInstantReplayTitle"
             >
-              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <circle cx="12" cy="12" r="9"/>
-                <path d="M12 7v5l3 2"/>
-              </svg>
+              <i class="ph ph-clock-counter-clockwise" aria-hidden="true"></i>
               <span data-i18n="actions.captureInstantReplay">Capture</span>
             </button>
             <button
@@ -135,11 +113,7 @@
               title="Turn always-on lookback on or off"
               data-i18n-title="actions.enableInstantReplayTitle"
             >
-              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M7 12a5 5 0 0 1 10 0"/>
-                <path d="M12 7v10"/>
-                <circle cx="12" cy="12" r="9"/>
-              </svg>
+              <i class="ph ph-power" aria-hidden="true"></i>
               <span data-i18n="actions.enableInstantReplay">Enable</span>
             </button>
             <button
@@ -154,10 +128,7 @@
               data-i18n-aria="instantReplay.settingsAria"
               aria-label="Instant Replay settings"
             >
-              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M12 15.5A3.5 3.5 0 1 0 12 8a3.5 3.5 0 0 0 0 7.5Z"/>
-                <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06A1.7 1.7 0 0 0 15 19.37a1.7 1.7 0 0 0-1 .58V20a2 2 0 1 1-4 0v-.08a1.7 1.7 0 0 0-1-.58a1.7 1.7 0 0 0-1.88.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.63 15a1.7 1.7 0 0 0-.58-1H4a2 2 0 1 1 0-4h.08a1.7 1.7 0 0 0 .58-1a1.7 1.7 0 0 0-.34-1.88l-.06-.06a2 2 0 1 1 2.83-2.83l.06-.06A1.7 1.7 0 0 0 9 4.63a1.7 1.7 0 0 0 1-.58V4a2 2 0 1 1 4 0v.08a1.7 1.7 0 0 0 1 .58a1.7 1.7 0 0 0 1.88-.34l.06.06a2 2 0 1 1 2.83-2.83l-.06.06A1.7 1.7 0 0 0 19.37 9c.16.35.37.68.63 1H20a2 2 0 1 1 0 4h-.08a1.7 1.7 0 0 0-.52 1Z"/>
-              </svg>
+              <i class="ph ph-gear" aria-hidden="true"></i>
               <span class="instant-replay-settings-label" data-i18n="actions.instantReplaySettings">Settings</span>
             </button>
           </div>
@@ -180,12 +151,7 @@
       <section id="drawing-section" class="hidden" aria-label="Drawing overlay" data-i18n-aria="drawing.sectionAria">
         <div class="drawing-toolbar">
           <button id="draw-toggle-btn" class="btn btn-secondary" type="button" title="Toggle drawing pen" data-i18n-title="drawing.toggleTitle">
-            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M12 19l7-7 3 3-7 7-3-3z"/>
-              <path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/>
-              <path d="M2 2l7.586 7.586"/>
-              <circle cx="11" cy="11" r="2"/>
-            </svg>
+            <i class="ph ph-pencil-simple" aria-hidden="true"></i>
             <span data-i18n="drawing.draw">Draw</span>
           </button>
           <div class="drawing-color-row" role="group" aria-label="Drawing pen color" data-i18n-aria="drawing.colorGroupAria">
@@ -279,14 +245,7 @@
 
     <section id="session-queue-section" class="hidden">
       <div class="section-title">
-        <svg class="section-title-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M8 6h13"/>
-          <path d="M8 12h13"/>
-          <path d="M8 18h13"/>
-          <path d="M3 6h.01"/>
-          <path d="M3 12h.01"/>
-          <path d="M3 18h.01"/>
-        </svg>
+        <i class="ph ph-list section-title-icon" aria-hidden="true"></i>
         <span data-i18n="sections.captureQueue">Capture Queue</span>
       </div>
       <div id="session-list" class="session-list"></div>
@@ -295,11 +254,7 @@
     <section id="upload-history-section" class="package-security-card upload-history-entry">
       <div class="section-title-row">
         <div class="section-title">
-          <svg class="section-title-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M12 16V4"/>
-            <path d="m7 9 5-5 5 5"/>
-            <path d="M20 16.5A3.5 3.5 0 0 1 16.5 20h-9A3.5 3.5 0 0 1 4 16.5"/>
-          </svg>
+          <i class="ph ph-upload-simple section-title-icon" aria-hidden="true"></i>
           <span data-i18n="sections.uploadHistory">Upload history</span>
         </div>
         <button
@@ -326,10 +281,7 @@
     <section id="package-security-section" class="package-security-card">
       <div class="package-security-header">
         <div class="section-title">
-          <svg class="section-title-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="5" y="11" width="14" height="10" rx="2"/>
-            <path d="M8 11V8a4 4 0 0 1 8 0v3"/>
-          </svg>
+          <i class="ph ph-lock section-title-icon" aria-hidden="true"></i>
           <span data-i18n="password.sectionTitle">Package password</span>
         </div>
         <div class="package-security-header-actions">
@@ -375,9 +327,7 @@
       <span id="toast-icon" class="toast-icon" aria-hidden="true"></span>
       <span id="toast-message" class="toast-message"></span>
       <button id="toast-close-btn" class="toast-close-btn" type="button" aria-label="Dismiss notification" title="Dismiss">
-        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
-          <path d="M6 6l12 12M18 6 6 18"/>
-        </svg>
+        <i class="ph ph-x" aria-hidden="true"></i>
       </button>
     </div>
 
@@ -403,9 +353,7 @@
       >
         <div class="popup-dialog-header">
           <div class="section-title" id="feedback-dialog-title">
-            <svg class="section-title-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-            </svg>
+            <i class="ph ph-chat-circle-dots section-title-icon" aria-hidden="true"></i>
             <span data-i18n="feedback.label">Feedback</span>
           </div>
           <button
@@ -417,9 +365,7 @@
             data-i18n-aria="dialog.close"
             data-i18n-title="dialog.close"
           >
-            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
-              <path d="M6 6l12 12M18 6 6 18"/>
-            </svg>
+            <i class="ph ph-x" aria-hidden="true"></i>
           </button>
         </div>
         <div class="popup-dialog-body">
@@ -465,10 +411,7 @@
       >
         <div class="popup-dialog-header">
           <div class="section-title" id="instant-replay-dialog-title">
-            <svg class="section-title-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="12" cy="12" r="9"/>
-              <path d="M12 7v5l3 2"/>
-            </svg>
+            <i class="ph ph-clock-counter-clockwise section-title-icon" aria-hidden="true"></i>
             <span data-i18n="instantReplay.sectionTitle">Instant replay</span>
           </div>
           <button
@@ -480,9 +423,7 @@
             data-i18n-aria="dialog.close"
             data-i18n-title="dialog.close"
           >
-            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
-              <path d="M6 6l12 12M18 6 6 18"/>
-            </svg>
+            <i class="ph ph-x" aria-hidden="true"></i>
           </button>
         </div>
         <div class="popup-dialog-body">
@@ -567,9 +508,7 @@
       >
         <div class="popup-dialog-header">
           <div class="section-title" id="manage-clouds-dialog-title">
-            <svg class="section-title-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/>
-            </svg>
+            <i class="ph ph-cloud section-title-icon" aria-hidden="true"></i>
             <span data-i18n="storage.manageCloudsTitle">Manage clouds</span>
             <button
               type="button"
@@ -593,9 +532,7 @@
             data-i18n-aria="dialog.close"
             data-i18n-title="dialog.close"
           >
-            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
-              <path d="M6 6l12 12M18 6 6 18"/>
-            </svg>
+            <i class="ph ph-x" aria-hidden="true"></i>
           </button>
         </div>
         <div class="popup-dialog-body">
@@ -629,11 +566,7 @@
       >
         <div class="popup-dialog-header">
           <div class="section-title" id="upload-history-dialog-title">
-            <svg class="section-title-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M12 16V4"/>
-              <path d="m7 9 5-5 5 5"/>
-              <path d="M20 16.5A3.5 3.5 0 0 1 16.5 20h-9A3.5 3.5 0 0 1 4 16.5"/>
-            </svg>
+            <i class="ph ph-upload-simple section-title-icon" aria-hidden="true"></i>
             <span data-i18n="sections.uploadHistory">Upload history</span>
           </div>
           <button
@@ -645,9 +578,7 @@
             data-i18n-aria="dialog.close"
             data-i18n-title="dialog.close"
           >
-            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
-              <path d="M6 6l12 12M18 6 6 18"/>
-            </svg>
+            <i class="ph ph-x" aria-hidden="true"></i>
           </button>
         </div>
         <div class="popup-dialog-body">
@@ -681,10 +612,7 @@
       >
         <div class="popup-dialog-header">
           <div class="section-title" id="settings-dialog-title">
-            <svg class="section-title-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M12 15.5A3.5 3.5 0 1 0 12 8a3.5 3.5 0 0 0 0 7.5Z"/>
-              <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06A1.7 1.7 0 0 0 15 19.37a1.7 1.7 0 0 0-1 .58V20a2 2 0 1 1-4 0v-.08a1.7 1.7 0 0 0-1-.58a1.7 1.7 0 0 0-1.88.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.63 15a1.7 1.7 0 0 0-.58-1H4a2 2 0 1 1 0-4h.08a1.7 1.7 0 0 0 .58-1a1.7 1.7 0 0 0-.34-1.88l-.06-.06a2 2 0 1 1 2.83-2.83l.06-.06A1.7 1.7 0 0 0 9 4.63a1.7 1.7 0 0 0 1-.58V4a2 2 0 1 1 4 0v.08a1.7 1.7 0 0 0 1 .58a1.7 1.7 0 0 0 1.88-.34l.06.06a2 2 0 1 1 2.83-2.83l-.06.06A1.7 1.7 0 0 0 19.37 9c.16.35.37.68.63 1H20a2 2 0 1 1 0 4h-.08a1.7 1.7 0 0 0-.52 1Z"/>
-            </svg>
+            <i class="ph ph-gear section-title-icon" aria-hidden="true"></i>
             <span data-i18n="settings.dialogTitle">Settings</span>
           </div>
           <button
@@ -696,9 +624,7 @@
             data-i18n-aria="dialog.close"
             data-i18n-title="dialog.close"
           >
-            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
-              <path d="M6 6l12 12M18 6 6 18"/>
-            </svg>
+            <i class="ph ph-x" aria-hidden="true"></i>
           </button>
         </div>
         <div class="popup-dialog-body" id="settings-form-root">

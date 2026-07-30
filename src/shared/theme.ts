@@ -42,10 +42,11 @@ const DEFAULT_LABELS: ThemeToggleLabels = {
   titleFixed: "Theme: {label}. Click to cycle System → Light → Dark.",
 };
 
+/** Phosphor class names (same set as the player theme toggle). */
 const THEME_ICONS: Record<ThemePreference, string> = {
-  system: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>`,
-  light: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>`,
-  dark: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>`,
+  system: "ph ph-desktop",
+  light: "ph ph-sun",
+  dark: "ph ph-moon",
 };
 
 function normalizePreference(value: unknown): ThemePreference | null {
@@ -139,8 +140,11 @@ export function attachThemeToggle(
     document.documentElement.setAttribute("data-theme-preference", preference);
 
     if (icon) {
-      // Icon host is a span/i container; inject the preference SVG (desktop/sun/moon).
-      icon.innerHTML = THEME_ICONS[preference];
+      // Icon host is an <i> (or span); set Phosphor classes for desktop/sun/moon.
+      icon.className = THEME_ICONS[preference];
+      if (icon instanceof HTMLElement) {
+        icon.setAttribute("aria-hidden", "true");
+      }
     }
 
     const labels = getLabels();

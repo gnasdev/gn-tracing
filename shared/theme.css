@@ -310,10 +310,18 @@ html[data-theme] {
     transform 80ms var(--ease-standard);
 }
 
-.btn svg {
+.btn svg,
+.btn .ph {
   width: 16px;
   height: 16px;
   flex-shrink: 0;
+}
+
+.btn .ph {
+  font-size: 16px;
+  line-height: 1;
+  width: auto;
+  height: auto;
 }
 
 .btn:hover:not(:disabled) {
@@ -467,26 +475,28 @@ html[data-theme] {
   transform: scale(0.94);
 }
 
-.icon-btn svg {
+.icon-btn svg,
+.icon-btn .ph {
   width: 15px;
   height: 15px;
   display: block;
 }
 
-/* Theme toggle icon host (span wrapping preference SVG). */
+.icon-btn .ph {
+  font-size: 15px;
+  line-height: 1;
+  width: auto;
+  height: auto;
+}
+
+/* Theme toggle icon (Phosphor class swaps desktop/sun/moon). */
+#theme-toggle-icon,
 .theme-toggle-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 15px;
-  height: 15px;
-  line-height: 0;
-}
-
-.theme-toggle-icon svg {
-  width: 15px;
-  height: 15px;
-  display: block;
+  font-size: 15px;
+  line-height: 1;
 }
 
 /* ---------- Section titles ---------- */
@@ -505,6 +515,13 @@ html[data-theme] {
   width: 13px;
   height: 13px;
   flex-shrink: 0;
+}
+
+i.section-title-icon.ph {
+  width: auto;
+  height: auto;
+  font-size: 13px;
+  line-height: 1;
 }
 
 .section-title-row {
@@ -712,9 +729,17 @@ select {
   color: var(--text-primary);
 }
 
-.toast-close-btn svg {
+.toast-close-btn svg,
+.toast-close-btn .ph {
   width: 12px;
   height: 12px;
+}
+
+.toast-close-btn .ph {
+  font-size: 12px;
+  line-height: 1;
+  width: auto;
+  height: auto;
 }
 
 /* ---------- Upload history items (shared renderer: upload-history-ui.ts) ---------- */
@@ -805,10 +830,20 @@ select {
 }
 
 .history-icon-button svg,
-.session-icon-button svg {
+.session-icon-button svg,
+.history-icon-button .ph,
+.session-icon-button .ph {
   width: 14px;
   height: 14px;
   display: block;
+}
+
+.history-icon-button .ph,
+.session-icon-button .ph {
+  font-size: 14px;
+  line-height: 1;
+  width: auto;
+  height: auto;
 }
 
 /* Destructive action affordance */

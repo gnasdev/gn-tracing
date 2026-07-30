@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Annotate screenshot — GN Tracing</title>
   <link rel="stylesheet" href="../shared/theme.css">
+  <link rel="stylesheet" href="../icons/phosphor-icons.css">
   <link rel="stylesheet" href="annotate.css">
   <script src="../shared/theme-init.js"></script>
 </head>
@@ -18,28 +19,28 @@
 
       <div class="editor-tools" role="toolbar" aria-label="Annotation tools">
         <button type="button" class="tool-btn is-active" data-tool="select" title="Select (V)" aria-pressed="true">
-          <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 3l7 17 2.5-6.5L20 11z"/></svg>
+          <i class="ph ph-cursor" aria-hidden="true"></i>
         </button>
         <button type="button" class="tool-btn" data-tool="arrow" title="Arrow (A)" aria-pressed="false">
-          <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 19L19 5"/><path d="M11 5h8v8"/></svg>
+          <i class="ph ph-arrow-up-right" aria-hidden="true"></i>
         </button>
         <button type="button" class="tool-btn" data-tool="rect" title="Box (R)" aria-pressed="false">
-          <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="5" width="16" height="14" rx="2"/></svg>
+          <i class="ph ph-rectangle" aria-hidden="true"></i>
         </button>
         <button type="button" class="tool-btn" data-tool="ellipse" title="Circle (O)" aria-pressed="false">
-          <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="12" rx="8" ry="7"/></svg>
+          <i class="ph ph-circle" aria-hidden="true"></i>
         </button>
         <button type="button" class="tool-btn" data-tool="freehand" title="Pen (P)" aria-pressed="false">
-          <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19c4-1 5-9 9-9s3 6 7 5"/></svg>
+          <i class="ph ph-scribble" aria-hidden="true"></i>
         </button>
         <button type="button" class="tool-btn" data-tool="text" title="Note (T)" aria-pressed="false">
-          <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 6h14"/><path d="M12 6v13"/></svg>
+          <i class="ph ph-text-t" aria-hidden="true"></i>
         </button>
         <button type="button" class="tool-btn" data-tool="highlight" title="Highlight (H)" aria-pressed="false">
-          <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 15l7-7 5 5-7 7H4z"/><path d="M14 5l5 5"/></svg>
+          <i class="ph ph-highlighter-circle" aria-hidden="true"></i>
         </button>
         <button type="button" class="tool-btn tool-btn-redact" data-tool="redact" title="Redact — destroys these pixels (X)" aria-pressed="false">
-          <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="8" width="16" height="8" rx="1" fill="currentColor"/></svg>
+          <i class="ph ph-selection-background" aria-hidden="true"></i>
         </button>
 
         <span class="tool-divider" aria-hidden="true"></span>
@@ -49,13 +50,13 @@
         <span class="tool-divider" aria-hidden="true"></span>
 
         <button type="button" class="tool-btn" id="undo-btn" title="Undo (⌘Z)" disabled>
-          <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 010 10h-4"/></svg>
+          <i class="ph ph-arrow-u-up-left" aria-hidden="true"></i>
         </button>
         <button type="button" class="tool-btn" id="redo-btn" title="Redo (⇧⌘Z)" disabled>
-          <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 14l5-5-5-5"/><path d="M20 9H9a5 5 0 000 10h4"/></svg>
+          <i class="ph ph-arrow-u-up-right" aria-hidden="true"></i>
         </button>
         <button type="button" class="tool-btn" id="delete-btn" title="Delete selected (⌫)" disabled>
-          <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16"/><path d="M6 7l1 14h10l1-14"/><path d="M9 7V4h6v3"/></svg>
+          <i class="ph ph-trash" aria-hidden="true"></i>
         </button>
       </div>
 

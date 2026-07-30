@@ -97,10 +97,19 @@ body.popup-dialog-open #app {
 }
 
 #header .icon-btn svg,
-#header .theme-toggle-icon,
-#header .theme-toggle-icon svg {
+#header .icon-btn .ph,
+#header #theme-toggle-icon,
+#header .theme-toggle-icon {
   width: 14px;
   height: 14px;
+  font-size: 14px;
+  line-height: 1;
+}
+
+#header .icon-btn .ph,
+#header #theme-toggle-icon {
+  width: auto;
+  height: auto;
 }
 
 #header .icon-btn.gn-lang-toggle {
@@ -1374,10 +1383,18 @@ body.popup-dialog-open #app {
     color var(--dur-fast, 120ms) var(--ease-standard, ease);
 }
 
-.instant-replay-domain-remove svg {
+.instant-replay-domain-remove svg,
+.instant-replay-domain-remove .ph {
   width: 11px;
   height: 11px;
   display: block;
+}
+
+.instant-replay-domain-remove .ph {
+  font-size: 11px;
+  line-height: 1;
+  width: auto;
+  height: auto;
 }
 
 .instant-replay-domain-remove:hover:not(:disabled) {

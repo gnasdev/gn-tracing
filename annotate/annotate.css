@@ -65,9 +65,17 @@ body {
     border-color 120ms ease;
 }
 
-.tool-btn svg {
+.tool-btn svg,
+.tool-btn .ph {
   width: 18px;
   height: 18px;
+}
+
+.tool-btn .ph {
+  font-size: 18px;
+  line-height: 1;
+  width: auto;
+  height: auto;
 }
 
 .tool-btn:hover:not(:disabled) {
