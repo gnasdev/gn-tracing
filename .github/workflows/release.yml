@@ -10,6 +10,10 @@ on:
   push:
     tags: ["v*"]
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   release:
     runs-on: ubuntu-latest
@@ -35,7 +39,28 @@ jobs:
           version: 3.x
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Verify required secrets
+        env:
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_TOKEN_PROXY_URL: ${{ secrets.GOOGLE_TOKEN_PROXY_URL }}
+          CHROME_EXTENSION_ID: ${{ secrets.CHROME_EXTENSION_ID }}
+          CHROME_EXTENSION_PUBLIC_KEY: ${{ secrets.CHROME_EXTENSION_PUBLIC_KEY }}
+          CHROME_EXTENSION_PRIVATE_KEY: ${{ secrets.CHROME_EXTENSION_PRIVATE_KEY }}
+        run: |
+          for secret in GOOGLE_CLIENT_ID GOOGLE_TOKEN_PROXY_URL CHROME_EXTENSION_ID CHROME_EXTENSION_PUBLIC_KEY CHROME_EXTENSION_PRIVATE_KEY; do
+            if [ -z "${!secret}" ]; then
+              echo "::error::Missing required secret: $secret"
+              exit 1
+            fi
+          done
+
       - name: Build production extension zip
+        env:
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_TOKEN_PROXY_URL: ${{ secrets.GOOGLE_TOKEN_PROXY_URL }}
+          CHROME_EXTENSION_ID: ${{ secrets.CHROME_EXTENSION_ID }}
+          CHROME_EXTENSION_PUBLIC_KEY: ${{ secrets.CHROME_EXTENSION_PUBLIC_KEY }}
+          CHROME_EXTENSION_PRIVATE_KEY: ${{ secrets.CHROME_EXTENSION_PRIVATE_KEY }}
         run: task release:ci
 
       - name: Upload release asset
@@ -50,4 +75,7 @@ jobs:
           gh release create "${{ github.ref_name }}" \
             --title "GN Tracing ${{ github.ref_name }}" \
             --generate-notes \
+            --notes "Download \`$release_zip\` from the assets below and load the extracted extension folder in Chrome or Edge developer mode.
+
+          GitHub may still show automatically generated Source code links for the release tag. Those archives are not the installable extension package." \
             "$release_zip"
