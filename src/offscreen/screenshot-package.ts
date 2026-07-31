@@ -1,11 +1,11 @@
 /**
- * Packaging a screenshot report.
+ * Packaging a screenshot / Instant Replay report.
  *
- * A screenshot report is a recording package with no video: one or more
- * annotated images, whatever the instant-replay buffer was holding, and the
- * console/network context the service worker had at capture time. It goes
- * through the same writer as a full recording, so the player and the MCP tools
- * read it with no special case.
+ * Two product paths share this writer (no video, same zip layout):
+ * - **Screenshot**: annotated still(s) + optional one-shot `dom.json`. No IR
+ *   lookback, no console/network.
+ * - **Instant Replay**: still (when available) + DOM lookback + console/network
+ *   evidence from the rolling buffer.
  *
  * The redaction step is the reason this lives in the offscreen document rather
  * than in the service worker: destroying pixels needs `OffscreenCanvas`, which
@@ -19,10 +19,9 @@ import {
   type ScreenshotArtifact,
   screenshotHasUnbakedRedactions,
 } from "../../packages/replay-core/src/schema/annotation";
-import {
-  EXTENSION_CAPABILITIES,
-  type PackageMetadata,
-  type RecordingCapability,
+import type {
+  PackageMetadata,
+  RecordingCapability,
 } from "../../packages/replay-core/src/schema/package";
 import {
   type AttachableArtifactId,
@@ -43,6 +42,12 @@ export interface ScreenshotInput {
   imageMimeType: string;
 }
 
+/**
+ * Which product path produced the package. Controls default capabilities when
+ * the caller does not pass an explicit list.
+ */
+export type ScreenshotPackageKind = "screenshot" | "instant-replay";
+
 export interface BuildScreenshotPackageInput {
   screenshots: ScreenshotInput[];
   packagedAt: string;
@@ -53,16 +58,65 @@ export interface BuildScreenshotPackageInput {
   artifacts?: Partial<Record<AttachableArtifactId, Uint8Array>>;
   password?: string;
   modifiedAt?: Date;
+  /**
+   * Product path. Defaults to `screenshot` (lean caps). Instant Replay must
+   * pass `instant-replay` so the package claims console/network even when the
+   * lookback window was quiet.
+   */
+  packageKind?: ScreenshotPackageKind;
+  /** Override capability list; wins over packageKind defaults. */
+  capabilities?: RecordingCapability[];
 }
 
 /**
- * Capabilities of a screenshot report: everything the extension can normally do
- * *minus* video, because a screenshot report has none. Claiming `video` here
- * would make the player treat a missing video as a broken package.
+ * Lean screenshot report: still + annotations.
+ * `dom-snapshot` is added when a one-shot DOM tree ships in `dom.json`.
+ * Instant Replay lookback and console/network belong to the IR product path.
  */
-export const SCREENSHOT_REPORT_CAPABILITIES: RecordingCapability[] = EXTENSION_CAPABILITIES.filter(
-  (capability) => capability !== "video",
-);
+export const SCREENSHOT_REPORT_CAPABILITIES: RecordingCapability[] = ["screenshot", "annotation"];
+
+/**
+ * Instant Replay report: DOM lookback + log surfaces (even if quiet) + optional still.
+ * No tab video — that remains full Record.
+ */
+export const INSTANT_REPLAY_REPORT_CAPABILITIES: RecordingCapability[] = [
+  "screenshot",
+  "annotation",
+  "instant-replay",
+  "dom-snapshot",
+  "console",
+  "network",
+  "network-bodies",
+  "websocket",
+  "storage",
+];
+
+/**
+ * Resolve package capabilities for a screenshot/IR package.
+ * Callers may override with `input.capabilities`.
+ */
+export function resolveScreenshotPackageCapabilities(input: {
+  packageKind?: ScreenshotPackageKind;
+  capabilities?: RecordingCapability[];
+  hasScreenshots?: boolean;
+  hasInstantReplay?: boolean;
+  hasDom?: boolean;
+}): RecordingCapability[] {
+  if (input.capabilities && input.capabilities.length > 0) {
+    return input.capabilities;
+  }
+
+  if (input.packageKind === "instant-replay") {
+    return [...INSTANT_REPLAY_REPORT_CAPABILITIES];
+  }
+
+  // Screenshot: still + optional one-shot DOM. Never IR / console / network.
+  const caps: RecordingCapability[] = [...SCREENSHOT_REPORT_CAPABILITIES];
+  if (input.hasDom) {
+    caps.push("dom-snapshot");
+  }
+  return caps;
+}
 
 export async function buildScreenshotPackage(
   input: BuildScreenshotPackageInput,
@@ -92,14 +146,37 @@ export async function buildScreenshotPackage(
     });
   }
 
-  const screenshotArtifact: ScreenshotArtifact = { schemaVersion: 1, screenshots: packaged };
-  artifacts.screenshots = encodeJsonArtifact(screenshotArtifact);
+  if (packaged.length > 0) {
+    const screenshotArtifact: ScreenshotArtifact = { schemaVersion: 1, screenshots: packaged };
+    artifacts.screenshots = encodeJsonArtifact(screenshotArtifact);
+  }
+
+  // Screenshot path keeps optional `dom` but drops IR lookback + log artifacts
+  // even if a caller accidentally passed them (Instant Replay uses packageKind).
+  if (input.packageKind !== "instant-replay" && input.capabilities == null) {
+    delete artifacts.instantReplay;
+    delete artifacts.console;
+    delete artifacts.network;
+    delete artifacts.websocket;
+    delete artifacts.storage;
+  }
+
+  const hasInstantReplay =
+    artifacts.instantReplay != null && artifacts.instantReplay.byteLength > 0;
+  const hasDom = artifacts.dom != null && artifacts.dom.byteLength > 0;
+  const capabilities = resolveScreenshotPackageCapabilities({
+    packageKind: input.packageKind,
+    capabilities: input.capabilities,
+    hasScreenshots: packaged.length > 0,
+    hasInstantReplay,
+    hasDom,
+  });
 
   const metadataPreview: PackageMetadata = {
     timestamp: input.packagedAt,
     url: input.url,
     producer: "extension",
-    capabilities: SCREENSHOT_REPORT_CAPABILITIES,
+    capabilities,
   };
   const agentSummary = buildAgentSummaryArtifact({
     metadata: metadataPreview,
@@ -117,7 +194,7 @@ export async function buildScreenshotPackage(
 
   const built = await buildRecordingPackage({
     producer: "extension",
-    capabilities: SCREENSHOT_REPORT_CAPABILITIES,
+    capabilities,
     packagedAt: input.packagedAt,
     zipFilename: input.zipFilename,
     version: getProductVersionOrDefault(),

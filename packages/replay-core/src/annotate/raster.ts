@@ -176,11 +176,98 @@ function mosaicRegion(
 }
 
 /**
+ * Load an SVG markup string as a drawable image.
+ *
+ * Chromium rejects `createImageBitmap` on `image/svg+xml` blobs (and silently
+ * failed in the old flatten path, which is why "Copy image" shipped bare
+ * stills). Prefer `HTMLImageElement` + data URL; fall back to object URL.
+ */
+async function loadSvgDrawable(
+  overlaySvg: string,
+  width: number,
+  height: number,
+): Promise<{ source: CanvasImageSource; close: () => void }> {
+  const svg = ensureSvgPixelSize(overlaySvg, width, height);
+  const dataUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+
+  if (typeof Image === "function") {
+    const image = await loadHtmlImage(dataUrl);
+    return {
+      source: image as unknown as CanvasImageSource,
+      close: () => {
+        image.src = "";
+      },
+    };
+  }
+
+  // Workers / environments without HTMLImageElement: try createImageBitmap via
+  // object URL (still more reliable than a bare SVG blob in some runtimes).
+  const blob = new Blob([svg], { type: "image/svg+xml;charset=utf-8" });
+  const objectUrl = URL.createObjectURL(blob);
+  try {
+    const bitmap = await createImageBitmap(blob).catch(async () => {
+      // Last resort: fetch the object URL as a bitmap of a rendered image.
+      if (typeof Image === "function") {
+        const image = await loadHtmlImage(objectUrl);
+        return createImageBitmap(image);
+      }
+      throw new Error("Cannot rasterise SVG overlay: no Image or createImageBitmap path.");
+    });
+    return {
+      source: bitmap as unknown as CanvasImageSource,
+      close: () => {
+        if (typeof (bitmap as ImageBitmap).close === "function") {
+          (bitmap as ImageBitmap).close();
+        }
+      },
+    };
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
+function loadHtmlImage(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("Failed to load SVG overlay for flatten."));
+    image.src = src;
+  });
+}
+
+/**
+ * Force width/height attributes so SVG→bitmap renderers know the pixel size.
+ * ViewBox alone is not enough for createImageBitmap / Image in Chromium.
+ */
+export function ensureSvgPixelSize(svg: string, width: number, height: number): string {
+  const w = Math.max(1, Math.round(width));
+  const h = Math.max(1, Math.round(height));
+  let out = svg.trim();
+  if (!out.includes("xmlns=")) {
+    out = out.replace(/<svg\b/, '<svg xmlns="http://www.w3.org/2000/svg"');
+  }
+  if (/\bwidth\s*=/.test(out)) {
+    out = out.replace(/\bwidth\s*=\s*["'][^"']*["']/, `width="${w}"`);
+  } else {
+    out = out.replace(/<svg\b/, `<svg width="${w}"`);
+  }
+  if (/\bheight\s*=/.test(out)) {
+    out = out.replace(/\bheight\s*=\s*["'][^"']*["']/, `height="${h}"`);
+  } else {
+    out = out.replace(/<svg\b/, `<svg height="${h}"`);
+  }
+  return out;
+}
+
+/**
  * Rasterises an SVG overlay onto an image, producing a single flattened frame.
  *
- * Used for the "download this screenshot" path and for handing an agent one
- * image that already carries the reporter's arrows, rather than an image plus a
- * separate list of coordinates it has to imagine.
+ * Used for "Copy image", download paths, and handing an agent one image that
+ * already carries the reporter's arrows — not an image plus a separate list of
+ * coordinates.
+ *
+ * Throws when a non-empty overlay cannot be rasterised, so callers never
+ * silently ship a bare still that looked annotated in the editor.
  */
 export async function flattenScreenshot(
   imageBytes: Uint8Array,
@@ -203,12 +290,14 @@ export async function flattenScreenshot(
   ctx.drawImage(base as unknown as CanvasImageSource, 0, 0);
   base.close();
 
-  const overlayBitmap = await createImageBitmap(
-    new Blob([overlaySvg], { type: "image/svg+xml" }),
-  ).catch(() => null);
-  if (overlayBitmap) {
-    ctx.drawImage(overlayBitmap as unknown as CanvasImageSource, 0, 0, canvas.width, canvas.height);
-    overlayBitmap.close();
+  const trimmedOverlay = overlaySvg?.trim() ?? "";
+  if (trimmedOverlay.length > 0) {
+    const overlay = await loadSvgDrawable(trimmedOverlay, canvas.width, canvas.height);
+    try {
+      ctx.drawImage(overlay.source, 0, 0, canvas.width, canvas.height);
+    } finally {
+      overlay.close();
+    }
   }
 
   const mimeType = options.mimeType ?? "image/png";

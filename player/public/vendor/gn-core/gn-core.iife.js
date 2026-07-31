@@ -1250,10 +1250,10 @@ var gnCore = (() => {
       );
     }
     if (hasScreenshots || evidence.hasDom && !evidence.hasVideo) {
-      const irLookback = Boolean(evidence.hasInstantReplay);
-      const hasConsoleData = evidence.consoleCount > 0 || irLookback;
-      const hasNetworkData = evidence.networkCount > 0 || evidence.websocketCount > 0 || irLookback;
-      const defaultTab = irLookback && evidence.consoleCount > 0 ? "console" : defaultTabForDomLookback(evidence);
+      const forceLogTabs = Boolean(evidence.expectsLogTabs);
+      const hasConsoleData = evidence.consoleCount > 0 || forceLogTabs;
+      const hasNetworkData = evidence.networkCount > 0 || evidence.websocketCount > 0 || forceLogTabs;
+      const defaultTab = forceLogTabs && evidence.consoleCount > 0 ? "console" : defaultTabForDomLookback(evidence);
       const mediaColumn = hasScreenshots || evidence.hasDom;
       const stillPrimary = hasScreenshots && !evidence.hasVideo;
       return withMediaStages(

@@ -244,7 +244,7 @@ describe("resolveInstantReplayForSave", () => {
     expect(liveCollect).not.toHaveBeenCalled();
   });
 
-  it("optionally live-collects for screenshot kind when IR enabled", async () => {
+  it("never attaches Instant Replay for screenshot kind", async () => {
     const pending: PendingCapture = {
       kind: "screenshot",
       id: "shot-1",
@@ -253,18 +253,17 @@ describe("resolveInstantReplayForSave", () => {
       tabId: 3,
       viewport: { width: 10, height: 10 },
     };
+    const liveCollect = vi.fn(async () => ({
+      ok: true as const,
+      artifact: sampleIrArtifact,
+      evidence: null,
+    }));
     const resolved = await resolveInstantReplayForSave(pending, {
       instantReplayEnabled: true,
-      liveCollect: async () => ({
-        ok: true,
-        artifact: sampleIrArtifact,
-        evidence: null,
-      }),
+      liveCollect,
     });
-    expect(resolved.mode).toBe("attach");
-    if (resolved.mode === "attach") {
-      expect(resolved.required).toBe(false);
-    }
+    expect(resolved.mode).toBe("none");
+    expect(liveCollect).not.toHaveBeenCalled();
   });
 });
 

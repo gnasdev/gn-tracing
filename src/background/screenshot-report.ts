@@ -20,10 +20,14 @@ import type {
   InstantReplayArtifact,
   Screenshot,
 } from "../../packages/replay-core/src/schema/annotation";
+import type { DomSnapshot } from "../../packages/replay-core/src/schema/capture";
 import { hasInstantReplayFrames } from "../shared/instant-replay-policy";
 import {
+  clearPendingDomSnapshot,
   clearPendingIrFreeze,
+  getPendingDomSnapshot,
   getPendingIrFreeze,
+  putPendingDomSnapshot,
   putPendingIrFreeze,
 } from "./pending-ir-freeze-idb";
 
@@ -61,11 +65,16 @@ export interface PendingCaptureBase {
 
 /**
  * Kind-discriminated pending capture.
- * - `screenshot`: still only; save may optionally attach a *live* IR collect.
- * - `instant-replay`: still + frozen lookback required at park time.
+ * - `screenshot`: still + optional one-shot DOM (`dom.json`). No IR lookback,
+ *   no console/network.
+ * - `instant-replay`: still + frozen lookback (+ evidence) required at park time.
  */
 export type PendingCapture =
-  | (PendingCaptureBase & { kind: "screenshot" })
+  | (PendingCaptureBase & {
+      kind: "screenshot";
+      /** One-shot page DOM at capture time; parked in IndexedDB with the still. */
+      frozenDom?: DomSnapshot | null;
+    })
   | (PendingCaptureBase & {
       kind: "instant-replay";
       frozenInstantReplay: FrozenInstantReplay;
@@ -175,10 +184,34 @@ export function parsePendingCapture(value: unknown): PendingCapture | null {
 
   // Default and explicit screenshot kind.
   if (raw.kind === "screenshot" || raw.kind == null) {
-    return { ...base, kind: "screenshot" };
+    const frozenDom = parseOptionalDomSnapshot(raw.frozenDom);
+    return {
+      ...base,
+      kind: "screenshot",
+      frozenDom: frozenDom ?? undefined,
+    };
   }
 
   return null;
+}
+
+function parseOptionalDomSnapshot(value: unknown): DomSnapshot | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const raw = value as DomSnapshot;
+  if (!raw.root || typeof raw.root !== "object") {
+    return null;
+  }
+  if (typeof raw.capturedAt !== "number") {
+    return null;
+  }
+  return {
+    label: typeof raw.label === "string" ? raw.label : "screenshot",
+    capturedAt: raw.capturedAt,
+    documentUrl: typeof raw.documentUrl === "string" ? raw.documentUrl : "",
+    root: raw.root,
+  };
 }
 
 /**
@@ -214,13 +247,16 @@ export function isInstantReplayPending(
 
 /**
  * Resolve which IR bundle (if any) to attach on annotated save.
- * IR reports always use the freeze; screenshots may live-collect when enabled.
+ * Instant Replay reports always use the freeze (DOM + evidence).
+ * Plain screenshots never attach lookback — still image only.
  */
 export function resolveInstantReplayForSave(
   pending: PendingCapture,
-  options: {
-    instantReplayEnabled: boolean;
-    liveCollect: () => Promise<
+  _options?: {
+    /** @deprecated Ignored — screenshots no longer live-collect IR. */
+    instantReplayEnabled?: boolean;
+    /** @deprecated Ignored — screenshots no longer live-collect IR. */
+    liveCollect?: () => Promise<
       | { ok: true; artifact: InstantReplayArtifact; evidence: InstantReplayEvidenceBundle | null }
       | { ok: false; error: string }
     >;
@@ -250,25 +286,8 @@ export function resolveInstantReplayForSave(
     });
   }
 
-  if (!options.instantReplayEnabled) {
-    return Promise.resolve({ mode: "none" });
-  }
-
-  return options.liveCollect().then((collected) => {
-    if (!collected.ok) {
-      // Optional attach for plain screenshots: skip rather than fail the upload.
-      return { mode: "none" as const };
-    }
-    if (!hasInstantReplayFrames(collected.artifact)) {
-      return { mode: "none" as const };
-    }
-    return {
-      mode: "attach" as const,
-      artifact: collected.artifact,
-      evidence: collected.evidence,
-      required: false,
-    };
-  });
+  // Screenshot reports are still-only: never piggyback Instant Replay frames.
+  return Promise.resolve({ mode: "none" });
 }
 
 /** Default caption when the editor left IR caption blank. */
@@ -463,7 +482,7 @@ export async function readPendingStillForAnnotate(): Promise<AnnotatePendingView
   return parsePendingStillView(stored?.[PENDING_KEY]);
 }
 
-/** Reads the full parked capture (reassembles IR freeze from IndexedDB), or null. */
+/** Reads the full parked capture (reassembles IR freeze / DOM from IndexedDB). */
 export async function readPendingScreenshot(): Promise<PendingCapture | null> {
   const stored = await chrome.storage.session.get(PENDING_KEY);
   const raw = stored?.[PENDING_KEY];
@@ -473,11 +492,11 @@ export async function readPendingScreenshot(): Promise<PendingCapture | null> {
 
   // Legacy: freeze embedded on the same session object.
   const direct = parsePendingCapture(raw);
-  if (direct) {
+  if (direct?.kind === "instant-replay") {
     return direct;
   }
 
-  // Still in session + freeze in IndexedDB (current layout).
+  // Still in session + bulk payload in IndexedDB (current layout).
   const still = parsePendingStillView(raw);
   if (still?.kind === "instant-replay") {
     const freeze = await getPendingIrFreeze(still.id);
@@ -488,16 +507,29 @@ export async function readPendingScreenshot(): Promise<PendingCapture | null> {
         frozenInstantReplay: freeze,
       });
     }
+    return null;
   }
 
-  return null;
+  if (still?.kind === "screenshot" || direct?.kind === "screenshot") {
+    const base = still ?? direct!;
+    const frozenDom =
+      (direct?.kind === "screenshot" ? direct.frozenDom : null) ??
+      (await getPendingDomSnapshot(base.id));
+    return {
+      ...base,
+      kind: "screenshot",
+      frozenDom: frozenDom ?? undefined,
+    };
+  }
+
+  return direct;
 }
 
 /**
  * Parks a validated capture. Throws on storage failure so callers can avoid
  * opening the editor.
  *
- * Still → session storage (small). IR freeze → IndexedDB (can exceed session quota).
+ * Still → session storage (small). IR freeze / DOM snapshot → IndexedDB.
  */
 export async function writePendingScreenshot(pending: PendingCapture): Promise<void> {
   const validated = parsePendingCapture(pending);
@@ -518,15 +550,29 @@ export async function writePendingScreenshot(pending: PendingCapture): Promise<v
       await clearPendingIrFreeze(validated.id).catch(() => undefined);
       throw new Error(`Could not store Instant Replay lookback for annotation: ${describe(error)}`);
     }
+    await clearPendingDomSnapshot(validated.id).catch(() => undefined);
     return;
   }
 
-  await chrome.storage.session.set({ [PENDING_KEY]: validated });
-  await clearPendingIrFreeze().catch(() => undefined);
+  // Screenshot: still meta in session; one-shot DOM (when present) in IndexedDB.
+  const stillMeta = toAnnotatePendingView(validated);
+  await chrome.storage.session.set({ [PENDING_KEY]: stillMeta });
+  await clearPendingIrFreeze(validated.id).catch(() => undefined);
+  if (validated.frozenDom) {
+    try {
+      await putPendingDomSnapshot(validated.id, validated.frozenDom);
+    } catch (error) {
+      await chrome.storage.session.remove([PENDING_KEY, ANNOTATE_OPENED_AT_KEY]);
+      await clearPendingDomSnapshot(validated.id).catch(() => undefined);
+      throw new Error(`Could not store screenshot DOM snapshot: ${describe(error)}`);
+    }
+  } else {
+    await clearPendingDomSnapshot(validated.id).catch(() => undefined);
+  }
 }
 
 /**
- * Clears the parked capture (still + IR freeze).
+ * Clears the parked capture (still + IR freeze + DOM snapshot).
  *
  * Always called after a save or a discard: the image is a picture of the user's
  * screen and there is no reason for it to outlive the report it belongs to.
@@ -548,8 +594,10 @@ export async function clearPendingScreenshot(): Promise<void> {
   ]);
   if (pendingId) {
     await clearPendingIrFreeze(pendingId).catch(() => undefined);
+    await clearPendingDomSnapshot(pendingId).catch(() => undefined);
   } else {
     await clearPendingIrFreeze().catch(() => undefined);
+    await clearPendingDomSnapshot().catch(() => undefined);
   }
 }
 

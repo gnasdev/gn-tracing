@@ -10,6 +10,7 @@ import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import type { Annotation, Screenshot } from "../schema/annotation";
 import { describeAnnotation, describePoint, renderScreenshotMarkdown } from "./describe";
+import { ensureSvgPixelSize } from "./raster";
 import { escapeXml, renderAnnotationsSvg, renderScreenshotOverlaySvg } from "./svg";
 
 const baseShape = { id: "a1", createdAt: 1_700_000_000_000 };
@@ -160,5 +161,22 @@ describe("describe", () => {
     const shot = screenshotWith([]);
     shot.source = { kind: "dom-snapshot", snapshotIndex: 0 };
     expect(renderScreenshotMarkdown(shot)).toContain("re-rendered DOM snapshot");
+  });
+});
+
+describe("ensureSvgPixelSize", () => {
+  it("forces width/height so SVG rasterisers know the pixel box", () => {
+    const arrow: Annotation = {
+      ...baseShape,
+      type: "arrow",
+      from: { x: 0.1, y: 0.1 },
+      to: { x: 0.9, y: 0.9 },
+      color: "#ff0000",
+    };
+    const raw = renderAnnotationsSvg([arrow], { width: 100, height: 50 });
+    const sized = ensureSvgPixelSize(raw, 1440, 900);
+    expect(sized).toMatch(/width="1440"/);
+    expect(sized).toMatch(/height="900"/);
+    expect(sized).toContain("xmlns=");
   });
 });

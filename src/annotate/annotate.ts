@@ -12,7 +12,11 @@
  */
 
 import { describeAnnotation } from "../../packages/replay-core/src/annotate/describe";
-import { renderAnnotationsSvg } from "../../packages/replay-core/src/annotate/svg";
+import { bakeRedactions, ensureSvgPixelSize } from "../../packages/replay-core/src/annotate/raster";
+import {
+  renderAnnotationsSvg,
+  renderScreenshotOverlaySvg,
+} from "../../packages/replay-core/src/annotate/svg";
 import type {
   Annotation,
   NormalizedPoint,
@@ -33,7 +37,7 @@ const ANNOTATE_COPY = {
     emptyShapes: "Nothing annotated yet.",
     packaging: "Packaging and uploading…",
     uploaded: "Uploaded. Opening the replay…",
-    ready: "Draw on the screenshot, then save.",
+    ready: "Draw on the screenshot, then save or copy the image.",
     readyIr: "Annotate this Instant Replay still, then save to upload the lookback package.",
     noPending: "No screenshot is waiting to be annotated.",
     imageLoadFailed: "Could not display the captured image. Capture again.",
@@ -41,12 +45,16 @@ const ANNOTATE_COPY = {
     titleScreenshot: "Annotate screenshot",
     titleIr: "Annotate Instant Replay",
     defaultCaptionIr: "Instant Replay capture",
+    copy: "Copy image",
+    copyOk: "Image copied.",
+    copyFailed: "Could not copy the image.",
+    copying: "Copying image…",
   },
   vi: {
     emptyShapes: "Chưa có chú thích.",
     packaging: "Đang đóng gói và tải lên…",
     uploaded: "Đã tải lên. Đang mở replay…",
-    ready: "Vẽ trên ảnh chụp, rồi lưu.",
+    ready: "Vẽ trên ảnh chụp, rồi lưu hoặc sao chép ảnh.",
     readyIr: "Chú thích ảnh Instant Replay này, rồi lưu để upload gói lookback.",
     noPending: "Không có ảnh chụp nào đang chờ chú thích.",
     imageLoadFailed: "Không hiển thị được ảnh đã chụp. Hãy capture lại.",
@@ -54,6 +62,10 @@ const ANNOTATE_COPY = {
     titleScreenshot: "Chú thích ảnh chụp",
     titleIr: "Chú thích Instant Replay",
     defaultCaptionIr: "Instant Replay capture",
+    copy: "Sao chép ảnh",
+    copyOk: "Đã sao chép ảnh.",
+    copyFailed: "Không sao chép được ảnh.",
+    copying: "Đang sao chép ảnh…",
   },
 } as const;
 
@@ -142,6 +154,7 @@ const TOOL_SHORTCUTS: Record<string, EditorTool> = {
     undo: document.getElementById("undo-btn") as HTMLButtonElement,
     redo: document.getElementById("redo-btn") as HTMLButtonElement,
     remove: document.getElementById("delete-btn") as HTMLButtonElement,
+    copy: document.getElementById("copy-btn") as HTMLButtonElement | null,
     save: document.getElementById("save-btn") as HTMLButtonElement,
     discard: document.getElementById("discard-btn") as HTMLButtonElement,
     shapeList: document.getElementById("shape-list") as HTMLUListElement,
@@ -360,6 +373,159 @@ const TOOL_SHORTCUTS: Record<string, EditorTool> = {
     window.close();
   });
 
+  function buildCurrentScreenshot(): Screenshot | null {
+    if (!pending) {
+      return null;
+    }
+    return {
+      id: pending.id,
+      capturedAt: pending.capturedAt,
+      url: pending.url,
+      title: pending.title,
+      viewport: pending.viewport,
+      source: { kind: "image", path: "", mimeType: "image/jpeg" },
+      annotations: history.annotations,
+      caption: elements.caption.value.trim() || undefined,
+    };
+  }
+
+  async function dataUrlToBytes(dataUrl: string): Promise<{ bytes: Uint8Array; mimeType: string }> {
+    const response = await fetch(dataUrl);
+    const blob = await response.blob();
+    return {
+      bytes: new Uint8Array(await blob.arrayBuffer()),
+      mimeType: blob.type || "image/jpeg",
+    };
+  }
+
+  function loadHtmlImage(src: string): Promise<HTMLImageElement> {
+    return new Promise((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => resolve(image);
+      image.onerror = () => reject(new Error("image-load-failed"));
+      image.src = src;
+    });
+  }
+
+  function canvasToPngBlob(canvas: HTMLCanvasElement): Promise<Blob> {
+    return new Promise((resolve, reject) => {
+      canvas.toBlob((blob) => {
+        if (blob) {
+          resolve(blob);
+        } else {
+          reject(new Error("canvas-to-blob-failed"));
+        }
+      }, "image/png");
+    });
+  }
+
+  /**
+   * Flatten still + annotations for clipboard paste.
+   *
+   * Uses a page canvas + HTMLImageElement for the SVG overlay — Chromium does
+   * not reliably decode SVG via createImageBitmap, which previously produced a
+   * bare still with no arrows/boxes.
+   */
+  async function buildAnnotatedImageBlob(): Promise<Blob> {
+    if (!pending) {
+      throw new Error(annotateT("noPending"));
+    }
+    const screenshot = buildCurrentScreenshot();
+    if (!screenshot) {
+      throw new Error(annotateT("noPending"));
+    }
+
+    // Clone so bakeRedactions can mark redacts applied without mutating the editor.
+    const forCopy: Screenshot = {
+      ...screenshot,
+      annotations: structuredClone(history.annotations) as Annotation[],
+    };
+
+    const source = await dataUrlToBytes(pending.imageDataUrl);
+    let baseObjectUrl: string | null = null;
+    let baseSrc = pending.imageDataUrl;
+
+    if (forCopy.annotations.some((shape) => shape.type === "redact")) {
+      const baked = await bakeRedactions(source.bytes, source.mimeType, forCopy, {
+        mimeType: "image/png",
+      });
+      baseObjectUrl = URL.createObjectURL(
+        new Blob([baked.bytes as BlobPart], { type: baked.mimeType }),
+      );
+      baseSrc = baseObjectUrl;
+    }
+
+    const naturalWidth = elements.image.naturalWidth || forCopy.viewport.width;
+    const naturalHeight = elements.image.naturalHeight || forCopy.viewport.height;
+    if (naturalWidth <= 0 || naturalHeight <= 0) {
+      throw new Error(annotateT("imageLoadFailed"));
+    }
+
+    const canvas = document.createElement("canvas");
+    canvas.width = naturalWidth;
+    canvas.height = naturalHeight;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      throw new Error("canvas-2d-unavailable");
+    }
+
+    try {
+      const baseImage = await loadHtmlImage(baseSrc);
+      ctx.drawImage(baseImage, 0, 0, naturalWidth, naturalHeight);
+    } finally {
+      if (baseObjectUrl) {
+        URL.revokeObjectURL(baseObjectUrl);
+      }
+    }
+
+    // Non-redact shapes only (redacts are already baked into base pixels).
+    const hasOverlayShapes = forCopy.annotations.some((shape) => shape.type !== "redact");
+    if (hasOverlayShapes) {
+      const overlaySvg = ensureSvgPixelSize(
+        renderScreenshotOverlaySvg(forCopy, {
+          width: naturalWidth,
+          height: naturalHeight,
+        }),
+        naturalWidth,
+        naturalHeight,
+      );
+      const overlayUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(overlaySvg)}`;
+      const overlayImage = await loadHtmlImage(overlayUrl);
+      ctx.drawImage(overlayImage, 0, 0, naturalWidth, naturalHeight);
+    }
+
+    return canvasToPngBlob(canvas);
+  }
+
+  elements.copy?.addEventListener("click", async () => {
+    if (!pending || pending.kind === "instant-replay" || !elements.copy) {
+      return;
+    }
+    const loading = setButtonLoading(elements.copy, {
+      label: annotateT("copying"),
+      spinner: true,
+    });
+    try {
+      const blob = await buildAnnotatedImageBlob();
+      if (typeof ClipboardItem === "undefined" || !navigator.clipboard?.write) {
+        throw new Error("clipboard-image-unsupported");
+      }
+      // Chrome wants a Promise-valued ClipboardItem for image blobs.
+      await navigator.clipboard.write([
+        new ClipboardItem({
+          [blob.type]: Promise.resolve(blob),
+        }),
+      ]);
+      setStatus(annotateT("copyOk"));
+    } catch {
+      setStatus(annotateT("copyFailed"), true);
+    } finally {
+      loading.clear();
+      elements.copy.disabled = false;
+      elements.copy.textContent = annotateT("copy");
+    }
+  });
+
   elements.save.addEventListener("click", async () => {
     if (!pending || saving) {
       return;
@@ -382,17 +548,13 @@ const TOOL_SHORTCUTS: Record<string, EditorTool> = {
       });
       setStatus(annotateT("packaging"));
 
-      const screenshot: Screenshot = {
-        id: pending.id,
-        capturedAt: pending.capturedAt,
-        url: pending.url,
-        title: pending.title,
-        viewport: pending.viewport,
-        // Rewritten by the packager once the image entry has a path.
-        source: { kind: "image", path: "", mimeType: "image/jpeg" },
-        annotations,
-        caption: elements.caption.value.trim() || undefined,
-      };
+      const screenshot = buildCurrentScreenshot();
+      if (!screenshot) {
+        throw new Error(annotateT("noPending"));
+      }
+      // Rewritten by the packager once the image entry has a path; annotations
+      // may still include pending redacts — offscreen bakes before packaging.
+      screenshot.annotations = annotations;
 
       const response = (await chrome.runtime.sendMessage({
         action: "SAVE_ANNOTATED_SCREENSHOT",
@@ -465,6 +627,12 @@ const TOOL_SHORTCUTS: Record<string, EditorTool> = {
       setStatus(annotateT("imageLoadFailed"), true);
       elements.save.disabled = true;
       return;
+    }
+
+    // Copy report is screenshot-only (IR packages are uploaded as full lookback).
+    if (elements.copy) {
+      elements.copy.hidden = isInstantReplay;
+      elements.copy.textContent = annotateT("copy");
     }
 
     elements.wrap.style.aspectRatio = `${pending.viewport.width} / ${pending.viewport.height}`;

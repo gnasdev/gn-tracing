@@ -129,11 +129,12 @@ describe("resolvePresentationMode", () => {
     expect(plan.showDomStage).toBe(true);
   });
 
-  it("always offers Console/Network tabs for Instant Replay packages", () => {
+  it("always offers Console/Network tabs for Instant Replay packages that claim logs", () => {
     const quiet = resolvePresentationMode({
       ...empty,
       hasDom: true,
       hasInstantReplay: true,
+      expectsLogTabs: true,
       consoleCount: 0,
       networkCount: 0,
     });
@@ -146,18 +147,56 @@ describe("resolvePresentationMode", () => {
       ...empty,
       hasDom: true,
       hasInstantReplay: true,
+      expectsLogTabs: true,
       consoleCount: 2,
     });
     expect(withLogs.showConsoleTab).toBe(true);
     expect(withLogs.defaultTab).toBe("console");
   });
 
-  it("IR with still uses still stage and keeps console/network when IR flag set", () => {
+  it("plain screenshot report hides empty Console/Network and has no IR claim", () => {
+    const plan = resolvePresentationMode({
+      ...empty,
+      screenshotCount: 1,
+      hasDom: false,
+      hasInstantReplay: false,
+      expectsLogTabs: false,
+      consoleCount: 0,
+      networkCount: 0,
+    });
+    expect(plan.mode).toBe("screenshot");
+    expect(plan.showStillStage).toBe(true);
+    expect(plan.showConsoleTab).toBe(false);
+    expect(plan.showNetworkTab).toBe(false);
+    expect(plan.showElementsTab).toBe(false);
+    expect(plan.defaultTab).toBe("report");
+  });
+
+  it("screenshot with one-shot DOM shows Elements without Console/Network", () => {
+    const plan = resolvePresentationMode({
+      ...empty,
+      screenshotCount: 1,
+      hasDom: true,
+      hasInstantReplay: false,
+      expectsLogTabs: false,
+      consoleCount: 0,
+      networkCount: 0,
+    });
+    expect(plan.mode).toBe("screenshot");
+    expect(plan.showStillStage).toBe(true);
+    expect(plan.showElementsTab).toBe(true);
+    expect(plan.showConsoleTab).toBe(false);
+    expect(plan.showNetworkTab).toBe(false);
+    expect(plan.defaultTab).toBe("report");
+  });
+
+  it("IR with still uses still stage and keeps console/network when logs are claimed", () => {
     const plan = resolvePresentationMode({
       ...empty,
       screenshotCount: 1,
       hasDom: true,
       hasInstantReplay: true,
+      expectsLogTabs: true,
       consoleCount: 0,
       networkCount: 0,
     });

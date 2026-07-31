@@ -29,11 +29,17 @@ export interface PresentationEvidence {
   /** Report / privacy / legacy stop-time screenshot content for the Report tab. */
   hasReportContent: boolean;
   /**
-   * Instant Replay lookback frames in the package. When true, the player always
-   * offers Console/Network tabs (IR claims in-page log capture even if a quiet
-   * window left those artifacts empty).
+   * Instant Replay lookback frames in the package (DOM timeline). Present on
+   * Instant Replay reports only — plain screenshots never ship lookback.
    */
   hasInstantReplay?: boolean;
+  /**
+   * Package claims console/network capture (Instant Replay / full recording
+   * capabilities). When true, empty Console/Network tabs stay visible so a
+   * quiet lookback is not mistaken for "logs were not captured".
+   * Screenshot reports leave this false.
+   */
+  expectsLogTabs?: boolean;
 }
 
 export interface PresentationPlan {
@@ -145,14 +151,14 @@ export function resolvePresentationMode(evidence: PresentationEvidence): Present
 
   // Annotated stills and/or Instant Replay lookback mapped into hasDom.
   if (hasScreenshots || (evidence.hasDom && !evidence.hasVideo)) {
-    const irLookback = Boolean(evidence.hasInstantReplay);
-    // IR packages always expose Console/Network (empty state is fine). Plain
-    // screenshot reports still hide empty log tabs.
-    const hasConsoleData = evidence.consoleCount > 0 || irLookback;
-    const hasNetworkData = evidence.networkCount > 0 || evidence.websocketCount > 0 || irLookback;
-    // Prefer Console when IR lookback actually captured log rows.
+    // Force empty log tabs only when the package claims log capture (IR).
+    // Plain screenshot reports never claim logs.
+    const forceLogTabs = Boolean(evidence.expectsLogTabs);
+    const hasConsoleData = evidence.consoleCount > 0 || forceLogTabs;
+    const hasNetworkData = evidence.networkCount > 0 || evidence.websocketCount > 0 || forceLogTabs;
+    // Prefer Console when IR claimed logs and actually captured rows.
     const defaultTab =
-      irLookback && evidence.consoleCount > 0 ? "console" : defaultTabForDomLookback(evidence);
+      forceLogTabs && evidence.consoleCount > 0 ? "console" : defaultTabForDomLookback(evidence);
     // Still-primary packages use the record-like media column (still stage).
     // DOM-only lookback also keeps the media column for the scrubber.
     const mediaColumn = hasScreenshots || evidence.hasDom;

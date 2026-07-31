@@ -97,6 +97,14 @@ describe("Instant Replay CDP wiring", () => {
     expect(reportSource).toContain("putPendingIrFreeze");
     expect(reportSource).toContain("getPendingIrFreeze");
     expect(swSource).toMatch(/artifacts:\s*screenshotArtifacts/);
+    // Screenshots never live-collect IR; only frozen IR pending attaches evidence.
+    expect(swSource).toContain("resolveInstantReplayForSave(pending)");
+    expect(swSource).toContain(
+      'packageKind: isInstantReplayReport ? "instant-replay" : "screenshot"',
+    );
+    // Screenshot path injects a one-shot DOM capture (not IR lookback).
+    expect(swSource).toContain("captureTabDomSnapshot");
+    expect(swSource).toContain("page-dom-snapshot.js");
     expect(swSource).toContain("createInstantReplayCdpHub");
     expect(swSource).toContain("irCdpHub");
     expect(swSource).toContain("peekEvidenceBundle");

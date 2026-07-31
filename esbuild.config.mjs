@@ -427,6 +427,7 @@ async function build() {
       { in: "src/content/drawing-overlay.ts", out: "content/drawing-overlay" },
       { in: "src/content/instant-replay.ts", out: "content/instant-replay" },
       { in: "src/content/instant-replay-evidence.ts", out: "content/instant-replay-evidence" },
+      { in: "src/content/page-dom-snapshot.ts", out: "content/page-dom-snapshot" },
     ],
     outdir: "dist",
     format: "iife",

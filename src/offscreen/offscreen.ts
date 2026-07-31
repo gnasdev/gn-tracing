@@ -464,6 +464,11 @@ export interface ScreenshotUploadData {
   screenshots: Array<{ screenshot: Screenshot; imageDataUrl?: string }>;
   /** Inline JSON artifacts for small/legacy packages without stagingId. */
   artifacts?: Partial<Record<string, string>>;
+  /**
+   * Product path for package capabilities. Screenshot = still only;
+   * instant-replay = DOM + console/network claims. Defaults to screenshot.
+   */
+  packageKind?: "screenshot" | "instant-replay";
 }
 
 /**
@@ -557,6 +562,7 @@ async function uploadScreenshotPackage(data: ScreenshotUploadData): Promise<{
       artifacts,
       password: typeof data.zipPassword === "string" ? data.zipPassword : "",
       modifiedAt: now,
+      packageKind: data.packageKind === "instant-replay" ? "instant-replay" : "screenshot",
     });
 
     const zipBlob = new Blob(built.chunks as BlobPart[], { type: "application/zip" });

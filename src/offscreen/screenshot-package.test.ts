@@ -1,7 +1,7 @@
 /**
  * End-to-end coverage of the screenshot-report path the user actually walks:
- * capture → annotate (arrow / box / note / caption / redact) → package with
- * optional console, network, and instant-replay artifacts.
+ * capture → annotate (arrow / box / note / caption / redact) → package still only
+ * (no Instant Replay lookback, no console/network).
  *
  * OffscreenCanvas is unavailable under Node, so redaction baking is stubbed to
  * mark shapes applied the same way the real baker does — the guard that refuses
@@ -26,7 +26,11 @@ import {
   mergeAnnotatedScreenshot,
   type PendingScreenshot,
 } from "../background/screenshot-report";
-import { buildScreenshotPackage, SCREENSHOT_REPORT_CAPABILITIES } from "./screenshot-package";
+import {
+  buildScreenshotPackage,
+  INSTANT_REPLAY_REPORT_CAPABILITIES,
+  SCREENSHOT_REPORT_CAPABILITIES,
+} from "./screenshot-package";
 
 /** 1×1 PNG — valid enough for packaging when bake is stubbed. */
 const PNG_1X1_B64 =
@@ -102,7 +106,7 @@ afterEach(() => {
 });
 
 describe("annotate → save & package (full reporter flow)", () => {
-  it("captures, annotates (arrow/box/note/caption/redact), and packages with console, network, and instant replay", async () => {
+  it("captures, annotates (arrow/box/note/caption/redact), and packages still + optional DOM", async () => {
     vi.spyOn(raster, "bakeRedactions").mockImplementation(async (bytes, mimeType, screenshot) => {
       for (const annotation of screenshot.annotations) {
         if (annotation.type === "redact" && annotation.applied === "pending") {
@@ -148,6 +152,7 @@ describe("annotate → save & package (full reporter flow)", () => {
       "text",
     ]);
 
+    // One-shot DOM ships; IR lookback + console/network must not.
     const consoleArtifact = {
       schemaVersion: 1,
       entries: [{ level: "warn", message: "price mismatch", timestamp: pending.capturedAt }],
@@ -178,6 +183,27 @@ describe("annotate → save & package (full reporter flow)", () => {
         },
       ],
     };
+    const domArtifact = {
+      schemaVersion: 1,
+      snapshots: [
+        {
+          label: "screenshot",
+          capturedAt: pending.capturedAt,
+          documentUrl: "https://shop.test/checkout",
+          root: {
+            nodeType: 1,
+            nodeName: "HTML",
+            children: [
+              {
+                nodeType: 1,
+                nodeName: "BODY",
+                children: [{ nodeType: 3, nodeName: "#text", nodeValue: "checkout-root" }],
+              },
+            ],
+          },
+        },
+      ],
+    };
 
     const built = await buildScreenshotPackage({
       screenshots: [
@@ -190,32 +216,33 @@ describe("annotate → save & package (full reporter flow)", () => {
       packagedAt: "2026-07-27T00:00:00.000Z",
       zipFilename: "gn-tracing-screenshot-report.zip",
       url: merged.screenshot.url,
+      packageKind: "screenshot",
       artifacts: {
         console: encodeJsonArtifact(consoleArtifact),
         network: encodeJsonArtifact(networkArtifact),
         instantReplay: encodeJsonArtifact(instantReplay),
+        dom: encodeJsonArtifact(domArtifact),
       },
       modifiedAt: new Date(0),
     });
 
-    expect(SCREENSHOT_REPORT_CAPABILITIES).not.toContain("video");
+    expect(SCREENSHOT_REPORT_CAPABILITIES).toEqual(["screenshot", "annotation"]);
     expect(screenshotHasUnbakedRedactions(merged.screenshot)).toBe(false);
 
     const pkg = await openRecordingPackageFromBytes(concatChunks(built.chunks));
     expect(pkg.metadata.producer).toBe("extension");
-    expect(pkg.metadata.capabilities).not.toContain("video");
+    expect(pkg.metadata.capabilities).toEqual(["screenshot", "annotation", "dom-snapshot"]);
     expect(pkg.metadata.url).toBe("https://shop.test/checkout");
 
-    for (const id of [
-      "screenshots",
-      "console",
-      "network",
-      "instantReplay",
-      "agentSummary",
-    ] as const) {
-      expect(pkg.hasArtifact(id), `missing artifact ${id}`).toBe(true);
-    }
+    expect(pkg.hasArtifact("screenshots")).toBe(true);
+    expect(pkg.hasArtifact("dom")).toBe(true);
+    expect(pkg.hasArtifact("instantReplay")).toBe(false);
+    expect(pkg.hasArtifact("console")).toBe(false);
+    expect(pkg.hasArtifact("network")).toBe(false);
     expect(pkg.hasArtifact("video")).toBe(false);
+
+    const domRead = await pkg.readArtifact<{ snapshots: Array<{ root: unknown }> }>("dom");
+    expect(JSON.stringify(domRead?.snapshots[0]?.root)).toContain("checkout-root");
 
     const shots = await pkg.readArtifact<ScreenshotArtifact>("screenshots");
     expect(shots?.screenshots).toHaveLength(1);
@@ -235,17 +262,54 @@ describe("annotate → save & package (full reporter flow)", () => {
       expect(imageBytes.byteLength).toBeGreaterThan(0);
     }
 
-    const replay = await pkg.readArtifact<InstantReplayArtifact>("instantReplay");
-    expect(replay?.windowMs).toBe(120_000);
-    expect(replay?.frames).toHaveLength(1);
-
-    const consoleRead = await pkg.readArtifact<{ entries: unknown[] }>("console");
-    expect(consoleRead?.entries).toHaveLength(1);
-
-    const networkRead = await pkg.readArtifact<{ entries: unknown[] }>("network");
-    expect(networkRead?.entries).toHaveLength(1);
-
     expect(raster.bakeRedactions).toHaveBeenCalledOnce();
+  });
+
+  it("Instant Replay packageKind keeps console/network and claims log capabilities", async () => {
+    const instantReplay: InstantReplayArtifact = {
+      schemaVersion: 1,
+      windowMs: 120_000,
+      coveredMs: 3_000,
+      droppedFrames: 0,
+      frames: [
+        {
+          capturedAt: 1,
+          relativeMs: 0,
+          documentUrl: "https://app.test/ir",
+          viewport: { width: 800, height: 600 },
+          root: { nodeType: 1, nodeName: "HTML" },
+        },
+      ],
+    };
+    const consoleArtifact = [{ level: "error", message: "boom", timestamp: 1 }];
+    const networkArtifact = {
+      schemaVersion: 2,
+      entries: [{ method: "GET", url: "https://app.test/api", status: 500, timestamp: 1 }],
+    };
+
+    const built = await buildScreenshotPackage({
+      screenshots: [],
+      packagedAt: "2026-07-27T00:00:00.000Z",
+      zipFilename: "gn-tracing-ir-report.zip",
+      url: "https://app.test/ir",
+      packageKind: "instant-replay",
+      artifacts: {
+        instantReplay: encodeJsonArtifact(instantReplay),
+        console: encodeJsonArtifact(consoleArtifact),
+        network: encodeJsonArtifact(networkArtifact),
+      },
+      modifiedAt: new Date(0),
+    });
+
+    const pkg = await openRecordingPackageFromBytes(concatChunks(built.chunks));
+    expect(pkg.metadata.capabilities).toEqual(
+      expect.arrayContaining(INSTANT_REPLAY_REPORT_CAPABILITIES),
+    );
+    expect(pkg.metadata.capabilities).toContain("console");
+    expect(pkg.metadata.capabilities).toContain("network");
+    expect(pkg.hasArtifact("instantReplay")).toBe(true);
+    expect(pkg.hasArtifact("console")).toBe(true);
+    expect(pkg.hasArtifact("network")).toBe(true);
   });
 
   it("packages without console/network/instant-replay when those artifacts are absent", async () => {
@@ -284,6 +348,11 @@ describe("annotate → save & package (full reporter flow)", () => {
     expect(pkg.hasArtifact("console")).toBe(false);
     expect(pkg.hasArtifact("network")).toBe(false);
     expect(pkg.hasArtifact("instantReplay")).toBe(false);
+    expect(pkg.metadata.capabilities).toEqual(["screenshot", "annotation"]);
+    expect(pkg.metadata.capabilities).not.toContain("console");
+    expect(pkg.metadata.capabilities).not.toContain("network");
+    expect(pkg.metadata.capabilities).not.toContain("instant-replay");
+    expect(pkg.metadata.capabilities).not.toContain("dom-snapshot");
 
     const shots = await pkg.readArtifact<ScreenshotArtifact>("screenshots");
     expect(shots?.screenshots[0]?.caption).toBe(CAPTION);
@@ -322,6 +391,7 @@ describe("annotate → save & package (full reporter flow)", () => {
       packagedAt: "2026-07-27T00:00:00.000Z",
       zipFilename: "gn-tracing-ir-only.zip",
       url: "https://app.test/ir",
+      packageKind: "instant-replay",
       artifacts: {
         instantReplay: encodeJsonArtifact(instantReplay),
       },
@@ -331,6 +401,11 @@ describe("annotate → save & package (full reporter flow)", () => {
     const pkg = await openRecordingPackageFromBytes(concatChunks(built.chunks));
     expect(pkg.hasArtifact("instantReplay")).toBe(true);
     expect(pkg.hasArtifact("video")).toBe(false);
+    expect(pkg.hasArtifact("console")).toBe(false);
+    // Quiet window still claims log surfaces so the player keeps empty tabs.
+    expect(pkg.metadata.capabilities).toEqual(
+      expect.arrayContaining(["instant-replay", "console", "network"]),
+    );
     const replay = await pkg.readArtifact<InstantReplayArtifact>("instantReplay");
     expect(replay?.frames).toHaveLength(1);
     expect(JSON.stringify(replay?.frames[0].root)).toContain("lookback-root");

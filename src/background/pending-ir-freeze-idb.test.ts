@@ -4,8 +4,11 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { InstantReplayArtifact } from "../../packages/replay-core/src/schema/annotation";
 import {
+  clearPendingDomSnapshot,
   clearPendingIrFreeze,
+  getPendingDomSnapshot,
   getPendingIrFreeze,
+  putPendingDomSnapshot,
   putPendingIrFreeze,
   resetPendingIrFreezeMemoryForTests,
 } from "./pending-ir-freeze-idb";
@@ -67,5 +70,19 @@ describe("pending-ir-freeze-idb", () => {
     await clearPendingIrFreeze();
     expect(await getPendingIrFreeze("a")).toBeNull();
     expect(await getPendingIrFreeze("b")).toBeNull();
+  });
+
+  it("round-trips one-shot DOM snapshot for screenshot pending ids", async () => {
+    await putPendingDomSnapshot("shot-1", {
+      label: "screenshot",
+      capturedAt: 99,
+      documentUrl: "https://shop.test/",
+      root: { nodeType: 1, nodeName: "HTML" },
+    });
+    const loaded = await getPendingDomSnapshot("shot-1");
+    expect(loaded?.label).toBe("screenshot");
+    expect(loaded?.root.nodeName).toBe("HTML");
+    await clearPendingDomSnapshot("shot-1");
+    expect(await getPendingDomSnapshot("shot-1")).toBeNull();
   });
 });

@@ -1,18 +1,20 @@
 /**
- * Park Instant Replay freeze payloads outside chrome.storage.session.
+ * Park bulky pending-capture payloads outside chrome.storage.session.
  *
- * Session storage is ~10MB total. An IR lookback can be 8MB DOM + evidence + a
- * still, so freeze must live in IndexedDB (extension-origin, survives SW kill
- * for the browser session) while the annotate still stays in session storage.
+ * Session storage is ~10MB total. IR lookback and a full-page DOM snapshot can
+ * each exceed that, so they live in IndexedDB (extension-origin, survives SW
+ * kill for the browser session) while the annotate still stays in session.
  */
 
 import type { InstantReplayEvidenceBundle } from "../../packages/replay-core/src/capture/instant-replay-evidence";
 import type { InstantReplayArtifact } from "../../packages/replay-core/src/schema/annotation";
+import type { DomSnapshot } from "../../packages/replay-core/src/schema/capture";
 import { hasInstantReplayFrames } from "../shared/instant-replay-policy";
 
 const DB_NAME = "gn-tracing-pending-capture";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE_NAME = "ir-freeze";
+const DOM_STORE_NAME = "dom-snapshot";
 
 export interface FrozenInstantReplayRecord {
   artifact: InstantReplayArtifact;
@@ -27,6 +29,7 @@ interface IrFreezeRow {
 
 /** In-memory fallback for unit tests / environments without IndexedDB. */
 const memoryFallback = new Map<string, FrozenInstantReplayRecord>();
+const domMemoryFallback = new Map<string, DomSnapshot>();
 
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -42,8 +45,30 @@ function openDb(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains(STORE_NAME)) {
         db.createObjectStore(STORE_NAME, { keyPath: "id" });
       }
+      if (!db.objectStoreNames.contains(DOM_STORE_NAME)) {
+        db.createObjectStore(DOM_STORE_NAME, { keyPath: "id" });
+      }
     };
   });
+}
+
+function parseDomSnapshot(value: unknown): DomSnapshot | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const raw = value as DomSnapshot;
+  if (!raw.root || typeof raw.root !== "object") {
+    return null;
+  }
+  if (typeof raw.capturedAt !== "number") {
+    return null;
+  }
+  return {
+    label: typeof raw.label === "string" ? raw.label : "screenshot",
+    capturedAt: raw.capturedAt,
+    documentUrl: typeof raw.documentUrl === "string" ? raw.documentUrl : "",
+    root: raw.root,
+  };
 }
 
 function parseFreeze(value: unknown): FrozenInstantReplayRecord | null {
@@ -165,7 +190,101 @@ export async function clearPendingIrFreeze(id?: string): Promise<void> {
   }
 }
 
+/** Store a one-shot DOM snapshot for a screenshot pending id. */
+export async function putPendingDomSnapshot(id: string, snapshot: DomSnapshot): Promise<void> {
+  const parsed = parseDomSnapshot(snapshot);
+  if (!id || !parsed) {
+    throw new Error("Invalid screenshot DOM snapshot payload.");
+  }
+
+  if (typeof indexedDB === "undefined") {
+    domMemoryFallback.set(id, parsed);
+    return;
+  }
+
+  const db = await openDb();
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(DOM_STORE_NAME, "readwrite");
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => {
+        reject(tx.error ?? new Error("Could not store screenshot DOM snapshot."));
+      };
+      tx.onabort = () => {
+        reject(tx.error ?? new Error("Screenshot DOM snapshot store aborted."));
+      };
+      tx.objectStore(DOM_STORE_NAME).put({
+        id,
+        snapshot: parsed,
+        storedAt: Date.now(),
+      });
+    });
+  } finally {
+    db.close();
+  }
+}
+
+/** Load DOM snapshot for a pending capture id, or null. */
+export async function getPendingDomSnapshot(id: string): Promise<DomSnapshot | null> {
+  if (!id) {
+    return null;
+  }
+
+  if (typeof indexedDB === "undefined") {
+    return domMemoryFallback.get(id) ?? null;
+  }
+
+  const db = await openDb();
+  try {
+    const row = await new Promise<{ snapshot?: unknown } | undefined>((resolve, reject) => {
+      const tx = db.transaction(DOM_STORE_NAME, "readonly");
+      const request = tx.objectStore(DOM_STORE_NAME).get(id);
+      request.onsuccess = () => {
+        resolve(request.result as { snapshot?: unknown } | undefined);
+      };
+      request.onerror = () => {
+        reject(request.error ?? new Error("Could not read screenshot DOM snapshot."));
+      };
+    });
+    return parseDomSnapshot(row?.snapshot);
+  } finally {
+    db.close();
+  }
+}
+
+/** Clear one DOM snapshot by id, or every parked snapshot when id is omitted. */
+export async function clearPendingDomSnapshot(id?: string): Promise<void> {
+  if (typeof indexedDB === "undefined") {
+    if (id) {
+      domMemoryFallback.delete(id);
+    } else {
+      domMemoryFallback.clear();
+    }
+    return;
+  }
+
+  const db = await openDb();
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(DOM_STORE_NAME, "readwrite");
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => {
+        reject(tx.error ?? new Error("Could not clear screenshot DOM snapshot."));
+      };
+      const store = tx.objectStore(DOM_STORE_NAME);
+      if (id) {
+        store.delete(id);
+      } else {
+        store.clear();
+      }
+    });
+  } finally {
+    db.close();
+  }
+}
+
 /** Test-only: wipe memory fallback between unit tests. */
 export function resetPendingIrFreezeMemoryForTests(): void {
   memoryFallback.clear();
+  domMemoryFallback.clear();
 }

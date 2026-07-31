@@ -5775,6 +5775,19 @@
         Array.isArray(instantReplayArtifact.frames) &&
         instantReplayArtifact.frames.length > 0,
     );
+    // Force empty Console/Network only when the package claims log capture (IR).
+    // Plain screenshot reports are still-only and leave this false.
+    const packageCapabilities = Array.isArray(metadata?.capabilities)
+      ? metadata.capabilities
+      : null;
+    const expectsLogTabs = packageCapabilities
+      ? packageCapabilities.includes("console") || packageCapabilities.includes("network")
+      : // Legacy packages without capabilities: only IR-only lookback forced tabs.
+        hasInstantReplay &&
+        !(
+          Array.isArray(screenshotsArtifact?.screenshots) &&
+          screenshotsArtifact.screenshots.length > 0
+        );
     const evidence = {
       hasVideo: (options.videoPartCount || 0) > 0,
       screenshotCount: Array.isArray(screenshotsArtifact?.screenshots)
@@ -5790,6 +5803,7 @@
         : Boolean(domArtifact?.root || domArtifact?.document),
       hasReportContent: hasReportArtifactContent(),
       hasInstantReplay,
+      expectsLogTabs,
     };
 
     if (typeof resolve === "function") {
@@ -5819,15 +5833,16 @@
       };
     }
     if (evidence.screenshotCount > 0 || evidence.hasDom) {
-      const showConsole = evidence.consoleCount > 0 || hasInstantReplay;
+      const forceLogTabs = Boolean(expectsLogTabs);
+      const showConsole = evidence.consoleCount > 0 || forceLogTabs;
       const showNetwork =
-        evidence.networkCount > 0 || evidence.websocketCount > 0 || hasInstantReplay;
+        evidence.networkCount > 0 || evidence.websocketCount > 0 || forceLogTabs;
       const mediaColumn = showStillStage || showDomStage;
       const stillPrimary = showStillStage;
       return {
         mode: "screenshot",
         defaultTab:
-          hasInstantReplay && evidence.consoleCount > 0
+          forceLogTabs && evidence.consoleCount > 0
             ? "console"
             : evidence.screenshotCount > 0
               ? "report"

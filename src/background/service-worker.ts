@@ -3,6 +3,8 @@
  */
 
 import type { Screenshot } from "../../packages/replay-core/src/schema/annotation";
+import type { DomSnapshot } from "../../packages/replay-core/src/schema/capture";
+import { CAPTURE_PAGE_DOM_SNAPSHOT_ACTION } from "../shared/capture-page-dom";
 import { DEFAULT_DRAW_COLOR, normalizeDrawColor } from "../shared/drawing";
 import {
   normalizeInstantReplayAllowedDomains,
@@ -2550,10 +2552,29 @@ async function handleCaptureInstantReplay(tabId: number | undefined): Promise<Me
 
 // ===== Screenshot reports =====
 //
-// A separate, lighter path from the recording flow: capture the visible tab,
-// let the reporter draw on it, then package and upload without any video. Most
-// bug reports are "this looks wrong, here", and making that require a full
-// recording costs the reporter time and the reader a video to scrub through.
+// Still + one-shot DOM (`dom.json`). No video, no Instant Replay lookback, no
+// console/network — those belong to Instant Replay capture and full Record.
+
+async function captureTabDomSnapshot(tabId: number): Promise<DomSnapshot | null> {
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ["content/page-dom-snapshot.js"],
+    });
+    const response = (await chrome.tabs.sendMessage(tabId, {
+      action: CAPTURE_PAGE_DOM_SNAPSHOT_ACTION,
+    })) as {
+      ok?: boolean;
+      snapshot?: DomSnapshot;
+    };
+    if (response?.ok && response.snapshot?.root) {
+      return response.snapshot;
+    }
+  } catch {
+    // Restricted pages (chrome://, Web Store) cannot inject — still ships.
+  }
+  return null;
+}
 
 async function handleCaptureScreenshot(tabId: number | undefined): Promise<MessageResponse> {
   const targetTabId =
@@ -2568,7 +2589,19 @@ async function handleCaptureScreenshot(tabId: number | undefined): Promise<Messa
     };
   }
 
-  const result = await captureScreenshotForAnnotation(targetTabId, createAnnotateCaptureDeps());
+  const result = await captureScreenshotForAnnotation(
+    targetTabId,
+    createAnnotateCaptureDeps({
+      finalizePending: async (base) => {
+        const frozenDom = await captureTabDomSnapshot(base.tabId);
+        return {
+          ...base,
+          kind: "screenshot",
+          frozenDom: frozenDom ?? undefined,
+        };
+      },
+    }),
+  );
   return result.ok ? { ok: true } : { ok: false, error: result.error };
 }
 
@@ -2619,25 +2652,14 @@ async function handleSaveAnnotatedScreenshot(
       : settings.folderId;
 
   const merged = mergeAnnotatedScreenshot(pending, annotated);
-  const irResolution = await resolveInstantReplayForSave(pending, {
-    instantReplayEnabled: Boolean(settings.instantReplayEnabled),
-    liveCollect: async () => {
-      const collected = await collectInstantReplay(pending.tabId);
-      if (!collected.ok) {
-        return { ok: false, error: collected.error };
-      }
-      return {
-        ok: true,
-        artifact: collected.artifact,
-        evidence: collected.evidence,
-      };
-    },
-  });
+  // Instant Replay: freeze + evidence. Screenshot: optional one-shot DOM only.
+  const irResolution = await resolveInstantReplayForSave(pending);
 
   if (irResolution.mode === "error") {
     return { ok: false, error: irResolution.error };
   }
 
+  const isInstantReplayReport = isInstantReplayPending(pending);
   let screenshotArtifacts: Record<string, string> = {};
   let attachedCoveredMs = 0;
   if (irResolution.mode === "attach") {
@@ -2672,6 +2694,13 @@ async function handleSaveAnnotatedScreenshot(
     activeRecording.recordingSettings = previousRecordingSettings;
     attachedCoveredMs =
       typeof irResolution.artifact.coveredMs === "number" ? irResolution.artifact.coveredMs : 0;
+  } else if (pending.kind === "screenshot" && pending.frozenDom?.root) {
+    screenshotArtifacts = {
+      dom: JSON.stringify({
+        schemaVersion: 1,
+        snapshots: [pending.frozenDom],
+      }),
+    };
   }
 
   // Bulk still + IR JSON in IndexedDB (shared with offscreen origin). Message
@@ -2707,6 +2736,8 @@ async function handleSaveAnnotatedScreenshot(
         url: merged.screenshot.url,
         // Still + artifacts stay in IDB; only annotation metadata crosses the channel.
         screenshots: [{ screenshot: merged.screenshot }],
+        // Capabilities + console strip depend on product path, not artifact presence.
+        packageKind: isInstantReplayReport ? "instant-replay" : "screenshot",
       },
     })) as MessageResponse & Partial<UploadSuccessResult>;
 
