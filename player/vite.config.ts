@@ -5,6 +5,7 @@
  * replay testing exercises the same same-origin path used by Cloudflare Pages.
  */
 
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Connect } from "vite";
@@ -14,6 +15,11 @@ import { handleDriveProxyRequest } from "./shared/proxy/drive-download.js";
 import { handleDropboxProxyRequest } from "./shared/proxy/dropbox-download.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const rootPackageJson = JSON.parse(
+  fs.readFileSync(path.resolve(__dirname, "../package.json"), "utf-8"),
+) as { version?: string };
+const rootAppVersion =
+  typeof rootPackageJson.version === "string" ? rootPackageJson.version.trim() : "";
 
 // Hosted player is served at the domain root (https://tracing.gnas.dev/).
 // Override with VITE_BASE_PATH only when deploying under a subpath.
@@ -147,6 +153,10 @@ function driveProxyPlugin() {
 export default defineConfig(({ mode }) => ({
   base: mode === "production" ? basePath : "/",
   plugins: [solid(), driveProxyPlugin()],
+  // Same product version as extension/worker (root package.json).
+  define: {
+    "import.meta.env.VITE_APP_VERSION": JSON.stringify(rootAppVersion),
+  },
   resolve: {
     alias: {
       "@shared": path.resolve(__dirname, "../src/shared"),

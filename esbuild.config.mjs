@@ -11,6 +11,11 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import * as esbuild from "esbuild";
+import {
+  isProductRouteVersion,
+  pickWorkerOrigin,
+  resolveVersionedWorkerEndpoints,
+} from "./packages/replay-core/src/route-version.ts";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const envVars = loadEnvFile(path.resolve(__dirname, ".env"));
@@ -20,29 +25,26 @@ const rawAppEnv = cliEnv || (watch ? "development" : "production");
 const appEnv = normalizeAppEnv(rawAppEnv);
 const isProductionBuild = appEnv === "production";
 const packageJson = JSON.parse(fs.readFileSync(path.resolve(__dirname, "package.json"), "utf-8"));
-const packageVersion = typeof packageJson.version === "string" ? packageJson.version : "";
+const packageVersion = typeof packageJson.version === "string" ? packageJson.version.trim() : "";
+if (!isProductRouteVersion(packageVersion)) {
+  throw new Error(
+    `package.json version must be core semver MAJOR.MINOR.PATCH (got ${JSON.stringify(packageVersion)})`,
+  );
+}
 const googleClientId = getConfigValue("GOOGLE_CLIENT_ID");
 const dropboxClientId = getConfigValue("DROPBOX_CLIENT_ID");
 // Dev/watch builds default to the multi-issuer Worker started by `task worker:dev`
 // / `task dev` on port 8787 so Google and Dropbox hit localhost without editing
 // .env. Override with *_TOKEN_PROXY_URL_DEV if needed.
-// Production builds always use *_TOKEN_PROXY_URL (deployed Worker paths).
-const DEFAULT_DEV_GOOGLE_TOKEN_PROXY_URL = "http://localhost:8787";
-const DEFAULT_DEV_DROPBOX_TOKEN_PROXY_URL = "http://localhost:8787/token/dropbox";
-const googleTokenProxyUrl = normalizeProxyUrl(
-  isProductionBuild
-    ? getConfigValue("GOOGLE_TOKEN_PROXY_URL")
-    : getConfigValue("GOOGLE_TOKEN_PROXY_URL_DEV", DEFAULT_DEV_GOOGLE_TOKEN_PROXY_URL),
-);
-const dropboxTokenProxyUrl = normalizeProxyUrl(
-  isProductionBuild
-    ? getConfigValue("DROPBOX_TOKEN_PROXY_URL")
-    : getConfigValue("DROPBOX_TOKEN_PROXY_URL_DEV", DEFAULT_DEV_DROPBOX_TOKEN_PROXY_URL),
-);
-// Feedback submit reuses the multi-issuer Worker at POST /feedback. Prefer an
-// explicit FEEDBACK_PROXY_URL; otherwise derive origin from a configured OAuth
-// proxy URL so host_permissions stay aligned with the same Worker.
-const DEFAULT_DEV_FEEDBACK_PROXY_URL = "http://localhost:8787/feedback";
+// Production builds always use *_TOKEN_PROXY_URL (deployed Worker origin or URL).
+// Endpoints are joined as /{packageVersion}/token via resolveVersionedWorkerEndpoints
+// (same pure helper as Worker/player).
+const DEFAULT_DEV_WORKER_ORIGIN = "http://localhost:8787";
+const googleTokenProxyUrl = resolveGoogleTokenProxyUrl();
+const dropboxTokenProxyUrl = resolveDropboxTokenProxyUrl();
+// Feedback submit reuses the multi-issuer Worker at POST /{version}/feedback.
+// Prefer an explicit FEEDBACK_PROXY_URL; otherwise derive origin from a configured
+// OAuth proxy URL so host_permissions stay aligned with the same Worker.
 const feedbackProxyUrl = resolveFeedbackProxyUrl();
 const chromeExtensionPublicKey = getConfigValue("CHROME_EXTENSION_PUBLIC_KEY");
 const chromeExtensionPrivateKey = getConfigValue("CHROME_EXTENSION_PRIVATE_KEY");
@@ -82,6 +84,7 @@ const commonOptions = {
   minify: false,
   define: {
     __APP_ENV__: JSON.stringify(appEnv),
+    __APP_VERSION__: JSON.stringify(packageVersion),
     __GOOGLE_CLIENT_ID__: JSON.stringify(googleClientId),
     __GOOGLE_TOKEN_PROXY_URL__: JSON.stringify(googleTokenProxyUrl),
     __DROPBOX_CLIENT_ID__: JSON.stringify(dropboxClientId),
@@ -92,6 +95,30 @@ const commonOptions = {
   },
 };
 
+function resolveGoogleTokenProxyUrl() {
+  const configured = normalizeProxyUrl(
+    isProductionBuild
+      ? getConfigValue("GOOGLE_TOKEN_PROXY_URL")
+      : getConfigValue("GOOGLE_TOKEN_PROXY_URL_DEV", DEFAULT_DEV_WORKER_ORIGIN),
+  );
+  if (!configured) {
+    return "";
+  }
+  return resolveVersionedWorkerEndpoints(configured, packageVersion).googleTokenUrl;
+}
+
+function resolveDropboxTokenProxyUrl() {
+  const configured = normalizeProxyUrl(
+    isProductionBuild
+      ? getConfigValue("DROPBOX_TOKEN_PROXY_URL")
+      : getConfigValue("DROPBOX_TOKEN_PROXY_URL_DEV", DEFAULT_DEV_WORKER_ORIGIN),
+  );
+  if (!configured) {
+    return "";
+  }
+  return resolveVersionedWorkerEndpoints(configured, packageVersion).dropboxTokenUrl;
+}
+
 /**
  * Resolve the feedback Worker endpoint for define + host_permissions.
  * Empty string means the extension will refuse submit with a clear error.
@@ -100,32 +127,20 @@ function resolveFeedbackProxyUrl() {
   const explicit = normalizeProxyUrl(
     isProductionBuild
       ? getConfigValue("FEEDBACK_PROXY_URL")
-      : getConfigValue("FEEDBACK_PROXY_URL_DEV", DEFAULT_DEV_FEEDBACK_PROXY_URL),
+      : getConfigValue("FEEDBACK_PROXY_URL_DEV", DEFAULT_DEV_WORKER_ORIGIN),
   );
   if (explicit) {
-    // Allow either full /feedback URL or bare Worker origin.
-    if (/\/feedback\/?$/i.test(explicit)) {
-      return explicit.replace(/\/+$/, "");
-    }
-    try {
-      return `${new URL(explicit).origin}/feedback`;
-    } catch {
-      return explicit;
-    }
+    return resolveVersionedWorkerEndpoints(explicit, packageVersion).feedbackUrl;
   }
 
-  for (const proxyUrl of [googleTokenProxyUrl, dropboxTokenProxyUrl]) {
-    if (!proxyUrl) {
-      continue;
-    }
-    try {
-      return `${new URL(proxyUrl).origin}/feedback`;
-    } catch {
-      // try next
-    }
+  const origin = pickWorkerOrigin(googleTokenProxyUrl, dropboxTokenProxyUrl);
+  if (origin) {
+    return resolveVersionedWorkerEndpoints(origin, packageVersion).feedbackUrl;
   }
 
-  return isProductionBuild ? "" : DEFAULT_DEV_FEEDBACK_PROXY_URL;
+  return isProductionBuild
+    ? ""
+    : resolveVersionedWorkerEndpoints(DEFAULT_DEV_WORKER_ORIGIN, packageVersion).feedbackUrl;
 }
 
 function loadEnvFile(envPath) {

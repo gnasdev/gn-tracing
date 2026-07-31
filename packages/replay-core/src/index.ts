@@ -39,6 +39,12 @@ export {
   type TailRead,
 } from "./package-source";
 export {
+  parseProductVersion,
+  pickProductVersion,
+  productVersionOrDefault,
+  requireProductVersion,
+} from "./product-version";
+export {
   type ConsoleEntryDetail,
   type ConsoleFilters,
   createRecordingSession,
@@ -78,6 +84,15 @@ export {
   type StorageRecordingRef,
 } from "./recording-ref";
 export { type BugReportOptions, renderBugReportMarkdown } from "./report";
+export {
+  isProductRouteVersion,
+  joinVersionedPath,
+  pickWorkerOrigin,
+  resolveVersionedWorkerEndpoints,
+  type StrippedRouteVersion,
+  stripRouteVersionPrefix,
+  type WorkerEndpoints,
+} from "./route-version";
 // The format itself. Re-exported from the root so existing readers keep their
 // single import; producers should prefer `./schema` directly.
 export * from "./schema";

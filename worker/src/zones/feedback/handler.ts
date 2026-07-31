@@ -15,6 +15,11 @@ import { jsonResponse } from "../../http/response";
 import { feedbackRateLimiter } from "../../middleware/rate-limit";
 import { createGitHubIssue } from "./github";
 
+/**
+ * True when pathname is the feedback route (after optional version strip).
+ * Pass the remainder from `stripRouteVersionPrefix`, not the raw URL path,
+ * when the request may include `/{version}/feedback`.
+ */
 export function isFeedbackPath(pathname: string): boolean {
   const path = pathname.replace(/\/+$/, "") || "/";
   return path === "/feedback";

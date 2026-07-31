@@ -10,17 +10,17 @@ tasks:
   build:
     desc: Build the extension into dist with the development environment.
     cmds:
-      - node esbuild.config.mjs --env development
+      - node --experimental-strip-types esbuild.config.mjs --env development
 
   dist:
     desc: Build the extension into dist with the production environment.
     cmds:
-      - node esbuild.config.mjs --env production
+      - node --experimental-strip-types esbuild.config.mjs --env production
 
   watch:
     desc: Watch and rebuild extension sources.
     cmds:
-      - node esbuild.config.mjs --watch
+      - node --experimental-strip-types esbuild.config.mjs --watch
 
   typecheck:
     desc: Run root TypeScript checks (production sources and test files).
@@ -126,7 +126,9 @@ tasks:
       - npm exec -- tsc --noEmit
 
   player:deploy:
-    desc: Deploy the standalone player to Cloudflare Pages.
+    desc: >-
+      Manually deploy the standalone player to Cloudflare Pages.
+      Not run by git hooks — invoke only when shipping edge.
     dir: player
     cmds:
       - ./deploy.sh
@@ -155,7 +157,9 @@ tasks:
       - npm exec -- tsc --noEmit
 
   worker:deploy:
-    desc: Deploy the multi-issuer OAuth Worker to Cloudflare (Google/Dropbox).
+    desc: >-
+      Manually deploy the multi-issuer OAuth Worker to Cloudflare.
+      Not run by git hooks — invoke only when shipping edge.
     dir: worker
     cmds:
       - ./deploy.sh
@@ -242,8 +246,12 @@ tasks:
         zip -r "$release_name.zip" "$release_name"
 
   release:ci:
-    desc: Run the CI release flow.
+    desc: >-
+      Build production extension zip only (version check → dist → zip).
+      Does not deploy Worker/Player — run task worker:deploy / player:deploy
+      manually before shipping if edge changed.
     cmds:
+      - npm run version:check
       - task: dist
       - task: release:zip
 

@@ -46,6 +46,11 @@ export interface BuildPackageInput {
   packagedAt: string;
   /** Filename the package will be stored under, recorded in metadata. */
   zipFilename: string;
+  /**
+   * Producer product version written to `metadata.version` (extension/SDK
+   * semver). Defaults to `0.0.0` only for fixtures that omit it.
+   */
+  version?: string;
   /** Recording duration in seconds, or null when unknown. */
   duration?: number | null;
   /** Page URL the session was recorded on. */
@@ -124,7 +129,7 @@ export async function buildRecordingPackage(input: BuildPackageInput): Promise<B
     url: input.url,
     startTime: input.startTime ?? null,
     extension: "gn-tracing",
-    version: "1.0.0",
+    version: String(input.version || "").trim() || "0.0.0",
     producer: input.producer,
     capabilities: input.capabilities,
     storage: {

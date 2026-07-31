@@ -10,6 +10,7 @@
  * upload; opening history uses `resolveReplayOpenUrl`, which rewrites production
  * hosts to the local player when the extension is a development build.
  */
+import { getProductVersion } from "./app-version";
 import { buildStorageRecordingPath, type StorageProviderId } from "./storage-provider";
 
 declare const __APP_ENV__: string;
@@ -19,8 +20,9 @@ declare const __PLAYER_HOST_URL__: string;
 /**
  * Centralized player URL builder.
  *
- * New uploads emit namespaced paths (`/gdrive/<id>`, `/dropbox/<id>`).
- * Legacy bare Drive ids remain parseable by `parseStorageRecordingRef`.
+ * New uploads emit versioned namespaced paths (`/{version}/gdrive/<id>`,
+ * `/{version}/dropbox/<id>`). Legacy unversioned and bare Drive ids remain
+ * parseable by `parseStorageRecordingRef`.
  */
 const APP_ENV = normalizeAppEnv(typeof __APP_ENV__ === "string" ? __APP_ENV__ : "production");
 const PLAYER_LOCAL_PORT = Number.parseInt(__PLAYER_LOCAL_PORT__ || "5176", 10) || 5176;
@@ -89,14 +91,16 @@ export function isProductionPlayerOrigin(urlOrHost: string): boolean {
  *
  * @param recordingId - Cloud file / object id returned after upload.
  * @param provider - Active storage provider; defaults to google-drive.
- *   Google Drive always uses `/gdrive/<id>` for newly emitted URLs.
+ *   New uploads use `/{productVersion}/gdrive|dropbox/<id>`.
  */
 export function buildExternalPlayerUrl(
   recordingId: string,
   provider: StorageProviderId = "google-drive",
 ): string {
   const baseUrl = PLAYER_HOST_URL.replace(/\/$/, "");
-  const path = buildStorageRecordingPath(recordingId, provider);
+  // Always emit product-version-prefixed paths when a recording id is present.
+  // getProductVersion() throws if the build define is missing/invalid.
+  const path = buildStorageRecordingPath(recordingId, provider, getProductVersion());
   if (!path) {
     return `${baseUrl}/`;
   }

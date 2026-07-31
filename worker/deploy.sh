@@ -90,13 +90,19 @@ if [ -z "$WORKER_URL" ]; then
 fi
 
 echo ""
+PRODUCT_VERSION="$(node -p "require('$ROOT_DIR/package.json').version" 2>/dev/null || echo '?')"
+
 echo "Deploy complete."
-echo "Health:  curl ${WORKER_URL}/health"
+echo "Health (legacy):   curl ${WORKER_URL}/health"
+echo "Health (versioned): curl ${WORKER_URL}/${PRODUCT_VERSION}/health"
 echo ""
-echo "Point extension env (then rebuild):"
+echo "Point extension env to the Worker *origin* (then rebuild)."
+echo "The extension build joins /{package.json version}/token automatically:"
 echo "  GOOGLE_TOKEN_PROXY_URL=${WORKER_URL}"
-echo "  DROPBOX_TOKEN_PROXY_URL=${WORKER_URL}/token/dropbox"
-echo "  FEEDBACK_PROXY_URL=${WORKER_URL}/feedback  # optional; derived from OAuth proxy origin when unset"
+echo "  DROPBOX_TOKEN_PROXY_URL=${WORKER_URL}"
+echo "  FEEDBACK_PROXY_URL=${WORKER_URL}  # optional; derived from OAuth proxy origin when unset"
+echo "  # Baked paths: /${PRODUCT_VERSION}/token , /${PRODUCT_VERSION}/token/dropbox , /${PRODUCT_VERSION}/feedback"
+echo "Legacy unversioned paths (/token, /feedback) remain accepted for older clients."
 if [ -z "${GITHUB_FEEDBACK_TOKEN:-}" ]; then
   echo ""
   echo "Note: GITHUB_FEEDBACK_TOKEN was empty — POST /feedback will return 503 until you set the secret."

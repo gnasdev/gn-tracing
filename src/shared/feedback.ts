@@ -16,6 +16,7 @@ export {
   validateFeedbackMessage,
 } from "./feedback-format";
 
+import { getProductVersionOrDefault } from "./app-version";
 import type { FeedbackDiagnostics } from "./feedback-format";
 
 /** Coarse OS label from a user-agent string. */
@@ -70,15 +71,9 @@ export function parseBrowserFromUserAgent(userAgent: string): {
 export function buildFeedbackDiagnostics(): FeedbackDiagnostics {
   const userAgent = typeof navigator !== "undefined" ? navigator.userAgent : "";
   const locale = typeof navigator !== "undefined" ? navigator.language || "" : "";
-  let extensionVersion = "";
-  try {
-    extensionVersion =
-      typeof chrome !== "undefined" && chrome.runtime?.getManifest
-        ? chrome.runtime.getManifest().version || ""
-        : "";
-  } catch {
-    extensionVersion = "";
-  }
+  // Soft product version (build define → chrome.manifest); "" if none available.
+  const version = getProductVersionOrDefault("");
+  const extensionVersion = version && version !== "0.0.0" ? version : "";
 
   return {
     extensionVersion,

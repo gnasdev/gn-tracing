@@ -91,6 +91,24 @@ describe("parseStorageRecordingRef", () => {
     });
   });
 
+  it("parses product-version-prefixed provider paths", () => {
+    expect(parseStorageRecordingRef("https://tracing.gnas.dev/1.7.5/gdrive/1AbCdEf")).toEqual({
+      provider: "google-drive",
+      fileId: "1AbCdEf",
+    });
+    expect(parseStorageRecordingRef("/1.6.3/dropbox/dbx-file")).toEqual({
+      provider: "dropbox",
+      fileId: "dbx-file",
+    });
+  });
+
+  it("builds version-prefixed paths when productVersion is set", () => {
+    expect(buildStorageRecordingPath("1AbCdEf", "google-drive", "1.7.5")).toBe(
+      "/1.7.5/gdrive/1AbCdEf",
+    );
+    expect(buildStorageRecordingPath("dbx", "dropbox", "1.6.3")).toBe("/1.6.3/dropbox/dbx");
+  });
+
   it("fails closed on legacy /onedrive/<id> (removed provider)", () => {
     expect(parseStorageRecordingRef("https://tracing.gnas.dev/onedrive/od-item")).toBeNull();
     expect(parseStorageRecordingRef("/onedrive/u!abc")).toBeNull();

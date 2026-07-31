@@ -3,8 +3,12 @@
  *
  * Trust models differ per zone (see middleware/origin and zones/mcp CORS).
  * This file only dispatches; domain logic lives under zones/.
+ *
+ * Product-version prefixes (`/1.7.5/token`) are stripped before zone matching
+ * so legacy unversioned paths and any prior extension version keep working.
  */
 
+import { stripRouteVersionPrefix } from "../../packages/replay-core/src/route-version";
 import type { Env } from "./env";
 import { emptyResponse, jsonResponse } from "./http/response";
 import type { CorsZone } from "./middleware/cors";
@@ -23,8 +27,12 @@ import { resolveProviderFromPath } from "./zones/oauth/routes";
 export async function handleRequest(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   const origin = request.headers.get("Origin");
-  const feedbackRoute = isFeedbackPath(url.pathname);
+  // MCP stays unversioned (agent clients); do not strip version for /mcp.
   const mcpRoute = isMcpPath(url.pathname);
+  const { routeVersion, remainder } = mcpRoute
+    ? { routeVersion: null as string | null, remainder: url.pathname }
+    : stripRouteVersionPrefix(url.pathname);
+  const feedbackRoute = isFeedbackPath(remainder);
   const corsZone: CorsZone = feedbackRoute ? "feedback" : "oauth";
 
   // MCP owns its own CORS and method rules: arbitrary MCP clients, not extension.
@@ -45,8 +53,8 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
     return handleMcpRequest(request, env);
   }
 
-  if (request.method === "GET" && isHealthPath(url.pathname)) {
-    return handleHealth(origin, env);
+  if (request.method === "GET" && isHealthPath(remainder)) {
+    return handleHealth(origin, env, routeVersion);
   }
 
   if (request.method === "OPTIONS") {
@@ -105,13 +113,13 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
     );
   }
 
-  const providerId = resolveProviderFromPath(url.pathname);
+  const providerId = resolveProviderFromPath(remainder);
   if (!providerId) {
     return jsonResponse(
       {
         error: "not_found",
         error_description:
-          "Unknown endpoint. Use /token (Google), /token/dropbox, /feedback, or /mcp.",
+          "Unknown endpoint. Use /token, /{version}/token, /token/dropbox, /feedback, or /mcp.",
       },
       404,
       origin,

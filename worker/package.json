@@ -1,6 +1,6 @@
 {
   "name": "gn-tracing-oauth-proxy",
-  "version": "1.0.0",
+  "version": "1.7.5",
   "private": true,
   "description": "Cloudflare Worker multi-issuer OAuth token proxy (Google, Dropbox) for the GN Tracing extension.",
   "license": "GPL-3.0-or-later",

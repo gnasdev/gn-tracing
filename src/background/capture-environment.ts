@@ -1,6 +1,7 @@
 /**
  * Capture environment normalization and browser detection.
  */
+import { getProductVersionOrDefault } from "../shared/app-version";
 import type { CaptureEnvironment, RecordingUserEvent } from "../types/recording";
 
 const MAX_EVENT_STRING_LENGTH = 160;
@@ -55,7 +56,7 @@ export function parseBrowserFromUserAgent(userAgent: string): {
 export function buildFallbackEnvironment(): CaptureEnvironment {
   const userAgent = typeof navigator !== "undefined" ? navigator.userAgent : "";
   return {
-    extensionVersion: chrome.runtime.getManifest().version,
+    extensionVersion: getProductVersionOrDefault("unknown"),
     userAgent,
     language: typeof navigator !== "undefined" ? navigator.language : "",
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "",
@@ -77,7 +78,7 @@ export function normalizeCaptureEnvironment(value: unknown): CaptureEnvironment 
     raw.screen && typeof raw.screen === "object" ? (raw.screen as Record<string, unknown>) : null;
 
   return {
-    extensionVersion: chrome.runtime.getManifest().version,
+    extensionVersion: getProductVersionOrDefault("unknown"),
     userAgent,
     language: truncateEventString(raw.language, 64) || "",
     timezone: truncateEventString(raw.timezone, 96) || "",

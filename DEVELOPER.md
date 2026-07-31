@@ -239,7 +239,7 @@ CHROME_EXTENSION_PUBLIC_KEY=
 - Preserve message contracts across popup, service worker, and offscreen code unless all participants are updated together. Prefer generic `STORAGE_*` messages; legacy `GOOGLE_DRIVE_*` aliases remain for compatibility.
 - Treat MV3 service worker restarts as normal. UI state should recover from `chrome.storage.session` and runtime checks.
 - Keep user-facing docs aligned with multi-cloud: record, stop, upload to the active provider, open namespaced replay link.
-- Biome owns formatting, linting, and import organization for its supported source types. Markdown docs are covered by `npm run docs:check`, and the Husky pre-commit hook runs Biome over staged supported files plus the docs check before re-staging safe fixes.
+- Biome owns formatting, linting, and import organization for its supported source types. Markdown docs are covered by `npm run docs:check`. Quality gates run via **Husky** (no GitHub Actions): `pre-commit` is fast (Biome staged + docs + version:check + vitest related); `pre-push` runs the full gate (`typecheck:all`, `check`, `test:all`). Hooks **never** deploy Worker or Player. Scripts: `npm run hooks:pre-commit`, `npm run quality:gate`. Skip push gate with `SKIP_HOOKS=1 git push`. Optional player e2e: `RUN_E2E=1 git push`.
 - `task player:dev` runs the SolidJS player on port 5176. `task player:build` / `player:dist` typecheck with TypeScript 7 then Vite-build. Theme/icons still sync from root `shared/` via `task player:sync`.
 - If manifest permissions, auth, cloud upload, or player loading changes, manually verify the affected browser × provider matrix.
 - Keep source comments in English and focused on runtime boundaries, browser API constraints, async lifecycle, or non-obvious contracts.
@@ -247,22 +247,31 @@ CHROME_EXTENSION_PUBLIC_KEY=
 
 ## Release
 
-Releases are tag-driven through `.github/workflows/release.yml`.
+Release is **local**. Commit hooks only run quality checks — they never deploy edge.
 
-1. Commit changes to `main`.
-2. Push a tag matching `v*`, for example `v1.0.4`.
-3. GitHub Actions runs `task release:ci`.
-4. The release publishes `gn-tracing-extension-${tag}.zip`, which extracts to `gn-tracing-extension-${tag}/`.
+**Deploy Worker / Player (manual only):**
 
-Production release builds use repository secrets for extension identity and OAuth:
+```bash
+task worker:deploy   # Cloudflare Worker (OAuth + feedback + /mcp)
+task player:deploy   # Cloudflare Pages (tracing.gnas.dev)
+```
 
-- `GOOGLE_CLIENT_ID`
-- `CHROME_EXTENSION_ID`
-- `CHROME_EXTENSION_PUBLIC_KEY`
-- `CHROME_EXTENSION_PRIVATE_KEY`
-- plus `DROPBOX_CLIENT_ID` (and optional proxy URL) when shipping multi-cloud Store builds
+Run these yourself when you intend to ship edge changes. Prefer Worker then Player before a new extension zip so clients do not hit undeployed routes. Requires `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, and provider secrets in `.env`.
 
-Local production builds can provide the same names in `.env`.
+**Extension package + version:**
+
+1. Ensure `npm run quality:gate` (or a normal `git push` pre-push hook) is green.
+2. Bump root `package.json` version and keep `player/` + `worker/` package versions aligned (`npm run version:check`).
+3. After manual edge deploy (if needed): `GITHUB_REF_NAME=vX.Y.Z task release:ci` → zip.
+4. Tag/push when ready: `git tag vX.Y.Z && git push origin vX.Y.Z` (attach zip to a GitHub Release manually if needed).
+5. MCP npm publish stays manual: bump `mcp/package.json` + `mcp/server.json`, then `npm publish` from `mcp/` after `npm run mcp:check`.
+
+Production build env (from `.env`):
+
+- `GOOGLE_CLIENT_ID`, `GOOGLE_TOKEN_PROXY_URL`
+- `CHROME_EXTENSION_ID`, `CHROME_EXTENSION_PUBLIC_KEY`, optional private key
+- Cloudflare: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`
+- plus Dropbox client/proxy when shipping multi-cloud
 
 ## Store Package Check
 

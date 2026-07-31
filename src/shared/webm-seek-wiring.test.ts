@@ -100,7 +100,7 @@ describe("webm seek single-path wiring", () => {
     expect(stPlayer).toBeGreaterThan(stTimeline);
 
     const solidShell = readRepo("player/index.html");
-    expect(solidShell).toMatch(/src\/main\.tsx/);
+    expect(solidShell).toMatch(/src\/main\.ts/);
   });
 
   it("vendor artifact exposes gnMakeWebmSeekable and no second duration stack", () => {

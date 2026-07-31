@@ -18,6 +18,8 @@ import {
 
 const CASES = [
   "https://tracing.gnas.dev/gdrive/1AbCdEfGhIjKlMnOp",
+  "https://tracing.gnas.dev/1.7.5/gdrive/1AbCdEfGhIjKlMnOp",
+  "https://tracing.gnas.dev/1.6.3/dropbox/scl/fi/abc123/gn-tracing.zip",
   "https://tracing.gnas.dev/dropbox/scl/fi/abc123/gn-tracing.zip",
   "https://tracing.gnas.dev/1AbCdEfGhIjKlMnOp",
   "https://tracing.gnas.dev/onedrive/whatever",
@@ -27,6 +29,7 @@ const CASES = [
   "https://tracing.gnas.dev/?id=abc&provider=dropbox",
   "https://tracing.gnas.dev/?id=abc&provider=onedrive",
   "/gdrive/1AbCdEfGhIjKlMnOp",
+  "/1.7.5/gdrive/1AbCdEfGhIjKlMnOp",
   "1AbCdEfGhIjKlMnOp",
   "gn-tracing.zip",
   "",
@@ -58,12 +61,24 @@ describe("parseStorageRecordingRef", () => {
       fileId: "scl/fi/x",
     });
   });
+
+  it("parses product-version-prefixed provider forms", () => {
+    expect(parseStorageRecordingRef("https://tracing.gnas.dev/1.7.5/gdrive/file-1")).toEqual({
+      provider: "google-drive",
+      fileId: "file-1",
+    });
+    expect(parseStorageRecordingRef("/1.6.3/dropbox/scl/fi/x")).toEqual({
+      provider: "dropbox",
+      fileId: "scl/fi/x",
+    });
+  });
 });
 
 describe("buildReplayUrl / buildPackageDownloadUrl", () => {
   it("round-trips a Drive ref through the replay URL", () => {
     const ref = { provider: "google-drive", fileId: "1AbCdEfGhIjKlMnOp" } as const;
     expect(parseStorageRecordingRef(buildReplayUrl(ref))).toEqual(ref);
+    expect(parseStorageRecordingRef(buildReplayUrl(ref, undefined, "1.7.5"))).toEqual(ref);
   });
 
   it("points at the same-origin download proxy for each provider", () => {

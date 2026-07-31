@@ -3,11 +3,11 @@
  *
  * Entry point only — routing and zone handlers live under `app.ts` and `zones/`.
  *
- * Routes:
+ * Routes (optional `/{productVersion}` prefix, e.g. `/1.7.5/token`):
  *   POST /  | /token | /token/google   → Google
  *   POST /token/dropbox | /dropbox     → Dropbox
  *   POST /feedback                     → create GitHub issue (opt-in product feedback)
- *   POST /mcp                          → remote MCP (hosted recordings only)
+ *   POST /mcp                          → remote MCP (hosted recordings only; unversioned)
  *   GET  /health                       → readiness (no secret required)
  *
  * The extension keeps PKCE end-to-end (code_verifier). This Worker only pins

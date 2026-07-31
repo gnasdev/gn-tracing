@@ -478,6 +478,8 @@
       mode: 'standalone',
       driveApiKey: undefined,
       // Local multi-issuer Worker default; override via VITE_FEEDBACK_PROXY_URL in builds.
+      // Local multi-issuer Worker; legacy /feedback still accepted (versioned
+      // /{version}/feedback is what production builds bake via deploy.sh).
       feedbackProxyUrl: 'http://localhost:8787/feedback',
     };
   </script>

@@ -1,17 +1,18 @@
 /**
  * Replay URL parsing shared by every non-browser consumer of a recording.
  *
- * The extension owns the canonical implementation in
- * `src/shared/storage-provider.ts` and the player reimplements it in
- * `player/public/player.js` (`resolveReplayRecordingRef`). This module is the third
- * copy's replacement: a pure, dependency-free version that MCP transports use,
+ * The extension owns a parallel implementation in `src/shared/storage-provider.ts`
  * kept behaviourally identical by the golden test in `recording-ref.test.ts`.
  *
  * Replay URLs are namespaced by provider:
  *   https://tracing.gnas.dev/gdrive/<file-id>
  *   https://tracing.gnas.dev/dropbox/<shared-link-id>
+ * New uploads also prefix the product version:
+ *   https://tracing.gnas.dev/1.7.5/gdrive/<file-id>
  * Legacy Google Drive bare-id URLs stay parseable; `/onedrive/...` fails closed.
  */
+
+import { isProductRouteVersion, joinVersionedPath, stripRouteVersionPrefix } from "./route-version";
 
 export type StorageProviderId = "google-drive" | "dropbox";
 
@@ -110,9 +111,10 @@ export function parseStorageRecordingRef(
     };
   }
 
-  const segments = url.pathname
+  const { remainder } = stripRouteVersionPrefix(url.pathname);
+  const segments = remainder
     .split("/")
-    .map((segment) => segment.trim())
+    .map((segment: string) => segment.trim())
     .filter(Boolean);
 
   if (segments.length === 0) {
@@ -132,17 +134,33 @@ export function parseStorageRecordingRef(
     return fileId ? { provider: namespacedProvider, fileId } : null;
   }
 
-  if (RESERVED_FIRST_SEGMENTS.has(first) || first.endsWith(".html") || first.includes(".")) {
+  if (
+    RESERVED_FIRST_SEGMENTS.has(first) ||
+    first.endsWith(".html") ||
+    first.includes(".") ||
+    isProductRouteVersion(segments[0])
+  ) {
     return null;
   }
 
   return { provider: "google-drive", fileId: safeDecode(segments[0]) };
 }
 
-/** Builds the replay URL a human opens for a ref. */
-export function buildReplayUrl(ref: StorageRecordingRef, origin = DEFAULT_PLAYER_ORIGIN): string {
+/**
+ * Builds the replay URL a human opens for a ref.
+ * When `productVersion` is a valid core semver, emits `/{version}/{provider}/…`.
+ * Invalid non-empty versions throw (silent omit is not allowed).
+ */
+export function buildReplayUrl(
+  ref: StorageRecordingRef,
+  origin = DEFAULT_PLAYER_ORIGIN,
+  productVersion?: string,
+): string {
   const segment = STORAGE_PROVIDER_PATH_SEGMENTS[ref.provider];
-  return `${trimTrailingSlash(origin)}/${segment}/${encodeURIComponent(ref.fileId)}`;
+  const recordingPath = `/${segment}/${encodeURIComponent(ref.fileId)}`;
+  const version = String(productVersion || "").trim();
+  const path = version ? joinVersionedPath(version, recordingPath) : recordingPath;
+  return `${trimTrailingSlash(origin)}${path}`;
 }
 
 /**

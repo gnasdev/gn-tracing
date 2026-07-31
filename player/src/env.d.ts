@@ -19,6 +19,8 @@ declare global {
     readonly VITE_DRIVE_API_KEY: string | undefined;
     readonly VITE_BASE_PATH: string | undefined;
     readonly VITE_FEEDBACK_PROXY_URL: string | undefined;
+    /** Root package.json version, baked by vite.config.ts. */
+    readonly VITE_APP_VERSION: string | undefined;
   }
 
   interface ImportMeta {

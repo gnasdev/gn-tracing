@@ -31,6 +31,7 @@ import {
   buildRecordingPackage,
   encodeJsonArtifact,
 } from "../../packages/replay-core/src/write";
+import { getProductVersionOrDefault } from "../shared/app-version";
 
 /** Directory prefix for screenshot images inside the package. */
 export const SCREENSHOT_ENTRY_PREFIX = "screenshots/";
@@ -119,6 +120,7 @@ export async function buildScreenshotPackage(
     capabilities: SCREENSHOT_REPORT_CAPABILITIES,
     packagedAt: input.packagedAt,
     zipFilename: input.zipFilename,
+    version: getProductVersionOrDefault(),
     duration: null,
     url: input.url,
     startTime: input.screenshots[0]?.screenshot.capturedAt ?? null,

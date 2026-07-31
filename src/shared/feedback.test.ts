@@ -135,16 +135,19 @@ describe("buildFeedbackDiagnostics", () => {
     });
     vi.stubGlobal("chrome", {
       runtime: {
+        // Manifest is a fallback; build define (__APP_VERSION__) wins when present.
         getManifest: () => ({ version: "9.9.9" }),
       },
     });
 
-    expect(buildFeedbackDiagnostics()).toEqual({
-      extensionVersion: "9.9.9",
+    const diagnostics = buildFeedbackDiagnostics();
+    expect(diagnostics).toMatchObject({
       browserName: "Chrome",
       browserVersion: "131.0.0.0",
       os: "macOS",
       locale: "vi-VN",
     });
+    // Product version comes from unified reader (define first).
+    expect(diagnostics.extensionVersion).toMatch(/^\d+\.\d+\.\d+$/);
   });
 });

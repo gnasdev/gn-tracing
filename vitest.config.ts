@@ -18,8 +18,15 @@
  * default Vite resolver resolves `src/**` imports exactly as in production.
  */
 
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 import { sharedTestConfig } from "./vitest.shared";
+
+const rootDir = path.dirname(fileURLToPath(import.meta.url));
+const rootAppVersion = JSON.parse(fs.readFileSync(path.join(rootDir, "package.json"), "utf-8"))
+  .version as string;
 
 export default defineConfig({
   // Mirror the build-time constants esbuild injects via `define` (see
@@ -30,11 +37,12 @@ export default defineConfig({
   // come from `.env` at build time.
   define: {
     __APP_ENV__: JSON.stringify("test"),
+    __APP_VERSION__: JSON.stringify(rootAppVersion),
     __GOOGLE_CLIENT_ID__: JSON.stringify(""),
     __GOOGLE_TOKEN_PROXY_URL__: JSON.stringify(""),
     __DROPBOX_CLIENT_ID__: JSON.stringify(""),
     __DROPBOX_TOKEN_PROXY_URL__: JSON.stringify(""),
-    __FEEDBACK_PROXY_URL__: JSON.stringify("http://localhost:8787/feedback"),
+    __FEEDBACK_PROXY_URL__: JSON.stringify(`http://localhost:8787/${rootAppVersion}/feedback`),
 
     __PLAYER_LOCAL_PORT__: JSON.stringify("5176"),
     // Empty → player-host falls back by __APP_ENV__ (test → production host).

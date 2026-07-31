@@ -22,16 +22,16 @@ describe("buildExternalPlayerUrl", () => {
     vi.unstubAllGlobals();
   });
 
-  it("emits /gdrive/<id> for google-drive by default", async () => {
+  it("emits /{version}/gdrive/<id> for google-drive by default", async () => {
     const { buildExternalPlayerUrl } = await import("./player-host");
     const url = buildExternalPlayerUrl("fileId123");
-    expect(url.endsWith("/gdrive/fileId123")).toBe(true);
+    expect(url.endsWith("/1.7.5/gdrive/fileId123")).toBe(true);
   });
 
   it("emits provider-specific namespaces for Drive and Dropbox", async () => {
     const { buildExternalPlayerUrl } = await import("./player-host");
-    expect(buildExternalPlayerUrl("dbx", "dropbox").endsWith("/dropbox/dbx")).toBe(true);
-    expect(buildExternalPlayerUrl("g", "google-drive").endsWith("/gdrive/g")).toBe(true);
+    expect(buildExternalPlayerUrl("dbx", "dropbox").endsWith("/1.7.5/dropbox/dbx")).toBe(true);
+    expect(buildExternalPlayerUrl("g", "google-drive").endsWith("/1.7.5/gdrive/g")).toBe(true);
   });
 
   it("returns the host root when the file id is empty", async () => {

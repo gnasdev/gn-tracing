@@ -1,5 +1,8 @@
 /**
  * Path → OAuth provider mapping (includes legacy Google aliases).
+ *
+ * Callers must pass the path *after* stripping an optional product-version
+ * prefix (`/1.7.5/token` → `/token`). See `stripRouteVersionPrefix`.
  */
 
 import type { OAuthProviderId } from "./providers";

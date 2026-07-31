@@ -8,6 +8,7 @@
  * source. Solid plugin enables TSX under the player package.
  */
 
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import solid from "vite-plugin-solid";
@@ -15,10 +16,16 @@ import { defineConfig, mergeConfig } from "vitest/config";
 import { sharedTestConfig } from "../vitest.shared";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const rootAppVersion = JSON.parse(
+  fs.readFileSync(path.resolve(__dirname, "../package.json"), "utf-8"),
+).version as string;
 
 export default mergeConfig(
   defineConfig({
     plugins: [solid()],
+    define: {
+      "import.meta.env.VITE_APP_VERSION": JSON.stringify(rootAppVersion),
+    },
     resolve: {
       alias: {
         "@shared": path.resolve(__dirname, "../src/shared"),

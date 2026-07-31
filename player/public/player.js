@@ -6221,13 +6221,15 @@
    * Parses provider + file id from the current player URL.
    *
    * Namespaced paths: /gdrive/<id>, /dropbox/<id>
+   * Product-version prefix (same as extension emit): /1.7.5/gdrive/<id>
    * Legacy bare path or ?id= → google-drive (backward compatible).
    * Optional ?provider= overrides the default when using ?id=.
    * Legacy /onedrive/… paths fail closed (OneDrive support removed).
    *
    * Keep rules in sync with `parseStorageRecordingRef` in
-   * `src/shared/storage-provider.ts` (extension TS cannot import into this
-   * raw player bundle without a build step).
+   * `src/shared/storage-provider.ts` and `stripRouteVersionPrefix` in
+   * `packages/replay-core/src/route-version.ts` (this raw IIFE cannot import
+   * those modules without a build step).
    */
   function resolveReplayRecordingRef() {
     const PATH_TO_PROVIDER = {
@@ -6243,6 +6245,8 @@
       "vendor",
       "api",
     ]);
+    // Core MAJOR.MINOR.PATCH — must match packages/replay-core route-version.
+    const PRODUCT_SEMVER_RE = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 
     const searchParams = new URLSearchParams(window.location.search);
     const searchId = searchParams.get("id");
@@ -6258,10 +6262,19 @@
       return { provider, fileId: searchId.trim() };
     }
 
-    const segments = window.location.pathname
+    let segments = window.location.pathname
       .split("/")
       .map((segment) => segment.trim())
       .filter(Boolean);
+
+    if (segments.length === 0) {
+      return null;
+    }
+
+    // Optional product-version prefix: /1.7.5/gdrive/<id> → strip then parse.
+    if (segments.length >= 1 && PRODUCT_SEMVER_RE.test(segments[0])) {
+      segments = segments.slice(1);
+    }
 
     if (segments.length === 0) {
       return null;
@@ -6290,7 +6303,13 @@
     }
 
     // Legacy bare Drive file id (first non-reserved path segment).
-    if (reservedPathSegments.has(first) || first.endsWith(".html") || first.includes(".")) {
+    // A lone product-version segment is not a recording ref.
+    if (
+      reservedPathSegments.has(first) ||
+      first.endsWith(".html") ||
+      first.includes(".") ||
+      PRODUCT_SEMVER_RE.test(segments[0])
+    ) {
       return null;
     }
 

@@ -146,14 +146,76 @@ describe("OAuth token proxy - method handling", () => {
     const body = (await res.json()) as {
       ok: boolean;
       service: string;
+      version?: string;
+      requestRouteVersion?: string | null;
       providers: Record<string, boolean>;
     };
     expect(body.ok).toBe(true);
     expect(body.service).toBe("gn-tracing-oauth-proxy");
+    expect(typeof body.version).toBe("string");
+    expect(body.version).toMatch(/^\d+\.\d+\.\d+$/);
+    expect(body.requestRouteVersion).toBeNull();
     expect(body.providers.google).toBe(true);
     expect(body.providers.dropbox).toBe(true);
     expect(body.providers).not.toHaveProperty("onedrive");
     expect((body as { feedback?: boolean }).feedback).toBe(false);
+  });
+
+  it("serves versioned health and oauth paths for any product version prefix", async () => {
+    const health = await worker.fetch(
+      new Request("https://proxy.example/1.6.3/health", { method: "GET" }),
+      makeEnv(),
+    );
+    expect(health.status).toBe(200);
+    const healthBody = (await health.json()) as {
+      ok: boolean;
+      requestRouteVersion: string | null;
+    };
+    expect(healthBody.ok).toBe(true);
+    expect(healthBody.requestRouteVersion).toBe("1.6.3");
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("api.github.com")) {
+        return new Response(
+          JSON.stringify({
+            html_url: "https://github.com/gnasdev/gn-tracing/issues/99",
+            number: 99,
+          }),
+          { status: 201, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      return new Response(JSON.stringify({ access_token: "tok", expires_in: 3600 }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const token = await worker.fetch(
+      makeTokenRequest("/1.7.5/token"),
+      makeEnv({ ALLOWED_EXTENSION_ORIGINS: PLACEHOLDER_ORIGIN }),
+    );
+    expect(token.status).toBe(200);
+
+    const dropbox = await worker.fetch(
+      makeTokenRequest("/1.0.0/token/dropbox"),
+      makeEnv({ ALLOWED_EXTENSION_ORIGINS: PLACEHOLDER_ORIGIN }),
+    );
+    expect(dropbox.status).toBe(200);
+
+    const feedback = await worker.fetch(
+      new Request("https://proxy.example/1.7.5/feedback", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Origin: PLACEHOLDER_ORIGIN,
+        },
+        body: JSON.stringify({ message: "versioned path works fine here" }),
+      }),
+      makeEnv({ GITHUB_FEEDBACK_TOKEN: "ghs_placeholder" }),
+    );
+    expect([200, 201]).toContain(feedback.status);
   });
 });
 

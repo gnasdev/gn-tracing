@@ -43,40 +43,13 @@ origin_of_url() {
   printf '%s' "$raw" | sed -E 's|(https?://[^/]+).*|\1|'
 }
 
-resolve_feedback_proxy_url() {
-  local explicit candidate origin
-  explicit="$(normalize_proxy_url "${VITE_FEEDBACK_PROXY_URL:-}")"
-  if [ -z "$explicit" ]; then
-    explicit="$(normalize_proxy_url "${FEEDBACK_PROXY_URL:-}")"
-  fi
-  if [ -n "$explicit" ]; then
-    if printf '%s' "$explicit" | grep -Eqi '/feedback/?$'; then
-      printf '%s' "$explicit"
-    else
-      origin="$(origin_of_url "$explicit" || true)"
-      if [ -n "${origin:-}" ]; then
-        printf '%s/feedback' "$origin"
-      else
-        printf '%s' "$explicit"
-      fi
-    fi
-    return 0
-  fi
-
-  for candidate in "${GOOGLE_TOKEN_PROXY_URL:-}" "${DROPBOX_TOKEN_PROXY_URL:-}"; do
-    origin="$(origin_of_url "$candidate" || true)"
-    if [ -n "${origin:-}" ]; then
-      printf '%s/feedback' "$origin"
-      return 0
-    fi
-  done
-
-  return 1
-}
-
-if ! VITE_FEEDBACK_PROXY_URL="$(resolve_feedback_proxy_url)"; then
+# Same pure join as esbuild / Worker: packages/replay-core/src/route-version.mjs
+if ! VITE_FEEDBACK_PROXY_URL="$(
+  cd "$ROOT_DIR" &&
+    node --experimental-strip-types scripts/resolve-feedback-proxy-url.mjs
+)"; then
   echo "error: could not resolve VITE_FEEDBACK_PROXY_URL for the hosted player." >&2
-  echo "Set VITE_FEEDBACK_PROXY_URL or FEEDBACK_PROXY_URL to the Worker /feedback URL," >&2
+  echo "Set VITE_FEEDBACK_PROXY_URL or FEEDBACK_PROXY_URL to the Worker origin," >&2
   echo "or set GOOGLE_TOKEN_PROXY_URL / DROPBOX_TOKEN_PROXY_URL so the origin can be derived." >&2
   exit 1
 fi

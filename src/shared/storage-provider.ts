@@ -5,6 +5,9 @@
  *   https://tracing.gnas.dev/gdrive/<id>
  *   https://tracing.gnas.dev/dropbox/<id>
  *
+ * New uploads also prefix the product (extension) version:
+ *   https://tracing.gnas.dev/1.7.5/gdrive/<id>
+ *
  * Legacy Google Drive bare-id URLs remain parseable forever:
  *   https://tracing.gnas.dev/<drive-file-id>
  *
@@ -13,8 +16,10 @@
  *
  * The standalone/extension player reimplements the same parse rules in
  * `player/public/player.js` (`resolveReplayRecordingRef`) — update both when changing
- * URL semantics.
+ * URL semantics. Package consumers use `packages/replay-core` recording-ref.
  */
+
+import { isProductRouteVersion, joinVersionedPath, stripRouteVersionPrefix } from "./route-version";
 
 export type StorageProviderId = "google-drive" | "dropbox";
 
@@ -53,17 +58,27 @@ export function normalizeStorageProviderId(
 /**
  * Builds the path portion of a replay URL for a provider + file id.
  * Google Drive always uses the namespaced `/gdrive/<id>` form for new uploads.
+ *
+ * When `productVersion` is provided it must be a core semver string and the
+ * path is prefixed (`/1.7.5/gdrive/<id>`). Invalid versions throw — callers
+ * that need a bare legacy path must omit the argument entirely.
  */
 export function buildStorageRecordingPath(
   fileId: string,
   provider: StorageProviderId = "google-drive",
+  productVersion?: string,
 ): string {
   const id = String(fileId || "").trim();
   if (!id) {
     return "";
   }
   const segment = STORAGE_PROVIDER_PATH_SEGMENTS[provider];
-  return `/${segment}/${encodeURIComponent(id)}`;
+  const base = `/${segment}/${encodeURIComponent(id)}`;
+  const version = String(productVersion ?? "").trim();
+  if (!version) {
+    return base;
+  }
+  return joinVersionedPath(version, base);
 }
 
 /**
@@ -116,9 +131,10 @@ export function parseStorageRecordingRef(
     return { provider, fileId: safeDecode(queryId) };
   }
 
-  const segments = url.pathname
+  const { remainder } = stripRouteVersionPrefix(url.pathname);
+  const segments = remainder
     .split("/")
-    .map((segment) => segment.trim())
+    .map((segment: string) => segment.trim())
     .filter(Boolean);
 
   if (segments.length === 0) {
@@ -142,8 +158,14 @@ export function parseStorageRecordingRef(
   }
 
   // Legacy bare path: first non-reserved segment is the Drive file id.
+  // A lone product-version segment (no provider) is not a recording ref.
   const reserved = new Set(["app", "privacy", "terms", "icons", "assets", "vendor", "api"]);
-  if (reserved.has(first) || first.endsWith(".html") || first.includes(".")) {
+  if (
+    reserved.has(first) ||
+    first.endsWith(".html") ||
+    first.includes(".") ||
+    isProductRouteVersion(segments[0])
+  ) {
     return null;
   }
 

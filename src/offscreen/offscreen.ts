@@ -12,6 +12,7 @@ import {
   buildRecordingPackage,
 } from "../../packages/replay-core/src/write";
 import { getScreenshotPackageStaging } from "../background/screenshot-package-staging-idb";
+import { getProductVersionOrDefault } from "../shared/app-version";
 import {
   DROPBOX_UPLOAD_SESSION_THRESHOLD_BYTES,
   makeDropboxPublicReadable,
@@ -830,13 +831,15 @@ async function uploadRecordingPackage(data: StorageUploadData): Promise<{
       }
     }
 
+    const producerVersion = getProductVersionOrDefault();
+
     const metadataPreview: PackageMetadata = {
       timestamp: packagedAt,
       duration: data.duration,
       url: data.url,
       startTime: data.startTime,
       extension: "gn-tracing",
-      version: "1.0.0",
+      version: producerVersion,
       producer: "extension",
       capabilities: EXTENSION_CAPABILITIES,
       storage: {
@@ -877,6 +880,7 @@ async function uploadRecordingPackage(data: StorageUploadData): Promise<{
       capabilities: EXTENSION_CAPABILITIES,
       packagedAt,
       zipFilename,
+      version: producerVersion,
       duration: data.duration,
       url: data.url,
       startTime: data.startTime,
