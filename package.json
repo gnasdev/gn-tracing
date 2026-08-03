@@ -1,6 +1,6 @@
 {
   "name": "gn-tracing",
-  "version": "1.7.6",
+  "version": "1.7.7",
   "private": true,
   "license": "GPL-3.0-or-later",
   "scripts": {
