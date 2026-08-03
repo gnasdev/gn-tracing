@@ -1,23 +1,8 @@
 /**
  * Tests for Item 2 (Resources/Storage panel) — unit + property-based.
  *
- * Covers three Item-2 surfaces:
- *  - `diffStorageGroups` — the start↔stop diff used by the player Storage tab
- *    (Property P4 / R5.2: every key in start∪stop yields exactly one row).
- *  - Storage redaction via `redactJsonValue` with `artifact = "storage"` — the
- *    same primitive `CdpManager.#redactStorageItems` / `#redactCookies` use
- *    (P3 / R4.4: sensitive keys are replaced with `REDACTED_VALUE`).
- *  - `isUploadArtifactKey("storage")` — the upload pipeline guard (R2.2).
- *  - Round-trip serialize/parse of `StorageArtifact` (P4-round-trip / R2.5).
- *
- * `diffStorageGroups` lives inside the non-bundled player IIFE
- * (`player/public/player.js`, ~line 699) and is not importable. To meaningfully test
- * R5.2 / Property P4 without a build step for the player, the algorithm is
- * mirrored verbatim below. Keep `diffStorageGroups` here byte-for-byte in sync
- * with `player/public/player.js`.
- *
- * fast-check global config (numRuns, verbose, seed reporting) is applied via the
- * `test/property-config.ts` setup file.
+ * Diff completeness uses the shipped `src/shared/storage-diff` module (same
+ * path production player calls via gnCore.storageDiff).
  */
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
@@ -25,41 +10,7 @@ import { makePrivacySettings } from "../../test/factories";
 import { isUploadArtifactKey } from "../background/upload-orchestrator";
 import type { CookieRecord, StorageArtifact, StorageKeyValue } from "../types/recording";
 import { REDACTED_VALUE, redactJsonValue } from "./privacy-redaction";
-
-// ---------------------------------------------------------------------------
-// Mirror of player.js `diffStorageGroups` (~line 699). Must stay in sync
-// with the canonical implementation. Builds a one-row-per-key diff between two
-// storage groups; every key present in start∪stop yields exactly one row.
-// ---------------------------------------------------------------------------
-type DiffRow =
-  | { key: string; status: "added"; value: string }
-  | { key: string; status: "removed"; value: string }
-  | { key: string; status: "unchanged"; value: string }
-  | { key: string; status: "changed"; from: string; to: string };
-
-function diffStorageGroups(
-  startItems: Array<{ key: string; value: string }>,
-  stopItems: Array<{ key: string; value: string }>,
-): DiffRow[] {
-  const startMap = new Map((startItems || []).map((it) => [it.key, it.value]));
-  const stopMap = new Map((stopItems || []).map((it) => [it.key, it.value]));
-  const rows: DiffRow[] = [];
-  for (const [key, value] of stopMap) {
-    if (!startMap.has(key)) {
-      rows.push({ key, status: "added", value });
-    } else if (startMap.get(key) !== value) {
-      rows.push({ key, status: "changed", from: startMap.get(key) as string, to: value });
-    } else {
-      rows.push({ key, status: "unchanged", value });
-    }
-  }
-  for (const [key, value] of startMap) {
-    if (!stopMap.has(key)) {
-      rows.push({ key, status: "removed", value });
-    }
-  }
-  return rows;
-}
+import { diffStorageGroups } from "./storage-diff";
 
 describe("diffStorageGroups (diff completeness, R5.2 / Property P4)", () => {
   it("classifies added / removed / changed / unchanged keys", () => {

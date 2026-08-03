@@ -30,6 +30,12 @@ function parseNetworkEntries(storage: StorageManager): Array<Record<string, unkn
   return parsed.entries ?? [];
 }
 
+function parseWebSocketEntries(storage: StorageManager): Array<Record<string, unknown>> {
+  const artifacts = storage.finalizeCurrentSession();
+  if (!artifacts.webSocketLogs) return [];
+  return JSON.parse(artifacts.webSocketLogs) as Array<Record<string, unknown>>;
+}
+
 describe("CdpManager network capture (shipped collector)", () => {
   let storage: StorageManager;
   let cdp: CdpManager;
@@ -48,6 +54,7 @@ describe("CdpManager network capture (shipped collector)", () => {
       captureResponseHeaders: "full",
       captureRequestBodies: false,
       suppressRecorderInternalRequests: true,
+      captureWebSockets: true,
     });
 
     // Domain enable / auto-attach / getResponseBody all go through sendCommand.
@@ -252,5 +259,46 @@ describe("CdpManager network capture (shipped collector)", () => {
         (c) => c.args[1] === "Network.getResponseBody",
       ),
     ).toHaveLength(0);
+  });
+
+  it("re-stamps WebSocket frames captured before the first network request", async () => {
+    const requestId = "ws-backfill";
+    const beforeMs = Date.now();
+    const wallTimeSeconds = beforeMs / 1000;
+
+    // WebSocket traffic starts before any HTTP request; the frame gets a
+    // Date.now() fallback because the wall-clock offset is not yet known.
+    emit("Network.webSocketCreated", { requestId, url: "wss://example.com/socket" });
+    emit("Network.webSocketFrameSent", {
+      requestId,
+      timestamp: 10,
+      response: { opcode: 1, payloadData: "hello" },
+    });
+
+    // The first HTTP request teaches the CDP manager the offset between
+    // monotonic seconds and wall-clock epoch ms.
+    emit(
+      "Network.requestWillBeSent",
+      makeCdpRequestWillBeSent({
+        requestId: "http-anchor",
+        url: "https://example.com/anchor",
+        timestamp: 12,
+        wallTime: wallTimeSeconds,
+      }),
+    );
+
+    emit("Network.webSocketClosed", { requestId });
+    await cdp.detach();
+
+    const entries = parseWebSocketEntries(storage);
+    expect(entries).toHaveLength(1);
+    const frames = (entries[0]?.frames ?? []) as Array<{ timestamp: number }>;
+    expect(frames).toHaveLength(1);
+
+    // Monotonic 10 is 2 seconds before monotonic 12, so the frame should be
+    // anchored 2000ms before the wall-time of the HTTP anchor request.
+    const expectedEpochMs = beforeMs - 2000;
+    expect(frames[0]?.timestamp).toBeGreaterThanOrEqual(expectedEpochMs - 100);
+    expect(frames[0]?.timestamp).toBeLessThanOrEqual(expectedEpochMs + 100);
   });
 });

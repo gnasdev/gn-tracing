@@ -106,6 +106,7 @@ export {
   SUMMARY_LIMITS,
   type SummaryInput,
 } from "./summarize";
+export { coerceEpochMs } from "./time";
 export {
   buildConsoleViews,
   buildEventViews,

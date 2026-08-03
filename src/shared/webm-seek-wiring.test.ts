@@ -51,7 +51,7 @@ describe("webm seek single-path wiring", () => {
     expect(source).toContain("function seekVideoToMs");
     expect(source).toContain("pendingSeekTimeMs");
     // Runtime uses vendored pure helpers — no hand-ported reconcileSeekClock body.
-    expect(source).toContain("gnCore?.timelineSeek");
+    expect(source).toContain("globalThis.gnCore");
     expect(source).toContain("function applySeekClock");
     expect(source).toContain("TimelineSeek.reconcileSeekClock");
     expect(source).not.toContain("function reconcileSeekClock");

@@ -138,6 +138,7 @@ export interface StackFrame {
 export interface ConsoleEntry {
   source: "console-api" | "exception" | "browser";
   level: string;
+  /** Epoch milliseconds. */
   timestamp: number;
   message?: string;
   args?: SerializedRemoteObject[];
@@ -160,7 +161,9 @@ export interface NetworkEntry {
   requestHeaders: Record<string, string> | null;
   requestHeadersExtra?: Record<string, string> | null;
   postData: string | null;
+  /** CDP Network.MonotonicTime: seconds since browser process start. */
   timestamp: number;
+  /** Epoch seconds (wall clock). */
   wallTime: number;
   initiator: NetworkInitiator | null;
   resourceType: string;
@@ -246,6 +249,7 @@ export interface WebSocketEntry {
 
 interface WebSocketFrame {
   direction: "sent" | "received";
+  /** Epoch milliseconds. Legacy packages may still carry CDP monotonic seconds. */
   timestamp: number;
   opcode: number;
   payloadData: string;

@@ -155,6 +155,21 @@ describe("RecordingSession", () => {
     expect(network?.some((entry) => entry.url.includes("/api/coupon"))).toBe(true);
   });
 
+  it("stores duration in milliseconds", async () => {
+    const win = createFakeWindow();
+    const session = new RecordingSession({ window: win });
+    session.start();
+
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    const result = await session.stop();
+    const pkg = await openRecordingPackageFromBytes(concatChunks(result.package.chunks));
+
+    // A 100ms real delay should yield a duration >= 100 if stored as ms, but
+    // only ~0.1 if stored as seconds.
+    expect(pkg.metadata.duration).toBeGreaterThanOrEqual(100);
+    expect(Number.isInteger(pkg.metadata.duration)).toBe(true);
+  });
+
   it("declares what it could not capture instead of leaving it implicit", async () => {
     const win = createFakeWindow();
     const session = new RecordingSession({ window: win });

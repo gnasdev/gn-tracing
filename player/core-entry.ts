@@ -30,6 +30,13 @@ import {
   renderBugReportMarkdown,
   resolveCapabilities,
 } from "../packages/replay-core/src/index";
+import { coerceEpochMs } from "../packages/replay-core/src/time";
+import {
+  MAX_EOCD_SEARCH_SPAN,
+  parseZipCentralDirectory,
+  type ZipEntryRecord,
+  type ZipParseResult,
+} from "../packages/replay-core/src/zip-reader";
 import { buildAgentReportMarkdown, buildAgentSummaryForPlayer } from "../src/shared/agent-report";
 import {
   mapInstantReplayToDomArtifact,
@@ -47,6 +54,24 @@ import {
   type NetworkResponseBodyDisplayKind,
   resolveNetworkResponseBodyDisplay,
 } from "../src/shared/network-response-body";
+import {
+  eventRelativeTimesMs,
+  findActiveEventIndexByRelativeMs,
+  getActiveSnapshotIndexByTime,
+  indexAtOrBefore,
+} from "../src/shared/player-clock-index";
+import {
+  formatMessage,
+  DEFAULT_LANGUAGE as I18N_DEFAULT_LANGUAGE,
+  TRANSLATIONS as I18N_TRANSLATIONS,
+  isUiLanguage,
+  type UiLanguage,
+} from "../src/shared/player-i18n";
+import {
+  aggregateLoadingProgress,
+  mergeLoadingEntry,
+  normalizeLoadingStatus,
+} from "../src/shared/player-loading-progress";
 import {
   type PresentationEvidence,
   type PresentationMode,
@@ -77,6 +102,7 @@ import {
   zoomInStill,
   zoomOutStill,
 } from "../src/shared/still-viewer-transform";
+import { diffStorageGroups, toStorageItems } from "../src/shared/storage-diff";
 
 export type {
   NetworkFilterBucket,
@@ -90,6 +116,9 @@ export type {
   RecordingCapability,
   StillRotationDeg,
   StillViewerTransform,
+  UiLanguage,
+  ZipEntryRecord,
+  ZipParseResult,
 };
 
 /** "Copy for AI" — the player's Markdown export of a recording. */
@@ -106,6 +135,38 @@ export const timelineSeek = {
 
 /** Which shell to show for recording vs screenshot vs SDK packages. */
 export const presentation = { resolvePresentationMode };
+
+/** Storage tab start↔stop key diff (pure). */
+export const storageDiff = { diffStorageGroups, toStorageItems };
+
+/** Active index at playhead for activity / storage snapshots. */
+export const clockIndex = {
+  indexAtOrBefore,
+  eventRelativeTimesMs,
+  getActiveSnapshotIndexByTime,
+  findActiveEventIndexByRelativeMs,
+};
+
+/** Loading bar aggregation (pure). */
+export const loadingProgress = {
+  aggregateLoadingProgress,
+  mergeLoadingEntry,
+  normalizeLoadingStatus,
+};
+
+/** EN/VI catalog — single production source. */
+export const i18n = {
+  TRANSLATIONS: I18N_TRANSLATIONS,
+  DEFAULT_LANGUAGE: I18N_DEFAULT_LANGUAGE,
+  formatMessage,
+  isUiLanguage,
+};
+
+/** Structural ZIP central-directory parse (shared with package readers). */
+export const zip = {
+  parseZipCentralDirectory,
+  MAX_EOCD_SEARCH_SPAN,
+};
 
 /** Zoom / rotate / pan math for the no-video still media stage. */
 export const stillViewer = {
@@ -149,6 +210,9 @@ export const network = {
  * video failed to load — the two need very different UI.
  */
 export const capabilities = { hasCapability, resolveCapabilities };
+
+/** Timestamp helpers shared between extension and player. */
+export const time = { coerceEpochMs };
 
 /** Summary and report builders, exposed for the "Copy for AI" path. */
 export const summary = { buildAgentSummary, renderBugReportMarkdown };

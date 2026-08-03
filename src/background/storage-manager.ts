@@ -2,6 +2,7 @@
  * Buffers captured artifacts for a single recording session in memory.
  */
 
+import { coerceEpochMs } from "../../packages/replay-core/src/time";
 import { getPrivacyProfileSettings, redactConsoleEntry } from "../shared/privacy-redaction";
 import type { PrivacyRedactionSettings, UploadSettings } from "../types/messages";
 import type {
@@ -231,7 +232,7 @@ export class StorageManager {
     if (typeof ts !== "number" || !Number.isFinite(ts)) {
       return 0;
     }
-    return ts < 1e11 ? ts * 1000 : ts;
+    return coerceEpochMs(ts, ts * 1000) ?? 0;
   }
 
   #networkEpochMs(entry: NetworkEntry): number {

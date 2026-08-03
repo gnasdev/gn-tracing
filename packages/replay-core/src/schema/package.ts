@@ -163,6 +163,7 @@ export const SDK_CAPABILITIES: RecordingCapability[] = [
 
 export interface PackageMetadata {
   timestamp?: string;
+  /** Recording duration in milliseconds. */
   duration?: number | null;
   url?: string;
   // The writer emits `null` when a session has no recorded start time, so the

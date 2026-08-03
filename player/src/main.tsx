@@ -1,9 +1,14 @@
 /**
- * Experimental SolidJS player entry — NOT used by production.
+ * ARCHIVED / DO NOT EXTEND — experimental SolidJS player entry.
  *
- * Hosted replay ships `index.html` → `src/main.ts` → `public/player.js`
- * (full shell + timeline/network/console). Keep this file for WIP UI work only;
- * do not point `index.html` here until Solid reaches feature parity.
+ * Production runtime is ONLY:
+ *   index.html → src/main.ts → public/player.js (+ vendor/gn-core)
+ *
+ * This Solid tree (App, panels, store, partial zip load) is not feature-parity
+ * and must not receive product features. Do not point Vite/index.html here.
+ * Future rewrite (if any) is a cutover project, not incremental dual-maintain.
+ *
+ * See plan: player architecture extract (monofile → modules, kill dual-stack).
  */
 /* @refresh reload */
 import { render } from "solid-js/web";

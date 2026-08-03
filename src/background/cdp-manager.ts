@@ -2,6 +2,7 @@
  * Captures Chrome Debugger Protocol events for recording replay artifacts.
  */
 
+import { coerceEpochMs } from "../../packages/replay-core/src/time";
 import {
   drainBodyFetchesThenDetach,
   shouldFetchResponseBodyForEntry,
@@ -1009,6 +1010,7 @@ export class CdpManager {
         frames: [],
         closed: false,
       },
+      frameMonotonicSeconds: [],
     });
   }
 
@@ -1016,14 +1018,14 @@ export class CdpManager {
     if (!this.#captureSettings.captureWebSockets) return;
     const ws = this.#pendingWebSockets.get(this.#requestKey(source, params.requestId));
     if (ws) {
+      const monotonicSeconds = params.timestamp;
       ws.entry.frames.push({
         direction: "sent",
-        // Store wall-clock epoch ms (not raw Network.MonotonicTime) so Instant
-        // Replay rolling trim can keep in-window frames.
-        timestamp: this.#webSocketFrameEpochMs(params.timestamp),
+        timestamp: this.#webSocketFrameEpochMs(monotonicSeconds),
         opcode: params.response.opcode,
         payloadData: this.#getWebSocketPayload(params.response.payloadData),
       });
+      ws.frameMonotonicSeconds.push(monotonicSeconds ?? Number.NaN);
     }
   }
 
@@ -1034,12 +1036,14 @@ export class CdpManager {
     if (!this.#captureSettings.captureWebSockets) return;
     const ws = this.#pendingWebSockets.get(this.#requestKey(source, params.requestId));
     if (ws) {
+      const monotonicSeconds = params.timestamp;
       ws.entry.frames.push({
         direction: "received",
-        timestamp: this.#webSocketFrameEpochMs(params.timestamp),
+        timestamp: this.#webSocketFrameEpochMs(monotonicSeconds),
         opcode: params.response.opcode,
         payloadData: this.#getWebSocketPayload(params.response.payloadData),
       });
+      ws.frameMonotonicSeconds.push(monotonicSeconds ?? Number.NaN);
     }
   }
 
@@ -1800,8 +1804,8 @@ export class CdpManager {
   }
 
   #toEpochMs(ts: number | undefined): number {
-    if (!ts) return Date.now();
-    return ts < 1e11 ? ts * 1000 : ts;
+    if (ts == null || !Number.isFinite(ts)) return Date.now();
+    return coerceEpochMs(ts, ts * 1000) ?? Date.now();
   }
 
   /** Learn wall-clock offset from Network events that pair monotonic + wallTime. */
@@ -1812,9 +1816,22 @@ export class CdpManager {
     if (typeof monotonicSeconds !== "number" || typeof wallTimeSeconds !== "number") {
       return;
     }
+    const hadOffset = this.#networkWallClockOffsetMs != null;
     const offset = wallClockOffsetFromNetworkPair(monotonicSeconds, wallTimeSeconds);
     if (offset != null) {
       this.#networkWallClockOffsetMs = offset;
+      // WebSocket frames captured before any HTTP request used a Date.now()
+      // fallback. Re-stamp them now that we can map monotonic → epoch.
+      if (!hadOffset) {
+        for (const ws of this.#pendingWebSockets.values()) {
+          for (let index = 0; index < ws.frameMonotonicSeconds.length; index += 1) {
+            const mono = ws.frameMonotonicSeconds[index];
+            if (Number.isFinite(mono)) {
+              ws.entry.frames[index].timestamp = monotonicSecondsToEpochMs(mono, offset);
+            }
+          }
+        }
+      }
     }
   }
 
@@ -2540,4 +2557,6 @@ interface PendingNetworkRequest {
 interface PendingWebSocket {
   sessionId?: string;
   entry: WebSocketEntry;
+  /** Raw monotonic seconds for each frame, aligned with `entry.frames`. */
+  frameMonotonicSeconds: number[];
 }

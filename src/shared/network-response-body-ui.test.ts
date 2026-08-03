@@ -13,6 +13,10 @@ const playerJs = readFileSync(
   "utf8",
 );
 const coreEntry = readFileSync(resolve(import.meta.dirname, "../../player/core-entry.ts"), "utf8");
+const playerCoreVendor = readFileSync(
+  resolve(import.meta.dirname, "../../player/public/vendor/gn-core/gn-core.iife.js"),
+  "utf8",
+);
 
 describe("network response body UI (shipped paths)", () => {
   it("exports resolveNetworkResponseBodyDisplay on gnCore.network", () => {
@@ -24,8 +28,9 @@ describe("network response body UI (shipped paths)", () => {
     expect(playerJs).toMatch(/resolveNetworkResponseBodyDisplay/);
     expect(playerJs).toMatch(/detail\.noResponseBody/);
     expect(playerJs).toMatch(/response-body empty/);
-    expect(playerJs).toContain('"detail.noResponseBody": "No response body"');
-    expect(playerJs).toContain('"detail.noResponseBody": "Không có response body"');
+    // Translation catalog ships in the gn-core vendor bundle, not in player.js.
+    expect(playerCoreVendor).toMatch(/"detail\.noResponseBody":\s*"No response body"/);
+    expect(playerCoreVendor).toMatch(/"detail\.noResponseBody":\s*"Kh[^"]+response body"/);
   });
 
   it("missing body is never an empty string status path (kind missing)", () => {

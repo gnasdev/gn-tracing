@@ -129,6 +129,22 @@ export interface StopResult {
   filename: string;
 }
 
+/**
+ * Read a monotonic clock value when available, falling back to wall-clock ms
+ * for environments (including some test doubles) where `performance.now()` is
+ * present but returns 0.
+ */
+function readMonotonicNow(scope: Window): number {
+  const perf = scope.performance;
+  if (perf && typeof perf.now === "function") {
+    const value = perf.now();
+    if (value > 0) {
+      return value;
+    }
+  }
+  return Date.now();
+}
+
 export class RecordingSession {
   readonly startTime: number;
   readonly #settings: PrivacyRedactionSettings;
@@ -154,6 +170,7 @@ export class RecordingSession {
   #teardown: Array<() => void> = [];
   #instantReplay: InstantReplayRecorder | null = null;
   #stopped = false;
+  #startMonotonicMs: number;
 
   constructor(options: SessionOptions = {}) {
     const ambient = options.window ?? (globalThis as unknown as { window?: Window }).window;
@@ -163,6 +180,7 @@ export class RecordingSession {
     this.#window = ambient;
     this.#options = options;
     this.startTime = Date.now();
+    this.#startMonotonicMs = readMonotonicNow(ambient);
     this.#settings = {
       ...getPrivacyProfileSettings(options.privacyProfile ?? "standard"),
       ...options.privacySettings,
@@ -286,6 +304,7 @@ export class RecordingSession {
 
     const packagedAt = new Date().toISOString();
     const stopTime = Date.now();
+    const monotonicStopMs = readMonotonicNow(this.#window);
     const zipFilename = `gn-tracing-${packagedAt.replace(/[:.]/g, "-").slice(0, 19)}.zip`;
 
     const artifacts: Partial<Record<AttachableArtifactId, Uint8Array>> = {};
@@ -321,7 +340,8 @@ export class RecordingSession {
 
     const metadataPreview = {
       timestamp: packagedAt,
-      duration: (stopTime - this.startTime) / 1000,
+      // Duration is stored in milliseconds, matching the extension player contract.
+      duration: Math.max(0, monotonicStopMs - this.#startMonotonicMs),
       url: this.#window.location?.href,
       startTime: this.startTime,
       producer: "sdk" as const,

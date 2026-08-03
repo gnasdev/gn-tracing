@@ -19,6 +19,7 @@
  */
 
 import type { PackageMetadata } from "./schema/package";
+import { coerceEpochMs } from "./time";
 
 export interface SourceLocationView {
   /** Original (source-mapped) file when available, else the generated URL. */
@@ -271,8 +272,14 @@ function resolveNetworkAtMs(entry: UnknownRecord, startTime: number): number | n
   if (timestamp === null) {
     return null;
   }
-  // CDP monotonic seconds in the native shape; the player multiplies by 1000.
-  return toRelativeMs(timestamp * 1000, startTime);
+  // Native CDP rows store monotonic seconds here; HAR-shaped imports may store
+  // epoch ms. `coerceEpochMs` handles both, falling back to "treat as seconds"
+  // for values too small to be an epoch timestamp.
+  const epochMs = coerceEpochMs(timestamp, timestamp * 1000);
+  if (epochMs === null) {
+    return null;
+  }
+  return toRelativeMs(epochMs, startTime);
 }
 
 function resolveNetworkDuration(entry: UnknownRecord): number | null {

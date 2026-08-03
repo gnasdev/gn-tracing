@@ -1,3 +1,5 @@
+import { coerceEpochMs } from "../../packages/replay-core/src/time";
+
 /**
  * Convert CDP Network.MonotonicTime (seconds) onto wall-clock epoch ms.
  *
@@ -34,16 +36,11 @@ export function monotonicSecondsToEpochMs(
   if (!Number.isFinite(monotonicSeconds)) {
     return nowMs;
   }
-  // Already epoch ms (defensive — some in-page paths stamp Date.now()).
-  if (monotonicSeconds >= 1e11) {
-    return monotonicSeconds;
-  }
-  // Already wall-clock seconds (e.g. Date.now()/1000 style).
-  if (monotonicSeconds >= 1e9) {
-    return monotonicSeconds * 1000;
-  }
-  if (offsetMs != null && Number.isFinite(offsetMs)) {
+  // Use the learned offset for genuine monotonic seconds (sub-epoch values).
+  if (offsetMs != null && Number.isFinite(offsetMs) && monotonicSeconds < 1e9) {
     return monotonicSeconds * 1000 + offsetMs;
   }
-  return nowMs;
+  // Defensive: some callers pass already-epoch values. coerceEpochMs handles
+  // epoch ms and epoch seconds, and falls back to nowMs when undecidable.
+  return coerceEpochMs(monotonicSeconds, nowMs) ?? nowMs;
 }

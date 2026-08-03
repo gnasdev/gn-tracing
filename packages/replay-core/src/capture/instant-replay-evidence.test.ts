@@ -95,7 +95,7 @@ describe("startInstantReplayEvidence", () => {
     const recorder = startInstantReplayEvidence(scope, { windowMs: 60_000 });
 
     scope.console.log("hello-ir");
-    await scope.fetch!("https://api.example.com/items");
+    await scope.fetch?.("https://api.example.com/items");
 
     const first = recorder.collect();
     expect(first.console.some((e) => e.message?.includes("hello-ir"))).toBe(true);

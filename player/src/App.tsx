@@ -1,3 +1,6 @@
+/**
+ * ARCHIVED Solid shell — not production. See `main.tsx`.
+ */
 import { Match, onMount, Switch } from "solid-js";
 import { ErrorState } from "./components/ErrorState";
 import { Intro } from "./components/Intro";

@@ -194,7 +194,7 @@ body.popup-dialog-open #app {
 }
 
 /* Idle: Record | Screenshot on row 1; IR Capture | Enable | Settings on row 2.
-   Recording: Stop | Screenshot | Discard on row 1; hide IR row. */
+   Recording: Stop | Discard on row 1; Screenshot on row 2; hide IR row. */
 .recording-actions-row {
   display: flex;
   flex-direction: row;
@@ -336,9 +336,24 @@ body.popup-dialog-open #app {
   padding-inline: 12px;
 }
 
+#recording-actions.is-recording .recording-actions-primary {
+  flex-wrap: wrap;
+}
+
 #recording-actions.is-recording #toggle-btn {
-  flex: 1 1 auto;
+  order: 1;
+  flex: 1 1 0;
   min-width: 0;
+}
+
+#recording-actions.is-recording #remove-recording-btn {
+  order: 2;
+}
+
+#recording-actions.is-recording #screenshot-btn {
+  order: 3;
+  flex: 1 1 100%;
+  width: 100%;
 }
 
 #recording-actions.is-recording .recording-actions-secondary {

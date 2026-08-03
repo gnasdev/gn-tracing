@@ -47,597 +47,114 @@
    * the player through the one core bundle (`npm run vendor:player-core` →
    * window.gnCore). After package bytes are in memory, Drive and Dropbox share
    * this path.
+   *
+   * Assigned in assertGnCore() — never optional after boot. Rebuild with
+   * `npm run vendor:player-core` if missing.
    */
-  const TimelineSeek = globalThis.gnCore?.timelineSeek;
+  let TimelineSeek = null;
   const SEEK_MAX_RETRIES = 3;
+  // Panel DOM work is far costlier than moving the playhead. Playback ticks and
+  // timeline scrubs share one gated sync path so hidden tabs stay dirty and
+  // rapid mousemove seeks cannot rebuild console+network on every event.
+  const PLAYBACK_PANEL_SYNC_MS = 250;
+  const SEEK_PANEL_SYNC_MS = 100;
+  // When the user is following the live tail (scrolled to bottom) without a
+  // search/filter, keep only this many log rows in the DOM. Full history returns
+  // as soon as they scroll up or search. Caps worst-case sync cost on long captures.
+  const LOG_DOM_TAIL_MAX = 400;
   const ZIP_CRYPTO_HEADER_BYTES = 12;
 
   console.log("[GN Tracing Player] Mode:", IS_EXTENSION ? "extension" : "standalone");
+
+  /**
+   * Hard boot contract: the player is not a degraded-without-gnCore app.
+   * Presentation policy, seek math, and annotate renderers live in shared code;
+   * duplicating them here was a drift source (screenshot vs IR tab rules, etc.).
+   * @returns {void}
+   */
+  function assertGnCore() {
+    const g = globalThis.gnCore;
+    if (!g || typeof g !== "object") {
+      throw new Error(
+        "GN Tracing player core failed to load (window.gnCore missing). Rebuild with: npm run vendor:player-core",
+      );
+    }
+
+    /** @type {Array<[string, string]>} */
+    const requiredFns = [
+      ["presentation", "resolvePresentationMode"],
+      ["timelineSeek", "getFiniteDurationMs"],
+      ["timelineSeek", "resolveTimelineDurationMs"],
+      ["timelineSeek", "reconcileSeekClock"],
+      ["timelineSeek", "ratioToTimeMs"],
+      ["capabilities", "hasCapability"],
+      ["annotate", "renderScreenshotOverlaySvg"],
+      ["annotate", "describeAnnotation"],
+      ["network", "getNetworkFilterType"],
+      ["dom", "hydrateDomNodeToHtml"],
+      ["instantReplay", "resolveDomArtifactForPlayer"],
+      ["agentReport", "buildAgentReportMarkdown"],
+      ["stillViewer", "createStillViewerTransform"],
+      ["stillViewer", "stillViewerCssTransform"],
+      ["i18n", "formatMessage"],
+      ["storageDiff", "diffStorageGroups"],
+      ["storageDiff", "toStorageItems"],
+      ["clockIndex", "findActiveEventIndexByRelativeMs"],
+      ["clockIndex", "eventRelativeTimesMs"],
+      ["clockIndex", "indexAtOrBefore"],
+      ["clockIndex", "getActiveSnapshotIndexByTime"],
+      ["loadingProgress", "aggregateLoadingProgress"],
+      ["loadingProgress", "mergeLoadingEntry"],
+      ["zip", "parseZipCentralDirectory"],
+    ];
+
+    const missing = [];
+    for (const [ns, fn] of requiredFns) {
+      const bag = g[ns];
+      if (!bag || typeof bag[fn] !== "function") {
+        missing.push(`gnCore.${ns}.${fn}`);
+      }
+    }
+    if (!g.i18n?.TRANSLATIONS?.en || !g.i18n?.TRANSLATIONS?.vi) {
+      missing.push("gnCore.i18n.TRANSLATIONS");
+    }
+    if (missing.length > 0) {
+      throw new Error(
+        `GN Tracing player core is incomplete (missing ${missing.join(", ")}). Rebuild with: npm run vendor:player-core`,
+      );
+    }
+
+    TimelineSeek = g.timelineSeek;
+    TRANSLATIONS = g.i18n.TRANSLATIONS;
+    publishPlayerI18nForTests();
+  }
 
   // ===== UI LANGUAGE (EN / VI) =====
   // Shared storage key with extension surfaces so language preference carries over
   // when the player opens in the same browser profile (extension) or standalone origin.
   const UI_LANGUAGE_STORAGE_KEY = "gn_tracing_ui_language";
-  const TRANSLATIONS = {
-    en: {
-      "loading.message": "Loading recording...",
-      "loading.package": "Loading recording package...",
-      "password.title": "Protected Recording",
-      "password.lead": "This recording package requires a password before it can be replayed.",
-      "password.label": "Recording password",
-      "password.placeholder": "Enter password",
-      "password.unlock": "Unlock",
-      "password.unlocking": "Unlocking...",
-      "password.wrong": "Wrong password or corrupted recording package. Please try again.",
-      "error.title": "Invalid Recording Parameters",
-      "error.default": "The recording parameters are missing or invalid.",
-      "error.invalidParams":
-        "Invalid or missing recording parameters. Please provide videos and metadata file IDs.",
-      "error.providerUnsupported":
-        'Storage provider "{provider}" is not supported in this player build yet.',
-      "controls.playPause": "Play/Pause (Space)",
-      "controls.mute": "Mute",
-      "controls.layoutGroup": "Player layout controls",
-      "controls.layoutHorizontal": "Horizontal layout",
-      "controls.layoutVertical": "Vertical layout",
-      "controls.expandVideo": "Expand video in tab",
-      "controls.exitExpandedVideo": "Exit expanded video",
-      "controls.expandStill": "Expand still in tab",
-      "controls.exitExpandedStill": "Exit expanded still",
-      "controls.splitter": "Resize player and logs panels",
-      "tabs.report": "Report",
-      "tabs.activity": "Activity",
-      "tabs.console": "Console",
-      "tabs.network": "Network",
-      "tabs.storage": "Storage",
-      "tabs.elements": "Elements",
-      "tabs.screenshots": "Screenshot",
-      "screenshots.aria": "Annotated screenshots",
-      "screenshots.sourceImage": "Captured image",
-      "screenshots.sourceDom": "DOM snapshot",
-      "screenshots.domSnapshot":
-        "This screenshot is a DOM snapshot the in-page SDK recorded, not a captured image. Open the Elements tab to inspect it.",
-      "screenshots.imageMissing": "The image for this screenshot is not in the package.",
-      "screenshots.instantReplay": "Instant replay (before the report)",
-      "screenshots.instantReplayMeta":
-        "{frames} frames covering {seconds}s before the report ({dropped} dropped to stay inside the buffer).",
-      "screenshots.instantReplayOpenElements":
-        "Open the Elements tab to inspect the DOM lookback timeline.",
-      "screenshots.instantReplayOpenStage": "Scrub DOM lookback",
-      "domStage.aria": "DOM lookback",
-      "domStage.frameTitle": "DOM lookback preview",
-      "domStage.prev": "Previous frame",
-      "domStage.next": "Next frame",
-      "domStage.scrubberAria": "DOM lookback scrubber",
-      "domStage.hint": "Structural DOM lookback — layout may differ without full page CSS.",
-      "domStage.empty": "No DOM frames to preview.",
-      "screenshots.badge": "Screenshot report",
-      "screenshots.noCaption": "No caption from the reporter",
-      "screenshots.noAnnotations": "No shapes or notes were drawn on this screenshot.",
-      "screenshots.openPage": "Open page",
-      "screenshots.copyUrl": "Copy URL",
-      "screenshots.urlCopied": "URL copied",
-      "screenshots.viewportChip": "{width}×{height}",
-      "screenshots.shotIndex": "{current} / {total}",
-      "screenshots.prev": "Previous screenshot",
-      "screenshots.next": "Next screenshot",
-      "screenshots.annotationsHeading": "Annotations",
-      "stillStage.aria": "Annotated still",
-      "stillStage.toolbarAria": "Still viewer controls",
-      "stillStage.zoomIn": "Zoom in",
-      "stillStage.zoomOut": "Zoom out",
-      "stillStage.fit": "Fit image",
-      "stillStage.rotate": "Rotate 90°",
-      "report.openPage": "Open recorded page",
-      "report.screenshotAlt": "Recording screenshot",
-      "console.search": "Search console",
-      "network.search": "Search network",
-      "network.method": "Method",
-      "network.url": "URL",
-      "network.status": "Status",
-      "network.type": "Type",
-      "network.size": "Size",
-      "network.websocketConnections": "WebSocket Connections",
-      "network.summary": "{visible}/{total} requests",
-      "filters.all": "All",
-      "filters.log": "Log",
-      "filters.warn": "Warn",
-      "filters.error": "Error",
-      "filters.info": "Info",
-      "filters.debug": "Debug",
-      "filters.fetch": "Fetch/XHR",
-      "filters.js": "JS",
-      "filters.css": "CSS",
-      "filters.img": "Img",
-      "filters.doc": "Doc",
-      "filters.font": "Font",
-      "filters.media": "Media",
-      "filters.ws": "WS",
-      "filters.other": "Other",
-      "storage.aria": "Storage snapshot diff",
-      "storage.empty": "No entries captured.",
-      "elements.aria": "DOM snapshot tree",
-      "elements.snapshot": "Snapshot",
-      "elements.selectAria": "Select DOM snapshot",
-      "elements.search": "Search elements",
-      "elements.searchAria": "Search elements",
-      "elements.empty": "No DOM nodes captured.",
-      "elements.noMatch": "No matching elements.",
-      "source.lineTruncated": "Line truncated in recording artifact.",
-      "theme.system": "System",
-      "theme.light": "Light",
-      "theme.dark": "Dark",
-      "theme.aria": "Theme: {label}",
-      "theme.titleSystem": "Theme: {label} (follows OS). Click to cycle System → Light → Dark.",
-      "theme.titleFixed": "Theme: {label}. Click to cycle System → Light → Dark.",
-      "lang.switchToVi": "Switch to Vietnamese",
-      "lang.switchToEn": "Switch to English",
-      "intro.eyebrow": "Browser debugging extension",
-      "intro.logoAlt": "GN Tracing logo",
-      "intro.lead":
-        "<strong>GN Tracing</strong> is a browser extension that helps developers and QA create shareable bug reports. When you start a recording, GN Tracing captures the selected tab’s video, console logs, network activity, and related debugging artifacts, then packages them for review.",
-      "intro.purposeTitle": "Purpose of GN Tracing",
-      "intro.purposeBody1":
-        "The purpose of <strong>GN Tracing</strong> is to record a user-selected browser tab on demand, build a replayable debugging package, store that package in the user’s own cloud storage (Google Drive or Dropbox after the user connects a provider), and open a hosted replay so teammates can inspect what happened without reproducing the bug locally.",
-      "intro.purposeBody2":
-        "GN Tracing does not run continuous background surveillance. Recording starts only when you click record in the extension popup and stops when you stop recording or close the tab.",
-      "feedback.button": "Feedback",
-      "feedback.sectionAria": "Send feedback",
-      "feedback.label": "Feedback",
-      "feedback.placeholder": "Describe a bug, idea, or question…",
-      "feedback.hint":
-        "Creates a public GitHub issue. Includes extension version, browser, OS, and locale only. Do not include secrets or passwords.",
-      "feedback.submit": "Submit",
-      "feedback.cancel": "Cancel",
-      "feedback.sending": "Sending…",
-      "feedback.success": "Feedback submitted.",
-      "feedback.failed": "Could not submit feedback.",
-      "feedback.notConfigured": "Feedback service is not configured for this player.",
-      "intro.whatTitle": "What GN Tracing does",
-      "intro.what1": "Records tab video and optional tab audio",
-      "intro.what2": "Captures console, network, and WebSocket debugging data",
-      "intro.what3": "Applies client-side redaction based on your privacy settings",
-      "intro.what4": "Uploads a zip package to <strong>your</strong> cloud storage",
-      "intro.what5": "Generates a shareable replay link for the hosted player",
-      "intro.howTitle": "How to use GN Tracing",
-      "intro.how1": "Install the <strong>GN Tracing</strong> browser extension.",
-      "intro.how2":
-        "Choose cloud storage in Settings and connect it in the popup (OAuth with limited file access).",
-      "intro.how3": "Start recording the tab you want to debug, then stop when finished.",
-      "intro.how4": "Upload the package and open the generated replay URL.",
-      "intro.cloudTitle": "Cloud storage access",
-      "intro.cloud1": "Supports Google Drive and Dropbox (user-owned cloud only).",
-      "intro.cloud2":
-        "Google Drive uses the <code>drive.file</code> scope only—not full Drive access.",
-      "intro.cloud3": "Packages stay in your account; SharePoint/site drives are not supported.",
-      "intro.cloud4":
-        "Replay files are link-readable so shared URLs work; optional zip passwords protect contents.",
-      "intro.footnote":
-        "Recording starts only when you choose to record. Packages stay in your cloud storage.",
-      "introStandalone.eyebrow": "Session Replay Player",
-      "introStandalone.lead":
-        "Replay a recorded browser session with synced video, console logs, network traffic, and WebSocket activity.",
-      "introStandalone.howTitle": "How to use",
-      "introStandalone.how1": "Install the GN Tracing extension and start recording a tab.",
-      "introStandalone.how2":
-        "Upload the capture to your connected cloud storage from the extension popup.",
-      "introStandalone.how3":
-        "Open the generated replay link to load the player with recording params.",
-      "introStandalone.paramsTitle": "Expected params",
-      "introStandalone.params1": "<code>videos</code> and <code>metadata</code> are required.",
-      "introStandalone.params2":
-        "<code>console</code>, <code>network</code>, and <code>websocket</code> are optional.",
-      "introStandalone.params3": "Links are generated automatically after a successful upload.",
-      "introStandalone.footnote":
-        "Contributions are welcome if you want to help improve replay quality, debugging ergonomics, or sharing flow.",
-      "report.recordedSession": "Recorded session",
-      "report.privacyTitle": "Privacy summary",
-      "report.chip.duration": "Duration {value}",
-      "report.chip.created": "Created {value}",
-      "report.chip.severity": "Severity {value}",
-      "report.chip.reference": "Reference {value}",
-      "report.chip.viewport": "Viewport {value}",
-      "report.chip.language": "Language {value}",
-      "report.chip.timezone": "Timezone {value}",
-      "report.privacy.policy": "Policy v{version} · {profile}",
-      "report.privacy.evidence": "Evidence: {list}",
-      "report.privacy.redactions": "{count} redaction(s) applied",
-      "report.privacy.limit": "Limit: {item}",
-      "report.privacy.unknownProfile": "unknown",
-      "activity.event": "Event",
-      "activity.navigation": "Navigation {detail}",
-      "activity.click": "Click {detail}",
-      "activity.contextmenu": "Right click {detail}",
-      "activity.scroll": "Scroll {direction} {detail}",
-      "activity.scrollUp": "up",
-      "activity.scrollDown": "down",
-      "activity.focus": "Focus {detail}",
-      "activity.submit": "Submit {detail}",
-      "activity.key": "Key {detail}",
-      "detail.time": "Time",
-      "detail.level": "Level",
-      "detail.arguments": "Arguments",
-      "detail.message": "Message",
-      "detail.source": "Source",
-      "detail.sourceMap": "Source Map",
-      "detail.sourcePreview": "Source Preview",
-      "detail.stackTrace": "Stack Trace",
-      "detail.url": "URL",
-      "detail.requestHeaders": "Request Headers",
-      "detail.requestBody": "Request Body",
-      "detail.responseHeaders": "Response Headers",
-      "detail.responseBody": "Response Body",
-      "detail.responsePreview": "Response Preview",
-      "detail.redirectChain": "Redirect Chain",
-      "detail.timing": "Timing",
-      "detail.initiator": "Initiator",
-      "detail.error": "Error",
-      "detail.frames": "Frames ({count})",
-      "detail.none": "(none)",
-      "detail.binaryData": "(binary data)",
-      "detail.noResponseBody": "No response body",
-      "detail.truncated": "...(truncated)",
-      "detail.anonymous": "(anonymous)",
-      "detail.toggleDetails": "Toggle details",
-      "detail.responseTabsAria": "Response detail tabs",
-      "detail.hideGrayFrames": "Hide gray frames ({count})",
-      "detail.showGrayFrames": "Show gray frames ({count})",
-      "detail.showPreview": "Show preview",
-      "detail.hidePreview": "Hide preview",
-      "detail.copyCurl": "Copy cURL",
-      "detail.copyItem": "Copy Item",
-      "detail.copyResponse": "Copy Response",
-      "detail.copyCurlResponse": "Copy cURL + Response",
-      "detail.copied": "Copied!",
-      "agentReport.button": "Copy for AI",
-      "agentReport.copied": "Recording report copied for AI",
-      "agentReport.failed": "Could not copy the report",
-      "agentReport.unavailable": "The report builder is not loaded",
-      "noVideo.title": "This recording has no video",
-      "noVideo.hint":
-        "It was captured by the in-page SDK, which records console, network, and WebSocket activity without a screen recording.",
-      "noVideo.screenshotTitle": "Screenshot report",
-      "noVideo.screenshotHint":
-        "This package is an annotated screenshot — there is no screen recording to play. Use the Screenshot tab for the reporter's image, notes, and shapes.",
-      "presentation.emptyTitle": "No replay evidence in this package",
-      "presentation.emptyHint":
-        "The package loaded, but it has no video, screenshots, or log artifacts to inspect.",
-      "loading.unlocked": "Loading unlocked recording...",
-      "password.enterRequired": "Enter the recording password.",
-      "password.unlockFailed": "Failed to unlock recording package.",
-      "error.loadFailed": "Failed to load recording",
-      "network.ws.frames": "{count} frames",
-      "network.ws.moreFrames": "... {count} more frames",
-      "network.ws.open": "Open",
-      "network.ws.closed": "Closed",
-      "storage.cookies": "Cookies",
-      "storage.status.added": "added",
-      "storage.status.removed": "removed",
-      "storage.status.changed": "changed",
-      "storage.status.unchanged": "unchanged",
-      "elements.masked": "masked",
-      "elements.maskedTitle": "Content masked for privacy",
-      "elements.snapshotFallback": "snapshot {index}",
-      "sourceMap.pending-frame-id": "Source map unavailable: waiting for frame id",
-      "sourceMap.missing-frame-id": "Source map unavailable: missing frame id",
-      "sourceMap.unsupported-target": "Source map unavailable: unsupported target",
-      "sourceMap.unsupported-url": "Source map unavailable: unsupported URL",
-      "sourceMap.too-large": "Source map unavailable: file too large",
-      "sourceMap.network-failed": "Source map unavailable: network load failed",
-      "sourceMap.http-error": "Source map unavailable: HTTP {status}",
-      "sourceMap.stream-read-failed": "Source map unavailable: stream read failed",
-      "sourceMap.html-fallback": "Source map response was HTML, not JSON",
-      "sourceMap.non-json-response": "Source map response was not JSON",
-      "sourceMap.json-parse-failed": "Source map JSON could not be parsed",
-      "sourceMap.unsupported-map": "Source map format is not supported",
-      "sourceMap.no-map-for-generated-url": "Source map unavailable for this generated URL",
-      "sourceMap.no-generated-line": "Source map loaded but this generated line was not mapped",
-      "sourceMap.no-segment-for-column":
-        "Source map loaded but no segment matched this generated column",
-      "sourceMap.no-original-segment":
-        "Source map loaded but matching segment had no original location",
-      "sourceMap.loadedNoMatch":
-        "Source map loaded, but this frame did not match a mapped segment.",
-      "sourceMap.unavailable": "Source map unavailable: {reason}",
-    },
-    vi: {
-      "loading.message": "Đang tải bản ghi...",
-      "loading.package": "Đang tải gói bản ghi...",
-      "password.title": "Bản ghi được bảo vệ",
-      "password.lead": "Gói bản ghi này cần mật khẩu trước khi phát lại.",
-      "password.label": "Mật khẩu bản ghi",
-      "password.placeholder": "Nhập mật khẩu",
-      "password.unlock": "Mở khóa",
-      "password.unlocking": "Đang mở khóa...",
-      "password.wrong": "Sai mật khẩu hoặc gói bản ghi bị hỏng. Hãy thử lại.",
-      "error.title": "Tham số bản ghi không hợp lệ",
-      "error.default": "Tham số bản ghi bị thiếu hoặc không hợp lệ.",
-      "error.invalidParams":
-        "Tham số bản ghi thiếu hoặc không hợp lệ. Cần cung cấp videos và metadata file ID.",
-      "error.providerUnsupported":
-        'Nhà cung cấp lưu trữ "{provider}" chưa được hỗ trợ trong bản player này.',
-      "controls.playPause": "Phát/Tạm dừng (Space)",
-      "controls.mute": "Tắt tiếng",
-      "controls.layoutGroup": "Điều khiển bố cục player",
-      "controls.layoutHorizontal": "Bố cục ngang",
-      "controls.layoutVertical": "Bố cục dọc",
-      "controls.expandVideo": "Phóng to video trong tab",
-      "controls.exitExpandedVideo": "Thoát chế độ phóng to video",
-      "controls.expandStill": "Phóng to ảnh trong tab",
-      "controls.exitExpandedStill": "Thoát chế độ phóng to ảnh",
-      "controls.splitter": "Đổi kích thước panel player và logs",
-      "tabs.report": "Report",
-      "tabs.activity": "Activity",
-      "tabs.console": "Console",
-      "tabs.network": "Network",
-      "tabs.storage": "Storage",
-      "tabs.elements": "Elements",
-      "tabs.screenshots": "Screenshot",
-      "screenshots.aria": "Ảnh màn hình có chú thích",
-      "screenshots.sourceImage": "Ảnh chụp",
-      "screenshots.sourceDom": "Ảnh chụp DOM",
-      "screenshots.domSnapshot":
-        "Ảnh này là ảnh chụp DOM do SDK trong trang ghi lại, không phải ảnh chụp màn hình thật. Mở tab Elements để xem chi tiết.",
-      "screenshots.imageMissing": "Gói không chứa ảnh cho mục này.",
-      "screenshots.instantReplay": "Instant replay (trước khi báo cáo)",
-      "screenshots.instantReplayMeta":
-        "{frames} khung hình bao phủ {seconds}s trước lúc báo cáo ({dropped} khung bị bỏ để vừa bộ đệm).",
-      "screenshots.instantReplayOpenElements": "Mở tab Elements để xem timeline DOM lookback.",
-      "screenshots.instantReplayOpenStage": "Scrub DOM lookback",
-      "domStage.aria": "DOM lookback",
-      "domStage.frameTitle": "Xem trước DOM lookback",
-      "domStage.prev": "Khung trước",
-      "domStage.next": "Khung sau",
-      "domStage.scrubberAria": "Thanh scrub DOM lookback",
-      "domStage.hint":
-        "DOM lookback dạng cấu trúc — layout có thể khác khi thiếu CSS đầy đủ của trang.",
-      "domStage.empty": "Không có khung DOM để xem.",
-      "screenshots.badge": "Báo cáo ảnh chụp màn hình",
-      "screenshots.noCaption": "Người báo cáo không để chú thích",
-      "screenshots.noAnnotations": "Không có hình vẽ hay ghi chú trên ảnh này.",
-      "screenshots.openPage": "Mở trang",
-      "screenshots.copyUrl": "Sao chép URL",
-      "screenshots.urlCopied": "Đã sao chép URL",
-      "screenshots.viewportChip": "{width}×{height}",
-      "screenshots.shotIndex": "{current} / {total}",
-      "screenshots.prev": "Ảnh trước",
-      "screenshots.next": "Ảnh sau",
-      "screenshots.annotationsHeading": "Chú thích",
-      "stillStage.aria": "Ảnh chú thích",
-      "stillStage.toolbarAria": "Điều khiển xem ảnh",
-      "stillStage.zoomIn": "Phóng to",
-      "stillStage.zoomOut": "Thu nhỏ",
-      "stillStage.fit": "Vừa khung",
-      "stillStage.rotate": "Xoay 90°",
-      "report.openPage": "Mở trang đã ghi",
-      "report.screenshotAlt": "Ảnh chụp bản ghi",
-      "console.search": "Tìm trong console",
-      "network.search": "Tìm trong network",
-      "network.method": "Method",
-      "network.url": "URL",
-      "network.status": "Status",
-      "network.type": "Type",
-      "network.size": "Size",
-      "network.websocketConnections": "Kết nối WebSocket",
-      "network.summary": "{visible}/{total} request",
-      "filters.all": "Tất cả",
-      "filters.log": "Log",
-      "filters.warn": "Warn",
-      "filters.error": "Error",
-      "filters.info": "Info",
-      "filters.debug": "Debug",
-      "filters.fetch": "Fetch/XHR",
-      "filters.js": "JS",
-      "filters.css": "CSS",
-      "filters.img": "Img",
-      "filters.doc": "Doc",
-      "filters.font": "Font",
-      "filters.media": "Media",
-      "filters.ws": "WS",
-      "filters.other": "Khác",
-      "storage.aria": "Diff snapshot storage",
-      "storage.empty": "Không có entry nào được capture.",
-      "elements.aria": "Cây snapshot DOM",
-      "elements.snapshot": "Snapshot",
-      "elements.selectAria": "Chọn snapshot DOM",
-      "elements.search": "Tìm elements",
-      "elements.searchAria": "Tìm elements",
-      "elements.empty": "Không có node DOM nào được capture.",
-      "elements.noMatch": "Không có element khớp.",
-      "source.lineTruncated": "Dòng bị cắt trong artifact bản ghi.",
-      "theme.system": "Hệ thống",
-      "theme.light": "Sáng",
-      "theme.dark": "Tối",
-      "theme.aria": "Giao diện: {label}",
-      "theme.titleSystem": "Giao diện: {label} (theo OS). Bấm để chuyển Hệ thống → Sáng → Tối.",
-      "theme.titleFixed": "Giao diện: {label}. Bấm để chuyển Hệ thống → Sáng → Tối.",
-      "lang.switchToVi": "Chuyển sang tiếng Việt",
-      "lang.switchToEn": "Chuyển sang English",
-      "intro.eyebrow": "Tiện ích debug trình duyệt",
-      "intro.logoAlt": "Logo GN Tracing",
-      "intro.lead":
-        "<strong>GN Tracing</strong> là tiện ích trình duyệt giúp developer và QA tạo báo cáo lỗi có thể chia sẻ. Khi bắt đầu ghi, GN Tracing capture video tab đã chọn, console log, network và các artifact debug liên quan, rồi đóng gói để review.",
-      "intro.purposeTitle": "Mục đích của GN Tracing",
-      "intro.purposeBody1":
-        "Mục đích của <strong>GN Tracing</strong> là ghi tab trình duyệt do người dùng chọn theo yêu cầu, tạo gói debug có thể phát lại, lưu gói đó trên cloud của chính người dùng (Google Drive hoặc Dropbox sau khi kết nối), và mở replay hosted để đồng nghiệp xem lại mà không cần tái hiện lỗi cục bộ.",
-      "intro.purposeBody2":
-        "GN Tracing không giám sát nền liên tục. Chỉ ghi khi bạn bấm record trong popup extension và dừng khi bạn stop hoặc đóng tab.",
-      "feedback.button": "Góp ý",
-      "feedback.sectionAria": "Gửi góp ý",
-      "feedback.label": "Góp ý",
-      "feedback.placeholder": "Mô tả lỗi, ý tưởng hoặc câu hỏi…",
-      "feedback.hint":
-        "Tạo issue GitHub công khai. Chỉ kèm version extension, browser, OS và locale. Không gửi mật khẩu hay secret.",
-      "feedback.submit": "Gửi",
-      "feedback.cancel": "Hủy",
-      "feedback.sending": "Đang gửi…",
-      "feedback.success": "Đã gửi góp ý.",
-      "feedback.failed": "Không gửi được góp ý.",
-      "feedback.notConfigured": "Dịch vụ góp ý chưa được cấu hình cho player này.",
-      "intro.whatTitle": "GN Tracing làm gì",
-      "intro.what1": "Ghi video tab và tùy chọn audio tab",
-      "intro.what2": "Capture console, network và dữ liệu WebSocket",
-      "intro.what3": "Áp dụng redaction phía client theo cài đặt privacy",
-      "intro.what4": "Upload gói zip lên cloud storage <strong>của bạn</strong>",
-      "intro.what5": "Tạo link replay chia sẻ cho player hosted",
-      "intro.howTitle": "Cách dùng GN Tracing",
-      "intro.how1": "Cài <strong>GN Tracing</strong> browser extension.",
-      "intro.how2":
-        "Chọn cloud storage trong Settings và kết nối trong popup (OAuth với quyền file hạn chế).",
-      "intro.how3": "Bắt đầu ghi tab cần debug, rồi dừng khi xong.",
-      "intro.how4": "Upload gói và mở URL replay được tạo.",
-      "intro.cloudTitle": "Truy cập cloud storage",
-      "intro.cloud1": "Hỗ trợ Google Drive và Dropbox (chỉ cloud của user).",
-      "intro.cloud2":
-        "Google Drive chỉ dùng scope <code>drive.file</code>—không truy cập full Drive.",
-      "intro.cloud3": "Gói nằm trong tài khoản của bạn; không hỗ trợ SharePoint/site drive.",
-      "intro.cloud4":
-        "File replay đọc được qua link để URL chia sẻ hoạt động; mật khẩu zip tùy chọn bảo vệ nội dung.",
-      "intro.footnote": "Chỉ ghi khi bạn chủ động bấm ghi. Package nằm trên cloud storage của bạn.",
-      "introStandalone.eyebrow": "Player phát lại phiên",
-      "introStandalone.lead":
-        "Phát lại phiên trình duyệt đã ghi với video, console, network và WebSocket đồng bộ.",
-      "introStandalone.howTitle": "Cách dùng",
-      "introStandalone.how1": "Cài extension GN Tracing và bắt đầu ghi một tab.",
-      "introStandalone.how2": "Upload bản ghi lên cloud đã kết nối từ popup extension.",
-      "introStandalone.how3": "Mở link replay được tạo để load player với tham số bản ghi.",
-      "introStandalone.paramsTitle": "Tham số mong đợi",
-      "introStandalone.params1": "<code>videos</code> và <code>metadata</code> là bắt buộc.",
-      "introStandalone.params2":
-        "<code>console</code>, <code>network</code> và <code>websocket</code> là tùy chọn.",
-      "introStandalone.params3": "Link được tạo tự động sau khi upload thành công.",
-      "introStandalone.footnote":
-        "Hoan nghênh đóng góp để cải thiện chất lượng replay, trải nghiệm debug hoặc luồng chia sẻ.",
-      "report.recordedSession": "Phiên đã ghi",
-      "report.privacyTitle": "Tóm tắt privacy",
-      "report.chip.duration": "Thời lượng {value}",
-      "report.chip.created": "Tạo lúc {value}",
-      "report.chip.severity": "Mức độ {value}",
-      "report.chip.reference": "Tham chiếu {value}",
-      "report.chip.viewport": "Viewport {value}",
-      "report.chip.language": "Ngôn ngữ {value}",
-      "report.chip.timezone": "Múi giờ {value}",
-      "report.privacy.policy": "Chính sách v{version} · {profile}",
-      "report.privacy.evidence": "Bằng chứng: {list}",
-      "report.privacy.redactions": "{count} redaction đã áp dụng",
-      "report.privacy.limit": "Giới hạn: {item}",
-      "report.privacy.unknownProfile": "không rõ",
-      "activity.event": "Sự kiện",
-      "activity.navigation": "Điều hướng {detail}",
-      "activity.click": "Nhấp {detail}",
-      "activity.contextmenu": "Nhấp phải {detail}",
-      "activity.scroll": "Cuộn {direction} {detail}",
-      "activity.scrollUp": "lên",
-      "activity.scrollDown": "xuống",
-      "activity.focus": "Focus {detail}",
-      "activity.submit": "Gửi form {detail}",
-      "activity.key": "Phím {detail}",
-      "detail.time": "Thời gian",
-      "detail.level": "Mức",
-      "detail.arguments": "Tham số",
-      "detail.message": "Nội dung",
-      "detail.source": "Nguồn",
-      "detail.sourceMap": "Source Map",
-      "detail.sourcePreview": "Xem trước source",
-      "detail.stackTrace": "Stack Trace",
-      "detail.url": "URL",
-      "detail.requestHeaders": "Header request",
-      "detail.requestBody": "Body request",
-      "detail.responseHeaders": "Header response",
-      "detail.responseBody": "Body response",
-      "detail.responsePreview": "Xem trước response",
-      "detail.redirectChain": "Chuỗi redirect",
-      "detail.timing": "Timing",
-      "detail.initiator": "Initiator",
-      "detail.error": "Lỗi",
-      "detail.frames": "Frame ({count})",
-      "detail.none": "(không có)",
-      "detail.binaryData": "(dữ liệu nhị phân)",
-      "detail.noResponseBody": "Không có response body",
-      "detail.truncated": "...(đã cắt)",
-      "detail.anonymous": "(ẩn danh)",
-      "detail.toggleDetails": "Mở/đóng chi tiết",
-      "detail.responseTabsAria": "Tab chi tiết response",
-      "detail.hideGrayFrames": "Ẩn frame xám ({count})",
-      "detail.showGrayFrames": "Hiện frame xám ({count})",
-      "detail.showPreview": "Hiện preview",
-      "detail.hidePreview": "Ẩn preview",
-      "detail.copyCurl": "Sao chép cURL",
-      "detail.copyItem": "Sao chép mục",
-      "detail.copyResponse": "Sao chép Response",
-      "detail.copyCurlResponse": "Sao chép cURL + Response",
-      "detail.copied": "Đã sao chép!",
-      "agentReport.button": "Sao chép cho AI",
-      "agentReport.copied": "Đã sao chép báo cáo bản ghi cho AI",
-      "agentReport.failed": "Không sao chép được báo cáo",
-      "agentReport.unavailable": "Chưa tải được bộ tạo báo cáo",
-      "noVideo.title": "Bản ghi này không có video",
-      "noVideo.hint":
-        "Bản ghi được tạo bởi SDK nhúng trong trang, ghi lại console, network và WebSocket mà không quay màn hình.",
-      "noVideo.screenshotTitle": "Báo cáo ảnh chụp màn hình",
-      "noVideo.screenshotHint":
-        "Gói này là ảnh có chú thích — không có video để phát. Dùng tab Screenshot để xem ảnh, ghi chú và hình vẽ của người báo cáo.",
-      "presentation.emptyTitle": "Gói không có bằng chứng để xem lại",
-      "presentation.emptyHint":
-        "Gói đã tải được nhưng không có video, ảnh chụp màn hình, hay log để kiểm tra.",
-      "loading.unlocked": "Đang tải bản ghi đã mở khóa...",
-      "password.enterRequired": "Nhập mật khẩu bản ghi.",
-      "password.unlockFailed": "Không mở khóa được gói bản ghi.",
-      "error.loadFailed": "Không tải được bản ghi",
-      "network.ws.frames": "{count} frame",
-      "network.ws.moreFrames": "... còn {count} frame",
-      "network.ws.open": "Mở",
-      "network.ws.closed": "Đóng",
-      "storage.cookies": "Cookie",
-      "storage.status.added": "thêm",
-      "storage.status.removed": "xóa",
-      "storage.status.changed": "đổi",
-      "storage.status.unchanged": "giữ",
-      "elements.masked": "đã che",
-      "elements.maskedTitle": "Nội dung đã che vì privacy",
-      "elements.snapshotFallback": "snapshot {index}",
-      "sourceMap.pending-frame-id": "Không có source map: đang chờ frame id",
-      "sourceMap.missing-frame-id": "Không có source map: thiếu frame id",
-      "sourceMap.unsupported-target": "Không có source map: target không hỗ trợ",
-      "sourceMap.unsupported-url": "Không có source map: URL không hỗ trợ",
-      "sourceMap.too-large": "Không có source map: file quá lớn",
-      "sourceMap.network-failed": "Không có source map: tải network thất bại",
-      "sourceMap.http-error": "Không có source map: HTTP {status}",
-      "sourceMap.stream-read-failed": "Không có source map: đọc stream thất bại",
-      "sourceMap.html-fallback": "Phản hồi source map là HTML, không phải JSON",
-      "sourceMap.non-json-response": "Phản hồi source map không phải JSON",
-      "sourceMap.json-parse-failed": "Không parse được JSON source map",
-      "sourceMap.unsupported-map": "Định dạng source map không được hỗ trợ",
-      "sourceMap.no-map-for-generated-url": "Không có source map cho URL generated này",
-      "sourceMap.no-generated-line": "Đã tải source map nhưng dòng generated này không được map",
-      "sourceMap.no-segment-for-column":
-        "Đã tải source map nhưng không có segment khớp cột generated",
-      "sourceMap.no-original-segment":
-        "Đã tải source map nhưng segment khớp không có vị trí original",
-      "sourceMap.loadedNoMatch": "Đã tải source map nhưng frame này không khớp segment đã map.",
-      "sourceMap.unavailable": "Không có source map: {reason}",
-    },
-  };
+  // Catalog: src/shared/player-i18n via gnCore.i18n (assigned in assertGnCore).
+  let TRANSLATIONS = null;
 
-  // Exposed for automated catalog/parity checks (tests import the shipped player path).
-  if (typeof window !== "undefined") {
-    window.__GN_TRACING_PLAYER_I18N__ = {
-      TRANSLATIONS,
-      t: (key, replacements = {}, language = currentLanguage) => {
-        const table = TRANSLATIONS[language] || TRANSLATIONS.en;
-        const template = table[key] || TRANSLATIONS.en[key] || key;
-        return Object.entries(replacements).reduce(
-          (text, [name, value]) => text.replaceAll(`{${name}}`, value),
-          template,
-        );
-      },
-    };
-  }
 
   let currentLanguage = "en";
 
+  // Exposed after boot for automated catalog/parity checks.
+  function publishPlayerI18nForTests() {
+    if (typeof window === "undefined" || !TRANSLATIONS) {
+      return;
+    }
+    window.__GN_TRACING_PLAYER_I18N__ = {
+      TRANSLATIONS,
+      t: (key, replacements = {}, language = currentLanguage) =>
+        globalThis.gnCore.i18n.formatMessage(language, key, replacements),
+    };
+  }
+
   function isUiLanguage(value) {
-    return value === "en" || value === "vi";
+    return globalThis.gnCore?.i18n?.isUiLanguage
+      ? globalThis.gnCore.i18n.isUiLanguage(value)
+      : value === "en" || value === "vi";
   }
 
   function detectBrowserLanguage() {
@@ -670,8 +187,12 @@
   }
 
   function t(key, replacements = {}) {
-    const table = TRANSLATIONS[currentLanguage] || TRANSLATIONS.en;
-    const template = table[key] || TRANSLATIONS.en[key] || key;
+    if (globalThis.gnCore?.i18n?.formatMessage) {
+      return globalThis.gnCore.i18n.formatMessage(currentLanguage, key, replacements);
+    }
+    // Pre-boot only (assertGnCore has not run).
+    const table = TRANSLATIONS?.[currentLanguage] || TRANSLATIONS?.en || {};
+    const template = table[key] || TRANSLATIONS?.en?.[key] || key;
     return Object.entries(replacements).reduce(
       (text, [name, value]) => text.replaceAll(`{${name}}`, value),
       template,
@@ -1235,6 +756,12 @@
   let privacySummary = null;
   let sourceMapDiagnostics = [];
   let userEvents = [];
+  /** Cached relativeMs vector for userEvents (see gnCore.clockIndex.eventRelativeTimesMs). */
+  let userEventTimesMs = [];
+  /** Live `.event-item` nodes in index order — avoids querySelectorAll on every tick. */
+  let activityEventNodes = [];
+  /** First activity index with relativeMs > currentTimeMs (is-future range start). */
+  let activityFirstFutureIndex = 0;
   let effectEvents = [];
   let effectsCursorIdx = 0;
   let effectsRafId = null;
@@ -1244,6 +771,8 @@
   let drawingRafId = null;
   const MAX_LIVE_EFFECT_NODES = 20;
   const EFFECT_TRAILING_WINDOW_MS = 300;
+  /** Invalidated on layout change; filled lazily by getVideoContentRect(). */
+  let videoContentRectCache = null;
   let screenshotUrl = null;
   let startTime = 0;
   let currentTimeMs = 0;
@@ -1283,6 +812,10 @@
   let activeLogsTab = "console";
   let consolePanelDirty = false;
   let networkPanelDirty = false;
+  // Last time syncPanelsToPlayhead actually touched the DOM (playback or seek).
+  let lastPanelSyncTime = 0;
+  /** @type {ReturnType<typeof setTimeout> | null} */
+  let panelSyncTimer = null;
   let layoutState = loadLayoutState();
   let isVideoFullscreen = false;
   let loadingProgressMessage = t("loading.message");
@@ -1544,24 +1077,11 @@
   }
 
   function renderLoadingProgress() {
-    const progressEntries = Array.from(loadingProgressEntries.values());
-    const uploadedBytes = progressEntries.reduce(
-      (sum, entry) => sum + (entry.total > 0 ? Math.min(entry.loaded, entry.total) : 0),
-      0,
-    );
-    const videoLoadedBytes = progressEntries
-      .filter((entry) => entry.group === "video")
-      .reduce((sum, entry) => sum + (entry.total > 0 ? Math.min(entry.loaded, entry.total) : 0), 0);
-    const videoKnownTotalBytes = progressEntries
-      .filter((entry) => entry.group === "video")
-      .reduce((sum, entry) => sum + entry.total, 0);
-    const otherTotalBytes = progressEntries
-      .filter((entry) => entry.group !== "video")
-      .reduce((sum, entry) => sum + entry.total, 0);
-    const totalBytes =
-      Math.max(videoKnownTotalBytes, expectedVideoBytes, videoLoadedBytes) + otherTotalBytes;
-    const percent =
-      totalBytes > 0 ? Math.max(0, Math.min(100, (uploadedBytes / totalBytes) * 100)) : 0;
+    const { uploadedBytes, totalBytes, percent } =
+      globalThis.gnCore.loadingProgress.aggregateLoadingProgress(
+        loadingProgressEntries.values(),
+        expectedVideoBytes,
+      );
 
     if (elements.loadingMessage) {
       elements.loadingMessage.textContent = loadingProgressMessage;
@@ -1578,11 +1098,7 @@
   }
 
   function normalizeLoadingStatus(status) {
-    const raw = String(status || "queued").toLowerCase();
-    if (raw === "queued" || raw === "loaded" || raw === "failed" || raw === "loading") {
-      return raw;
-    }
-    return "queued";
+    return globalThis.gnCore.loadingProgress.normalizeLoadingStatus(status);
   }
 
   function resetLoadingProgress(message = t("loading.message")) {
@@ -1606,20 +1122,17 @@
     key,
     { loaded = 0, total = 0, group = "other", label, status, message } = {},
   ) {
-    const previous = loadingProgressEntries.get(key) || {
-      loaded: 0,
-      total: 0,
-      group,
-      label: label || key,
-      status: "queued",
-    };
-    loadingProgressEntries.set(key, {
-      loaded: Math.max(0, loaded),
-      total: Math.max(0, total || previous.total || 0),
-      group,
-      label: label || previous.label || key,
-      status: normalizeLoadingStatus(status || previous.status || "queued"),
-    });
+    const previous = loadingProgressEntries.get(key);
+    loadingProgressEntries.set(
+      key,
+      globalThis.gnCore.loadingProgress.mergeLoadingEntry(previous, key, {
+        loaded,
+        total,
+        group,
+        label,
+        status,
+      }),
+    );
     if (message) {
       loadingProgressMessage = message;
     }
@@ -1770,11 +1283,7 @@
   }
 
   function getFiniteDurationMs(value) {
-    if (TimelineSeek && typeof TimelineSeek.getFiniteDurationMs === "function") {
-      return TimelineSeek.getFiniteDurationMs(value);
-    }
-    const durationMs = Number(value);
-    return Number.isFinite(durationMs) && durationMs > 0 ? durationMs : 0;
+    return TimelineSeek.getFiniteDurationMs(value);
   }
 
   function getVideoDurationMs() {
@@ -1783,21 +1292,13 @@
 
   function syncDurationState(extraDurationMs = 0) {
     // Do not let partial demux (video.duration ticking up) reflow the bar after lock.
-    if (TimelineSeek && typeof TimelineSeek.resolveTimelineDurationMs === "function") {
-      const resolved = TimelineSeek.resolveTimelineDurationMs({
-        durationMs: duration,
-        metadataDurationMs: metadata?.duration,
-        videoDurationMs: extraDurationMs,
-        locked: timelineDurationLocked,
-      });
-      duration = resolved.durationMs;
-    } else {
-      duration = Math.max(
-        getFiniteDurationMs(duration),
-        getFiniteDurationMs(metadata?.duration),
-        getFiniteDurationMs(extraDurationMs),
-      );
-    }
+    const resolved = TimelineSeek.resolveTimelineDurationMs({
+      durationMs: duration,
+      metadataDurationMs: metadata?.duration,
+      videoDurationMs: extraDurationMs,
+      locked: timelineDurationLocked,
+    });
+    duration = resolved.durationMs;
     if (elements.totalDuration) {
       elements.totalDuration.textContent = formatTime(duration);
     }
@@ -1805,21 +1306,13 @@
   }
 
   function lockTimelineDurationFromMedia() {
-    if (TimelineSeek && typeof TimelineSeek.resolveTimelineDurationMs === "function") {
-      const resolved = TimelineSeek.resolveTimelineDurationMs({
-        durationMs: duration,
-        metadataDurationMs: metadata?.duration,
-        videoDurationMs: getVideoDurationMs(),
-        locked: false,
-      });
-      duration = resolved.durationMs;
-    } else {
-      duration = Math.max(
-        getFiniteDurationMs(duration),
-        getFiniteDurationMs(metadata?.duration),
-        getVideoDurationMs(),
-      );
-    }
+    const resolved = TimelineSeek.resolveTimelineDurationMs({
+      durationMs: duration,
+      metadataDurationMs: metadata?.duration,
+      videoDurationMs: getVideoDurationMs(),
+      locked: false,
+    });
+    duration = resolved.durationMs;
     timelineDurationLocked = true;
     if (elements.totalDuration) {
       elements.totalDuration.textContent = formatTime(duration);
@@ -2139,38 +1632,13 @@
     }
   }
 
-  // Build a one-row-per-key diff between two storage groups. Every key present
-  // in start∪stop yields exactly one row (Property P4 / R5.2).
+  // Canonical: src/shared/storage-diff.ts via gnCore.storageDiff
   function diffStorageGroups(startItems, stopItems) {
-    const startMap = new Map((startItems || []).map((it) => [it.key, it.value]));
-    const stopMap = new Map((stopItems || []).map((it) => [it.key, it.value]));
-    const rows = [];
-    for (const [key, value] of stopMap) {
-      if (!startMap.has(key)) {
-        rows.push({ key, status: "added", value });
-      } else if (startMap.get(key) !== value) {
-        rows.push({ key, status: "changed", from: startMap.get(key), to: value });
-      } else {
-        rows.push({ key, status: "unchanged", value });
-      }
-    }
-    for (const [key, value] of startMap) {
-      if (!stopMap.has(key)) {
-        rows.push({ key, status: "removed", value });
-      }
-    }
-    return rows;
+    return globalThis.gnCore.storageDiff.diffStorageGroups(startItems, stopItems);
   }
 
-  // Normalize a snapshot's group into a list of { key, value }. Cookies use the
-  // cookie `name` as the diff key.
   function toStorageItems(snapshot, group) {
-    if (!snapshot) return [];
-    const raw = Array.isArray(snapshot[group]) ? snapshot[group] : [];
-    if (group === "cookies") {
-      return raw.map((c) => ({ key: c?.name ?? "", value: c?.value ?? "" }));
-    }
-    return raw.map((kv) => ({ key: kv?.key ?? "", value: kv?.value ?? "" }));
+    return globalThis.gnCore.storageDiff.toStorageItems(snapshot, group);
   }
 
   function getStorageDiffValueHtml(row) {
@@ -2227,27 +1695,13 @@
     return capturedAt - startTime;
   }
 
-  // Picks the snapshot active at the current playback time: the latest snapshot
-  // captured at or before `currentTimeMs`. Falls back to the earliest snapshot
-  // when playback is before the first capture. Returns its index.
+  // Canonical: src/shared/player-clock-index.ts via gnCore.clockIndex
   function getActiveSnapshotIndexByTime(snapshots) {
-    let activeIndex = 0;
-    let bestRel = Number.NEGATIVE_INFINITY;
-    let earliestRel = Number.POSITIVE_INFINITY;
-    let earliestIndex = 0;
-    for (let i = 0; i < snapshots.length; i += 1) {
-      const rel = getSnapshotRelativeMs(snapshots[i]);
-      if (rel === null) continue;
-      if (rel < earliestRel) {
-        earliestRel = rel;
-        earliestIndex = i;
-      }
-      if (rel <= currentTimeMs && rel >= bestRel) {
-        bestRel = rel;
-        activeIndex = i;
-      }
-    }
-    return bestRel === Number.NEGATIVE_INFINITY ? earliestIndex : activeIndex;
+    return globalThis.gnCore.clockIndex.getActiveSnapshotIndexByTime(
+      snapshots,
+      currentTimeMs,
+      startTime,
+    );
   }
 
   function renderStorageTab() {
@@ -2460,8 +1914,13 @@
   }
 
   /**
-   * Frames for the DOM stage scrubber: prefer Instant Replay artifact frames
-   * (true relativeMs), else map merged Elements snapshots.
+   * Frames for the DOM stage scrubber.
+   *
+   * Instant Replay frames carry a `relativeMs` relative to the first retained
+   * frame (its rolling window origin), not to the recording start. We rebase
+   * them onto the recording timeline using `capturedAt - startTime` so that
+   * scrubbing the DOM stage seeks the video to the correct playback time.
+   *
    * @returns {Array<{ relativeMs: number, documentUrl: string, root: unknown, viewport?: { width?: number, height?: number } }>}
    */
   function getDomLookbackFrames() {
@@ -2470,18 +1929,26 @@
       Array.isArray(instantReplayArtifact.frames) &&
       instantReplayArtifact.frames.length > 0
     ) {
-      return instantReplayArtifact.frames.map((frame) => ({
-        relativeMs: Number(frame.relativeMs) || 0,
-        documentUrl: typeof frame.documentUrl === "string" ? frame.documentUrl : "",
-        root: frame.root,
-        viewport: frame.viewport,
-      }));
+      return instantReplayArtifact.frames.map((frame) => {
+        const capturedAt = Number(frame.capturedAt);
+        const fallbackMs = Number(frame.relativeMs) || 0;
+        const relativeMs =
+          startTime > 0 && Number.isFinite(capturedAt) && capturedAt >= startTime
+            ? capturedAt - startTime
+            : fallbackMs;
+        return {
+          relativeMs,
+          documentUrl: typeof frame.documentUrl === "string" ? frame.documentUrl : "",
+          root: frame.root,
+          viewport: frame.viewport,
+        };
+      });
     }
     const snapshots = Array.isArray(domArtifact?.snapshots) ? domArtifact.snapshots : [];
     if (snapshots.length === 0) {
       return [];
     }
-    const base = Number(snapshots[0]?.capturedAt) || 0;
+    const base = startTime || Number(snapshots[0]?.capturedAt) || 0;
     return snapshots.map((snapshot, index) => {
       const capturedAt = Number(snapshot.capturedAt) || 0;
       const relativeMs = base > 0 && capturedAt >= base ? capturedAt - base : index * 1000;
@@ -3635,42 +3102,76 @@
     }
   }
 
-  // Last event whose relativeMs is still at or before the playhead (userEvents is sorted).
+  // Canonical: src/shared/player-clock-index.ts via gnCore.clockIndex
   function findActiveActivityIndex(timeMs) {
-    if (!userEvents.length) return -1;
-    let lo = 0;
-    let hi = userEvents.length;
-    while (lo < hi) {
-      const mid = (lo + hi) >>> 1;
-      const eventMs = Math.max(0, Number(userEvents[mid].relativeMs) || 0);
-      if (eventMs <= timeMs) {
-        lo = mid + 1;
-      } else {
-        hi = mid;
-      }
-    }
-    return lo - 1;
+    return globalThis.gnCore.clockIndex.findActiveEventIndexByRelativeMs(
+      userEvents,
+      timeMs,
+      userEventTimesMs,
+    );
   }
 
-  // Toggle active/future classes from currentTimeMs without rebuilding the list.
+  function rebuildUserEventTimesCache() {
+    userEventTimesMs = globalThis.gnCore.clockIndex.eventRelativeTimesMs(userEvents);
+  }
+
+  function clearActivityHighlightState() {
+    activeActivityIndex = -1;
+    activityFirstFutureIndex = 0;
+    activityEventNodes = [];
+  }
+
+  /**
+   * Patch only nodes whose active / is-future class actually changes.
+   * timesMs is sorted ascending, so the future boundary is a single cut index.
+   */
   function updateActivityHighlight(options = {}) {
     const forceScroll = Boolean(options.forceScroll);
     if (!elements.eventList) return;
 
-    const nextIndex = hasActivityContent() ? findActiveActivityIndex(currentTimeMs) : -1;
-    const changed = nextIndex !== activeActivityIndex;
-    activeActivityIndex = nextIndex;
+    const items = activityEventNodes;
+    if (items.length === 0) {
+      activeActivityIndex = -1;
+      activityFirstFutureIndex = 0;
+      return;
+    }
 
-    const items = elements.eventList.querySelectorAll(".event-item");
-    items.forEach((item, index) => {
-      const timeMs = Number(item.dataset.timeMs);
-      const isFuture = Number.isFinite(timeMs) && timeMs > currentTimeMs;
-      item.classList.toggle("active", index === activeActivityIndex);
-      item.classList.toggle("is-future", isFuture);
-    });
+    const nextIndex = hasActivityContent() ? findActiveActivityIndex(currentTimeMs) : -1;
+    // First future index = first event strictly after playhead. Prefer the
+    // cached times vector (handles duplicate timestamps); fall back to active+1.
+    const futureFromTimes =
+      userEventTimesMs.length === items.length
+        ? globalThis.gnCore.clockIndex.indexAtOrBefore(userEventTimesMs, currentTimeMs) + 1
+        : nextIndex + 1;
+    const nextFirstFuture = Math.max(0, Math.min(items.length, futureFromTimes));
+
+    const prevActive = activeActivityIndex;
+    const prevFuture = activityFirstFutureIndex;
+    activeActivityIndex = nextIndex;
+    activityFirstFutureIndex = nextFirstFuture;
+
+    if (prevActive !== nextIndex) {
+      if (prevActive >= 0 && prevActive < items.length) {
+        items[prevActive].classList.remove("active");
+      }
+      if (nextIndex >= 0 && nextIndex < items.length) {
+        items[nextIndex].classList.add("active");
+      }
+    }
+
+    // Move the is-future boundary with minimal class churn.
+    if (nextFirstFuture > prevFuture) {
+      for (let i = prevFuture; i < nextFirstFuture; i += 1) {
+        items[i].classList.remove("is-future");
+      }
+    } else if (nextFirstFuture < prevFuture) {
+      for (let i = nextFirstFuture; i < prevFuture; i += 1) {
+        items[i].classList.add("is-future");
+      }
+    }
 
     if (
-      (changed || forceScroll) &&
+      (prevActive !== nextIndex || forceScroll) &&
       activeActivityIndex >= 0 &&
       activeLogsTab === "activity" &&
       items[activeActivityIndex]
@@ -3689,7 +3190,7 @@
     elements.activityPanel?.classList.toggle("hidden", !hasActivity);
 
     if (!hasActivity) {
-      activeActivityIndex = -1;
+      clearActivityHighlightState();
       elements.eventList.innerHTML = "";
       if (elements.activityTab?.classList.contains("active")) {
         fallbackOptionalTab("report");
@@ -3701,7 +3202,8 @@
     // Activity viewer scrolls for long lists; highlight tracks video.currentTime.
     elements.eventList.innerHTML = userEvents
       .map((event, index) => {
-        const timeMs = Math.max(0, Number(event.relativeMs) || 0);
+        const timeMs =
+          userEventTimesMs[index] ?? Math.max(0, Number(event.relativeMs) || 0);
         return `
         <button class="event-item" type="button" data-index="${index}" data-time-ms="${timeMs}">
           <span class="event-time">${escapeHtml(formatTime(timeMs))}</span>
@@ -3711,7 +3213,14 @@
       })
       .join("");
 
+    activityEventNodes = Array.from(elements.eventList.querySelectorAll(".event-item"));
+    // Seed classes as if nothing has played yet, then patch to the real playhead.
+    for (const item of activityEventNodes) {
+      item.classList.add("is-future");
+      item.classList.remove("active");
+    }
     activeActivityIndex = -1;
+    activityFirstFutureIndex = 0;
     updateActivityHighlight({ forceScroll: activeLogsTab === "activity" });
 
     // Only auto-open Activity when it first appears and Report is unavailable.
@@ -4214,6 +3723,28 @@
     return items;
   }
 
+  /**
+   * When the user is glued to the live tail (no search, no filters) only keep
+   * the newest LOG_DOM_TAIL_MAX rows in the DOM. Scrolling up or searching
+   * restores the full time-bounded set via the next render.
+   * @template T
+   * @param {T[]} visible
+   * @param {HTMLElement | null | undefined} scrollContainer
+   * @param {boolean} hasActiveQuery
+   * @returns {T[]}
+   */
+  function maybeCapLogDomTail(visible, scrollContainer, hasActiveQuery) {
+    if (hasActiveQuery || visible.length <= LOG_DOM_TAIL_MAX) {
+      return visible;
+    }
+    // No container yet, or user has scrolled away from the tail → keep full set
+    // so history above the fold stays addressable.
+    if (!scrollContainer || !isScrolledNearBottom(scrollContainer)) {
+      return visible;
+    }
+    return visible.slice(visible.length - LOG_DOM_TAIL_MAX);
+  }
+
   function getVisibleConsoleEntries() {
     const consoleQuery = normalizeSearchQuery(consoleSearchQuery);
     const prepared = getPreparedConsoleEntries();
@@ -4225,7 +3756,11 @@
     if (consoleQuery) {
       visible = visible.filter((pe) => pe.searchText.includes(consoleQuery));
     }
-    return visible;
+    return maybeCapLogDomTail(
+      visible,
+      elements.consoleEntries,
+      Boolean(consoleQuery) || activeConsoleFilters.size > 0,
+    );
   }
 
   function getVisibleNetworkEntries() {
@@ -4239,7 +3774,11 @@
     if (networkQuery) {
       visible = visible.filter((pe) => pe.searchText.includes(networkQuery));
     }
-    return visible;
+    return maybeCapLogDomTail(
+      visible,
+      elements.networkEntries,
+      Boolean(networkQuery) || activeNetworkFilters.size > 0,
+    );
   }
 
   function getVisibleWebSocketEntries() {
@@ -5741,42 +5280,20 @@
     }
   }
 
-  /** @deprecated Use applyPresentationMode — kept name for older call sites during load. */
-  function applyNoVideoPresentation(hasNoVideo) {
-    applyPresentationMode(
-      {
-        mode: hasNoVideo ? "sdk-logs" : "recording",
-        defaultTab: "console",
-        showVideoSection: true,
-        showDomStage: false,
-        showStillStage: false,
-        showLayoutSplitter: true,
-        showConsoleTab: true,
-        showNetworkTab: true,
-        showScreenshotsTab: false,
-        showReportTab: false,
-        showActivityTab: false,
-        showStorageTab: false,
-        showElementsTab: false,
-        noVideoNotice: hasNoVideo ? "sdk" : "none",
-      },
-      { videoPartCount: hasNoVideo ? 0 : 1 },
-    );
-  }
-
   /**
    * Build the presentation plan from whatever the package actually loaded.
+   * Policy lives only in `src/shared/player-presentation.ts` (via gnCore).
+   * The shell must never invent mode/tab chrome here — only map evidence → shared resolver.
    * @param {{ videoPartCount: number }} options
    */
   function buildPresentationPlan(options) {
-    const resolve = globalThis.gnCore?.presentation?.resolvePresentationMode;
     const hasInstantReplay = Boolean(
       instantReplayArtifact &&
         Array.isArray(instantReplayArtifact.frames) &&
         instantReplayArtifact.frames.length > 0,
     );
     // Force empty Console/Network only when the package claims log capture (IR).
-    // Plain screenshot reports are still-only and leave this false.
+    // Plain screenshot reports leave this false.
     const packageCapabilities = Array.isArray(metadata?.capabilities)
       ? metadata.capabilities
       : null;
@@ -5806,77 +5323,7 @@
       expectsLogTabs,
     };
 
-    if (typeof resolve === "function") {
-      return resolve(evidence);
-    }
-
-    // Fallback when gn-core is missing: mirror shared resolvePresentationMode.
-    const showStillStage = !evidence.hasVideo && evidence.screenshotCount > 0;
-    const showDomStage =
-      !evidence.hasVideo && !showStillStage && evidence.hasDom && evidence.screenshotCount === 0;
-    if (evidence.hasVideo) {
-      return {
-        mode: "recording",
-        defaultTab: "console",
-        showVideoSection: true,
-        showDomStage: false,
-        showStillStage: false,
-        showLayoutSplitter: true,
-        showConsoleTab: true,
-        showNetworkTab: true,
-        showScreenshotsTab: evidence.screenshotCount > 0,
-        showReportTab: evidence.hasReportContent,
-        showActivityTab: evidence.activityCount > 0,
-        showStorageTab: evidence.hasStorage,
-        showElementsTab: evidence.hasDom,
-        noVideoNotice: "none",
-      };
-    }
-    if (evidence.screenshotCount > 0 || evidence.hasDom) {
-      const forceLogTabs = Boolean(expectsLogTabs);
-      const showConsole = evidence.consoleCount > 0 || forceLogTabs;
-      const showNetwork =
-        evidence.networkCount > 0 || evidence.websocketCount > 0 || forceLogTabs;
-      const mediaColumn = showStillStage || showDomStage;
-      const stillPrimary = showStillStage;
-      return {
-        mode: "screenshot",
-        defaultTab:
-          forceLogTabs && evidence.consoleCount > 0
-            ? "console"
-            : evidence.screenshotCount > 0
-              ? "report"
-              : "elements",
-        showVideoSection: mediaColumn,
-        showDomStage,
-        showStillStage,
-        showLayoutSplitter: mediaColumn,
-        showConsoleTab: showConsole,
-        showNetworkTab: showNetwork,
-        showScreenshotsTab: evidence.screenshotCount > 0 && !stillPrimary,
-        showReportTab: evidence.hasReportContent || stillPrimary,
-        showActivityTab: evidence.activityCount > 0,
-        showStorageTab: evidence.hasStorage,
-        showElementsTab: evidence.hasDom,
-        noVideoNotice: "none",
-      };
-    }
-    return {
-      mode: "sdk-logs",
-      defaultTab: "console",
-      showVideoSection: true,
-      showDomStage: false,
-      showStillStage: false,
-      showLayoutSplitter: true,
-      showConsoleTab: true,
-      showNetworkTab: true,
-      showScreenshotsTab: false,
-      showReportTab: evidence.hasReportContent,
-      showActivityTab: evidence.activityCount > 0,
-      showStorageTab: evidence.hasStorage,
-      showElementsTab: evidence.hasDom,
-      noVideoNotice: "sdk",
-    };
+    return globalThis.gnCore.presentation.resolvePresentationMode(evidence);
   }
 
   async function parseJsonBlob(blob, label) {
@@ -6080,48 +5527,32 @@
     // while JSON/text artifacts use ZIP DEFLATE to reduce Drive payload size.
     // Password-protected packages keep using traditional ZIP encryption so
     // downloaded archives also prompt in common unzip tools.
+    //
+    // Central-directory layout is shared with packages/replay-core zip-reader
+    // (gnCore.zip.parseZipCentralDirectory) — same parse as player tests.
     const buffer = await blob.arrayBuffer();
     const bytes = new Uint8Array(buffer);
     const view = new DataView(buffer);
-    const decoder = new TextDecoder();
-    const eocdSignature = 0x06054b50;
-    const centralSignature = 0x02014b50;
     const localSignature = 0x04034b50;
-    let eocdOffset = -1;
 
-    for (let offset = bytes.length - 22; offset >= Math.max(0, bytes.length - 65557); offset -= 1) {
-      if (view.getUint32(offset, true) === eocdSignature) {
-        eocdOffset = offset;
-        break;
-      }
+    const directory = globalThis.gnCore.zip.parseZipCentralDirectory(bytes);
+    if (!directory.ok) {
+      throw new Error(directory.message || "Invalid recording package. Zip directory was not found.");
     }
 
-    if (eocdOffset < 0) {
-      throw new Error("Invalid recording package. Zip directory was not found.");
-    }
-
-    const entryCount = view.getUint16(eocdOffset + 10, true);
-    let centralOffset = view.getUint32(eocdOffset + 16, true);
     const entries = new Map();
+    for (const record of directory.entries) {
+      const {
+        name,
+        flags,
+        compressionMethod,
+        crc32,
+        compressedSize,
+        uncompressedSize,
+        localHeaderOffset,
+        isEncrypted,
+      } = record;
 
-    for (let index = 0; index < entryCount; index += 1) {
-      if (view.getUint32(centralOffset, true) !== centralSignature) {
-        throw new Error("Invalid recording package. Central directory is corrupt.");
-      }
-
-      const flags = view.getUint16(centralOffset + 8, true);
-      const compressionMethod = view.getUint16(centralOffset + 10, true);
-      const crc32 = view.getUint32(centralOffset + 16, true);
-      const compressedSize = view.getUint32(centralOffset + 20, true);
-      const uncompressedSize = view.getUint32(centralOffset + 24, true);
-      const fileNameLength = view.getUint16(centralOffset + 28, true);
-      const extraLength = view.getUint16(centralOffset + 30, true);
-      const commentLength = view.getUint16(centralOffset + 32, true);
-      const localHeaderOffset = view.getUint32(centralOffset + 42, true);
-      const nameStart = centralOffset + 46;
-      const name = decoder.decode(bytes.subarray(nameStart, nameStart + fileNameLength));
-
-      const isEncrypted = (flags & ZIP_FLAG_ENCRYPTED) !== 0;
       if (!isEncrypted && compressionMethod === 0 && compressedSize !== uncompressedSize) {
         throw new Error(`Invalid recording package size for ${name}`);
       }
@@ -6159,8 +5590,6 @@
         }
         entries.set(name, new Blob([plainBytes]));
       }
-
-      centralOffset += 46 + fileNameLength + extraLength + commentLength;
     }
 
     return entries;
@@ -6754,6 +6183,8 @@
       privacySummary = null;
       sourceMapDiagnostics = [];
       userEvents = [];
+      userEventTimesMs = [];
+      clearActivityHighlightState();
       drawingStrokes = [];
       drawingClears = [];
       releaseScreenshotResources();
@@ -6820,10 +6251,8 @@
       pendingSeekTimeMs = null;
       pendingSeekRetryCount = 0;
       currentTimeMs = 0;
-      // Shell chrome is finalized after artifacts load via buildPresentationPlan.
-      // Apply a conservative no-video class early so the video element is not
-      // shown empty while the rest of the package streams in.
-      applyNoVideoPresentation(recordingFiles.videoParts.length === 0);
+      // Shell chrome is applied only after artifacts load, via buildPresentationPlan
+      // → gnCore.presentation.resolvePresentationMode (never invent interim tab policy).
       setExpectedVideoBytes(metadata.video?.totalBytes || 0);
       const videoMimeType =
         recordingFiles.manifest?.video?.mimeType || metadata.video?.mimeType || "video/webm";
@@ -6880,6 +6309,7 @@
                   }))
                   .filter((event) => Number.isFinite(event.relativeMs))
                   .sort((a, b) => a.relativeMs - b.relativeMs);
+                rebuildUserEventTimesCache();
                 effectEvents = userEvents.filter(
                   (event) =>
                     event.type === "key" ||
@@ -7034,7 +6464,9 @@
                     return {
                       ...entry,
                       relativeMs:
-                        (entry.wallTime ? entry.wallTime * 1000 : entry.timestamp * 1000) -
+                        (entry.wallTime
+                          ? entry.wallTime * 1000
+                          : gnCore.time.coerceEpochMs(entry.timestamp, entry.timestamp * 1000)) -
                         startTime,
                     };
                   }
@@ -7070,7 +6502,9 @@
                     url: request.url || "",
                     requestHeaders: reqHeaders || null,
                     postData: request.postData?.text || null,
-                    timestamp: entry.wallTime ? entry.wallTime * 1000 : entry.timestamp || 0,
+                    timestamp: entry.wallTime
+                      ? entry.wallTime * 1000
+                      : gnCore.time.coerceEpochMs(entry.timestamp, entry.timestamp * 1000) || 0,
                     wallTime: entry.wallTime || null,
                     initiator: entry.initiator || null,
                     resourceType: entry.resourceType || "",
@@ -7088,7 +6522,10 @@
                       : null,
                     redirectChain: entry.redirectChain || null,
                     relativeMs:
-                      (entry.wallTime ? entry.wallTime * 1000 : entry.timestamp || 0) - startTime,
+                      (entry.wallTime
+                        ? entry.wallTime * 1000
+                        : gnCore.time.coerceEpochMs(entry.timestamp, entry.timestamp * 1000) || 0) -
+                      startTime,
                   };
                 })
                 .sort((a, b) => a.relativeMs - b.relativeMs);
@@ -8041,6 +7478,10 @@
     window.addEventListener("blur", stopResizing);
   }
 
+  function invalidateVideoContentRectCache() {
+    videoContentRectCache = null;
+  }
+
   function updateVideoFit() {
     if (!elements.video || !elements.videoContainer) {
       return;
@@ -8058,6 +7499,7 @@
     elements.video.classList.remove("video-fit-width", "video-fit-height");
     if (!videoRatio || !containerRatio) {
       elements.video.classList.add("video-fit-width");
+      invalidateVideoContentRectCache();
       return;
     }
 
@@ -8067,6 +7509,8 @@
       containerRatio > videoRatio ? "video-fit-height" : "video-fit-width",
     );
 
+    // Fit class / container size changed — drop any cached content rect.
+    invalidateVideoContentRectCache();
     resizeDrawingCanvas();
     if (elements.video && !Number.isNaN(elements.video.currentTime)) {
       renderDrawingUpTo(elements.video.currentTime * 1000);
@@ -8104,11 +7548,13 @@
   }
 
   // Live rectangle of the actually-displayed video pixels, relative to the
-  // effects layer (which covers the whole video-container). Recomputed on every
-  // effect so it can never drift from the current layout, and it accounts for
-  // object-fit letterboxing so coordinates land on real pixels even if the fit
-  // class has not been applied yet.
+  // effects layer (which covers the whole video-container). Accounts for
+  // object-fit letterboxing. Cached until layout invalidation (resize / fit
+  // change) so spawnEffect + drawing can share one pair of layout reads.
   function getVideoContentRect() {
+    if (videoContentRectCache) {
+      return videoContentRectCache;
+    }
     const video = elements.video;
     const container = elements.videoContainer;
     if (!video || !container) {
@@ -8136,12 +7582,13 @@
       }
     }
 
-    return {
+    videoContentRectCache = {
       left: elementRect.left - containerRect.left + (elementRect.width - contentWidth) / 2,
       top: elementRect.top - containerRect.top + (elementRect.height - contentHeight) / 2,
       width: contentWidth,
       height: contentHeight,
     };
+    return videoContentRectCache;
   }
 
   // Chrome tab capture can letterbox the page inside a larger fixed-size frame
@@ -8334,6 +7781,8 @@
     // Resizing the backing buffer wipes its pixels, so the next render must
     // repaint even if the drawing-state signature hasn't changed.
     drawingCanvasNeedsRepaint = true;
+    // Canvas size tracks the container; content-rect geometry may have moved too.
+    invalidateVideoContentRectCache();
   }
 
   function getDrawingContext() {
@@ -8524,14 +7973,6 @@
    * @returns {boolean} true when the pending seek fully committed
    */
   function applySeekClock(mediaTimeMs, options = {}) {
-    if (!TimelineSeek || typeof TimelineSeek.reconcileSeekClock !== "function") {
-      // Vendor missing: fall back to media clock only (degraded).
-      if (pendingSeekTimeMs == null) {
-        currentTimeMs = Number(mediaTimeMs) || 0;
-      }
-      return false;
-    }
-
     const result = TimelineSeek.reconcileSeekClock(
       {
         pendingSeekTimeMs,
@@ -8578,29 +8019,16 @@
       new ResizeObserver(updateVideoFit).observe(elements.videoContainer);
     }
 
-    // Time update
+    // Time update — progress follows media; panels share the gated sync helper.
     elements.video.addEventListener("timeupdate", () => {
       const now = performance.now();
-      if (now - lastEmitTime < 250) return;
+      if (now - lastEmitTime < PLAYBACK_PANEL_SYNC_MS) return;
       lastEmitTime = now;
 
       applySeekClock(elements.video.currentTime * 1000, { isDragging });
       updateProgress();
-      if (activeLogsTab === "console") {
-        renderConsoleEntries();
-      } else {
-        consolePanelDirty = true;
-      }
-      if (activeLogsTab === "network") {
-        renderNetworkEntries();
-      } else {
-        networkPanelDirty = true;
-      }
-      if (activeLogsTab === "activity") {
-        updateActivityHighlight();
-      }
-      updateStorageForTime();
-      updateElementsForTime();
+      // Force: timeupdate is already rate-limited above; avoid a second trailing timer.
+      schedulePanelSync({ force: true });
     });
 
     // Loaded metadata
@@ -8668,6 +8096,11 @@
       updateProgress();
       resetEffectsCursor();
       renderDrawingUpTo(currentTimeMs);
+      // After a settled seek (not mid-scrub), panels must match the committed time.
+      // Scrub flushes on pointer-up instead so seeked storms during drag stay cheap.
+      if (!isDragging) {
+        schedulePanelSync({ force: true });
+      }
       if (!elements.video.paused && !elements.video.ended && pendingSeekTimeMs == null) {
         startEffectsScheduler();
         startDrawingScheduler();
@@ -8677,19 +8110,19 @@
     // Progress bar interaction
     elements.progressWrapper.addEventListener("mousedown", (e) => {
       isDragging = true;
-      seekToRatio(getMouseRatio(e.clientX));
+      seekToRatio(getMouseRatio(e.clientX), { scrubbing: true });
     });
 
     elements.progressWrapper.addEventListener("touchstart", (e) => {
       isDragging = true;
       if (e.touches[0]) {
-        seekToRatio(getMouseRatio(e.touches[0].clientX));
+        seekToRatio(getMouseRatio(e.touches[0].clientX), { scrubbing: true });
       }
     });
 
     document.addEventListener("mousemove", (e) => {
       if (isDragging) {
-        seekToRatio(getMouseRatio(e.clientX));
+        seekToRatio(getMouseRatio(e.clientX), { scrubbing: true });
       }
 
       // Tooltip on hover
@@ -8715,8 +8148,9 @@
         return;
       }
       isDragging = false;
-      // Finalize drag: re-assert the last target now that intermediate seeked
-      // events will no longer be ignored via isDragging.
+      // Flush throttled panel work to the final scrub position, then re-assert
+      // media time now that intermediate seeked events are no longer ignored.
+      schedulePanelSync({ force: true });
       if (pendingSeekTimeMs != null && elements.video) {
         pendingSeekRetryCount = 0;
         try {
@@ -8729,7 +8163,7 @@
 
     document.addEventListener("touchmove", (e) => {
       if (isDragging && e.touches[0]) {
-        seekToRatio(getMouseRatio(e.touches[0].clientX));
+        seekToRatio(getMouseRatio(e.touches[0].clientX), { scrubbing: true });
       }
     });
 
@@ -8738,6 +8172,7 @@
         return;
       }
       isDragging = false;
+      schedulePanelSync({ force: true });
       if (pendingSeekTimeMs != null && elements.video) {
         pendingSeekRetryCount = 0;
         try {
@@ -8842,12 +8277,95 @@
     return Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
   }
 
+  function cancelScheduledPanelSync() {
+    if (panelSyncTimer != null) {
+      clearTimeout(panelSyncTimer);
+      panelSyncTimer = null;
+    }
+  }
+
+  /**
+   * Apply currentTimeMs to the visible log/side panels only.
+   * Hidden console/network tabs are marked dirty and catch up on tab switch
+   * (see showLogsTab). Storage/elements already no-op when the active snapshot
+   * is unchanged.
+   * @param {{ forceScrollActivity?: boolean }} [options]
+   */
+  function syncPanelsToPlayhead(options = {}) {
+    const forceScrollActivity = Boolean(options.forceScrollActivity);
+
+    if (activeLogsTab === "console") {
+      renderConsoleEntries();
+    } else {
+      consolePanelDirty = true;
+    }
+
+    if (activeLogsTab === "network") {
+      renderNetworkEntries();
+    } else {
+      networkPanelDirty = true;
+    }
+
+    // Activity highlight walks every event node — only pay that cost when the
+    // tab is open, or when a click on an activity row requested a forced scroll.
+    if (activeLogsTab === "activity" || forceScrollActivity) {
+      updateActivityHighlight({
+        forceScroll: forceScrollActivity || activeLogsTab === "activity",
+      });
+    }
+
+    updateStorageForTime();
+    updateElementsForTime();
+  }
+
+  /**
+   * Gate panel DOM work so playback ticks and timeline scrubs cannot stampede
+   * full list rebuilds. Progress/playhead updates stay outside this helper and
+   * remain immediate.
+   * @param {{
+   *   force?: boolean,
+   *   throttleMs?: number,
+   *   forceScrollActivity?: boolean,
+   * }} [options]
+   */
+  function schedulePanelSync(options = {}) {
+    const force = Boolean(options.force);
+    const throttleMs =
+      typeof options.throttleMs === "number" && Number.isFinite(options.throttleMs)
+        ? Math.max(0, options.throttleMs)
+        : PLAYBACK_PANEL_SYNC_MS;
+    const forceScrollActivity = Boolean(options.forceScrollActivity);
+    const run = () => {
+      panelSyncTimer = null;
+      lastPanelSyncTime = performance.now();
+      syncPanelsToPlayhead({ forceScrollActivity });
+    };
+
+    if (force || throttleMs === 0) {
+      cancelScheduledPanelSync();
+      run();
+      return;
+    }
+
+    const elapsed = performance.now() - lastPanelSyncTime;
+    if (elapsed >= throttleMs) {
+      cancelScheduledPanelSync();
+      run();
+      return;
+    }
+
+    // Trailing coalesce: keep the latest forceScrollActivity intent, restart timer.
+    cancelScheduledPanelSync();
+    panelSyncTimer = setTimeout(run, Math.max(0, throttleMs - elapsed));
+  }
+
   /**
    * Seek playback to an absolute time (ms).
    * UI jumps optimistically; media assignment is separate. Far seeked samples
    * never replace the playhead (TimelineSeek.reconcileSeekClock).
+   * Panel lists are gated: immediate on discrete seeks, throttled while scrubbing.
    * @param {number} timeMs
-   * @param {{ forceScrollActivity?: boolean }} [options]
+   * @param {{ forceScrollActivity?: boolean, scrubbing?: boolean }} [options]
    */
   function seekVideoToMs(timeMs, options = {}) {
     if (!elements.video) {
@@ -8861,14 +8379,24 @@
     currentTimeMs = targetMs;
     pendingSeekRetryCount = 0;
 
+    // Playhead/progress always track the optimistic target immediately.
     updateProgress();
-    updateActivityHighlight({
-      forceScroll: Boolean(options.forceScrollActivity) || activeLogsTab === "activity",
-    });
-    renderConsoleEntries();
-    renderNetworkEntries();
-    updateStorageForTime();
-    updateElementsForTime();
+
+    const forceScrollActivity = Boolean(options.forceScrollActivity);
+    if (options.scrubbing) {
+      // Drag/touch scrub: at most one panel sync per SEEK_PANEL_SYNC_MS, with a
+      // trailing flush so the final pointer position still paints.
+      schedulePanelSync({
+        throttleMs: SEEK_PANEL_SYNC_MS,
+        forceScrollActivity,
+      });
+    } else {
+      // Click, keyboard, activity-row jump, DOM-stage seek: panels follow now.
+      schedulePanelSync({
+        force: true,
+        forceScrollActivity,
+      });
+    }
 
     try {
       // Precise currentTime only — never fastSeek (keyframe snap).
@@ -8878,16 +8406,17 @@
     }
   }
 
-  function seekToRatio(ratio) {
+  /**
+   * @param {number} ratio
+   * @param {{ scrubbing?: boolean, forceScrollActivity?: boolean }} [options]
+   */
+  function seekToRatio(ratio, options = {}) {
     const playbackDuration = syncDurationState(getVideoDurationMs());
     if (playbackDuration <= 0) {
       return;
     }
-    const targetMs =
-      TimelineSeek && typeof TimelineSeek.ratioToTimeMs === "function"
-        ? TimelineSeek.ratioToTimeMs(ratio, playbackDuration)
-        : Math.max(0, Math.min(1, Number(ratio) || 0)) * playbackDuration;
-    seekVideoToMs(targetMs);
+    const targetMs = TimelineSeek.ratioToTimeMs(ratio, playbackDuration);
+    seekVideoToMs(targetMs, options);
   }
 
   function clampProgressPercent(value) {
@@ -9346,6 +8875,19 @@
   // Initialize
   async function init() {
     initElements();
+    try {
+      assertGnCore();
+    } catch (error) {
+      console.error("[GN Tracing Player]", error);
+      if (elements.errorMessage) {
+        elements.errorMessage.textContent =
+          error instanceof Error
+            ? error.message
+            : "GN Tracing player core failed to load.";
+      }
+      showError();
+      return;
+    }
     attachLanguageSwitch();
     attachFeedbackUi();
     applyLayoutState();

@@ -225,6 +225,12 @@ const activeRecording: ActiveRecordingState = {
 /** Pen color for the active drawing overlay; survives popup close within the worker. */
 let drawingColor = DEFAULT_DRAW_COLOR;
 
+/**
+ * Monotonic clock anchor for the active recording. Not persisted across service
+ * worker restarts; recovery uses the wall-clock startTime instead.
+ */
+let activeRecordingStartMonotonicMs: number | null = null;
+
 let sessions: RecordingSessionSummary[] = [];
 let sessionArtifacts: Record<string, SessionArtifacts> = {};
 const activeUploadTasks = new Map<string, Promise<void>>();
@@ -275,6 +281,7 @@ function resetActiveRecordingState(): void {
   activeRecording.privacyLimitations = [];
   activeRecording.privacySettings = DEFAULT_PRIVACY_REDACTION_SETTINGS;
   activeRecording.recordingSettings = null;
+  activeRecordingStartMonotonicMs = null;
   recorder.clearActiveSession();
 }
 
@@ -1536,7 +1543,10 @@ async function startRecording(
     cdp.setCaptureSettings(settings);
     cdp.setPrivacySettings(activeRecording.privacySettings, recordActiveRedactionHits);
 
-    await Promise.all([cdp.attach(tabId), recorder.startCapture(tabId, sessionId)]);
+    const [, firstFrameAt] = await Promise.all([
+      cdp.attach(tabId),
+      recorder.startCapture(tabId, sessionId),
+    ]);
 
     if (settings.captureStorage) {
       await cdp.captureStorageSnapshot("start");
@@ -1545,8 +1555,10 @@ async function startRecording(
       await cdp.captureDomSnapshot("start");
     }
 
-    // Align wall-clock origin with the first captured video frame timeline.
-    activeRecording.startTime = Date.now();
+    // Anchor the timeline at the first produced video frame when available;
+    // fall back to the startCapture acknowledgement time.
+    activeRecording.startTime = firstFrameAt ?? Date.now();
+    activeRecordingStartMonotonicMs = performance.now();
     activeRecording.isRecording = true;
     recorder.hydrateActiveSession(sessionId);
     void startRecordingEventCapture(tabId, sessionId, activeRecording.privacySettings);
@@ -1645,9 +1657,12 @@ async function stopRecording(): Promise<MessageResponse> {
     );
 
     const durationMs =
-      typeof startTime === "number" && Number.isFinite(startTime)
-        ? Math.max(0, stopTime - startTime)
-        : 0;
+      typeof activeRecordingStartMonotonicMs === "number" &&
+      Number.isFinite(activeRecordingStartMonotonicMs)
+        ? Math.max(0, performance.now() - activeRecordingStartMonotonicMs)
+        : typeof startTime === "number" && Number.isFinite(startTime)
+          ? Math.max(0, stopTime - startTime)
+          : 0;
 
     sessionArtifacts[sessionId] = {
       consoleLogs: finalizedArtifacts.consoleLogs,

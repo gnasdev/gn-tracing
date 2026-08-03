@@ -159,7 +159,7 @@ chrome.runtime.onMessage.addListener((message: OffscreenIncomingMessage, _sender
   switch (message.type) {
     case "START_CAPTURE":
       startCapture(String(message.data?.streamId || ""), String(message.data?.sessionId || ""))
-        .then(() => sendResponse({ ok: true }))
+        .then((firstFrameAt) => sendResponse({ ok: true, data: { firstFrameAt } }))
         .catch((error: Error) => sendResponse({ ok: false, error: error.message }));
       return true;
 
@@ -257,7 +257,45 @@ function clearActiveCapture(): void {
   void stopActiveMediaStream();
 }
 
-async function startCapture(streamId: string, sessionId: string): Promise<void> {
+async function waitForFirstFrame(stream: MediaStream): Promise<number | null> {
+  const [videoTrack] = stream.getVideoTracks();
+  if (!videoTrack) {
+    return null;
+  }
+
+  // If the track already produced frames, use it immediately.
+  if (!videoTrack.muted && videoTrack.readyState === "live") {
+    return Date.now();
+  }
+
+  const video = document.createElement("video");
+  video.muted = true;
+  video.playsInline = true;
+  video.srcObject = stream;
+
+  try {
+    await Promise.race([
+      new Promise<void>((resolve) => {
+        video.onloadeddata = () => resolve();
+      }),
+      new Promise<void>((resolve) => {
+        const track = videoTrack;
+        track.onunmute = () => resolve();
+      }),
+      new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error("first-frame timeout")), 2000);
+      }),
+    ]);
+    return Date.now();
+  } catch {
+    return null;
+  } finally {
+    video.srcObject = null;
+    videoTrack.onunmute = null;
+  }
+}
+
+async function startCapture(streamId: string, sessionId: string): Promise<number | null> {
   if (!streamId || !sessionId) {
     throw new Error("Missing capture session metadata.");
   }
@@ -331,6 +369,11 @@ async function startCapture(streamId: string, sessionId: string): Promise<void> 
   };
 
   recorder.start();
+
+  // Capture the wall-clock time of the first produced video frame. This is the
+  // closest approximation we have to "video t=0", so it becomes the recording's
+  // logical startTime in the service worker.
+  return waitForFirstFrame(stream);
 }
 
 async function stopCapture(): Promise<void> {

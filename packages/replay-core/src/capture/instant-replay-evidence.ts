@@ -14,6 +14,7 @@ import type {
   StorageSnapshot,
   WebSocketEntry,
 } from "../schema/capture";
+import { coerceEpochMs } from "../time";
 import {
   captureStorageSnapshot,
   type InPageCaptureKind,
@@ -64,12 +65,13 @@ function entryTimestamp(kind: InPageCaptureKind, entry: unknown): number {
   }
   if (kind === "network") {
     const net = entry as NetworkEntry;
-    // Prefer wallTime: package schema stores epoch *seconds* for in-page rows.
+    // Prefer wallTime (epoch seconds); fall back to timestamp, which may be
+    // monotonic seconds (native CDP shape) or epoch ms (legacy/HAR).
     if (typeof net.wallTime === "number" && Number.isFinite(net.wallTime)) {
-      return net.wallTime > 1e12 ? net.wallTime : net.wallTime * 1000;
+      return coerceEpochMs(net.wallTime, net.wallTime * 1000) ?? Date.now();
     }
-    if (typeof net.timestamp === "number" && net.timestamp > 1e11) {
-      return net.timestamp;
+    if (typeof net.timestamp === "number" && Number.isFinite(net.timestamp)) {
+      return coerceEpochMs(net.timestamp, net.timestamp * 1000) ?? Date.now();
     }
     return Date.now();
   }

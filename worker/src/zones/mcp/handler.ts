@@ -20,7 +20,6 @@
 
 import { handleMessage } from "../../../../mcp/src/protocol";
 import { createToolRegistry, SERVER_INSTRUCTIONS } from "../../../../mcp/src/tools";
-import type { Env } from "../../env";
 import { isMcpEnabled } from "../../env";
 import { isDeclaredBodyTooLarge } from "../../http/body";
 import { mcpRateLimiter } from "../../middleware/rate-limit";
