@@ -52,7 +52,7 @@ flowchart LR
 
 Requirements:
 
-- Node.js 18+
+- Node.js 22+ (see `.nvmrc`; builds use `--experimental-strip-types`)
 - A Chromium-based browser (Chrome, Edge, Brave, Vivaldi, Opera, etc.)
 - Task, if you want to use the documented `task` commands
 

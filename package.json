@@ -51,6 +51,6 @@
     "webm-duration-fix": "^1.0.4"
   },
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=22.0.0"
   }
 }
