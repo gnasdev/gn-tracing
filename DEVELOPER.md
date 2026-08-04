@@ -78,8 +78,10 @@ task typecheck      # Type-check root extension code
 task lint           # Run Biome lint checks for supported sources
 task format         # Format Biome-supported repository sources
 task check          # Run Biome checks plus docs hygiene validation
-task build:all      # Build extension and standalone player
-task dist:all       # Production build for extension and player
+task build:all      # Chrome + Edge + Firefox (development)
+task dist:all       # Chrome + Edge + Firefox (production)
+task player:build   # Standalone player (dev)
+task player:dist    # Standalone player (production)
 task dev            # Full local stack: extension watch + player (Vite proxies) + multi-issuer Worker (:8787 OAuth + /feedback)
 task worker:dev     # Local Worker only (also included in `task dev`)
 task worker:sync-dev-vars  # Sync worker/.dev.vars from root .env (run automatically by task dev / worker:dev)
@@ -309,7 +311,7 @@ CHROME_EXTENSION_PUBLIC_KEY=
 
 ## Release
 
-Release is **local**. Commit hooks only run quality checks — they never deploy edge.
+Release is **local or tag-driven**. Commit hooks only run quality checks — they never deploy edge.
 
 **Deploy Worker / Player (manual only):**
 
@@ -324,8 +326,10 @@ Run these yourself when you intend to ship edge changes. Prefer Worker then Play
 
 1. Ensure `npm run quality:gate` (or a normal `git push` pre-push hook) is green.
 2. Bump root `package.json` version and keep `player/` + `worker/` package versions aligned (`npm run version:check`).
-3. After manual edge deploy (if needed): `GITHUB_REF_NAME=vX.Y.Z task release:ci` → zip.
-4. Tag/push when ready: `git tag vX.Y.Z && git push origin vX.Y.Z` (attach zip to a GitHub Release manually if needed).
+3. After manual edge deploy (if needed): `GITHUB_REF_NAME=vX.Y.Z task release:ci` → zip with `chrome/`, `edge/`, and `firefox/`.
+4. Tag/push when ready: `git tag vX.Y.Z && git push origin vX.Y.Z`.
+   - GitHub Actions (`.github/workflows/release.yml`) builds all three browsers and uploads `gn-tracing-extension-vX.Y.Z.zip`.
+   - CI (`.github/workflows/test.yml`) also runs `task dist:all` on `main`/`dev` PRs so multi-browser packaging stays green.
 5. MCP npm publish stays manual: bump `mcp/package.json` + `mcp/server.json`, then `npm publish` from `mcp/` after `npm run mcp:check`.
 
 Production build env (from `.env`):

@@ -267,36 +267,30 @@ tasks:
       - task: player:typecheck
       - task: worker:typecheck
 
-  build:all:
-    desc: Build the extension and standalone player with development settings.
-    cmds:
-      - task: build
-      - task: player:build
-
-  dist:all:
-    desc: Build the extension and standalone player with production settings.
-    cmds:
-      - task: dist
-      - task: player:dist
-
   release:zip:
-    desc: Zip the built extension for a GitHub release.
+    desc: >-
+      Zip dist/ (chrome/, edge/, firefox/) for a GitHub release.
+      Run task dist:all first so all browser packages are present.
     cmds:
       - |
         release_name="gn-tracing-extension-${GITHUB_REF_NAME:-local}"
         trap 'rm -rf "$release_name"' EXIT
         rm -rf "$release_name" "$release_name.zip"
+        if [ ! -d dist/chrome ] || [ ! -d dist/edge ] || [ ! -d dist/firefox ]; then
+          echo "Expected dist/chrome, dist/edge, and dist/firefox. Run task dist:all first." >&2
+          exit 1
+        fi
         cp -R dist "$release_name"
         zip -r "$release_name.zip" "$release_name"
 
   release:ci:
     desc: >-
-      Build production extension zip only (version check → dist → zip).
+      Build production Chrome + Edge + Firefox packages and zip them.
       Does not deploy Worker/Player — run task worker:deploy / player:deploy
       manually before shipping if edge changed.
     cmds:
       - npm run version:check
-      - task: dist
+      - task: dist:all
       - task: release:zip
 
   store:check:

@@ -24,30 +24,31 @@ There are two distinct ship targets:
 1. **GitHub Releases** — the `.zip` artifact users download to install manually.
 2. **Chrome Web Store** — the auto-update path that Chrome itself maintains.
 
-Both flow through `task dist` + `task release:zip`. The Store has an additional gate (`task store:check` → `store:zip` → `store:upload` → `store:publish`).
+Both flow through `task dist:all` + `task release:zip` (Chrome + Edge + Firefox under `dist/<browser>/`). The Store has an additional gate (`task store:check` → `store:zip` → `store:upload` → `store:publish`).
 
 ## 13.2 Tag-Driven `.github/workflows/release.yml`
 
-The workflow triggers on `push tags: 'v*'` and runs on `ubuntu-latest` with `contents: write`. It expects five repository secrets:
+The workflow triggers on `push tags: 'v*'` and runs on `ubuntu-latest` with `contents: write`. Required repository secrets:
 
 | Secret | Source | Used by |
 | --- | --- | --- |
 | `GOOGLE_CLIENT_ID` | chapter `01`/`10` | `manifest.json#oauth2.client_id` and `__GOOGLE_CLIENT_ID__` |
+| `GOOGLE_TOKEN_PROXY_URL` | Worker origin | production token exchange route |
 | `CHROME_EXTENSION_ID` | chapter `01` (derived) | `esbuild.config.mjs` validation |
 | `CHROME_EXTENSION_PUBLIC_KEY` | chapter `01` | `manifest.json#key` and ID derivation |
-| `CHROME_EXTENSION_PRIVATE_KEY` | chapter `01` | optional release signing |
-| `CLOUDFLARE_API_TOKEN` | optional, only if you also push the player at release time | `task player:deploy` |
 
-Without all five secrets present, the workflow logs a warning but continues with the placeholder-derived values — production builds need all five to succeed.
+Optional secrets: `GOOGLE_WEB_CLIENT_ID`, `CHROME_EXTENSION_PRIVATE_KEY`, `EDGE_EXTENSION_PUBLIC_KEY`, `FIREFOX_EXTENSION_ID` (defaults to `gn-tracing@gnas.dev`), Dropbox/feedback proxy URLs.
 
 The workflow steps:
 
-1. Checkout with `fetch-depth: 0` (so tags work).
-2. `npm ci` at the repo root.
-3. `task release:ci` runs:
-   - `task dist` — production build.
-   - `task release:zip` — wraps `dist/` into `gn-tracing-extension-<tag>.zip`.
+1. Checkout and `npm ci` at the repo root.
+2. `task release:ci` runs:
+   - `task dist:all` — production builds for **Chrome, Edge, and Firefox**.
+   - `task release:zip` — wraps `dist/{chrome,edge,firefox}/` into `gn-tracing-extension-<tag>.zip`.
+3. Assert the zip contains each browser `manifest.json`.
 4. Upload the artifact via `softprops/action-gh-release@v2` against the just-pushed tag.
+
+CI on `main`/`dev` (`.github/workflows/test.yml`) also runs `task dist:all` so multi-browser packaging is exercised without cutting a release.
 
 ## 13.3 Cutting a Local Release
 
@@ -93,8 +94,8 @@ Run this before tagging:
 1. `npm run format:check` — clean.
 2. `npm run check` — clean.
 3. `npm run test:coverage` — meets thresholds in all three contexts.
-4. `task dist:all` — extension + player built.
-5. `task store:check` — passes locally.
+4. `task dist:all` — Chrome + Edge + Firefox production packages.
+5. `task store:check` — passes locally (Chrome Store; also `store:check:edge` / `store:check:firefox` when shipping those stores).
 6. Confirm `CHANGELOG` / release notes are written.
 7. Push the tag.
 

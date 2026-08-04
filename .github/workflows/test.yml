@@ -1,0 +1,84 @@
+# Quality gate for push/PR. Builds production packages for Chrome, Edge, and
+# Firefox so multi-browser packaging stays green without cutting a release.
+name: Test
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+
+concurrency:
+  group: test-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: ".nvmrc"
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            player/package-lock.json
+            worker/package-lock.json
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Install player dependencies
+        run: npm ci
+        working-directory: player
+
+      - name: Install worker dependencies
+        run: npm ci
+        working-directory: worker
+
+      - name: Setup Task
+        uses: arduino/setup-task@v2
+        with:
+          version: 3.x
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Typecheck all contexts
+        run: task typecheck:all
+
+      - name: Check (biome + docs + version + mcp)
+        run: npm run check
+
+      - name: Test root
+        run: npm test
+
+      - name: Test player
+        run: npm test
+        working-directory: player
+
+      - name: Test worker
+        run: npm test
+        working-directory: worker
+
+      - name: Production build Chrome, Edge, and Firefox
+        env:
+          # Prefer repo secrets when present; otherwise use identity values that
+          # match the public extension key so production packaging is exercised.
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_TOKEN_PROXY_URL: ${{ secrets.GOOGLE_TOKEN_PROXY_URL }}
+          CHROME_EXTENSION_ID: ${{ secrets.CHROME_EXTENSION_ID }}
+          CHROME_EXTENSION_PUBLIC_KEY: ${{ secrets.CHROME_EXTENSION_PUBLIC_KEY }}
+          FIREFOX_EXTENSION_ID: ${{ secrets.FIREFOX_EXTENSION_ID }}
+        run: |
+          export GOOGLE_CLIENT_ID="${GOOGLE_CLIENT_ID:-480452534376-ci-placeholder.apps.googleusercontent.com}"
+          export GOOGLE_TOKEN_PROXY_URL="${GOOGLE_TOKEN_PROXY_URL:-https://example.invalid}"
+          export CHROME_EXTENSION_ID="${CHROME_EXTENSION_ID:-jbhlmonpecgenhinhffclanbbknjlbeh}"
+          export CHROME_EXTENSION_PUBLIC_KEY="${CHROME_EXTENSION_PUBLIC_KEY:-MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAsj8PpGhIEfSkwl9ju5sWK9w8I/9k9z60sNyw7yGBrBG6EEU3mj9cBSFNcSFyrDgr4P27DtRpFbDWO1uUCsFAp/yGuNZ70cNVsflPxMBumwKoGFffRDlPWoSh9G9sNzGCSFysfVFxwUxBTas3cBhIt8SFouXM2b/Q36mBA696QNQhzCk2EcZwBGt08o2O3s9JxpUWaxN72wJZufKQhY9dPJDYFaO31danyo/dV5M1TOc9HIciW86LFTViVH9Bsf4UhX32EkZusQUJ5ZoGVUnPWHixh1j9U4dVOwbVjKzoPs/VqPpRZTVS1RzdZwgw/7qc4Gy2t5BAVvncYRjf/B3aywIDAQAB}"
+          export FIREFOX_EXTENSION_ID="${FIREFOX_EXTENSION_ID:-gn-tracing@gnas.dev}"
+          task dist:all
+          test -f dist/chrome/manifest.json
+          test -f dist/edge/manifest.json
+          test -f dist/firefox/manifest.json
+          echo "dist/{chrome,edge,firefox} production packages OK"

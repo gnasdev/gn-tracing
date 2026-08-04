@@ -33,9 +33,13 @@ GN Tracing release packaging produces a versioned extension directory for manual
 
 ## Release Packaging
 
-Tag-driven release automation delegates extension build and packaging to `Taskfile.yml`. The packaged artifact is named `gn-tracing-extension-${tag}.zip` and contains the built extension under `gn-tracing-extension-${tag}/`.
+Tag-driven release automation (`.github/workflows/release.yml`) delegates extension build and packaging to `Taskfile.yml` (`task release:ci` → `dist:all` + `release:zip`). The packaged artifact is named `gn-tracing-extension-${tag}.zip` and contains **Chrome, Edge, and Firefox** packages under:
 
-Production builds require explicit OAuth and extension identity values so `dist/manifest.json` is generated from `manifest.template.json` with the Store OAuth client and Chrome extension public key. Store validation rejects unexpected broad host permissions and allows only the fixed Google OAuth/Drive hosts (plus an optional token-proxy origin).
+- `gn-tracing-extension-${tag}/chrome/`
+- `gn-tracing-extension-${tag}/edge/`
+- `gn-tracing-extension-${tag}/firefox/`
+
+Production builds require explicit OAuth and extension identity values so each `dist/<browser>/manifest.json` is generated from `manifest.template.json` with the Store OAuth client and Chromium public key (Firefox uses `browser_specific_settings.gecko.id`). Store validation rejects unexpected broad host permissions and allows only the fixed Google OAuth/Drive hosts (plus an optional token-proxy origin).
 
 Standalone player deployment remains separate from extension release packaging.
 

@@ -1,0 +1,95 @@
+# Tag-driven extension release: production builds for Chrome, Edge, and Firefox
+# are zipped into gn-tracing-extension-<tag>.zip and uploaded to the GitHub Release.
+#
+# Trigger: git tag vX.Y.Z && git push origin vX.Y.Z
+# Does not deploy Worker/Player (manual: task worker:deploy / player:deploy).
+name: Release extension
+
+on:
+  push:
+    tags:
+      - "v*"
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: ".nvmrc"
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Setup Task
+        uses: arduino/setup-task@v2
+        with:
+          version: 3.x
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify required secrets
+        env:
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_TOKEN_PROXY_URL: ${{ secrets.GOOGLE_TOKEN_PROXY_URL }}
+          CHROME_EXTENSION_ID: ${{ secrets.CHROME_EXTENSION_ID }}
+          CHROME_EXTENSION_PUBLIC_KEY: ${{ secrets.CHROME_EXTENSION_PUBLIC_KEY }}
+        run: |
+          for secret in GOOGLE_CLIENT_ID GOOGLE_TOKEN_PROXY_URL CHROME_EXTENSION_ID CHROME_EXTENSION_PUBLIC_KEY; do
+            if [ -z "${!secret}" ]; then
+              echo "::error::Missing required secret: $secret"
+              exit 1
+            fi
+          done
+
+      - name: Build Chrome, Edge, and Firefox release zip
+        env:
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_WEB_CLIENT_ID: ${{ secrets.GOOGLE_WEB_CLIENT_ID }}
+          GOOGLE_TOKEN_PROXY_URL: ${{ secrets.GOOGLE_TOKEN_PROXY_URL }}
+          DROPBOX_CLIENT_ID: ${{ secrets.DROPBOX_CLIENT_ID }}
+          DROPBOX_TOKEN_PROXY_URL: ${{ secrets.DROPBOX_TOKEN_PROXY_URL }}
+          CHROME_EXTENSION_ID: ${{ secrets.CHROME_EXTENSION_ID }}
+          CHROME_EXTENSION_PUBLIC_KEY: ${{ secrets.CHROME_EXTENSION_PUBLIC_KEY }}
+          CHROME_EXTENSION_PRIVATE_KEY: ${{ secrets.CHROME_EXTENSION_PRIVATE_KEY }}
+          EDGE_EXTENSION_PUBLIC_KEY: ${{ secrets.EDGE_EXTENSION_PUBLIC_KEY }}
+          FIREFOX_EXTENSION_ID: ${{ secrets.FIREFOX_EXTENSION_ID }}
+          FEEDBACK_PROXY_URL: ${{ secrets.FEEDBACK_PROXY_URL }}
+        run: task release:ci
+
+      - name: Assert multi-browser package layout
+        run: |
+          release_zip="gn-tracing-extension-${{ github.ref_name }}.zip"
+          test -f "$release_zip"
+          unzip -l "$release_zip" | grep -q "chrome/manifest.json"
+          unzip -l "$release_zip" | grep -q "edge/manifest.json"
+          unzip -l "$release_zip" | grep -q "firefox/manifest.json"
+          echo "Release zip contains chrome/, edge/, and firefox/ packages."
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          body: |
+            Download `gn-tracing-extension-${{ github.ref_name }}.zip` and load the browser-specific folder:
+
+            | Browser | Unpacked path |
+            |---------|----------------|
+            | Chrome | `gn-tracing-extension-${{ github.ref_name }}/chrome/` |
+            | Edge | `gn-tracing-extension-${{ github.ref_name }}/edge/` |
+            | Firefox | `gn-tracing-extension-${{ github.ref_name }}/firefox/` |
+
+            GitHub may also show automatically generated Source code archives for the tag. Those are not installable extension packages.
+          files: |
+            gn-tracing-extension-${{ github.ref_name }}.zip
