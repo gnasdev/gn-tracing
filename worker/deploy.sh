@@ -34,12 +34,13 @@ fi
 # At least one provider must be fully configured (id + secret).
 HAS_GOOGLE=0
 HAS_DROPBOX=0
-[ -n "${GOOGLE_CLIENT_ID:-}" ] && [ -n "${GOOGLE_CLIENT_SECRET:-}" ] && HAS_GOOGLE=1
+GOOGLE_WORKER_CLIENT_ID="${GOOGLE_WEB_CLIENT_ID:-${GOOGLE_CLIENT_ID:-}}"
+[ -n "$GOOGLE_WORKER_CLIENT_ID" ] && [ -n "${GOOGLE_CLIENT_SECRET:-}" ] && HAS_GOOGLE=1
 [ -n "${DROPBOX_CLIENT_ID:-}" ] && [ -n "${DROPBOX_CLIENT_SECRET:-}" ] && HAS_DROPBOX=1
 
 if [ "$HAS_GOOGLE" -eq 0 ] && [ "$HAS_DROPBOX" -eq 0 ]; then
   echo "No provider fully configured. Set at least one pair of CLIENT_ID + CLIENT_SECRET:"
-  echo "  Google:   GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET"
+  echo "  Google:   (GOOGLE_WEB_CLIENT_ID or GOOGLE_CLIENT_ID) + GOOGLE_CLIENT_SECRET"
   echo "  Dropbox:  DROPBOX_CLIENT_ID + DROPBOX_CLIENT_SECRET"
   exit 1
 fi
@@ -72,6 +73,7 @@ put_secret "GITHUB_FEEDBACK_TOKEN" "${GITHUB_FEEDBACK_TOKEN:-}"
 
 VAR_FLAGS=(
   --var "GOOGLE_CLIENT_ID:${GOOGLE_CLIENT_ID:-}"
+  --var "GOOGLE_WEB_CLIENT_ID:${GOOGLE_WEB_CLIENT_ID:-}"
   --var "DROPBOX_CLIENT_ID:${DROPBOX_CLIENT_ID:-}"
   --var "ALLOWED_EXTENSION_ORIGINS:${ALLOWED_ORIGINS}"
   --var "GITHUB_REPO_OWNER:${GITHUB_REPO_OWNER:-gnasdev}"

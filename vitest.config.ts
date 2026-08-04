@@ -38,7 +38,9 @@ export default defineConfig({
   define: {
     __APP_ENV__: JSON.stringify("test"),
     __APP_VERSION__: JSON.stringify(rootAppVersion),
+    __BROWSER_TARGET__: JSON.stringify("chrome"),
     __GOOGLE_CLIENT_ID__: JSON.stringify(""),
+    __GOOGLE_WEB_CLIENT_ID__: JSON.stringify(""),
     __GOOGLE_TOKEN_PROXY_URL__: JSON.stringify(""),
     __DROPBOX_CLIENT_ID__: JSON.stringify(""),
     __DROPBOX_TOKEN_PROXY_URL__: JSON.stringify(""),

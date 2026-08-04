@@ -161,6 +161,26 @@ export const SDK_CAPABILITIES: RecordingCapability[] = [
   "instant-replay",
 ];
 
+/**
+ * Firefox extension producer: in-page console/network (same-origin bodies),
+ * optional getDisplayMedia video, raster screenshots, no CDP cross-origin or
+ * source maps. Declared here so readers/tests can import without the extension
+ * platform package.
+ */
+export const FIREFOX_EXTENSION_CAPABILITIES: RecordingCapability[] = [
+  "video",
+  "console",
+  "network",
+  "network-bodies",
+  "websocket",
+  "user-events",
+  "storage",
+  "dom-snapshot",
+  "screenshot",
+  "annotation",
+  "instant-replay",
+];
+
 export interface PackageMetadata {
   timestamp?: string;
   /** Recording duration in milliseconds. */

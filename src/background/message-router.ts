@@ -1,3 +1,4 @@
+import { isMediaMessageTarget } from "../platform/media/message-target";
 import type {
   MessageResponse,
   PopupState,
@@ -64,6 +65,7 @@ export interface MessageHandlers {
   discardPendingScreenshot: () => Promise<MessageResponse>;
   saveAnnotatedScreenshot: (data: Record<string, unknown> | undefined) => Promise<MessageResponse>;
   captureInstantReplay: (tabId: number | undefined) => Promise<MessageResponse>;
+  handleInPageCaptureEntry: (message: ServiceWorkerMessage) => MessageResponse;
 }
 
 export function registerMessageListeners(handlers: MessageHandlers): void {
@@ -83,7 +85,7 @@ export function registerMessageListeners(handlers: MessageHandlers): void {
       sendResponse,
     ) => {
       if (
-        message.target !== "offscreen" ||
+        !isMediaMessageTarget(message.target) ||
         message.type !== "UPLOAD_PROGRESS" ||
         !message.data?.sessionId
       ) {
@@ -174,6 +176,8 @@ async function handleMessage(
         typeof message.data?.sessionId === "string" ? message.data.sessionId : undefined,
       );
       return { ok: true };
+    case "IN_PAGE_CAPTURE_ENTRY":
+      return handlers.handleInPageCaptureEntry(message);
     case "GET_UPLOAD_ARTIFACT_CHUNK":
       return handlers.getUploadArtifactChunk(message.data);
     case "CAPTURE_SCREENSHOT":

@@ -8,19 +8,63 @@ dotenv: [".env"]
 
 tasks:
   build:
-    desc: Build the extension into dist with the development environment.
+    desc: Build the Chrome extension into dist/chrome with the development environment.
     cmds:
-      - node --experimental-strip-types esbuild.config.mjs --env development
+      - node --experimental-strip-types esbuild.config.mjs --env development --browser chrome
+
+  build:edge:
+    desc: Build the Edge extension into dist/edge (development).
+    cmds:
+      - node --experimental-strip-types esbuild.config.mjs --env development --browser edge
+
+  build:firefox:
+    desc: Build the Firefox extension into dist/firefox (development).
+    cmds:
+      - node --experimental-strip-types esbuild.config.mjs --env development --browser firefox
+
+  build:all:
+    desc: Build Chrome, Edge, and Firefox development packages.
+    cmds:
+      - task: build
+      - task: build:edge
+      - task: build:firefox
 
   dist:
-    desc: Build the extension into dist with the production environment.
+    desc: Build the Chrome extension into dist/chrome with the production environment.
     cmds:
-      - node --experimental-strip-types esbuild.config.mjs --env production
+      - node --experimental-strip-types esbuild.config.mjs --env production --browser chrome
+
+  dist:edge:
+    desc: Build the Edge extension into dist/edge (production).
+    cmds:
+      - node --experimental-strip-types esbuild.config.mjs --env production --browser edge
+
+  dist:firefox:
+    desc: Build the Firefox extension into dist/firefox (production).
+    cmds:
+      - node --experimental-strip-types esbuild.config.mjs --env production --browser firefox
+
+  dist:all:
+    desc: Build Chrome, Edge, and Firefox production packages.
+    cmds:
+      - task: dist
+      - task: dist:edge
+      - task: dist:firefox
 
   watch:
-    desc: Watch and rebuild extension sources.
+    desc: Watch and rebuild Chrome extension sources.
     cmds:
-      - node --experimental-strip-types esbuild.config.mjs --watch
+      - node --experimental-strip-types esbuild.config.mjs --watch --browser chrome
+
+  watch:edge:
+    desc: Watch and rebuild Edge extension sources.
+    cmds:
+      - node --experimental-strip-types esbuild.config.mjs --watch --browser edge
+
+  watch:firefox:
+    desc: Watch and rebuild Firefox extension sources.
+    cmds:
+      - node --experimental-strip-types esbuild.config.mjs --watch --browser firefox
 
   typecheck:
     desc: Run root TypeScript checks (production sources and test files).
@@ -256,20 +300,44 @@ tasks:
       - task: release:zip
 
   store:check:
-    desc: Validate the production extension package before Chrome Web Store upload.
+    desc: Validate the production Chrome package before Web Store upload.
     cmds:
       - npx tsc --noEmit
       - npm audit --omit=dev
       - task: player:typecheck
       - sh -c 'cd player && npm audit'
       - task: dist
-      - node scripts/check-store-package.mjs
+      - node scripts/check-store-package.mjs --browser chrome
+
+  store:check:edge:
+    desc: Validate the production Edge package.
+    cmds:
+      - task: dist:edge
+      - node scripts/check-store-package.mjs --browser edge
+
+  store:check:firefox:
+    desc: Validate the production Firefox package.
+    cmds:
+      - task: dist:firefox
+      - node scripts/check-store-package.mjs --browser firefox
 
   store:zip:
     desc: Build, validate, and zip the Chrome Web Store package (manifest.key stripped).
     cmds:
       - task: store:check
-      - node scripts/package-store-zip.mjs
+      - node scripts/package-store-zip.mjs --browser chrome
+
+  store:zip:edge:
+    desc: Build, validate, and zip the Edge Add-ons package.
+    cmds:
+      - task: store:check:edge
+      - node scripts/package-store-zip.mjs --browser edge
+
+  store:zip:firefox:
+    desc: Build, validate, and zip the Firefox AMO package.
+    cmds:
+      - task: store:check:firefox
+      - node scripts/package-store-zip.mjs --browser firefox
 
   store:status:
     desc: Fetch the Chrome Web Store item status through the official API.

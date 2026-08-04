@@ -51,6 +51,8 @@ function makeTokenRequest(
     grant_type: "authorization_code",
     code: "abc",
     code_verifier: "xyz",
+    // Platform extension redirect only (Google OAuth domain ownership policy).
+    redirect_uri: "https://abcdefghijklmnopqrstuvwxyzabcdef.chromiumapp.org/",
   },
   origin: string | null = PLACEHOLDER_ORIGIN,
 ): Request {
@@ -458,6 +460,7 @@ describe("OAuth token proxy - upstream relay", () => {
         grant_type: "authorization_code",
         code: "abc",
         code_verifier: "xyz",
+        redirect_uri: "https://abcdefghijklmnopqrstuvwxyzabcdef.chromiumapp.org/",
         client_id: "evil-client",
         client_secret: "evil-secret",
       }),
@@ -468,6 +471,27 @@ describe("OAuth token proxy - upstream relay", () => {
     const body = (await res.json()) as { access_token: string };
     expect(body.access_token).toBe("g-atok");
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects authorization_code with a non-extension redirect_uri", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const res = await worker.fetch(
+      makeTokenRequest("/token", {
+        grant_type: "authorization_code",
+        code: "abc",
+        code_verifier: "xyz",
+        redirect_uri: "https://tracing.gnas.dev/oauth/callback",
+      }),
+      makeEnv(),
+    );
+
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string; error_description: string };
+    expect(body.error).toBe("invalid_request");
+    expect(body.error_description).toMatch(/platform extension domain/i);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("relays Dropbox token responses to Dropbox token endpoint", async () => {
@@ -485,7 +509,7 @@ describe("OAuth token proxy - upstream relay", () => {
         grant_type: "authorization_code",
         code: "db-code",
         code_verifier: "db-verifier",
-        redirect_uri: "https://ext.chromiumapp.org/",
+        redirect_uri: "https://abcdefghijklmnopqrstuvwxyzabcdef.chromiumapp.org/",
       }),
       makeEnv(),
     );

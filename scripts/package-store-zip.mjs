@@ -1,9 +1,15 @@
 /**
- * Build gn-tracing-store.zip from dist/ for Chrome Web Store upload.
+ * Build store zip from dist/<browser>/ for Chrome Web Store, Edge Add-ons, or AMO.
  *
  * Chrome Web Store rejects packages whose manifest includes a "key" field.
  * Local/unpacked builds keep "key" so the extension ID stays stable; the Store
  * zip strips it before packaging.
+ *
+ * Usage:
+ *   node scripts/package-store-zip.mjs
+ *   node scripts/package-store-zip.mjs --browser chrome
+ *   node scripts/package-store-zip.mjs --browser edge
+ *   node scripts/package-store-zip.mjs --browser firefox
  */
 
 import { execFileSync } from "node:child_process";
@@ -13,8 +19,32 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-const distDir = path.join(root, "dist");
-const outZip = path.join(root, "gn-tracing-store.zip");
+
+function getCliArgValue(flagName) {
+  for (let i = 0; i < process.argv.length; i += 1) {
+    const arg = process.argv[i];
+    if (arg === flagName) {
+      return process.argv[i + 1];
+    }
+    if (arg.startsWith(`${flagName}=`)) {
+      return arg.slice(flagName.length + 1);
+    }
+  }
+  return undefined;
+}
+
+const browser = String(getCliArgValue("--browser") || "chrome")
+  .trim()
+  .toLowerCase();
+if (!["chrome", "edge", "firefox"].includes(browser)) {
+  fail(`unsupported --browser ${browser}`);
+}
+
+const distDir = path.join(root, "dist", browser);
+const outZip =
+  browser === "chrome"
+    ? path.join(root, "gn-tracing-store.zip")
+    : path.join(root, `gn-tracing-${browser}-store.zip`);
 const manifestPath = path.join(distDir, "manifest.json");
 
 function fail(message) {
@@ -23,7 +53,9 @@ function fail(message) {
 }
 
 if (!fs.existsSync(manifestPath)) {
-  fail("dist/manifest.json is missing. Run task dist or task store:check first.");
+  fail(
+    `dist/${browser}/manifest.json is missing. Run task dist --browser ${browser} or task store:check first.`,
+  );
 }
 
 const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
@@ -62,5 +94,6 @@ if (Object.hasOwn(packaged, "key")) {
 
 console.log(
   `Store zip ready: ${path.relative(root, outZip)}` +
-    (hadKey ? " (stripped manifest.key for Chrome Web Store)" : ""),
+    (hadKey ? " (stripped manifest.key for store upload)" : "") +
+    ` [${browser}]`,
 );

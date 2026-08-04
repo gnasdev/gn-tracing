@@ -8,6 +8,14 @@
  * dedicated route/issuer (optional P1 follow-up). Tokens are cached under a
  * Dropbox-only storage key so disconnect does not clear Google credentials.
  */
+import {
+  buildPkceAuthorizationCodeTokenParams,
+  buildRefreshTokenParams,
+  createPkcePair,
+  generateOAuthState,
+  parseOAuthAuthorizationRedirect,
+} from "../shared/oauth-pkce";
+import { resolveRuntimeExtensionRedirectUri } from "../shared/oauth-redirect-policy";
 import type { MessageResponse } from "../types/messages";
 
 declare const __DROPBOX_CLIENT_ID__: string;
@@ -98,25 +106,6 @@ async function mirrorDropboxConnected(isConnected: boolean): Promise<void> {
   }
 }
 
-function base64UrlEncode(bytes: Uint8Array): string {
-  let binary = "";
-  for (const byte of bytes) {
-    binary += String.fromCharCode(byte);
-  }
-  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-}
-
-function generateCodeVerifier(): string {
-  const bytes = new Uint8Array(32);
-  crypto.getRandomValues(bytes);
-  return base64UrlEncode(bytes);
-}
-
-async function generateCodeChallenge(verifier: string): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier));
-  return base64UrlEncode(new Uint8Array(digest));
-}
-
 async function verifyDropboxAccessToken(token: string): Promise<boolean> {
   try {
     const response = await fetch(DROPBOX_VERIFY_ENDPOINT, {
@@ -150,12 +139,11 @@ async function exchangeAuthorizationCode(params: {
     response = await fetch(TOKEN_EXCHANGE_ENDPOINT, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        client_id: DROPBOX_CLIENT_ID,
+      body: buildPkceAuthorizationCodeTokenParams({
+        clientId: DROPBOX_CLIENT_ID,
         code: params.code,
-        code_verifier: params.codeVerifier,
-        grant_type: "authorization_code",
-        redirect_uri: params.redirectUri,
+        codeVerifier: params.codeVerifier,
+        redirectUri: params.redirectUri,
       }),
     });
   } catch (e) {
@@ -222,55 +210,40 @@ export class DropboxAuth {
         };
       }
 
-      const codeVerifier = generateCodeVerifier();
-      const codeChallenge = await generateCodeChallenge(codeVerifier);
-      const state = generateCodeVerifier();
-      const redirectUri = chrome.identity.getRedirectURL();
+      const pkce = await createPkcePair();
+      const state = generateOAuthState();
+      // Same domain policy as Google: only platform extension redirect hosts.
+      const redirect = resolveRuntimeExtensionRedirectUri();
+      if (!redirect.ok) {
+        return { ok: false, error: redirect.error };
+      }
+      const redirectUri = redirect.redirectUri;
 
-      const authUrl =
-        `${DROPBOX_AUTH_ENDPOINT}` +
-        `?client_id=${encodeURIComponent(DROPBOX_CLIENT_ID)}` +
-        "&response_type=code" +
-        `&redirect_uri=${encodeURIComponent(redirectUri)}` +
-        `&code_challenge=${encodeURIComponent(codeChallenge)}` +
-        "&code_challenge_method=S256" +
-        `&state=${encodeURIComponent(state)}` +
-        "&token_access_type=offline" +
-        `&scope=${encodeURIComponent(DROPBOX_SCOPES)}`;
+      const authQuery = new URLSearchParams({
+        client_id: DROPBOX_CLIENT_ID,
+        response_type: "code",
+        redirect_uri: redirectUri,
+        code_challenge: pkce.codeChallenge,
+        code_challenge_method: "S256",
+        state,
+        token_access_type: "offline",
+        scope: DROPBOX_SCOPES,
+      });
+      const authUrl = `${DROPBOX_AUTH_ENDPOINT}?${authQuery.toString()}`;
 
       const resultUrl = await chrome.identity.launchWebAuthFlow({
         url: authUrl,
         interactive: true,
       });
 
-      if (!resultUrl) {
-        return { ok: false, error: "No redirect URL received" };
-      }
-
-      const url = new URL(resultUrl);
-      const returnedState = url.searchParams.get("state");
-      if (returnedState !== state) {
-        return { ok: false, error: "OAuth state mismatch. Please try again." };
-      }
-      const errorParam = url.searchParams.get("error");
-      if (errorParam) {
-        return {
-          ok: false,
-          error: `Dropbox returned error: ${errorParam}${
-            url.searchParams.get("error_description")
-              ? ` (${url.searchParams.get("error_description")})`
-              : ""
-          }`,
-        };
-      }
-      const code = url.searchParams.get("code");
-      if (!code) {
-        return { ok: false, error: "No authorization code in redirect" };
+      const parsed = parseOAuthAuthorizationRedirect(resultUrl || "", state);
+      if (!parsed.ok) {
+        return { ok: false, error: parsed.error };
       }
 
       const exchanged = await exchangeAuthorizationCode({
-        code,
-        codeVerifier,
+        code: parsed.code,
+        codeVerifier: pkce.codeVerifier,
         redirectUri,
       });
       if (!exchanged.ok || !exchanged.payload) {
@@ -389,10 +362,9 @@ export class DropboxAuth {
         response = await fetch(TOKEN_EXCHANGE_ENDPOINT, {
           method: "POST",
           headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: new URLSearchParams({
-            client_id: DROPBOX_CLIENT_ID,
-            refresh_token: refreshToken,
-            grant_type: "refresh_token",
+          body: buildRefreshTokenParams({
+            clientId: DROPBOX_CLIENT_ID,
+            refreshToken,
           }),
           signal: controller.signal,
         });

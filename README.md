@@ -60,10 +60,11 @@ GN Tracing is distributed as a packaged release from this repository.
 
 1. Download the latest release `.zip`.
 2. Extract it.
-3. Open your browser's extensions page (`chrome://extensions`, `edge://extensions`, or equivalent).
-4. Turn on `Developer mode`.
-5. Click `Load unpacked`.
-6. Select the extracted `gn-tracing-extension-v<version>/` folder.
+3. Open your browser's extensions page:
+   - Chrome: `chrome://extensions` → load unpacked `dist/chrome/` (or the Chrome release zip)
+   - Edge: `edge://extensions` → load unpacked `dist/edge/` (`task build:edge`)
+   - Firefox: `about:debugging#/runtime/this-firefox` → temporary add-on → `dist/firefox/manifest.json` (`task build:firefox`)
+4. Turn on `Developer mode` (Chromium) and load the matching package folder.
 
 ## Replay Links
 

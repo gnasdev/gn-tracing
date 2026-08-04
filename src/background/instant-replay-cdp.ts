@@ -26,9 +26,23 @@ type HubDeps = {
 };
 
 /**
+ * Surface used by the service worker so call sites stay unconditional.
+ * Non-CDP browsers get {@link NullInstantReplayCdpHub}.
+ */
+export interface InstantReplayCdpHubLike {
+  sync(): Promise<void>;
+  pauseForRecording(recordingTabId: number | null): Promise<void>;
+  resumeAfterRecording(): Promise<void>;
+  peekEvidenceBundle(): InstantReplayEvidenceBundle | null;
+  clearBuffersAfterCommit(): void;
+  isAttachedTo(tabId: number): boolean;
+  getStatus(): InstantReplayCdpStatus;
+}
+
+/**
  * Testable hub. Production wires real chrome.tabs via createInstantReplayCdpHub.
  */
-export class InstantReplayCdpHub {
+export class InstantReplayCdpHub implements InstantReplayCdpHubLike {
   readonly storage = new StorageManager();
   readonly cdp = new CdpManager(this.storage);
 
@@ -237,6 +251,23 @@ export class InstantReplayCdpHub {
   }
 }
 
+/** No-op hub for Firefox (and any build without chrome.debugger). */
+export class NullInstantReplayCdpHub implements InstantReplayCdpHubLike {
+  async sync(): Promise<void> {}
+  async pauseForRecording(_recordingTabId: number | null): Promise<void> {}
+  async resumeAfterRecording(): Promise<void> {}
+  peekEvidenceBundle(): InstantReplayEvidenceBundle | null {
+    return null;
+  }
+  clearBuffersAfterCommit(): void {}
+  isAttachedTo(_tabId: number): boolean {
+    return false;
+  }
+  getStatus(): InstantReplayCdpStatus {
+    return { attachedTabId: null, pausedForRecording: false, lastError: null };
+  }
+}
+
 export function createInstantReplayCdpHub(
   getSettings: () => Promise<UploadSettingsStore>,
 ): InstantReplayCdpHub {
@@ -251,4 +282,17 @@ export function createInstantReplayCdpHub(
       return tab;
     },
   });
+}
+
+/**
+ * Build-time selection: Chromium gets a live hub; Firefox gets a no-op.
+ */
+export function createInstantReplayCdpHubForBrowser(
+  getSettings: () => Promise<UploadSettingsStore>,
+  hasCdp: boolean,
+): InstantReplayCdpHubLike {
+  if (!hasCdp) {
+    return new NullInstantReplayCdpHub();
+  }
+  return createInstantReplayCdpHub(getSettings);
 }

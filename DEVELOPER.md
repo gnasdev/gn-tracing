@@ -132,13 +132,47 @@ task player:typecheck
 
 ## Load Locally
 
-1. Run `task build`.
-2. Open `chrome://extensions` or `edge://extensions`.
+### Chrome
+
+1. Run `task build` (outputs `dist/chrome/`).
+2. Open `chrome://extensions`.
 3. Enable `Developer mode`.
 4. Click `Load unpacked`.
-5. Select this repository's `dist/` folder.
+5. Select `dist/chrome/`.
+
+### Microsoft Edge
+
+1. Run `task build:edge` (outputs `dist/edge/`).
+2. Open `edge://extensions`.
+3. Enable `Developer mode`.
+4. Click `Load unpacked`.
+5. Select `dist/edge/`.
+
+Edge uses the same Chromium capture path as Chrome (CDP + tabCapture + offscreen). Google Drive auth uses the web PKCE flow (not `getAuthToken`).
+
+### Firefox
+
+1. Run `task build:firefox` (outputs `dist/firefox/`).
+2. Open `about:debugging#/runtime/this-firefox`.
+3. Click **Load Temporary Add-on…**.
+4. Select `dist/firefox/manifest.json`.
+
+Firefox has no `debugger` / `offscreen` / `tabCapture`. Console and network use in-page capture (same-origin bodies). Video uses `getDisplayMedia` (browser picker). Set `FIREFOX_EXTENSION_ID` (default `gn-tracing@gnas.dev`) and register the redirect URI `https://<id>.extensions.allizom.org/` on OAuth apps.
 
 Rebuild and reload the unpacked extension after source changes. After changing OAuth client ids or token proxy URLs, always rebuild so esbuild defines and `host_permissions` are regenerated.
+
+### Multi-browser build commands
+
+```bash
+task build            # Chrome → dist/chrome
+task build:edge       # Edge → dist/edge
+task build:firefox    # Firefox → dist/firefox
+task build:all        # all three (development)
+task dist:all         # all three (production)
+task store:zip        # Chrome Web Store zip
+task store:zip:edge   # Edge Add-ons zip
+task store:zip:firefox
+```
 
 ## Upload And Replay Model
 
@@ -159,15 +193,43 @@ Upload **hard-fails** if public share creation fails — no broken replay links.
 
 ## OAuth Apps (All Providers)
 
-Use **public clients + PKCE** when the vendor allows it so the extension never needs a client secret. Secrets belong only in optional Workers, never in the extension bundle.
+Use **public clients + PKCE (S256)** when the vendor allows it so the extension never needs a client secret. Secrets belong only in optional Workers, never in the extension bundle.
 
-Redirect URI for all providers (from `chrome.identity.getRedirectURL()`):
+**PKCE implementation (Google native-app Steps 1–5):** shared module `src/shared/oauth-pkce.ts` — `createPkcePair`, `buildGoogleAuthorizationUrl`, `parseOAuthAuthorizationRedirect`, `buildPkceAuthorizationCodeTokenParams`, `buildRefreshTokenParams`, `grantedScopesInclude`. Google Drive web flow and Dropbox both call these helpers; unit tests include the RFC 7636 Appendix B S256 vector.
+
+### Google OAuth domain ownership policy
+
+Must follow [Google OAuth 2.0 Policies — domains](https://developers.google.com/identity/protocols/oauth2/policies#domains):
+
+| Rule | GN Tracing practice |
+|------|---------------------|
+| Only use domains you own | Redirect URIs are **only** platform extension hosts (`*.chromiumapp.org`, `*.extensions.allizom.org`) from `chrome.identity.getRedirectURL()`. Never register `tracing.gnas.dev`, `workers.dev`, or arbitrary web callbacks as OAuth redirect URIs. |
+| Homepage on verified domain | Consent-screen homepage: `https://tracing.gnas.dev/app/` (owned product domain). |
+| Privacy / Terms links | `https://tracing.gnas.dev/privacy/`, `https://tracing.gnas.dev/terms/`. |
+| Secure redirects | Code validates redirect URIs (`src/shared/oauth-redirect-policy.ts`); Worker rejects `authorization_code` exchanges with non-extension `redirect_uri`. |
+| Minimal scopes | Google Drive: `drive.file` only (manifest `oauth2.scopes` + web flow). |
+
+**Cloud Console checklist**
+
+1. Prefer a **Chrome Extension** OAuth client for Chrome Store builds (`getAuthToken`).
+2. For Edge / Firefox / web PKCE: a **Web application** client may be used only if Authorized redirect URIs are exactly the extension identity URLs (below) — not custom website paths.
+3. Authorized JavaScript origins: leave empty for pure extension flows, or only domains you own if a web surface needs them.
+4. Branding name must match the product: **GN Tracing**.
+5. Production vs dev: separate Cloud projects when shipping (policy: separate testing and production projects).
+
+Redirect URI for Chromium providers (from `chrome.identity.getRedirectURL()`):
 
 ```text
 https://<extension-id>.chromiumapp.org/
 ```
 
-Use the Store extension id for production, or the unpacked id printed in `chrome://extensions` for local dev. Rebuild after changing client ids.
+Firefox (AMO / temporary add-on):
+
+```text
+https://<addon-id-or-uuid>.extensions.allizom.org/
+```
+
+Use the Store extension id for production, or the unpacked id printed in `chrome://extensions` for local dev. Rebuild after changing client ids. The extension **refuses** to launch web auth if the identity redirect host is not an allowed platform domain.
 
 ### Google Drive
 

@@ -6,6 +6,7 @@ import type { Env } from "../../env";
 import { readFormParams } from "../../http/body";
 import { jsonResponse, passthroughUpstream } from "../../http/response";
 import { getOAuthProvider, type OAuthProviderId } from "./providers";
+import { isAllowedExtensionOAuthRedirectUri } from "./redirect-uri";
 
 const ALLOWED_GRANT_TYPES = new Set(["authorization_code", "refresh_token"]);
 // Fields the extension may forward. client_id / client_secret are injected.
@@ -84,6 +85,25 @@ export async function handleTokenExchange(
       env,
       "oauth",
     );
+  }
+
+  // Google OAuth domain policy: never exchange codes for non-extension redirects.
+  // refresh_token grants omit redirect_uri and are unchanged.
+  if (grantType === "authorization_code") {
+    const redirectUri = parsed.params.get("redirect_uri") ?? "";
+    const redirectCheck = isAllowedExtensionOAuthRedirectUri(redirectUri);
+    if (!redirectCheck.ok) {
+      return jsonResponse(
+        {
+          error: "invalid_request",
+          error_description: redirectCheck.error,
+        },
+        400,
+        origin,
+        env,
+        "oauth",
+      );
+    }
   }
 
   const upstream = new URLSearchParams();

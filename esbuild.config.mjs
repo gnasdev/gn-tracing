@@ -24,6 +24,8 @@ const watch = process.argv.includes("--watch");
 const rawAppEnv = cliEnv || (watch ? "development" : "production");
 const appEnv = normalizeAppEnv(rawAppEnv);
 const isProductionBuild = appEnv === "production";
+const browserTarget = normalizeBrowserTarget(getCliArgValue("--browser") || "chrome");
+const distRoot = path.resolve(__dirname, "dist", browserTarget);
 const packageJson = JSON.parse(fs.readFileSync(path.resolve(__dirname, "package.json"), "utf-8"));
 const packageVersion = typeof packageJson.version === "string" ? packageJson.version.trim() : "";
 if (!isProductRouteVersion(packageVersion)) {
@@ -32,6 +34,9 @@ if (!isProductRouteVersion(packageVersion)) {
   );
 }
 const googleClientId = getConfigValue("GOOGLE_CLIENT_ID");
+// Web application client for launchWebAuthFlow + PKCE (Edge / fallback). Falls
+// back to GOOGLE_CLIENT_ID when empty (single-client setups).
+const googleWebClientId = getConfigValue("GOOGLE_WEB_CLIENT_ID", googleClientId);
 const dropboxClientId = getConfigValue("DROPBOX_CLIENT_ID");
 // Dev/watch builds default to the multi-issuer Worker started by `task worker:dev`
 // / `task dev` on port 8787 so Google and Dropbox hit localhost without editing
@@ -52,6 +57,11 @@ const chromeExtensionId = getConfigValue(
   "CHROME_EXTENSION_ID",
   chromeExtensionPublicKey ? getChromeExtensionId(chromeExtensionPublicKey) : "",
 );
+const edgeExtensionPublicKey = getConfigValue(
+  "EDGE_EXTENSION_PUBLIC_KEY",
+  chromeExtensionPublicKey,
+);
+const firefoxExtensionId = getConfigValue("FIREFOX_EXTENSION_ID", "gn-tracing@gnas.dev");
 const playerLocalPort = getConfigValue("PLAYER_LOCAL_PORT", "5176");
 // Replay host baked into the extension (Instant Replay / screenshot / Record upload links).
 // Dev never falls back to PLAYER_HOST_URL (often production in .env) so local
@@ -64,14 +74,14 @@ const playerHostUrl = normalizePlayerHostUrl(
     : getConfigValue("PLAYER_HOST_URL_DEV", DEFAULT_DEV_PLAYER_HOST_URL),
 );
 const STATIC_ASSET_ENTRIES = [
-  { type: "text", src: "popup/popup.html", dest: "dist/popup/popup.html" },
-  { type: "file", src: "popup/popup.css", dest: "dist/popup/popup.css" },
-  { type: "text", src: "annotate/annotate.html", dest: "dist/annotate/annotate.html" },
-  { type: "file", src: "annotate/annotate.css", dest: "dist/annotate/annotate.css" },
-  { type: "text", src: "offscreen/offscreen.html", dest: "dist/offscreen/offscreen.html" },
-  { type: "dir", src: "icons", dest: "dist/icons" },
-  { type: "file", src: "shared/theme.css", dest: "dist/shared/theme.css" },
-  { type: "file", src: "shared/theme-init.js", dest: "dist/shared/theme-init.js" },
+  { type: "text", src: "popup/popup.html", dest: "popup/popup.html" },
+  { type: "file", src: "popup/popup.css", dest: "popup/popup.css" },
+  { type: "text", src: "annotate/annotate.html", dest: "annotate/annotate.html" },
+  { type: "file", src: "annotate/annotate.css", dest: "annotate/annotate.css" },
+  { type: "text", src: "offscreen/offscreen.html", dest: "offscreen/offscreen.html" },
+  { type: "dir", src: "icons", dest: "icons" },
+  { type: "file", src: "shared/theme.css", dest: "shared/theme.css" },
+  { type: "file", src: "shared/theme-init.js", dest: "shared/theme-init.js" },
 ];
 const staticAssetWatchers = [];
 
@@ -79,13 +89,15 @@ const staticAssetWatchers = [];
 // is owned entirely by `player/` (Vite).
 const commonOptions = {
   bundle: true,
-  target: "chrome120",
+  target: browserTarget === "firefox" ? "firefox115" : "chrome120",
   sourcemap: !isProductionBuild,
   minify: false,
   define: {
     __APP_ENV__: JSON.stringify(appEnv),
     __APP_VERSION__: JSON.stringify(packageVersion),
+    __BROWSER_TARGET__: JSON.stringify(browserTarget),
     __GOOGLE_CLIENT_ID__: JSON.stringify(googleClientId),
+    __GOOGLE_WEB_CLIENT_ID__: JSON.stringify(googleWebClientId || googleClientId),
     __GOOGLE_TOKEN_PROXY_URL__: JSON.stringify(googleTokenProxyUrl),
     __DROPBOX_CLIENT_ID__: JSON.stringify(dropboxClientId),
     __DROPBOX_TOKEN_PROXY_URL__: JSON.stringify(dropboxTokenProxyUrl),
@@ -94,6 +106,16 @@ const commonOptions = {
     __PLAYER_HOST_URL__: JSON.stringify(playerHostUrl),
   },
 };
+
+function normalizeBrowserTarget(value) {
+  const normalized = String(value || "chrome")
+    .trim()
+    .toLowerCase();
+  if (normalized === "chrome" || normalized === "edge" || normalized === "firefox") {
+    return normalized;
+  }
+  throw new Error(`Unsupported --browser value: ${value}. Use chrome, edge, or firefox.`);
+}
 
 function resolveGoogleTokenProxyUrl() {
   const configured = normalizeProxyUrl(
@@ -212,13 +234,27 @@ function validateChromeExtensionIdentity() {
     throw new Error("GOOGLE_CLIENT_ID is required. Set it in .env or the environment.");
   }
 
-  if (isProductionBuild && !hasConfigValue("CHROME_EXTENSION_ID")) {
-    throw new Error("CHROME_EXTENSION_ID is required for production builds.");
+  if (browserTarget === "firefox") {
+    if (!firefoxExtensionId || !firefoxExtensionId.includes("@")) {
+      throw new Error(
+        "FIREFOX_EXTENSION_ID is required for Firefox builds (e.g. gn-tracing@gnas.dev).",
+      );
+    }
+    return;
   }
 
-  if (!chromeExtensionPublicKey) {
+  const publicKey =
+    browserTarget === "edge"
+      ? edgeExtensionPublicKey || chromeExtensionPublicKey
+      : chromeExtensionPublicKey;
+
+  if (isProductionBuild && browserTarget === "chrome" && !hasConfigValue("CHROME_EXTENSION_ID")) {
+    throw new Error("CHROME_EXTENSION_ID is required for production Chrome builds.");
+  }
+
+  if (!publicKey) {
     throw new Error(
-      "CHROME_EXTENSION_PUBLIC_KEY is required to generate manifest.json. Set it in .env or the environment.",
+      "CHROME_EXTENSION_PUBLIC_KEY (or EDGE_EXTENSION_PUBLIC_KEY) is required to generate manifest.json.",
     );
   }
 
@@ -226,11 +262,13 @@ function validateChromeExtensionIdentity() {
     console.warn("CHROME_EXTENSION_PRIVATE_KEY is set but does not look like a PEM private key.");
   }
 
-  const derivedExtensionId = getChromeExtensionId(chromeExtensionPublicKey);
-  if (chromeExtensionId && chromeExtensionId !== derivedExtensionId) {
-    throw new Error(
-      `CHROME_EXTENSION_ID (${chromeExtensionId}) does not match CHROME_EXTENSION_PUBLIC_KEY (${derivedExtensionId}).`,
-    );
+  if (browserTarget === "chrome") {
+    const derivedExtensionId = getChromeExtensionId(publicKey);
+    if (chromeExtensionId && chromeExtensionId !== derivedExtensionId) {
+      throw new Error(
+        `CHROME_EXTENSION_ID (${chromeExtensionId}) does not match CHROME_EXTENSION_PUBLIC_KEY (${derivedExtensionId}).`,
+      );
+    }
   }
 }
 
@@ -313,7 +351,7 @@ function copyDir(src, dest) {
 
 function generateManifest(outputPath) {
   const templatePath = path.resolve(__dirname, "manifest.template.json");
-  const manifestPath = path.resolve(__dirname, outputPath);
+  const manifestPath = path.resolve(outputPath);
 
   if (!fs.existsSync(templatePath)) {
     console.error("manifest.template.json not found");
@@ -322,17 +360,57 @@ function generateManifest(outputPath) {
 
   validateChromeExtensionIdentity();
 
+  const publicKey =
+    browserTarget === "edge"
+      ? edgeExtensionPublicKey || chromeExtensionPublicKey
+      : chromeExtensionPublicKey;
+
   const template = fs
     .readFileSync(templatePath, "utf-8")
     .replace(/{{GOOGLE_CLIENT_ID}}/g, googleClientId)
-    .replace(/{{CHROME_EXTENSION_PUBLIC_KEY}}/g, chromeExtensionPublicKey);
+    .replace(/{{CHROME_EXTENSION_PUBLIC_KEY}}/g, publicKey || "");
   const manifest = JSON.parse(template);
   manifest.version = packageVersion || manifest.version;
+  applyBrowserManifestPatches(manifest);
   addTokenProxyHostPermission(manifest);
 
   fs.mkdirSync(path.dirname(manifestPath), { recursive: true });
   fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf-8");
-  console.log("✓ manifest.json generated");
+  console.log(`✓ manifest.json generated (${browserTarget})`);
+}
+
+/**
+ * Apply per-browser permission/identity differences on top of the shared template.
+ */
+function applyBrowserManifestPatches(manifest) {
+  if (browserTarget === "firefox") {
+    delete manifest.minimum_chrome_version;
+    delete manifest.key;
+    delete manifest.oauth2;
+    const chromiumOnly = new Set(["tabCapture", "offscreen", "debugger"]);
+    manifest.permissions = (manifest.permissions || []).filter((p) => !chromiumOnly.has(p));
+    if (!manifest.permissions.includes("tabs")) {
+      manifest.permissions.push("tabs");
+    }
+    manifest.browser_specific_settings = {
+      gecko: {
+        id: firefoxExtensionId,
+        strict_min_version: "115.0",
+      },
+    };
+    return;
+  }
+
+  if (browserTarget === "edge") {
+    // Edge is Chromium: keep CDP/offscreen/tabCapture. Prefer web OAuth at
+    // runtime; oauth2 block remains optional for compatibility.
+    if (!manifest.permissions.includes("tabs")) {
+      manifest.permissions.push("tabs");
+    }
+    return;
+  }
+
+  // chrome default template is already correct.
 }
 
 // Surfaces whether the OAuth token exchange (used by the service worker when
@@ -397,15 +475,16 @@ function addTokenProxyHostPermission(manifest) {
 async function build() {
   logTokenProxyStatus();
   logPlayerHostStatus();
+  console.log(`✓ Browser target: ${browserTarget} → ${path.relative(__dirname, distRoot)}/`);
 
   if (!watch) {
-    fs.rmSync(path.resolve(__dirname, "dist"), { recursive: true, force: true });
+    fs.rmSync(distRoot, { recursive: true, force: true });
   }
 
   const swCtx = await esbuild.context({
     ...commonOptions,
     entryPoints: ["src/background/service-worker.ts"],
-    outfile: "dist/background/service-worker.js",
+    outfile: path.join(distRoot, "background/service-worker.js"),
     format: "esm",
   });
 
@@ -416,20 +495,24 @@ async function build() {
       { in: "src/offscreen/offscreen.ts", out: "offscreen/offscreen" },
       { in: "src/annotate/annotate.ts", out: "annotate/annotate" },
     ],
-    outdir: "dist",
+    outdir: distRoot,
     format: "iife",
   });
 
+  const contentEntries = [
+    { in: "src/content/recording-events.ts", out: "content/recording-events" },
+    { in: "src/content/drawing-overlay.ts", out: "content/drawing-overlay" },
+    { in: "src/content/instant-replay.ts", out: "content/instant-replay" },
+    { in: "src/content/instant-replay-evidence.ts", out: "content/instant-replay-evidence" },
+    { in: "src/content/page-dom-snapshot.ts", out: "content/page-dom-snapshot" },
+    { in: "src/content/in-page-capture-main.ts", out: "content/in-page-capture-main" },
+    { in: "src/content/in-page-capture-bridge.ts", out: "content/in-page-capture-bridge" },
+  ];
+
   const contentCtx = await esbuild.context({
     ...commonOptions,
-    entryPoints: [
-      { in: "src/content/recording-events.ts", out: "content/recording-events" },
-      { in: "src/content/drawing-overlay.ts", out: "content/drawing-overlay" },
-      { in: "src/content/instant-replay.ts", out: "content/instant-replay" },
-      { in: "src/content/instant-replay-evidence.ts", out: "content/instant-replay-evidence" },
-      { in: "src/content/page-dom-snapshot.ts", out: "content/page-dom-snapshot" },
-    ],
-    outdir: "dist",
+    entryPoints: contentEntries,
+    outdir: distRoot,
     format: "iife",
     sourcemap: false,
   });
@@ -438,7 +521,7 @@ async function build() {
     await Promise.all([swCtx.watch(), uiCtx.watch(), contentCtx.watch()]);
     syncExtensionAssets();
     watchExtensionAssets();
-    console.log("Watching extension sources...");
+    console.log(`Watching extension sources (${browserTarget})...`);
     return;
   }
 
@@ -446,23 +529,24 @@ async function build() {
   await Promise.all([swCtx.dispose(), uiCtx.dispose(), contentCtx.dispose()]);
   syncExtensionAssets();
 
-  console.log("Extension built.");
+  console.log(`Extension built for ${browserTarget}.`);
 }
 
 function copyStaticAssets() {
   for (const entry of STATIC_ASSET_ENTRIES) {
+    const dest = path.join(distRoot, entry.dest);
     if (entry.type === "text") {
-      copyTextFile(entry.src, entry.dest);
+      copyTextFile(entry.src, dest);
     } else if (entry.type === "dir") {
-      copyDir(entry.src, entry.dest);
+      copyDir(entry.src, dest);
     } else {
-      copyFile(entry.src, entry.dest);
+      copyFile(entry.src, dest);
     }
   }
 }
 
 function syncExtensionAssets() {
-  generateManifest("dist/manifest.json");
+  generateManifest(path.join(distRoot, "manifest.json"));
   copyStaticAssets();
 }
 

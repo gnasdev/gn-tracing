@@ -21,7 +21,10 @@ const googleProvider: OAuthProvider = {
   label: "Google",
   requiresSecret: true,
   resolveCredentials(env) {
-    return { clientId: env.GOOGLE_CLIENT_ID, clientSecret: env.GOOGLE_CLIENT_SECRET };
+    // Prefer Web application client id when extension and Worker use separate
+    // OAuth clients (Chrome Extension client has no secret).
+    const clientId = env.GOOGLE_WEB_CLIENT_ID || env.GOOGLE_CLIENT_ID;
+    return { clientId, clientSecret: env.GOOGLE_CLIENT_SECRET };
   },
 };
 

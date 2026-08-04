@@ -48,7 +48,9 @@ type MessageAction =
   | "DISCARD_PENDING_SCREENSHOT"
   | "SAVE_ANNOTATED_SCREENSHOT"
   /** Collect always-on Instant Replay buffer on the active tab and upload. */
-  | "CAPTURE_INSTANT_REPLAY";
+  | "CAPTURE_INSTANT_REPLAY"
+  /** Firefox in-page capture bridge → storage (MAIN world evidence). */
+  | "IN_PAGE_CAPTURE_ENTRY";
 
 type RecordingPhase = "idle" | "recording" | "interrupted";
 
@@ -60,6 +62,12 @@ export interface ServiceWorkerMessage {
   tabId?: number;
   url?: string;
   data?: Record<string, unknown>;
+  /** IN_PAGE_CAPTURE_ENTRY: session that produced the entry. */
+  sessionId?: string;
+  /** IN_PAGE_CAPTURE_ENTRY: console | network | websocket | storage. */
+  kind?: string;
+  /** IN_PAGE_CAPTURE_ENTRY: captured payload. */
+  entry?: unknown;
 }
 
 /**

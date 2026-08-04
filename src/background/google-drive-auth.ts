@@ -4,12 +4,37 @@
  * Uses a strategy pattern to support both Chrome's native identity API and the
  * standard web auth flow for other Chromium browsers (Edge, Brave, Vivaldi, etc).
  */
+import { getFeatureFlags } from "../platform/detect";
+import {
+  buildGoogleAuthorizationUrl,
+  buildPkceAuthorizationCodeTokenParams,
+  buildRefreshTokenParams,
+  createPkcePair,
+  generateOAuthState,
+  grantedScopesInclude,
+  parseOAuthAuthorizationRedirect,
+} from "../shared/oauth-pkce";
+import {
+  describeOAuthRedirectDebug,
+  resolveRuntimeExtensionRedirectUri,
+} from "../shared/oauth-redirect-policy";
 import type { MessageResponse } from "../types/messages";
 
 declare const __GOOGLE_CLIENT_ID__: string;
+declare const __GOOGLE_WEB_CLIENT_ID__: string;
 declare const __GOOGLE_TOKEN_PROXY_URL__: string;
 
+/** Chrome Extension client — manifest oauth2 + getAuthToken. */
 const GOOGLE_CLIENT_ID = __GOOGLE_CLIENT_ID__;
+/**
+ * Web application client for launchWebAuthFlow + PKCE (and Worker token exchange).
+ * Must have Authorized redirect URI = chrome.identity.getRedirectURL().
+ * Falls back to GOOGLE_CLIENT_ID when unset at build time.
+ */
+const GOOGLE_WEB_CLIENT_ID =
+  typeof __GOOGLE_WEB_CLIENT_ID__ === "string" && __GOOGLE_WEB_CLIENT_ID__.trim()
+    ? __GOOGLE_WEB_CLIENT_ID__.trim()
+    : GOOGLE_CLIENT_ID;
 // Optional Cloudflare Worker that holds the OAuth client secret and proxies the
 // token exchange. Required when the OAuth client is registered as a "Web
 // application" (which rejects PKCE-only requests with "client_secret is
@@ -74,25 +99,6 @@ async function mirrorGoogleDriveConnected(isConnected: boolean): Promise<void> {
   }
 }
 
-function base64UrlEncode(bytes: Uint8Array): string {
-  let binary = "";
-  for (const byte of bytes) {
-    binary += String.fromCharCode(byte);
-  }
-  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-}
-
-function generateCodeVerifier(): string {
-  const bytes = new Uint8Array(32);
-  crypto.getRandomValues(bytes);
-  return base64UrlEncode(bytes);
-}
-
-async function generateCodeChallenge(verifier: string): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier));
-  return base64UrlEncode(new Uint8Array(digest));
-}
-
 async function verifyDriveAccessToken(token: string): Promise<boolean> {
   try {
     const response = await fetch(DRIVE_VERIFY_ENDPOINT, {
@@ -130,21 +136,27 @@ async function exchangeAuthorizationCode(params: {
   codeVerifier: string;
   redirectUri: string;
 }): Promise<AuthorizationCodeExchangeResult> {
-  if (!GOOGLE_CLIENT_ID) {
-    return { ok: false, error: "Missing GOOGLE_CLIENT_ID" };
+  if (!GOOGLE_WEB_CLIENT_ID) {
+    return {
+      ok: false,
+      error: "Missing GOOGLE_WEB_CLIENT_ID (or GOOGLE_CLIENT_ID) for web OAuth token exchange.",
+    };
   }
   let response: Response;
   try {
+    // Native-app Step 5: public client + PKCE (no client_secret in the extension).
+    // https://developers.google.com/identity/protocols/oauth2/native-app#exchange-authorization-code
+    // Web flow must use the Web application client id (not Chrome Extension client).
+    const body = buildPkceAuthorizationCodeTokenParams({
+      clientId: GOOGLE_WEB_CLIENT_ID,
+      code: params.code,
+      codeVerifier: params.codeVerifier,
+      redirectUri: params.redirectUri,
+    });
     response = await fetch(TOKEN_EXCHANGE_ENDPOINT, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        client_id: GOOGLE_CLIENT_ID,
-        code: params.code,
-        code_verifier: params.codeVerifier,
-        grant_type: "authorization_code",
-        redirect_uri: params.redirectUri,
-      }),
+      body,
     });
   } catch (e) {
     const detail = e instanceof Error ? e.message : String(e);
@@ -303,57 +315,79 @@ class WebAuthFlowProvider implements TokenProvider {
 
   async launchInteractive(): Promise<MessageResponse> {
     try {
-      if (!GOOGLE_CLIENT_ID) {
+      if (!GOOGLE_WEB_CLIENT_ID) {
         return {
           ok: false,
-          error: "Google OAuth client id is not configured. Set GOOGLE_CLIENT_ID and rebuild.",
+          error:
+            "Google web OAuth client id is not configured. Set GOOGLE_WEB_CLIENT_ID (Web application) or GOOGLE_CLIENT_ID and rebuild.",
         };
       }
 
-      const codeVerifier = generateCodeVerifier();
-      const codeChallenge = await generateCodeChallenge(codeVerifier);
-      const state = generateCodeVerifier();
-      const redirectUri = chrome.identity.getRedirectURL();
+      // Google native-app OAuth (PKCE S256): Steps 1–5.
+      // https://developers.google.com/identity/protocols/oauth2/native-app
+      const pkce = await createPkcePair();
+      const state = generateOAuthState();
+      // Domain policy: only platform extension redirect hosts.
+      // https://developers.google.com/identity/protocols/oauth2/policies#domains
+      const redirect = resolveRuntimeExtensionRedirectUri();
+      if (!redirect.ok) {
+        return {
+          ok: false,
+          error: `${redirect.error}\n${describeOAuthRedirectDebug({
+            webClientId: GOOGLE_WEB_CLIENT_ID,
+          })}`,
+        };
+      }
+      const redirectUri = redirect.redirectUri;
 
-      const authUrl =
-        `${GOOGLE_AUTH_ENDPOINT}` +
-        `?client_id=${GOOGLE_CLIENT_ID}` +
-        "&response_type=code" +
-        `&redirect_uri=${encodeURIComponent(redirectUri)}` +
-        `&scope=${encodeURIComponent(DRIVE_FILE_SCOPE)}` +
-        `&code_challenge=${codeChallenge}` +
-        "&code_challenge_method=S256" +
-        `&state=${state}` +
-        "&access_type=offline" +
-        "&prompt=consent" +
-        "&include_granted_scopes=true";
-
-      const resultUrl = await chrome.identity.launchWebAuthFlow({
-        url: authUrl,
-        interactive: true,
+      const authUrl = buildGoogleAuthorizationUrl({
+        // Must be Web application client — Chrome Extension clients reject redirect_uri.
+        clientId: GOOGLE_WEB_CLIENT_ID,
+        redirectUri,
+        scope: DRIVE_FILE_SCOPE,
+        codeChallenge: pkce.codeChallenge,
+        state,
+        authEndpoint: GOOGLE_AUTH_ENDPOINT,
+        accessType: "offline",
+        prompt: "consent",
+        includeGrantedScopes: true,
       });
 
-      if (!resultUrl) {
-        return { ok: false, error: "No redirect URL received" };
+      let resultUrl: string | undefined;
+      try {
+        resultUrl = await chrome.identity.launchWebAuthFlow({
+          url: authUrl,
+          interactive: true,
+        });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        if (
+          /redirect_uri_mismatch|redirect_uri|Authorization page could not be loaded/i.test(msg)
+        ) {
+          return {
+            ok: false,
+            error:
+              `redirect_uri_mismatch (or auth page failed).\n` +
+              `In Google Cloud Console open the *Web application* client (not Chrome Extension):\n` +
+              `  client_id=${GOOGLE_WEB_CLIENT_ID}\n` +
+              `Add BOTH of these Authorized redirect URIs (exact match):\n` +
+              `  ${redirectUri}\n` +
+              `  ${redirectUri.replace(/\/$/, "")}\n` +
+              `Then Save, wait ~1 min, reload the extension, Connect again.\n` +
+              describeOAuthRedirectDebug({ webClientId: GOOGLE_WEB_CLIENT_ID }),
+          };
+        }
+        throw e;
       }
 
-      const url = new URL(resultUrl);
-      const returnedState = url.searchParams.get("state");
-      if (returnedState !== state) {
-        return { ok: false, error: "OAuth state mismatch. Please try again." };
-      }
-      const errorParam = url.searchParams.get("error");
-      if (errorParam) {
-        return { ok: false, error: `Google returned error: ${errorParam}` };
-      }
-      const code = url.searchParams.get("code");
-      if (!code) {
-        return { ok: false, error: "No authorization code in redirect" };
+      const parsed = parseOAuthAuthorizationRedirect(resultUrl || "", state);
+      if (!parsed.ok) {
+        return { ok: false, error: parsed.error };
       }
 
       const exchanged = await exchangeAuthorizationCode({
-        code,
-        codeVerifier,
+        code: parsed.code,
+        codeVerifier: pkce.codeVerifier,
         redirectUri,
       });
       if (!exchanged.ok || !exchanged.payload) {
@@ -365,6 +399,19 @@ class WebAuthFlowProvider implements TokenProvider {
       const { access_token: accessToken, refresh_token: refreshToken } = exchanged.payload;
       if (!accessToken) {
         return { ok: false, error: "No access token in exchange response" };
+      }
+
+      // Step 6: when Google returns a scope field, require drive.file.
+      if (
+        typeof exchanged.payload.scope === "string" &&
+        exchanged.payload.scope.trim() &&
+        !grantedScopesInclude(exchanged.payload.scope, [DRIVE_FILE_SCOPE])
+      ) {
+        return {
+          ok: false,
+          error:
+            "Google did not grant the Drive file scope. Reconnect and allow file access for GN Tracing.",
+        };
       }
 
       if (!(await verifyDriveAccessToken(accessToken))) {
@@ -452,7 +499,7 @@ class WebAuthFlowProvider implements TokenProvider {
     accessToken: string;
     expiresAt: number;
   } | null> {
-    if (!GOOGLE_CLIENT_ID) {
+    if (!GOOGLE_WEB_CLIENT_ID) {
       return null;
     }
     try {
@@ -463,10 +510,9 @@ class WebAuthFlowProvider implements TokenProvider {
         response = await fetch(TOKEN_EXCHANGE_ENDPOINT, {
           method: "POST",
           headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: new URLSearchParams({
-            client_id: GOOGLE_CLIENT_ID,
-            refresh_token: refreshToken,
-            grant_type: "refresh_token",
+          body: buildRefreshTokenParams({
+            clientId: GOOGLE_WEB_CLIENT_ID,
+            refreshToken,
           }),
           signal: controller.signal,
         });
@@ -594,7 +640,11 @@ export class GoogleDriveAuth {
         // Ignore storage read errors and fall through to detection.
       }
 
-      const detected: AuthStrategy = this.detectGoogleChrome() ? "chrome" : "web";
+      // Edge and Firefox packages never use getAuthToken (Chrome extension OAuth
+      // client only). Force web PKCE so store builds do not depend on brand UA.
+      const flags = getFeatureFlags();
+      const detected: AuthStrategy =
+        flags.chromeIdentityGetAuthToken && this.detectGoogleChrome() ? "chrome" : "web";
       this.strategy = detected;
       return detected;
     })();
@@ -658,9 +708,32 @@ export class GoogleDriveAuth {
     const strategy = await this.resolveStrategy();
 
     if (strategy === "chrome") {
+      // Chrome Extension OAuth client + getAuthToken (no redirect_uri).
       const result = await this.chromeProvider.launchInteractive();
       if (result.ok) return result;
-      // Chrome interactive failed; fall back to web auth flow.
+
+      // Only fall back to web PKCE when a *separate* Web application client is
+      // configured. Using the Chrome Extension client_id with launchWebAuthFlow
+      // always yields redirect_uri_mismatch.
+      const hasSeparateWebClient =
+        Boolean(GOOGLE_WEB_CLIENT_ID) &&
+        Boolean(GOOGLE_CLIENT_ID) &&
+        GOOGLE_WEB_CLIENT_ID !== GOOGLE_CLIENT_ID;
+
+      if (!hasSeparateWebClient) {
+        return {
+          ok: false,
+          error:
+            `Chrome identity sign-in failed: ${result.error || "unknown error"}.\n` +
+            `Fix Chrome Extension OAuth client in Google Cloud Console:\n` +
+            `  • Client type: Chrome extension\n` +
+            `  • Item ID must equal this extension id: ${chrome.runtime?.id || "(reload extension)"}\n` +
+            `  • Client ID must match GOOGLE_CLIENT_ID in .env and rebuild.\n` +
+            `Or set GOOGLE_WEB_CLIENT_ID to a Web application client and add redirect URI:\n` +
+            `  https://${chrome.runtime?.id || "YOUR_EXTENSION_ID"}.chromiumapp.org/`,
+        };
+      }
+
       console.warn(
         "[GoogleDriveAuth] Chrome identity flow failed, falling back to web auth flow:",
         result.error,

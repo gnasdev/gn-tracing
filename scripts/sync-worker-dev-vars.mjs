@@ -22,6 +22,7 @@ const outPath = path.join(rootDir, "worker", ".dev.vars");
 /** Keys counted in the "populated" log summary when non-empty after sync. */
 const KEYS = [
   "GOOGLE_CLIENT_ID",
+  "GOOGLE_WEB_CLIENT_ID",
   "GOOGLE_CLIENT_SECRET",
   "DROPBOX_CLIENT_ID",
   "DROPBOX_CLIENT_SECRET",
@@ -73,6 +74,7 @@ function main() {
     "# Used by `task worker:dev` / `task dev` (wrangler). Do not commit.",
     "",
     `GOOGLE_CLIENT_ID=${env.GOOGLE_CLIENT_ID || ""}`,
+    `GOOGLE_WEB_CLIENT_ID=${env.GOOGLE_WEB_CLIENT_ID || ""}`,
     `GOOGLE_CLIENT_SECRET=${env.GOOGLE_CLIENT_SECRET || ""}`,
     `DROPBOX_CLIENT_ID=${env.DROPBOX_CLIENT_ID || ""}`,
     `DROPBOX_CLIENT_SECRET=${env.DROPBOX_CLIENT_SECRET || ""}`,

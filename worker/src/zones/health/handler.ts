@@ -23,7 +23,9 @@ export function healthBody(
     version: PRODUCT_VERSION,
     requestRouteVersion,
     providers: {
-      google: Boolean(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET),
+      google: Boolean(
+        (env.GOOGLE_WEB_CLIENT_ID || env.GOOGLE_CLIENT_ID) && env.GOOGLE_CLIENT_SECRET,
+      ),
       dropbox: Boolean(env.DROPBOX_CLIENT_ID && env.DROPBOX_CLIENT_SECRET),
     },
     feedback: Boolean((env.GITHUB_FEEDBACK_TOKEN ?? "").trim()),

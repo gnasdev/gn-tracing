@@ -100,9 +100,16 @@ function getItemName() {
   return `publishers/${getEnv("CHROME_WEBSTORE_PUBLISHER_ID")}/items/${getEnv("CHROME_WEBSTORE_EXTENSION_ID")}`;
 }
 
+function getWebOAuthClientId() {
+  // Prefer dedicated Web application client (Chrome Extension clients have no secret).
+  const web = process.env.GOOGLE_WEB_CLIENT_ID?.trim();
+  if (web) return web;
+  return getEnv("GOOGLE_CLIENT_ID");
+}
+
 async function getAccessToken() {
   const body = new URLSearchParams({
-    client_id: getEnv("GOOGLE_CLIENT_ID"),
+    client_id: getWebOAuthClientId(),
     client_secret: getEnv("GOOGLE_CLIENT_SECRET"),
     refresh_token: getEnv("CHROME_WEBSTORE_REFRESH_TOKEN"),
     grant_type: "refresh_token",

@@ -3,15 +3,20 @@
  */
 
 import type { Screenshot } from "../../packages/replay-core/src/schema/annotation";
-import {
-  EXTENSION_CAPABILITIES,
-  type PackageMetadata,
-} from "../../packages/replay-core/src/schema/package";
+import type { PackageMetadata } from "../../packages/replay-core/src/schema/package";
 import {
   type AttachableArtifactId,
   buildRecordingPackage,
 } from "../../packages/replay-core/src/write";
 import { getScreenshotPackageStaging } from "../background/screenshot-package-staging-idb";
+import {
+  acquireCaptureStream,
+  pickRecorderMimeType,
+  type SessionRecordingSnapshot,
+  waitForFirstFrame,
+} from "../media-pipeline/record-session";
+import { getProducerCapabilities } from "../platform/capabilities";
+import { isMediaMessageTarget } from "../platform/media/message-target";
 import { getProductVersionOrDefault } from "../shared/app-version";
 import {
   DROPBOX_UPLOAD_SESSION_THRESHOLD_BYTES,
@@ -50,12 +55,6 @@ let activeStream: MediaStream | null = null;
 let playbackAudioContext: AudioContext | null = null;
 let playbackSourceNode: MediaStreamAudioSourceNode | null = null;
 let shouldDiscardActiveCapture = false;
-
-interface SessionRecordingSnapshot {
-  blob: Blob;
-  mimeType: string;
-  createdAt: number;
-}
 
 const sessionSnapshots = new Map<string, SessionRecordingSnapshot>();
 
@@ -148,17 +147,20 @@ const MAX_PACKAGE_PART_BYTES = Math.min(MAX_DRIVE_UPLOAD_BYTES, MAX_DROPBOX_SIMP
 const UPLOAD_PROGRESS_THROTTLE_MS = 250;
 const UPLOAD_PROGRESS_MIN_DELTA = 0.5;
 
-// The offscreen document exposes a small command surface to the service worker.
-// Keep message names stable with the service-worker caller because there is no
-// compile-time link between these runtime message payloads.
+// Chromium hosts this document via chrome.offscreen; Firefox opens the same
+// page as a tab. Accept both historical "offscreen" and "media-host" targets.
 chrome.runtime.onMessage.addListener((message: OffscreenIncomingMessage, _sender, sendResponse) => {
-  if (message.target !== "offscreen") {
+  if (!isMediaMessageTarget(message.target)) {
     return false;
   }
 
   switch (message.type) {
     case "START_CAPTURE":
-      startCapture(String(message.data?.streamId || ""), String(message.data?.sessionId || ""))
+      startCapture(
+        String(message.data?.streamId || ""),
+        String(message.data?.sessionId || ""),
+        String(message.data?.mode || ""),
+      )
         .then((firstFrameAt) => sendResponse({ ok: true, data: { firstFrameAt } }))
         .catch((error: Error) => sendResponse({ ok: false, error: error.message }));
       return true;
@@ -257,46 +259,15 @@ function clearActiveCapture(): void {
   void stopActiveMediaStream();
 }
 
-async function waitForFirstFrame(stream: MediaStream): Promise<number | null> {
-  const [videoTrack] = stream.getVideoTracks();
-  if (!videoTrack) {
-    return null;
+async function startCapture(
+  streamId: string,
+  sessionId: string,
+  mode = "",
+): Promise<number | null> {
+  if (!sessionId) {
+    throw new Error("Missing capture session metadata.");
   }
-
-  // If the track already produced frames, use it immediately.
-  if (!videoTrack.muted && videoTrack.readyState === "live") {
-    return Date.now();
-  }
-
-  const video = document.createElement("video");
-  video.muted = true;
-  video.playsInline = true;
-  video.srcObject = stream;
-
-  try {
-    await Promise.race([
-      new Promise<void>((resolve) => {
-        video.onloadeddata = () => resolve();
-      }),
-      new Promise<void>((resolve) => {
-        const track = videoTrack;
-        track.onunmute = () => resolve();
-      }),
-      new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error("first-frame timeout")), 2000);
-      }),
-    ]);
-    return Date.now();
-  } catch {
-    return null;
-  } finally {
-    video.srcObject = null;
-    videoTrack.onunmute = null;
-  }
-}
-
-async function startCapture(streamId: string, sessionId: string): Promise<number | null> {
-  if (!streamId || !sessionId) {
+  if (mode !== "display-media" && !streamId) {
     throw new Error("Missing capture session metadata.");
   }
 
@@ -304,35 +275,19 @@ async function startCapture(streamId: string, sessionId: string): Promise<number
     throw new Error("A recording is already active.");
   }
 
-  const stream = await navigator.mediaDevices.getUserMedia({
-    audio: {
-      mandatory: {
-        chromeMediaSource: "tab",
-        chromeMediaSourceId: streamId,
-      },
-    } as MediaTrackConstraints,
-    video: {
-      mandatory: {
-        chromeMediaSource: "tab",
-        chromeMediaSourceId: streamId,
-        maxWidth: 1920,
-        maxHeight: 1080,
-        maxFrameRate: 30,
-      },
-    } as MediaTrackConstraints,
-  });
+  const { stream, loopbackTabAudio } = await acquireCaptureStream(streamId, mode);
 
-  playbackAudioContext = new AudioContext();
-  const source = playbackAudioContext.createMediaStreamSource(stream);
-  playbackSourceNode = source;
-  source.connect(playbackAudioContext.destination);
+  if (loopbackTabAudio) {
+    // Tab capture audio must be piped to speakers so the user still hears the tab.
+    playbackAudioContext = new AudioContext();
+    const source = playbackAudioContext.createMediaStreamSource(stream);
+    playbackSourceNode = source;
+    source.connect(playbackAudioContext.destination);
+  }
 
-  const mimeType = MediaRecorder.isTypeSupported("video/webm;codecs=vp9,opus")
-    ? "video/webm;codecs=vp9,opus"
-    : "video/webm;codecs=vp8,opus";
-  const finalMimeType = mimeType;
+  const finalMimeType = pickRecorderMimeType();
 
-  recorder = new MediaRecorder(stream, { mimeType });
+  recorder = new MediaRecorder(stream, { mimeType: finalMimeType });
   activeStream = stream;
   activeSessionId = sessionId;
   activeChunks = [];
@@ -890,7 +845,7 @@ async function uploadRecordingPackage(data: StorageUploadData): Promise<{
       extension: "gn-tracing",
       version: producerVersion,
       producer: "extension",
-      capabilities: EXTENSION_CAPABILITIES,
+      capabilities: getProducerCapabilities(),
       storage: {
         provider: storageProvider,
         folderId: targetFolderId,
@@ -926,7 +881,7 @@ async function uploadRecordingPackage(data: StorageUploadData): Promise<{
 
     const built = await buildRecordingPackage({
       producer: "extension",
-      capabilities: EXTENSION_CAPABILITIES,
+      capabilities: getProducerCapabilities(),
       packagedAt,
       zipFilename,
       version: producerVersion,

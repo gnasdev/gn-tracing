@@ -46,9 +46,14 @@ function makeHandlers(overrides: Partial<MessageHandlers> = {}): MessageHandlers
     discardPendingScreenshot: vi.fn(async () => ({ ok: true })),
     saveAnnotatedScreenshot: vi.fn(async () => ({ ok: true })),
     captureInstantReplay: vi.fn(async () => ({ ok: true })),
+    handleInPageCaptureEntry: vi.fn(() => ({ ok: true })),
     ...overrides,
   };
-  return base;
+  return {
+    ...base,
+    // Required handler — never leave undefined via Partial overrides.
+    handleInPageCaptureEntry: overrides.handleInPageCaptureEntry ?? base.handleInPageCaptureEntry,
+  };
 }
 
 async function dispatch(
@@ -157,6 +162,25 @@ describe("registerMessageListeners", () => {
       percent: 40,
     });
     expect(sendResponse).toHaveBeenCalledWith({ ok: true });
+  });
+
+  it("routes IN_PAGE_CAPTURE_ENTRY to handleInPageCaptureEntry", async () => {
+    const entry = { timestamp: 1, message: "log" };
+    const response = await dispatch({
+      action: "IN_PAGE_CAPTURE_ENTRY",
+      sessionId: "sess-ip",
+      kind: "console",
+      entry,
+    });
+    expect(handlers.handleInPageCaptureEntry).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "IN_PAGE_CAPTURE_ENTRY",
+        sessionId: "sess-ip",
+        kind: "console",
+        entry,
+      }),
+    );
+    expect(response).toEqual({ ok: true });
   });
 
   it("routes SUBMIT_FEEDBACK and CAPTURE_SCREENSHOT", async () => {

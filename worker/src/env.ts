@@ -14,7 +14,10 @@ export const DEFAULT_FEEDBACK_WEB_ORIGINS = [
 
 export interface Env {
   GOOGLE_CLIENT_SECRET?: string;
+  /** Chrome Extension client id (optional on Worker). */
   GOOGLE_CLIENT_ID?: string;
+  /** Web application client id for token proxy (preferred over GOOGLE_CLIENT_ID). */
+  GOOGLE_WEB_CLIENT_ID?: string;
   DROPBOX_CLIENT_SECRET?: string;
   DROPBOX_CLIENT_ID?: string;
   /**

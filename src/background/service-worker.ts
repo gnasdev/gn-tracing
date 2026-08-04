@@ -4,6 +4,10 @@
 
 import type { Screenshot } from "../../packages/replay-core/src/schema/annotation";
 import type { DomSnapshot } from "../../packages/replay-core/src/schema/capture";
+import { getFeatureFlags } from "../platform/detect";
+import { getMediaMessageTarget } from "../platform/media/message-target";
+import { createRecordingRuntime } from "../platform/recording-runtime/create-recording-runtime";
+import type { EvidenceEntry } from "../platform/recording-runtime/types";
 import { CAPTURE_PAGE_DOM_SNAPSHOT_ACTION } from "../shared/capture-page-dom";
 import { DEFAULT_DRAW_COLOR, normalizeDrawColor } from "../shared/drawing";
 import {
@@ -66,9 +70,8 @@ import {
   normalizeRecordingUserEvent,
   truncateEventString,
 } from "./capture-environment";
-import { CdpManager } from "./cdp-manager";
 import { submitFeedback } from "./feedback-submit";
-import { createInstantReplayCdpHub } from "./instant-replay-cdp";
+import { createInstantReplayCdpHubForBrowser } from "./instant-replay-cdp";
 import {
   createRegistrationDeps,
   syncInstantReplayRegistration,
@@ -80,7 +83,6 @@ import {
   parseCollectInstantReplayResponse,
 } from "./instant-replay-session";
 import { registerMessageListeners } from "./message-router";
-import { RecorderManager } from "./recorder-manager";
 import {
   clearScreenshotPackageStaging,
   putScreenshotPackageStaging,
@@ -136,10 +138,10 @@ import { getUploadArtifactChunk } from "./upload-orchestrator";
  * because MV3 service workers can restart between user actions.
  */
 const storage = new StorageManager();
-const recorder = new RecorderManager();
-const cdp = new CdpManager(storage);
-/** Instant Replay CDP lookback (separate StorageManager + CdpManager). */
-const irCdpHub = createInstantReplayCdpHub(getUploadSettings);
+/** Full-record evidence + media host (Chromium CDP or Firefox in-page). */
+const recordingRuntime = createRecordingRuntime(storage);
+/** Instant Replay CDP lookback; no-op hub on Firefox. */
+const irCdpHub = createInstantReplayCdpHubForBrowser(getUploadSettings, getFeatureFlags().cdp);
 /** Multi-cloud storage providers from the registry (Drive + Dropbox). */
 const googleDriveProvider = getGoogleDriveProvider();
 const googleAuth = googleDriveProvider.getAuth();
@@ -282,7 +284,7 @@ function resetActiveRecordingState(): void {
   activeRecording.privacySettings = DEFAULT_PRIVACY_REDACTION_SETTINGS;
   activeRecording.recordingSettings = null;
   activeRecordingStartMonotonicMs = null;
-  recorder.clearActiveSession();
+  recordingRuntime.clearActiveSession();
 }
 
 function recordActiveRedactionHits(hits: RedactionHit[] | undefined): void {
@@ -494,18 +496,19 @@ function notifyPopupStateUpdated(state: PopupState | null): void {
     .catch(() => {});
 }
 
-async function probeOffscreenCaptureState(): Promise<OffscreenCaptureState | null> {
+async function probeMediaCaptureState(): Promise<OffscreenCaptureState | null> {
   try {
-    const contexts = await chrome.runtime.getContexts({
-      contextTypes: [chrome.runtime.ContextType.OFFSCREEN_DOCUMENT],
-    });
-
-    if (contexts.length === 0) {
-      return null;
+    if (recordingRuntime.mediaKind === "offscreen") {
+      const contexts = await chrome.runtime.getContexts({
+        contextTypes: [chrome.runtime.ContextType.OFFSCREEN_DOCUMENT],
+      });
+      if (contexts.length === 0) {
+        return null;
+      }
     }
 
     return (await chrome.runtime.sendMessage({
-      target: "offscreen",
+      target: getMediaMessageTarget(),
       type: "GET_CAPTURE_STATE",
     })) as OffscreenCaptureState;
   } catch {
@@ -513,21 +516,21 @@ async function probeOffscreenCaptureState(): Promise<OffscreenCaptureState | nul
   }
 }
 
-async function closeOffscreenDocumentIfIdle(): Promise<void> {
+async function closeMediaHostIfIdle(): Promise<void> {
   if (activeUploadTasks.size > 1) {
     return;
   }
 
-  const offscreenState = await probeOffscreenCaptureState();
+  const mediaState = await probeMediaCaptureState();
   if (
-    !offscreenState?.ok ||
-    offscreenState.isRecording ||
-    (offscreenState.snapshotSessionIds || []).length > 0
+    !mediaState?.ok ||
+    mediaState.isRecording ||
+    (mediaState.snapshotSessionIds || []).length > 0
   ) {
     return;
   }
 
-  await recorder.closeOffscreenDocument();
+  await recordingRuntime.closeMediaHostIfIdle();
 }
 
 async function syncRuntimeState(): Promise<void> {
@@ -559,7 +562,7 @@ async function syncRuntimeState(): Promise<void> {
     resetActiveRecordingState();
   }
 
-  const offscreenState = await probeOffscreenCaptureState();
+  const offscreenState = await probeMediaCaptureState();
   const snapshotIds = new Set(offscreenState?.snapshotSessionIds || []);
 
   if (!offscreenState?.ok || !offscreenState.isRecording) {
@@ -567,7 +570,7 @@ async function syncRuntimeState(): Promise<void> {
   } else {
     activeRecording.isRecording = Boolean(offscreenState.isRecording);
     activeRecording.sessionId = offscreenState.activeSessionId ?? activeRecording.sessionId;
-    recorder.hydrateActiveSession(activeRecording.sessionId);
+    recordingRuntime.hydrateActiveSession(activeRecording.sessionId);
     // Restore capture settings for redaction/privacy after worker eviction.
     if (!activeRecording.recordingSettings) {
       const settings = await getUploadSettings();
@@ -665,7 +668,7 @@ chrome.runtime.onInstalled.addListener(() => {
   void syncInstantReplayRegistrationOnBoot();
 });
 
-// IR CDP follows the focused allowlisted tab.
+// IR CDP follows the focused allowlisted tab (Chromium only).
 chrome.tabs.onActivated.addListener(() => {
   void irCdpHub.sync();
 });
@@ -761,7 +764,7 @@ registerMessageListeners({
     return { ok: true, token: await resolved.provider.getAuthToken() };
   },
   onRecordingComplete: (sessionId) => {
-    recorder.onRecordingComplete(sessionId);
+    recordingRuntime.onRecordingComplete(sessionId);
   },
   getUploadArtifactChunk: (data) => getUploadArtifactChunk(sessionArtifacts, data),
   patchUploadProgress,
@@ -774,6 +777,16 @@ registerMessageListeners({
   },
   saveAnnotatedScreenshot: handleSaveAnnotatedScreenshot,
   captureInstantReplay: handleCaptureInstantReplay,
+  handleInPageCaptureEntry: (message) => {
+    const sessionId = typeof message.sessionId === "string" ? message.sessionId : "";
+    const kind = typeof message.kind === "string" ? message.kind : "";
+    const entry = message.entry;
+    if (!sessionId || !kind || !entry || typeof entry !== "object") {
+      return { ok: false, error: "Invalid in-page capture entry." };
+    }
+    recordingRuntime.ingestEvidenceEntry(sessionId, kind, entry as EvidenceEntry);
+    return { ok: true };
+  },
 });
 
 /**
@@ -886,19 +899,6 @@ function buildUserEventArtifact(events: RecordingUserEvent[]): RecordingUserEven
   return {
     schemaVersion: 1,
     events,
-  };
-}
-
-function buildSourceMapDiagnosticsArtifact(stopTime: number): SourceMapDiagnosticsArtifact | null {
-  const sourceMaps = cdp.getSourceMapDiagnostics();
-  if (sourceMaps.length === 0) {
-    return null;
-  }
-
-  return {
-    schemaVersion: 1,
-    generatedAt: new Date(stopTime).toISOString(),
-    sourceMaps,
   };
 }
 
@@ -1419,7 +1419,7 @@ function handleRecordingUserEvent(
       // capture path is internally guarded (records a limitation on failure) so it
       // never blocks event handling.
       if (activeRecording.recordingSettings?.captureDomSnapshots) {
-        void cdp.captureDomSnapshot("marker:navigation");
+        void recordingRuntime.captureDomSnapshotMarker("marker:navigation");
       }
     }
     activeRecording.userEvents.push(safeEvent);
@@ -1540,27 +1540,21 @@ async function startRecording(
     storage.setPrivacySettings(activeRecording.privacySettings, recordActiveRedactionHits);
     // Full recordings keep all evidence (no rolling Instant Replay retention).
     storage.setRollingWindowMs(null);
-    cdp.setCaptureSettings(settings);
-    cdp.setPrivacySettings(activeRecording.privacySettings, recordActiveRedactionHits);
 
-    const [, firstFrameAt] = await Promise.all([
-      cdp.attach(tabId),
-      recorder.startCapture(tabId, sessionId),
-    ]);
-
-    if (settings.captureStorage) {
-      await cdp.captureStorageSnapshot("start");
-    }
-    if (settings.captureDomSnapshots) {
-      await cdp.captureDomSnapshot("start");
-    }
+    const { firstFrameAt } = await recordingRuntime.start({
+      tabId,
+      sessionId,
+      settings,
+      privacySettings: activeRecording.privacySettings,
+      onRedactionHits: recordActiveRedactionHits,
+    });
 
     // Anchor the timeline at the first produced video frame when available;
     // fall back to the startCapture acknowledgement time.
     activeRecording.startTime = firstFrameAt ?? Date.now();
     activeRecordingStartMonotonicMs = performance.now();
     activeRecording.isRecording = true;
-    recorder.hydrateActiveSession(sessionId);
+    recordingRuntime.hydrateActiveSession(sessionId);
     void startRecordingEventCapture(tabId, sessionId, activeRecording.privacySettings);
     void startDrawingOverlay(tabId, sessionId);
 
@@ -1573,12 +1567,7 @@ async function startRecording(
   } catch (error) {
     await stopRecordingEventCapture(tabId);
     try {
-      await cdp.detach();
-    } catch {
-      // Ignore detach failures.
-    }
-    try {
-      await recorder.cleanup();
+      await recordingRuntime.discard();
     } catch {
       // Ignore recorder cleanup failures.
     }
@@ -1609,33 +1598,21 @@ async function stopRecording(): Promise<MessageResponse> {
 
     await stopDrawingOverlay(activeRecording.tabId);
     await stopRecordingEventCapture(activeRecording.tabId);
-    await recorder.stopCapture();
+    // Stop media first so video length matches the user's stop, then finalize
+    // evidence (source maps / detach) inside the browser runtime.
+    await recordingRuntime.stopMedia();
     const screenshotDataUrl = await captureVisibleTabScreenshot(activeRecording.tabId);
 
-    let sourceMapDiagnostics: SourceMapDiagnosticsArtifact | null = null;
-
-    // Keep CDP attached while flushing source maps, but stop media capture
-    // first so the video length matches the user's stop action as closely as
-    // possible.
-    await cdp.flushSourceMaps();
-    if (activeRecording.recordingSettings?.captureStorage) {
-      await cdp.captureStorageSnapshot("stop");
-    }
-    if (activeRecording.recordingSettings?.captureDomSnapshots) {
-      await cdp.captureDomSnapshot("stop");
-    }
-    for (const limitation of cdp.getStorageLimitations()) {
+    const evidenceFinal = await recordingRuntime.finalizeEvidence({
+      captureStorage: Boolean(activeRecording.recordingSettings?.captureStorage),
+      captureDomSnapshots: Boolean(activeRecording.recordingSettings?.captureDomSnapshots),
+      stopTime,
+    });
+    for (const limitation of evidenceFinal.privacyLimitations) {
       addActivePrivacyLimitation(limitation);
     }
-    try {
-      await cdp.detach();
-    } catch {
-      // Capture has already stopped, so detach failures should not block finalization.
-    }
-    const sourceMapDiagnosticsSnapshot = cdp.getSourceMapDiagnostics();
-    storage.resolveSourceMaps(cdp.sourceMapResolver, sourceMapDiagnosticsSnapshot);
-    sourceMapDiagnostics = buildSourceMapDiagnosticsArtifact(stopTime);
-    cdp.releaseSourceMaps();
+    const sourceMapDiagnostics: SourceMapDiagnosticsArtifact | null =
+      evidenceFinal.sourceMapDiagnostics;
 
     const finalizedArtifacts = storage.finalizeCurrentSession();
     const report = buildRecordingReport(stopTime);
@@ -1742,10 +1719,10 @@ async function removeRecording(): Promise<MessageResponse> {
 
     await stopDrawingOverlay(activeRecording.tabId);
     await stopRecordingEventCapture(activeRecording.tabId);
-    await Promise.allSettled([recorder.stopCapture(true), cdp.detach()]);
+    await recordingRuntime.discard();
 
     storage.clear();
-    cdp.releaseSourceMaps();
+    recordingRuntime.releaseSourceMaps();
     activeRecording.drawingStrokes = [];
     activeRecording.drawingOverlayActive = false;
     delete sessionArtifacts[sessionId];
@@ -1760,7 +1737,7 @@ async function removeRecording(): Promise<MessageResponse> {
 
     void chrome.runtime
       .sendMessage({
-        target: "offscreen",
+        target: getMediaMessageTarget(),
         type: "DELETE_SESSION_SNAPSHOT",
         data: { sessionId },
       })
@@ -1770,7 +1747,7 @@ async function removeRecording(): Promise<MessageResponse> {
   } catch (error) {
     resetActiveRecordingState();
     storage.clear();
-    cdp.releaseSourceMaps();
+    recordingRuntime.releaseSourceMaps();
     await saveArtifactsToStorage();
     await saveStateToStorage();
     // Discard may have paused IR via an earlier successful start; resume even
@@ -1868,7 +1845,7 @@ async function deleteSession(data: Record<string, unknown> | undefined): Promise
 
   void chrome.runtime
     .sendMessage({
-      target: "offscreen",
+      target: getMediaMessageTarget(),
       type: "DELETE_SESSION_SNAPSHOT",
       data: { sessionId },
     })
@@ -2286,7 +2263,7 @@ async function runSessionUpload(sessionId: string, authToken: string): Promise<v
           : null
         : settings.folderId;
     const result = (await chrome.runtime.sendMessage({
-      target: "offscreen",
+      target: getMediaMessageTarget(),
       type: "UPLOAD_TO_STORAGE",
       data: {
         sessionId,
@@ -2337,12 +2314,12 @@ async function runSessionUpload(sessionId: string, authToken: string): Promise<v
 
     await chrome.runtime
       .sendMessage({
-        target: "offscreen",
+        target: getMediaMessageTarget(),
         type: "DELETE_SESSION_SNAPSHOT",
         data: { sessionId },
       })
       .catch(() => {});
-    await closeOffscreenDocumentIfIdle();
+    await closeMediaHostIfIdle();
 
     if (updatedSession) {
       await persistUploadHistory(
@@ -2411,7 +2388,7 @@ async function commitInstantReplay(tabId: number | undefined): Promise<void> {
   }
 }
 
-/** Record takes the debugger — detach IR CDP first. */
+/** Record takes the debugger — detach IR CDP first (Chromium only). */
 async function pauseInstantReplayEvidence(tabId: number | null): Promise<void> {
   await irCdpHub.pauseForRecording(tabId);
 }
@@ -2737,9 +2714,9 @@ async function handleSaveAnnotatedScreenshot(
   }
 
   try {
-    await ensureOffscreenDocumentForPackaging();
+    await recordingRuntime.ensurePackagingContext();
     const result = (await chrome.runtime.sendMessage({
-      target: "offscreen",
+      target: getMediaMessageTarget(),
       type: "UPLOAD_SCREENSHOT_PACKAGE",
       data: {
         stagingId,
@@ -2775,7 +2752,7 @@ async function handleSaveAnnotatedScreenshot(
     // The capture is a picture of the user's screen; it has no reason to
     // outlive the report it belongs to.
     await clearPendingScreenshot();
-    await closeOffscreenDocumentIfIdle();
+    await closeMediaHostIfIdle();
 
     const recordingUrl = normalizeRecordingUrl(result.recordingUrl) ?? undefined;
     if (recordingUrl) {
@@ -2798,23 +2775,4 @@ async function handleSaveAnnotatedScreenshot(
   } finally {
     await clearScreenshotPackageStaging(stagingId).catch(() => undefined);
   }
-}
-
-/**
- * The packaging path needs the offscreen document for `OffscreenCanvas`, which
- * an MV3 service worker does not have — and destroying redacted pixels is not
- * optional, so there is no fallback.
- */
-async function ensureOffscreenDocumentForPackaging(): Promise<void> {
-  const contexts = await chrome.runtime.getContexts({
-    contextTypes: [chrome.runtime.ContextType.OFFSCREEN_DOCUMENT],
-  });
-  if (contexts.length > 0) {
-    return;
-  }
-  await chrome.offscreen.createDocument({
-    url: "offscreen/offscreen.html",
-    reasons: [chrome.offscreen.Reason.BLOBS],
-    justification: "Redacting and packaging an annotated screenshot report",
-  });
 }

@@ -1,9 +1,38 @@
+/**
+ * Validate dist/<browser>/ before store upload.
+ *
+ * Usage:
+ *   node scripts/check-store-package.mjs
+ *   node scripts/check-store-package.mjs --browser chrome|edge|firefox
+ */
+
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-const distDir = path.join(root, "dist");
+
+function getCliArgValue(flagName) {
+  for (let i = 0; i < process.argv.length; i += 1) {
+    const arg = process.argv[i];
+    if (arg === flagName) {
+      return process.argv[i + 1];
+    }
+    if (arg.startsWith(`${flagName}=`)) {
+      return arg.slice(flagName.length + 1);
+    }
+  }
+  return undefined;
+}
+
+const browser = String(getCliArgValue("--browser") || "chrome")
+  .trim()
+  .toLowerCase();
+if (!["chrome", "edge", "firefox"].includes(browser)) {
+  fail(`unsupported --browser ${browser}`);
+}
+
+const distDir = path.join(root, "dist", browser);
 const manifestPath = path.join(distDir, "manifest.json");
 
 function fail(message) {
@@ -28,7 +57,7 @@ function walk(dir) {
 }
 
 if (!fs.existsSync(manifestPath)) {
-  fail("dist/manifest.json is missing. Run task dist first.");
+  fail(`dist/${browser}/manifest.json is missing. Run task dist --browser ${browser} first.`);
 }
 
 const manifest = readJson(manifestPath);
@@ -41,13 +70,30 @@ if (manifest.manifest_version !== 3) {
   fail("manifest_version must be 3.");
 }
 
-if (!manifest.minimum_chrome_version) {
-  fail("minimum_chrome_version is required for Store package clarity.");
+if (browser === "firefox") {
+  if (manifest.minimum_chrome_version) {
+    fail("Firefox package must not set minimum_chrome_version.");
+  }
+  if (!manifest.browser_specific_settings?.gecko?.id) {
+    fail("Firefox package requires browser_specific_settings.gecko.id.");
+  }
+  for (const permission of ["tabCapture", "offscreen", "debugger"]) {
+    if (manifest.permissions?.includes(permission)) {
+      fail(`Firefox package must not include Chromium-only permission: ${permission}`);
+    }
+  }
+  if (manifest.oauth2) {
+    fail("Firefox package must not include oauth2 (use launchWebAuthFlow).");
+  }
+  if (manifest.key) {
+    fail("Firefox package must not include key.");
+  }
+} else if (!manifest.minimum_chrome_version) {
+  fail("minimum_chrome_version is required for Chromium store package clarity.");
 }
 
 // Fixed multi-cloud hosts (must match manifest.template.json host_permissions
 // minus optional token-proxy origins injected at build time).
-// Google Drive + Dropbox fixed host permissions.
 const fixedHostPermissions = new Set([
   "https://oauth2.googleapis.com/",
   "https://www.googleapis.com/",
@@ -56,7 +102,6 @@ const fixedHostPermissions = new Set([
   "https://www.dropbox.com/",
   "https://dl.dropboxusercontent.com/",
 ]);
-// Optional token-proxy Worker origins (Google / Dropbox), max 2.
 const MAX_TOKEN_PROXY_ORIGINS = 2;
 
 const hostPermissions = Array.isArray(manifest.host_permissions) ? manifest.host_permissions : [];
@@ -91,7 +136,7 @@ if (missingFixedHosts.length > 0) {
   fail(`required host_permissions missing: ${missingFixedHosts.join(", ")}`);
 }
 
-for (const permission of [
+const chromiumPermissions = [
   "tabCapture",
   "offscreen",
   "debugger",
@@ -99,7 +144,11 @@ for (const permission of [
   "storage",
   "alarms",
   "identity",
-]) {
+];
+const firefoxPermissions = ["activeTab", "storage", "alarms", "identity", "scripting", "tabs"];
+const requiredPermissions = browser === "firefox" ? firefoxPermissions : chromiumPermissions;
+
+for (const permission of requiredPermissions) {
   if (!manifest.permissions?.includes(permission)) {
     fail(`required permission ${permission} is missing.`);
   }
@@ -113,6 +162,18 @@ if (!fs.existsSync(backgroundPath)) {
 const popupPath = path.join(distDir, manifest.action?.default_popup || "");
 if (!fs.existsSync(popupPath)) {
   fail("default popup path does not exist.");
+}
+
+if (browser === "firefox") {
+  for (const rel of [
+    "content/in-page-capture-main.js",
+    "content/in-page-capture-bridge.js",
+    "offscreen/offscreen.js",
+  ]) {
+    if (!fs.existsSync(path.join(distDir, rel))) {
+      fail(`Firefox package missing required asset: ${rel}`);
+    }
+  }
 }
 
 const files = walk(distDir);
@@ -142,4 +203,4 @@ for (const file of files) {
   }
 }
 
-console.log("Store package check passed.");
+console.log(`Store package check passed (${browser}).`);
