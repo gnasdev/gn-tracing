@@ -160,13 +160,14 @@ describe("RecordingSession", () => {
     const session = new RecordingSession({ window: win });
     session.start();
 
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    // Timer wakeups can fire slightly early under load; use a margin so the
+    // assertion still distinguishes ms (dozens–hundreds) from seconds (~0.1).
+    await new Promise((resolve) => setTimeout(resolve, 120));
     const result = await session.stop();
     const pkg = await openRecordingPackageFromBytes(concatChunks(result.package.chunks));
 
-    // A 100ms real delay should yield a duration >= 100 if stored as ms, but
-    // only ~0.1 if stored as seconds.
-    expect(pkg.metadata.duration).toBeGreaterThanOrEqual(100);
+    expect(pkg.metadata.duration).toBeGreaterThanOrEqual(50);
+    expect(pkg.metadata.duration).toBeLessThan(5_000);
     expect(Number.isInteger(pkg.metadata.duration)).toBe(true);
   });
 
