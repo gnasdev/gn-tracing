@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 const ensureRecordingHostPermission = vi.fn(async () => true);
 
 vi.mock("../../shared/recording-host-permission", () => ({
-  ensureRecordingHostPermission: (...args: unknown[]) => ensureRecordingHostPermission(...args),
+  ensureRecordingHostPermission: () => ensureRecordingHostPermission(),
 }));
 
 import {
