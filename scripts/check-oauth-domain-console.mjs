@@ -7,6 +7,7 @@
  * Usage: node scripts/check-oauth-domain-console.mjs
  */
 
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -88,18 +89,38 @@ console.log("  Credentials → OAuth client (Web application) for Edge/Firefox P
 console.log("  This client must match GOOGLE_WEB_CLIENT_ID (not the Chrome Extension client).");
 console.log("  Authorized redirect URIs (ONLY these — never tracing.gnas.dev callbacks):");
 console.log(`    ${chromeRedirect}`);
-console.log(`    (Firefox after install) https://<addon-uuid>.extensions.allizom.org/`);
-console.log(`    Firefox id hint:    ${firefoxId}`);
+// Firefox identity.getRedirectURL uses SHA-1(addon id), not the raw email id.
+const firefoxSha1 = crypto.createHash("sha1").update(firefoxId, "utf8").digest("hex");
+const firefoxMozo = `http://127.0.0.1/mozoauth2/${firefoxSha1}`;
+console.log(`    Firefox (SHA-1 of addon id — required for Google):`);
+console.log(`      ${firefoxMozo}`);
+console.log(`    Firefox id:         ${firefoxId}`);
+console.log(`    Firefox sha1(id):   ${firefoxSha1}`);
 console.log("");
 console.log("  redirect_uri_mismatch fix:");
 console.log(`    1. Open Web application client → Authorized redirect URIs`);
-console.log(`    2. Add exactly: ${chromeRedirect}`);
-console.log(`    3. Save → task build → reload extension → Connect Drive again`);
+console.log(`    2. Add Chromium: ${chromeRedirect}`);
+console.log(`    3. Add Firefox:  ${firefoxMozo}`);
+console.log(`    4. Save → task build:firefox → reload temporary add-on → Connect Drive again`);
 console.log("");
 console.log("  Do NOT add as redirect URI:");
 console.log(`    ${playerHost}/oauth/callback`);
 console.log("    https://*.workers.dev/...");
-console.log("    http://localhost/...");
+console.log("    https://…@….extensions.allizom.org/");
+console.log(`    http://127.0.0.1/mozoauth2/${firefoxId}  (raw email — WRONG; use SHA-1 above)`);
+console.log("");
+
+// Dropbox refuses http:// redirect URIs on any host other than the literal
+// "localhost", so the mozoauth2 IP-literal form Google needs cannot be
+// registered there. Firefox also intercepts the https allizom identity host.
+const firefoxAllizom = `https://${firefoxSha1}.extensions.allizom.org/`;
+console.log("Paste into Dropbox App Console → your app → Settings → OAuth 2 → Redirect URIs");
+console.log(`  DROPBOX_CLIENT_ID:       ${env.DROPBOX_CLIENT_ID ? "set" : "MISSING"}`);
+console.log(`  Chromium: ${chromeRedirect}`);
+console.log(`  Firefox:  ${firefoxAllizom}`);
+console.log("  Dropbox allows http:// only for the literal host 'localhost', so the Firefox");
+console.log("  mozoauth2 loopback above is rejected with 'Invalid redirect_uri' — use the");
+console.log("  https allizom URI for Dropbox and mozoauth2 for Google.");
 console.log("");
 console.log("Deep links");
 console.log("  https://console.cloud.google.com/auth/overview?project=gn-tracing");

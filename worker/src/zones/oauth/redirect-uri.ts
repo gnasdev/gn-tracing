@@ -6,6 +6,7 @@
  */
 
 const ALLOWED_SUFFIXES = [".chromiumapp.org", ".extensions.allizom.org"] as const;
+const FIREFOX_MOZOAUTH2_PREFIX = "http://127.0.0.1/mozoauth2/";
 
 export function isAllowedExtensionOAuthRedirectUri(raw: string): {
   ok: boolean;
@@ -15,6 +16,25 @@ export function isAllowedExtensionOAuthRedirectUri(raw: string): {
   if (!trimmed) {
     return { ok: false, error: "redirect_uri is required for authorization_code." };
   }
+
+  // Firefox 86+ loopback form used with Google / Dropbox web auth.
+  const mozo = trimmed.replace(/\/+$/, "");
+  if (mozo.startsWith(FIREFOX_MOZOAUTH2_PREFIX)) {
+    const sub = mozo.slice(FIREFOX_MOZOAUTH2_PREFIX.length);
+    if (!sub || sub.includes("/") || sub.includes("..") || sub.includes("?") || sub.includes("#")) {
+      return { ok: false, error: "redirect_uri mozoauth2 path is invalid." };
+    }
+    return { ok: true };
+  }
+
+  // Email-style allizom raw strings (client usually converts to mozoauth2 first).
+  const allizomMatch = trimmed
+    .replace(/\/+$/, "")
+    .match(/^https:\/\/(.+)\.extensions\.allizom\.org$/i);
+  if (allizomMatch?.[1] && !allizomMatch[1].includes("/")) {
+    return { ok: true };
+  }
+
   let url: URL;
   try {
     url = new URL(trimmed);
@@ -35,7 +55,7 @@ export function isAllowedExtensionOAuthRedirectUri(raw: string): {
     return {
       ok: false,
       error:
-        "redirect_uri must be a platform extension domain (*.chromiumapp.org or *.extensions.allizom.org).",
+        "redirect_uri must be a platform extension domain (*.chromiumapp.org, *.extensions.allizom.org, or Firefox mozoauth2 loopback).",
     };
   }
   if (url.username || url.password || (url.port && url.port !== "443")) {

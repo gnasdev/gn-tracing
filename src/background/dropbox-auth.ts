@@ -15,7 +15,7 @@ import {
   generateOAuthState,
   parseOAuthAuthorizationRedirect,
 } from "../shared/oauth-pkce";
-import { resolveRuntimeExtensionRedirectUri } from "../shared/oauth-redirect-policy";
+import { resolveRuntimeExtensionRedirectUriForProvider } from "../shared/oauth-redirect-policy";
 import type { MessageResponse } from "../types/messages";
 
 declare const __DROPBOX_CLIENT_ID__: string;
@@ -212,8 +212,10 @@ export class DropboxAuth {
 
       const pkce = await createPkcePair();
       const state = generateOAuthState();
-      // Same domain policy as Google: only platform extension redirect hosts.
-      const redirect = resolveRuntimeExtensionRedirectUri();
+      // Same domain policy as Google, but Firefox diverges: Dropbox rejects any
+      // http:// redirect whose host is not literally "localhost", so Firefox
+      // must use the https allizom identity host instead of mozoauth2.
+      const redirect = resolveRuntimeExtensionRedirectUriForProvider("dropbox");
       if (!redirect.ok) {
         return { ok: false, error: redirect.error };
       }

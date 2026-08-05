@@ -370,9 +370,11 @@ class WebAuthFlowProvider implements TokenProvider {
               `redirect_uri_mismatch (or auth page failed).\n` +
               `In Google Cloud Console open the *Web application* client (not Chrome Extension):\n` +
               `  client_id=${GOOGLE_WEB_CLIENT_ID}\n` +
-              `Add BOTH of these Authorized redirect URIs (exact match):\n` +
+              `Add this Authorized redirect URI (exact match):\n` +
               `  ${redirectUri}\n` +
-              `  ${redirectUri.replace(/\/$/, "")}\n` +
+              (redirectUri.startsWith("http://127.0.0.1/mozoauth2/")
+                ? `Firefox uses the mozoauth2 loopback form (Google rejects email-style *.extensions.allizom.org hosts).\n`
+                : `Also try without trailing slash: ${redirectUri.replace(/\/$/, "")}\n`) +
               `Then Save, wait ~1 min, reload the extension, Connect again.\n` +
               describeOAuthRedirectDebug({ webClientId: GOOGLE_WEB_CLIENT_ID }),
           };

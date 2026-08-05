@@ -23,7 +23,9 @@ export interface Env {
   /**
    * Comma-separated allowed extension origins, e.g.
    * `chrome-extension://abc...,chrome-extension://def...`.
-   * Empty → any `chrome-extension://` origin (dev fallback only), unless
+   * Firefox origins are random per install — add the sentinel
+   * `moz-extension://*` to accept any of them.
+   * Empty → any extension-scheme origin (dev fallback only), unless
    * STRICT_ORIGIN is enabled.
    */
   ALLOWED_EXTENSION_ORIGINS?: string;

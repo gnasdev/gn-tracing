@@ -110,7 +110,10 @@ describe("buildFeedbackIssueTitle / formatFeedbackIssueBody", () => {
 
   it("matches Worker re-exports of the pure format module (single source of truth)", async () => {
     // Worker imports and re-exports the same pure helpers — prove no fork.
-    const worker = await import("../../worker/src/index");
+    // Imported from the handler module, not the Worker entry: workerd treats any
+    // named export on the entry as a Durable Object binding, so it exports
+    // `default` only.
+    const worker = await import("../../worker/src/zones/feedback/handler");
     const message = "hello\nworld with more detail for triage";
     const diagnostics = {
       extensionVersion: "2.0.0",

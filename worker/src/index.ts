@@ -16,22 +16,12 @@
 
 import { handleRequest } from "./app";
 import type { Env } from "./env";
-import { isFeedbackOriginAllowed } from "./middleware/origin";
-import {
-  buildFeedbackIssueTitle,
-  formatFeedbackIssueBody,
-  isFeedbackPath,
-} from "./zones/feedback/handler";
-import { resolveProviderFromPath } from "./zones/oauth/routes";
+
+// Named non-handler exports break wrangler/workerd (it treats every named export
+// as a Durable Object / ExportedHandler). Re-export helpers only from their own
+// modules for tests/importers — not from this entry.
 
 export type { Env };
-export {
-  buildFeedbackIssueTitle,
-  formatFeedbackIssueBody,
-  isFeedbackOriginAllowed,
-  isFeedbackPath,
-  resolveProviderFromPath,
-};
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {

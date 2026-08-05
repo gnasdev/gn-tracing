@@ -6,16 +6,21 @@
  */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import worker, {
-  buildFeedbackIssueTitle,
-  type Env,
-  formatFeedbackIssueBody,
+import worker, { type Env } from "./index";
+import {
+  FIREFOX_EXTENSION_ORIGIN_WILDCARD,
+  isExtensionOriginAllowed,
   isFeedbackOriginAllowed,
+} from "./middleware/origin";
+import {
+  buildFeedbackIssueTitle,
+  formatFeedbackIssueBody,
   isFeedbackPath,
-  resolveProviderFromPath,
-} from "./index";
+} from "./zones/feedback/handler";
+import { resolveProviderFromPath } from "./zones/oauth/routes";
 
 const PLACEHOLDER_ORIGIN = "chrome-extension://placeholderextensionidaaaaaaaaaaaaa";
+const FIREFOX_ORIGIN = "moz-extension://11111111-2222-3333-4444-555555555555";
 
 function makeEnv(overrides: Partial<Env> = {}): Env {
   return {
@@ -108,6 +113,70 @@ describe("isFeedbackOriginAllowed", () => {
     const env = makeEnv({ ALLOWED_WEB_ORIGINS: "https://custom.player.test" });
     expect(isFeedbackOriginAllowed("https://custom.player.test", env)).toBe(true);
     expect(isFeedbackOriginAllowed("https://tracing.gnas.dev", env)).toBe(false);
+  });
+});
+
+describe("isExtensionOriginAllowed - Firefox origins", () => {
+  it("accepts moz-extension origins in the empty-allow-list dev fallback", () => {
+    const env = makeEnv();
+    expect(isExtensionOriginAllowed(FIREFOX_ORIGIN, env)).toBe(true);
+    expect(isExtensionOriginAllowed(PLACEHOLDER_ORIGIN, env)).toBe(true);
+    expect(isExtensionOriginAllowed("https://evil.example", env)).toBe(false);
+  });
+
+  it("rejects Firefox origins when a Chromium-only allow-list is pinned", () => {
+    const env = makeEnv({ ALLOWED_EXTENSION_ORIGINS: PLACEHOLDER_ORIGIN });
+    expect(isExtensionOriginAllowed(PLACEHOLDER_ORIGIN, env)).toBe(true);
+    expect(isExtensionOriginAllowed(FIREFOX_ORIGIN, env)).toBe(false);
+  });
+
+  it("accepts any moz-extension uuid via the wildcard sentinel", () => {
+    const env = makeEnv({
+      ALLOWED_EXTENSION_ORIGINS: `${PLACEHOLDER_ORIGIN},${FIREFOX_EXTENSION_ORIGIN_WILDCARD}`,
+    });
+    expect(isExtensionOriginAllowed(FIREFOX_ORIGIN, env)).toBe(true);
+    expect(isExtensionOriginAllowed("moz-extension://another-random-uuid", env)).toBe(true);
+    expect(isExtensionOriginAllowed(PLACEHOLDER_ORIGIN, env)).toBe(true);
+    // The sentinel must not widen anything beyond the Firefox scheme.
+    expect(isExtensionOriginAllowed("chrome-extension://some-other-id", env)).toBe(false);
+    expect(isExtensionOriginAllowed("https://evil.example", env)).toBe(false);
+  });
+
+  it("keeps STRICT_ORIGIN fail-closed for Firefox too", () => {
+    const env = makeEnv({ STRICT_ORIGIN: "true", ALLOWED_EXTENSION_ORIGINS: "" });
+    expect(isExtensionOriginAllowed(FIREFOX_ORIGIN, env)).toBe(false);
+  });
+
+  it("echoes CORS back to a wildcard-allowed Firefox origin on token exchange", async () => {
+    const fetchMock = vi.fn(async () => {
+      return new Response(JSON.stringify({ access_token: "placeholder-access-token" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const env = makeEnv({
+      ALLOWED_EXTENSION_ORIGINS: `${PLACEHOLDER_ORIGIN},${FIREFOX_EXTENSION_ORIGIN_WILDCARD}`,
+    });
+    const res = await worker.fetch(
+      new Request("https://proxy.example/token", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Origin: FIREFOX_ORIGIN,
+        },
+        body: new URLSearchParams({
+          grant_type: "refresh_token",
+          refresh_token: "placeholder-refresh-token",
+        }).toString(),
+      }),
+      env,
+    );
+
+    expect(res.status).toBe(200);
+    // Without this header Firefox surfaces the response as a bare NetworkError.
+    expect(res.headers.get("Access-Control-Allow-Origin")).toBe(FIREFOX_ORIGIN);
   });
 });
 

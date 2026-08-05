@@ -47,12 +47,27 @@ fi
 
 ALLOWED_ORIGINS="${WORKER_ALLOWED_EXTENSION_ORIGINS:-}"
 if [ -z "$ALLOWED_ORIGINS" ] && [ -n "${CHROME_EXTENSION_ID:-}" ]; then
-  ALLOWED_ORIGINS="chrome-extension://${CHROME_EXTENSION_ID}"
+  # Firefox mints a random moz-extension://<uuid> per profile and per install, so
+  # there is no stable origin to pin the way CHROME_EXTENSION_ID is pinned. The
+  # `moz-extension://*` sentinel accepts that scheme; PKCE plus redirect_uri
+  # validation remain the controls for those requests. Set
+  # WORKER_ALLOWED_EXTENSION_ORIGINS to override (omit the sentinel to keep the
+  # Worker Chromium-only).
+  ALLOWED_ORIGINS="chrome-extension://${CHROME_EXTENSION_ID},moz-extension://*"
 fi
+
+case "$ALLOWED_ORIGINS" in
+  *"moz-extension://*"*)
+    echo "Note: allow-list accepts any moz-extension:// origin (Firefox support)."
+    ;;
+  *)
+    echo "Note: allow-list has no moz-extension:// entry — Firefox OAuth will 403."
+    ;;
+esac
 
 if [ -z "$ALLOWED_ORIGINS" ]; then
   echo "Warning: no WORKER_ALLOWED_EXTENSION_ORIGINS or CHROME_EXTENSION_ID set."
-  echo "The Worker will accept any chrome-extension:// origin. Set one for production."
+  echo "The Worker will accept any extension-scheme origin. Set one for production."
 fi
 
 cd "$SCRIPT_DIR"
