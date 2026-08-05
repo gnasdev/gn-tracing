@@ -14,6 +14,11 @@ import {
   isInPageCaptureStopComplete,
 } from "../shared/in-page-capture-bridge";
 import { awaitInPageStopDrain, makeInPageStopRequestId } from "../shared/in-page-stop-protocol";
+import {
+  type IsolatedScope,
+  isRealmProbeFailure,
+  probeMainWorldRealm,
+} from "../shared/main-world-realm";
 
 (() => {
   type BridgeWindow = Window & {
@@ -70,6 +75,16 @@ import { awaitInPageStopDrain, makeInPageStopRequestId } from "../shared/in-page
       if (message.type === "START" && message.sessionId) {
         postControl("START", message.sessionId);
         sendResponse({ ok: true });
+        return false;
+      }
+      if (message.type === "VERIFY_REALM") {
+        // Answered from the ISOLATED world on purpose: only this side can read
+        // the page realm through Firefox's Xray wrapper and tell "the MAIN
+        // script ran in the page" from "it ran in the sandbox".
+        const probe = probeMainWorldRealm(window as unknown as IsolatedScope);
+        sendResponse(
+          isRealmProbeFailure(probe) ? { ok: false, error: probe.reason } : { ok: true },
+        );
         return false;
       }
       if (message.type === "STOP") {

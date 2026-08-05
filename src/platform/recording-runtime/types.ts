@@ -84,6 +84,15 @@ export interface RecordingRuntime {
    */
   ingestEvidenceEntry(sessionId: string, kind: string, entry: EvidenceEntry): void;
 
+  /**
+   * Re-arm evidence capture after the recorded tab navigated.
+   *
+   * Firefox injects content scripts that a navigation destroys, so they must be put
+   * back or the rest of the recording has no console/network evidence. Chromium
+   * keeps evidence on CDP, which survives navigation, so it is a no-op there.
+   */
+  reinjectEvidenceCapture(tabId: number, sessionId: string): Promise<void>;
+
   /** Optional CDP DOM snapshot at discrete markers (e.g. navigation). No-op without CDP. */
   captureDomSnapshotMarker(label: string): Promise<void>;
 }

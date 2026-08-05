@@ -472,9 +472,40 @@ async function buildPopupState(): Promise<PopupState> {
   };
 }
 
+/**
+ * Serialized payload of the last successful state write.
+ *
+ * `chrome.storage.session.set` notifies `onChanged` even when the value is
+ * unchanged, and the popup reacts to every notification by querying provider
+ * status — which used to write state again, so a single non-progress update
+ * turned into an endless write/render loop. Skipping no-op writes makes the
+ * channel idempotent so any such cycle dies out instead of self-sustaining.
+ */
+let lastPersistedStateJson: string | null = null;
+
+/**
+ * Comparison key for {@link saveStateToStorage}'s no-op check.
+ *
+ * `elapsedMs` / `elapsedUpdatedAt` are recomputed from the clock on every build,
+ * so leaving them in would make every state look new and defeat the check. The
+ * popup derives the live timer from `startTime` with its own interval, so it does
+ * not need a write to observe time passing.
+ */
+function popupStateIdentity(state: PopupState): string {
+  const recording = state.recording
+    ? { ...state.recording, elapsedMs: 0, elapsedUpdatedAt: 0 }
+    : state.recording;
+  return JSON.stringify({ ...state, recording });
+}
+
 async function saveStateToStorage(): Promise<PopupState | null> {
   try {
     const popupState = await buildPopupState();
+    const identity = popupStateIdentity(popupState);
+    if (identity === lastPersistedStateJson) {
+      return popupState;
+    }
+    lastPersistedStateJson = identity;
     await chrome.storage.session.set({ [STORAGE_KEY_STATE]: popupState });
     return popupState;
   } catch {
@@ -679,9 +710,17 @@ chrome.tabs.onUpdated.addListener((_tabId, changeInfo) => {
 });
 
 chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === "gn-tracing-keepalive" && activeRecording.isRecording) {
-    // Wake the service worker so MV3 does not evict mid-capture.
+  if (alarm.name !== "gn-tracing-keepalive") {
+    return;
   }
+  // The wake itself is the point: on Firefox the background is an event page
+  // that unloads when idle, and an unload during the share-picker wait destroys
+  // the suspended start() continuation. The alarm fires inside that idle
+  // timeout, so the page never goes away mid-start. No body needed.
+  //
+  // Deliberately NOT gated on activeRecording.isRecording: that flag is only
+  // set after the user has picked a share target, which is precisely the
+  // window this alarm exists to protect.
 });
 
 function patchUploadProgress(sessionId: string, data: Record<string, unknown>): void {
@@ -753,7 +792,10 @@ registerMessageListeners({
       dropboxState.isConnected = isConnected;
       dropboxState.checkedAt = Date.now();
     }
-    await saveStateToStorage();
+    // Deliberately no saveStateToStorage(): this is a read-only query and the
+    // answer goes back in the response. Broadcasting it re-entered the popup's
+    // state listener, which queries status again — an endless loop. Real
+    // connection changes are broadcast by storageConnect / storageDisconnect.
     return { ok: true, isConnected };
   },
   getStorageToken: async (data) => {
@@ -843,9 +885,12 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 
   if (changeInfo.status === "complete") {
     // Page navigations replace the injected listener context, so re-arm it on
-    // complete while keeping the recording alive.
+    // complete while keeping the recording alive. In-page console/network capture
+    // is re-armed too: on Firefox it lives in content scripts that the navigation
+    // destroyed, and leaving it dead produced recordings with empty console.json.
     void startRecordingEventCapture(tabId, activeRecording.sessionId);
     void startDrawingOverlay(tabId, activeRecording.sessionId);
+    void recordingRuntime.reinjectEvidenceCapture(tabId, activeRecording.sessionId);
   }
 });
 
@@ -922,6 +967,10 @@ async function startRecordingEventCapture(
     if (privacySettings.maskDomSelectors.length > 0) {
       addActivePrivacyLimitation("Visual masking could not be injected into the recorded tab.");
     }
+    // The replay must not imply the user did nothing: say the evidence is absent.
+    addActivePrivacyLimitation(
+      "User interactions were not captured because the extension lacks permission to run on this page.",
+    );
     console.warn("[GN Tracing] User-event capture unavailable:", error);
   }
 }
@@ -969,6 +1018,34 @@ async function applyDrawingColorToOverlay(tabId: number, color: string): Promise
       color,
     })
     .catch(() => {});
+}
+
+/**
+ * Inject the recorded tab's content scripts while that tab still holds Firefox's
+ * `activeTab` grant.
+ *
+ * `devlocal.example` style hosts match no entry in `host_permissions`, so on
+ * Firefox the only access the extension has is `activeTab` — granted when the
+ * user clicks the popup and **revoked as soon as another tab becomes active**.
+ * The Firefox record path deliberately focuses the media host tab to obtain the
+ * transient activation `getDisplayMedia` requires, which destroys that grant, so
+ * every later `executeScript` fails with "Missing host permission for the tab".
+ *
+ * Injecting up front keeps user-event capture, DOM masking and the drawing
+ * overlay working; the START messages that follow are plain tab messaging and
+ * need no host permission. Re-injection after a navigation still needs a real
+ * granted host permission.
+ */
+async function preinjectRecordedTabScripts(tabId: number): Promise<void> {
+  await Promise.all(
+    [RECORDING_EVENTS_SCRIPT, DRAWING_OVERLAY_SCRIPT].map(async (file) => {
+      try {
+        await chrome.scripting.executeScript({ target: { tabId }, files: [file] });
+      } catch (error) {
+        console.warn(`[GN Tracing] Could not pre-inject ${file}:`, error);
+      }
+    }),
+  );
 }
 
 async function startDrawingOverlay(tabId: number, sessionId: string): Promise<void> {
@@ -1541,6 +1618,26 @@ async function startRecording(
     // Full recordings keep all evidence (no rolling Instant Replay retention).
     storage.setRollingWindowMs(null);
 
+    // Inject before the runtime starts: the Firefox path focuses the media host
+    // tab to get transient activation, and that revokes activeTab for this tab.
+    await preinjectRecordedTabScripts(tabId);
+
+    // Keepalive BEFORE the runtime starts, not after it returns.
+    //
+    // On Firefox the background is an event page (`background.scripts`), which
+    // the browser unloads when idle and then re-evaluates from scratch. The
+    // Firefox start path waits for the user to pick a share target in the arm
+    // panel — up to ARM_TIMEOUT_MS (180s) during which the background does
+    // nothing at all. An unload in that window destroys the suspended async
+    // continuation below, so the in-page capture START message is never sent
+    // and console/network evidence stays completely empty while the video (owned
+    // by the media tab, which already holds a live MediaRecorder) records fine.
+    // That is exactly the "video works, console.json empty" report.
+    //
+    // Chrome never showed this because its evidence arrives over CDP, whose
+    // steady event traffic keeps the service worker alive on its own.
+    chrome.alarms.create("gn-tracing-keepalive", { periodInMinutes: 0.4 });
+
     const { firstFrameAt } = await recordingRuntime.start({
       tabId,
       sessionId,
@@ -1560,11 +1657,14 @@ async function startRecording(
 
     chrome.action.setBadgeText({ text: "REC" });
     chrome.action.setBadgeBackgroundColor({ color: "#ef233c" });
-    chrome.alarms.create("gn-tracing-keepalive", { periodInMinutes: 0.4 });
 
     await saveStateToStorage();
     return { ok: true };
   } catch (error) {
+    // The keepalive is armed before the start path waits for the user, so it
+    // must be cleared on every failure path or a cancelled start leaves the
+    // event page being woken every 24s forever.
+    chrome.alarms.clear("gn-tracing-keepalive");
     await stopRecordingEventCapture(tabId);
     try {
       await recordingRuntime.discard();
@@ -2228,9 +2328,16 @@ async function runSessionUpload(sessionId: string, authToken: string): Promise<v
   const artifacts = sessionArtifacts[sessionId];
 
   if (!session || !artifacts || !session.hasLocalSnapshot) {
+    // Three distinct causes; naming the right one is the difference between a
+    // user retrying usefully and filing a bug about a lost recording.
+    const error = !session
+      ? "This recording is no longer tracked by the extension."
+      : !artifacts
+        ? "The recording's evidence was lost when the extension runtime restarted. Record again."
+        : "Recording snapshot is no longer available for upload.";
     patchSession(sessionId, {
       phase: "failed",
-      error: "Recording snapshot is no longer available for upload.",
+      error,
       hasLocalSnapshot: false,
     });
     await saveStateToStorage();

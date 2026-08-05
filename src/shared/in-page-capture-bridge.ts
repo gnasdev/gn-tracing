@@ -14,6 +14,15 @@ export const IN_PAGE_CAPTURE_TAG = "__gnTracingInPageCapture" as const;
 
 export type InPageCaptureControlType = "START" | "STOP";
 
+/**
+ * Sentinel the MAIN world sets on its own global.
+ *
+ * The bridge reads it back through Firefox's Xray wrapper to prove the MAIN
+ * script really landed in the page realm. Exported so both sides and the tests
+ * agree on one name.
+ */
+export const IN_PAGE_CAPTURE_REALM_SENTINEL = "__gnTracingInPageCaptureListener" as const;
+
 export interface InPageCaptureControlMessage {
   [IN_PAGE_CAPTURE_TAG]: true;
   direction: "control";

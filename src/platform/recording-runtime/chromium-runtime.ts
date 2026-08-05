@@ -122,6 +122,10 @@ export class ChromiumRecordingRuntime implements RecordingRuntime {
     // CDP path — entries arrive via debugger, not content-bridge messages.
   }
 
+  async reinjectEvidenceCapture(_tabId: number, _sessionId: string): Promise<void> {
+    // CDP stays attached across navigations, so there is nothing to re-arm.
+  }
+
   captureDomSnapshotMarker(label: string): Promise<void> {
     return this.#cdp.captureDomSnapshot(label);
   }
