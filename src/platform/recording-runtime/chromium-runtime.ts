@@ -40,6 +40,9 @@ export class ChromiumRecordingRuntime implements RecordingRuntime {
       this.#evidence.attach({ tabId: input.tabId, sessionId: input.sessionId }),
       this.#media.startCapture(input.tabId, input.sessionId),
     ]);
+    // CDP observes from attach; beginSession is a no-op on CdpEvidenceCollector
+    // but kept so the runtime always uses the same two-phase collector API.
+    await this.#evidence.beginSession({ tabId: input.tabId, sessionId: input.sessionId });
 
     if (input.settings.captureStorage) {
       await this.#cdp.captureStorageSnapshot("start");

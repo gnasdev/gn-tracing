@@ -51,13 +51,18 @@ import {
     }
   }
 
-  function startCapture(
-    sessionId: string,
-    options: { responseBodyMode?: string; maxResponseBodyBytes?: number | null },
-  ): void {
+  function startCapture(sessionId: string, control: InPageCaptureControlMessage): void {
     // Drop previous session without STOP_COMPLETE (no SW waiter).
     pageWindow.__gnTracingInPageCaptureCleanup?.();
     pageWindow.__gnTracingInPageCaptureCleanup = null;
+
+    const responseBodyMode =
+      control.responseBodyMode === "off" ||
+      control.responseBodyMode === "text" ||
+      control.responseBodyMode === "text-json" ||
+      control.responseBodyMode === "eligible"
+        ? (control.responseBodyMode as InPageResponseBodyCaptureMode)
+        : undefined;
 
     pageWindow.__gnTracingInPageCaptureCleanup = installInPageCapture(
       scope,
@@ -73,8 +78,9 @@ import {
         window.postMessage(message, "*");
       },
       {
-        responseBodyMode: options.responseBodyMode as InPageResponseBodyCaptureMode | undefined,
-        maxResponseBodyBytes: options.maxResponseBodyBytes,
+        responseBodyMode,
+        maxResponseBodyBytes: control.maxResponseBodyBytes,
+        captureNetwork: control.captureNetwork,
       },
     );
   }
@@ -89,10 +95,7 @@ import {
     }
     const control = data as InPageCaptureControlMessage;
     if (control.type === "START" && control.sessionId) {
-      startCapture(control.sessionId, {
-        responseBodyMode: control.responseBodyMode,
-        maxResponseBodyBytes: control.maxResponseBodyBytes,
-      });
+      startCapture(control.sessionId, control);
       return;
     }
     if (control.type === "STOP") {

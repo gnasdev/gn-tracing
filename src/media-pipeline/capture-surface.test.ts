@@ -6,7 +6,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { describeCaptureSurfaceLimitation } from "./capture-surface";
+import { describeCaptureSurfaceLimitation, describeSurfaceTitleMismatch } from "./capture-surface";
 
 describe("describeCaptureSurfaceLimitation", () => {
   it("says nothing for a Chromium tab capture", () => {
@@ -61,6 +61,33 @@ describe("describeCaptureSurfaceLimitation", () => {
   });
 });
 
+describe("describeSurfaceTitleMismatch", () => {
+  it("is silent when the window label contains the tab title", () => {
+    expect(
+      describeSurfaceTitleMismatch({ label: "Checkout page — Mozilla Firefox" }, "Checkout page"),
+    ).toBeNull();
+  });
+
+  it("warns when the shared window clearly does not match the recorded tab", () => {
+    const note = describeSurfaceTitleMismatch(
+      { label: "Unrelated Spreadsheet — LibreOffice" },
+      "Checkout page",
+    );
+    expect(note).toMatch(/does not match/i);
+    expect(note).toContain("Checkout page");
+    expect(note).toContain("LibreOffice");
+  });
+
+  it("does not double-warn for a whole-screen pick", () => {
+    expect(describeSurfaceTitleMismatch({ label: "Primary Monitor" }, "Checkout page")).toBeNull();
+  });
+
+  it("says nothing without a title or label", () => {
+    expect(describeSurfaceTitleMismatch({ label: "Win" }, "")).toBeNull();
+    expect(describeSurfaceTitleMismatch({}, "Checkout")).toBeNull();
+  });
+});
+
 describe("captured surface wiring", () => {
   const read = (path: string) => readFileSync(resolve(__dirname, path), "utf8");
 
@@ -86,5 +113,16 @@ describe("captured surface wiring", () => {
     // Only added when there is something to say — no empty entry in the package.
     expect(runtime).toContain("if (surfaceLimitation) {");
     expect(runtime).toContain("limitations.push(surfaceLimitation)");
+  });
+
+  it("arms evidence before restoring recorded-tab focus after share commit", () => {
+    const runtime = read("../platform/recording-runtime/firefox-runtime.ts");
+    const startMethod = runtime.indexOf("async start(input: RecordingStartInput)");
+    const nextMethod = runtime.indexOf("\n  async ", startMethod + 10);
+    const startBody = runtime.slice(startMethod, nextMethod);
+    const beginAt = startBody.indexOf("this.#evidence.beginSession(");
+    const restoreAt = startBody.indexOf("restoreRecordedTabFocus(");
+    expect(beginAt).toBeGreaterThan(-1);
+    expect(restoreAt).toBeGreaterThan(beginAt);
   });
 });

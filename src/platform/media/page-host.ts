@@ -4,11 +4,12 @@
  * Firefox has no chrome.offscreen / chrome.tabCapture. Video uses
  * getDisplayMedia inside that page, which Firefox only allows while the document
  * holds transient user activation — so the page is focused and the user clicks
- * "Share this tab" there. Packaging and upload stay in the same document code
- * path as Chromium.
+ * "Choose what to share" there. Packaging and upload stay in the same document
+ * code path as Chromium.
  */
 
 import type { CapturedSurface } from "../../media-pipeline/capture-surface";
+import { describeFirefoxArmTimeoutMessage } from "../../shared/firefox-arm-copy";
 import { MEDIA_PAGE_MESSAGE_TARGET } from "./message-target";
 import type { MediaHost } from "./types";
 
@@ -16,7 +17,7 @@ import type { MediaHost } from "./types";
 const MEDIA_PAGE_PATH = "offscreen/offscreen.html";
 
 /**
- * How long to wait for the user to press "Share this tab" in the media page.
+ * How long to wait for the user to press the arm button in the media page.
  * The browser's own share picker sits inside this window, so it must be generous.
  */
 const ARM_TIMEOUT_MS = 180_000;
@@ -81,8 +82,9 @@ export class ExtensionPageMediaHost implements MediaHost {
 
       this.#activeSessionId = sessionId;
       this.#capturedSurface = result.surface ?? {};
-      // Hand focus back to the tab under test now that the stream is live.
-      await this.#restoreFocus(tabId);
+      // Leave focus on the media tab until the runtime arms evidence. Restoring
+      // the recorded tab first lets early console/network traffic land before
+      // beginSession scopes collectors; callers must call restoreRecordedTabFocus.
       return result.firstFrameAt ?? null;
     } catch (error) {
       await this.#cancelArm();
@@ -90,6 +92,16 @@ export class ExtensionPageMediaHost implements MediaHost {
     } finally {
       armed.dispose();
     }
+  }
+
+  /**
+   * Park the media host and return the user to the recorded tab.
+   *
+   * Call after evidence `beginSession` so console/network arming races less with
+   * the focus restore that brings the user back to the page under test.
+   */
+  async restoreRecordedTabFocus(tabId: number): Promise<void> {
+    await this.#restoreFocus(tabId);
   }
 
   /** Resolve on the page's DISPLAY_CAPTURE_RESULT for this session, or time out. */
@@ -138,12 +150,7 @@ export class ExtensionPageMediaHost implements MediaHost {
         }
         settled = true;
         dispose();
-        reject(
-          new Error(
-            "Timed out waiting for screen sharing to be allowed. " +
-              "Start the recording again and press Share this tab.",
-          ),
-        );
+        reject(new Error(describeFirefoxArmTimeoutMessage()));
       }, ARM_TIMEOUT_MS);
     });
 

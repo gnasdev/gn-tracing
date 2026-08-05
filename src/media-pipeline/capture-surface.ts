@@ -75,3 +75,75 @@ export function describeCaptureSurfaceLimitation(surface: CapturedSurface): stri
     "browser interface and any other tab shown in that window, not just the recorded tab."
   );
 }
+
+function isWholeScreenSurface(surface: CapturedSurface): boolean {
+  const displaySurface = (surface.displaySurface || "").toLowerCase();
+  if (displaySurface === "monitor") {
+    return true;
+  }
+  if (displaySurface === "browser" || displaySurface === "window") {
+    return false;
+  }
+  return SCREEN_LABEL_PATTERN.test(surface.label || "");
+}
+
+/**
+ * When the shared window/screen label clearly does not match the recorded tab
+ * title, warn. Firefox cannot auto-select the correct surface; this only labels
+ * an obvious mismatch so packages are not presented as the right window.
+ *
+ * Returns null when there is not enough signal, when the surface is a whole
+ * screen (already covered by {@link describeCaptureSurfaceLimitation}), or when
+ * the label and title fuzzy-match.
+ */
+export function describeSurfaceTitleMismatch(
+  surface: CapturedSurface,
+  expectedTabTitle: string,
+): string | null {
+  const title = expectedTabTitle.trim();
+  const label = (surface.label || "").trim();
+  if (!title || !label) {
+    return null;
+  }
+  // Whole-screen picks already get a stronger limitation; do not double-speak.
+  if (isWholeScreenSurface(surface)) {
+    return null;
+  }
+  // Chromium tab capture is already the right surface.
+  if ((surface.displaySurface || "").toLowerCase() === "browser") {
+    return null;
+  }
+
+  const normalize = (value: string) =>
+    value
+      .toLowerCase()
+      .replace(/\s+/g, " ")
+      .replace(/[^\p{L}\p{N}\s.-]/gu, "")
+      .trim();
+
+  const nTitle = normalize(title);
+  const nLabel = normalize(label);
+  if (!nTitle || !nLabel) {
+    return null;
+  }
+  if (nLabel.includes(nTitle) || nTitle.includes(nLabel)) {
+    return null;
+  }
+
+  // Compare significant tokens (length ≥ 3) so short stop-words do not force a match.
+  const tokens = (value: string) => value.split(" ").filter((token) => token.length >= 3);
+  const titleTokens = tokens(nTitle);
+  const labelTokens = new Set(tokens(nLabel));
+  if (titleTokens.length > 0 && titleTokens.every((token) => labelTokens.has(token))) {
+    return null;
+  }
+  const overlap = titleTokens.filter((token) => labelTokens.has(token)).length;
+  if (overlap >= 2 || (titleTokens.length === 1 && overlap === 1)) {
+    return null;
+  }
+
+  return (
+    `The shared surface (${quote(label)}) does not match the recorded tab title ` +
+    `(${quote(title)}). Confirm you selected the Firefox window that holds that page.`
+  );
+}

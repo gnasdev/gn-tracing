@@ -1,7 +1,7 @@
 /**
  * Evidence capture must be re-armed after the recorded tab navigates.
  *
- * On Firefox console/network evidence lives in injected content scripts, which a
+ * On Firefox console evidence lives in injected content scripts, which a
  * navigation destroys. The tabs.onUpdated handler used to re-arm only user-event
  * capture and the drawing overlay, so a recording on a reloading dev server ended
  * with empty console.json and "Receiving end does not exist" at stop.
@@ -72,7 +72,8 @@ describe("evidence capture re-arm after navigation", () => {
     const collectorReattach = inPageCollector.indexOf("async reattach(");
     const collectorBody = inPageCollector.slice(collectorReattach, collectorReattach + 500);
     expect(collectorBody).toContain("#injectAndVerify(tabId)");
-    expect(collectorBody).toContain('type: "START"');
+    // reattach arms via #sendStart (START + captureNetwork: false), not inline type.
+    expect(collectorBody).toContain("#sendStart(tabId, sessionId)");
   });
 
   it("checks the injection outcome instead of trusting a resolved promise", () => {
@@ -80,27 +81,23 @@ describe("evidence capture re-arm after navigation", () => {
     expect(inPageCollector).toContain("injectScriptFile");
     expect(inPageCollector).not.toMatch(/await chrome\.scripting\.executeScript\(/);
     // Both worlds are injected, and both across all frames — a main-frame-only
-    // injection silently omits every iframe's console and network traffic.
+    // injection silently omits every iframe's console traffic.
     expect(inPageCollector).toContain('world: "ISOLATED"');
     expect(inPageCollector).toContain('world: "MAIN"');
     expect(inPageCollector.match(/allFrames: true/g)?.length).toBeGreaterThanOrEqual(2);
     expect(inPageCollector).toContain("#describeFailure");
   });
 
-  it("fails attach when capture cannot be installed", () => {
-    // A silent failure ships a recording whose console.json is empty. The
-    // collector reports ok:false; the runtime is the one that turns that into a
-    // thrown error for a fresh start (see start() in firefox-runtime.ts).
+  it("fails start when no collector can prepare", () => {
+    // A silent failure ships a recording with no evidence. The set reports
+    // ok:false only when every collector fails; the runtime turns that into a
+    // thrown error for a fresh start.
     const start = inPageCollector.indexOf("#describeFailure(detail: string");
     expect(start).toBeGreaterThan(-1);
     const body = inPageCollector.slice(start, start + 400);
     expect(body).toContain("Grant GN Tracing access to this site");
 
     const startMethod = firefoxRuntime.indexOf("async start(input: RecordingStartInput)");
-    // Anchor on the NEXT method definition rather than a fixed byte window,
-    // so an unrelated field or comment added to start() cannot make this test
-    // read past its own method body into the next one (or, if the method
-    // grows, miss the assertion entirely — both have happened to this file).
     const nextMethod = firefoxRuntime.indexOf("\n  async ", startMethod + 10);
     const startBody = firefoxRuntime.slice(startMethod, nextMethod);
     expect(startBody).toContain("if (!attached.ok)");
@@ -117,5 +114,37 @@ describe("evidence capture re-arm after navigation", () => {
     const returnOkAt = inPageCollector.indexOf("ok: true,", verifyAt);
     expect(verifyAt).toBeGreaterThan(-1);
     expect(returnOkAt).toBeGreaterThan(verifyAt);
+  });
+
+  it("Firefox start prepares before media and arms START only after media commit", () => {
+    const startMethod = firefoxRuntime.indexOf("async start(input: RecordingStartInput)");
+    const nextMethod = firefoxRuntime.indexOf("\n  async ", startMethod + 10);
+    const startBody = firefoxRuntime.slice(startMethod, nextMethod);
+
+    const attachAt = startBody.indexOf("this.#evidence.attach(");
+    const mediaAt = startBody.indexOf("this.#media.startCapture(");
+    const beginAt = startBody.indexOf("this.#evidence.beginSession(");
+    expect(attachAt).toBeGreaterThan(-1);
+    expect(mediaAt).toBeGreaterThan(attachAt);
+    expect(beginAt).toBeGreaterThan(mediaAt);
+
+    // attach must not START; beginSession / reattach own START.
+    const attachMethod = inPageCollector.indexOf("async attach(");
+    const beginMethod = inPageCollector.indexOf("async beginSession(");
+    const attachBody = inPageCollector.slice(attachMethod, beginMethod);
+    expect(attachBody).not.toContain('type: "START"');
+    // beginSession is longer (re-inject recovery); look at a wider window.
+    expect(inPageCollector.slice(beginMethod, beginMethod + 1200)).toContain("#sendStart");
+    expect(inPageCollector.slice(beginMethod, beginMethod + 1200)).toContain("#injectAndVerify");
+  });
+
+  it("full-record START disables page-script network capture", () => {
+    expect(inPageCollector).toContain("captureNetwork: false");
+    expect(inPageCollector).not.toMatch(/responseBodyMode:\s*input/);
+    // provides is console+websocket only — no network-bodies capability claim.
+    expect(inPageCollector).toMatch(
+      /IN_PAGE_CAPABILITIES[^=]*=\s*\[?\s*"console",\s*"websocket"\s*\]/,
+    );
+    expect(inPageCollector).not.toMatch(/capabilities\.push\(\s*"network-bodies"/);
   });
 });

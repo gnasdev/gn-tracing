@@ -14,6 +14,12 @@
  * is testable.
  */
 
+import {
+  hasRecordingHostPermission,
+  RECORDING_HOST_ORIGINS,
+  requestRecordingHostPermission,
+} from "../shared/recording-host-permission";
+
 export const INSTANT_REPLAY_SCRIPT_ID = "gn-tracing-instant-replay";
 /** @deprecated MAIN-world evidence; unregistered on sync for cleanup. */
 export const INSTANT_REPLAY_EVIDENCE_SCRIPT_ID = "gn-tracing-instant-replay-evidence";
@@ -88,7 +94,7 @@ export async function syncInstantReplayRegistration(
       {
         id: INSTANT_REPLAY_SCRIPT_ID,
         js: ["content/instant-replay.js"],
-        matches: ["http://*/*", "https://*/*"],
+        matches: [...RECORDING_HOST_ORIGINS],
         runAt: "document_idle",
         allFrames: false,
         persistAcrossSessions: true,
@@ -125,7 +131,6 @@ export async function unregisterLegacyInstantReplayScript(
 
 /** The live `chrome.*` implementation. */
 export function createRegistrationDeps(): RegistrationDeps {
-  const origins = ["http://*/*", "https://*/*"];
   return {
     getRegistered: () => chrome.scripting.getRegisteredContentScripts(),
     register: (scripts) =>
@@ -133,11 +138,12 @@ export function createRegistrationDeps(): RegistrationDeps {
         scripts as unknown as chrome.scripting.RegisteredContentScript[],
       ),
     unregister: (filter) => chrome.scripting.unregisterContentScripts(filter),
-    hasHostPermission: () => chrome.permissions.contains({ origins }),
-    requestHostPermission: () => chrome.permissions.request({ origins }),
+    // Same origins as full-record Firefox host permission (shared constant).
+    hasHostPermission: () => hasRecordingHostPermission(),
+    requestHostPermission: () => requestRecordingHostPermission(),
     injectIntoOpenTabs: async () => {
       const tabs = await chrome.tabs.query({
-        url: ["http://*/*", "https://*/*"],
+        url: [...RECORDING_HOST_ORIGINS],
       });
       await Promise.all(
         tabs.map(async (tab) => {

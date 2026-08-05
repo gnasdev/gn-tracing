@@ -75,8 +75,10 @@ describe("ExtensionPageMediaHost display-capture arming", () => {
 
     await expect(started).resolves.toBe(1234);
     expect(host.activeSessionId).toBe(SESSION_ID);
-    // Focus returns to the tab under test once the stream is live.
-    expect(updateCalls()).toEqual(expect.arrayContaining([[RECORDED_TAB_ID, { active: true }]]));
+    // Evidence arms before focus restore; caller invokes restoreRecordedTabFocus.
+    expect(
+      updateCalls().filter(([id, opts]) => id === RECORDED_TAB_ID && opts.active === true),
+    ).toHaveLength(0);
   });
 
   it("rejects with the page's reason when the user cancels sharing", async () => {
@@ -147,5 +149,42 @@ describe("ExtensionPageMediaHost display-capture arming", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("timeout names Choose what to share, never Share this tab", async () => {
+    vi.useFakeTimers();
+    try {
+      const host = new ExtensionPageMediaHost();
+      const started = host.startCapture(RECORDED_TAB_ID, SESSION_ID);
+      let errorMessage = "";
+      const pending = started.catch((error: Error) => {
+        errorMessage = error.message;
+      });
+      await vi.advanceTimersByTimeAsync(300);
+      await vi.advanceTimersByTimeAsync(180_000);
+      await pending;
+      expect(errorMessage).toMatch(/Timed out/i);
+      expect(errorMessage).toContain("Choose what to share");
+      expect(errorMessage).not.toMatch(/Share this tab/i);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not restore recorded-tab focus until restoreRecordedTabFocus is called", async () => {
+    const host = new ExtensionPageMediaHost();
+    const started = host.startCapture(RECORDED_TAB_ID, SESSION_ID);
+    await vi.waitFor(() => expect(armMessage()).toBeDefined());
+    emitCaptureResult({ sessionId: SESSION_ID, ok: true, firstFrameAt: 50 });
+    await expect(started).resolves.toBe(50);
+
+    // After share commit, recorded tab should not yet have been focused back.
+    const focusAfterShare = updateCalls().filter(
+      ([id, opts]) => id === RECORDED_TAB_ID && opts.active === true,
+    );
+    expect(focusAfterShare).toHaveLength(0);
+
+    await host.restoreRecordedTabFocus(RECORDED_TAB_ID);
+    expect(updateCalls()).toEqual(expect.arrayContaining([[RECORDED_TAB_ID, { active: true }]]));
   });
 });

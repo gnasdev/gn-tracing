@@ -51,7 +51,10 @@ function makeScope(): InPageCaptureScope & {
   };
 }
 
-/** Mirrors FirefoxRecordingRuntime.ingestEvidenceEntry (shipped path). */
+/**
+ * Mirrors FirefoxRecordingRuntime.ingestEvidenceEntry (shipped path).
+ * Network is intentionally dropped: full-record network is owned by webRequest.
+ */
 function ingestIntoStorage(
   storage: StorageManager,
   kind: string,
@@ -62,7 +65,6 @@ function ingestIntoStorage(
     return;
   }
   if (kind === "network") {
-    storage.addNetworkEntry(entry as NetworkEntry);
     return;
   }
   if (kind === "storage") {

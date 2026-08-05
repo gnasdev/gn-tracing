@@ -3,21 +3,23 @@
  *
  * webRequest is Firefox's answer to CDP's Network domain: full-tab, all-frames
  * visibility including requests the browser issues itself (document, images,
- * stylesheets, fonts) that in-page capture cannot see (see
- * InPageEvidenceCollector's networkGapLimitation). This collector is
+ * stylesheets, fonts) that in-page capture cannot see. This collector is
  * observe-only — no `filterResponseData`, no response bodies, no blocking —
- * which keeps the risk of stalling a page's real requests at zero. That is a
- * deliberate scope cut (phase 2 of the Firefox evidence plan); response bodies
- * are a separate, higher-risk phase.
+ * which keeps the risk of stalling a page's real requests at zero. Response
+ * bodies are a separate, higher-risk phase.
+ *
+ * Lifecycle:
+ * - `attach` installs listeners once and checks the API is available. It does
+ *   **not** set the recorded tab yet, so traffic during a cancelable share-
+ *   picker step is not stored.
+ * - `beginSession` scopes listeners to the committed tab/session.
  *
  * Listeners are registered once at module scope in `install()`, not inside
  * attach(). Firefox's background is an event page that the browser can unload
  * and re-evaluate from scratch, and `chrome.webRequest.onBeforeRequest` only
  * fires for listeners added synchronously when the script runs — a listener
  * added inside an async attach() call can miss events fired before that
- * promise resolves, and is exactly the kind of "works most of the time" bug
- * this session spent hours chasing elsewhere. Session-scoping happens inside
- * the listener via `#sessionId`, not by attaching/detaching the listener itself.
+ * promise resolves.
  */
 
 import type { RecordingCapability } from "../../../../packages/replay-core/src/schema/package";
@@ -25,6 +27,7 @@ import type { StorageManager } from "../../../background/storage-manager";
 import type {
   EvidenceAttachInput,
   EvidenceAttachResult,
+  EvidenceBeginSessionInput,
   EvidenceCollector,
   EvidenceDetachResult,
 } from "../types";
@@ -42,14 +45,16 @@ export class WebRequestNetworkCollector implements EvidenceCollector {
   #sessionId: string | null = null;
   #tabId: number | null = null;
   #listenersInstalled = false;
+  #prepared = false;
 
   constructor(storage: StorageManager) {
     this.#storage = storage;
   }
 
-  async attach(input: EvidenceAttachInput): Promise<EvidenceAttachResult> {
-    this.#sessionId = input.sessionId;
-    this.#tabId = input.tabId;
+  async attach(_input: EvidenceAttachInput): Promise<EvidenceAttachResult> {
+    this.#prepared = false;
+    this.#sessionId = null;
+    this.#tabId = null;
 
     if (!this.#hasWebRequest()) {
       // Optional permission not granted, or an engine without webRequest.
@@ -63,6 +68,7 @@ export class WebRequestNetworkCollector implements EvidenceCollector {
     }
 
     this.#installListenersOnce();
+    this.#prepared = true;
     return {
       ok: true,
       capabilities: NETWORK_CAPABILITIES,
@@ -73,6 +79,15 @@ export class WebRequestNetworkCollector implements EvidenceCollector {
     };
   }
 
+  async beginSession(input: EvidenceBeginSessionInput): Promise<{ limitations: string[] }> {
+    if (!this.#prepared) {
+      return { limitations: [] };
+    }
+    this.#tabId = input.tabId;
+    this.#sessionId = input.sessionId;
+    return { limitations: [] };
+  }
+
   async detach(): Promise<EvidenceDetachResult> {
     const incomplete = this.#table.drainIncomplete();
     for (const entry of incomplete) {
@@ -80,6 +95,7 @@ export class WebRequestNetworkCollector implements EvidenceCollector {
     }
     this.#sessionId = null;
     this.#tabId = null;
+    this.#prepared = false;
     // Listeners stay installed: webRequest.onBeforeRequest only fires for
     // listeners present when the browser dispatches the event, and removing
     // them here would have to re-add them on the next attach from inside an
@@ -88,8 +104,11 @@ export class WebRequestNetworkCollector implements EvidenceCollector {
   }
 
   async reattach(tabId: number, sessionId: string): Promise<void> {
-    // webRequest is not injected per-frame like content scripts; it observes
-    // at the browser level and survives navigation on its own.
+    // webRequest listeners survive navigation; only retarget the recorded tab.
+    if (!this.#prepared && this.#hasWebRequest()) {
+      this.#installListenersOnce();
+      this.#prepared = true;
+    }
     this.#tabId = tabId;
     this.#sessionId = sessionId;
   }

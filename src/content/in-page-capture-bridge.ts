@@ -3,11 +3,14 @@
  *
  * STOP is asynchronous: MAIN must finish cleanup (and entry deliveries must
  * reach the service worker) before we answer the tabs.sendMessage waiter.
+ *
+ * START policy fields (`responseBodyMode`, `maxResponseBodyBytes`,
+ * `captureNetwork`) are forwarded end-to-end via `buildInPageControlMessage`.
  */
 
 import {
+  buildInPageControlMessage,
   IN_PAGE_CAPTURE_ENTRY_ACTION,
-  IN_PAGE_CAPTURE_TAG,
   type InPageCaptureControlMessage,
   type InPageCaptureEntryMessage,
   isInPageCaptureBridgeMessage,
@@ -34,14 +37,17 @@ import {
   /** In-flight SW deliveries for entry messages (must drain on STOP). */
   const pendingEntryDeliveries = new Set<Promise<unknown>>();
 
-  function postControl(type: "START" | "STOP", sessionId?: string, requestId?: string): void {
-    const message: InPageCaptureControlMessage = {
-      [IN_PAGE_CAPTURE_TAG]: true,
-      direction: "control",
-      type,
-      sessionId,
-      requestId,
-    };
+  function postControl(
+    type: "START" | "STOP",
+    fields: {
+      sessionId?: string;
+      requestId?: string;
+      responseBodyMode?: InPageCaptureControlMessage["responseBodyMode"];
+      maxResponseBodyBytes?: number | null;
+      captureNetwork?: boolean;
+    } = {},
+  ): void {
+    const message = buildInPageControlMessage({ type, ...fields });
     window.postMessage(message, "*");
   }
 
@@ -63,9 +69,18 @@ import {
     });
   }
 
+  type BridgeRuntimeMessage = {
+    target?: string;
+    type?: string;
+    sessionId?: string;
+    responseBodyMode?: InPageCaptureControlMessage["responseBodyMode"];
+    maxResponseBodyBytes?: number | null;
+    captureNetwork?: boolean;
+  };
+
   chrome.runtime.onMessage.addListener(
     (
-      message: { target?: string; type?: string; sessionId?: string },
+      message: BridgeRuntimeMessage,
       _sender,
       sendResponse: (response: unknown) => void,
     ): boolean => {
@@ -73,7 +88,12 @@ import {
         return false;
       }
       if (message.type === "START" && message.sessionId) {
-        postControl("START", message.sessionId);
+        postControl("START", {
+          sessionId: message.sessionId,
+          responseBodyMode: message.responseBodyMode,
+          maxResponseBodyBytes: message.maxResponseBodyBytes,
+          captureNetwork: message.captureNetwork,
+        });
         sendResponse({ ok: true });
         return false;
       }
@@ -91,7 +111,7 @@ import {
         const requestId = makeInPageStopRequestId();
         void awaitInPageStopDrain({
           requestId,
-          postStopToMain: (id) => postControl("STOP", undefined, id),
+          postStopToMain: (id) => postControl("STOP", { requestId: id }),
           onStopComplete: (id, onComplete) => {
             const listener = (event: MessageEvent) => {
               if (event.source !== window) {

@@ -3,19 +3,21 @@
  * `EvidenceCollector` seam.
  *
  * Owns console, uncaught errors, and WebSocket frames only. Network evidence
- * moved to `WebRequestNetworkCollector`, which sees the whole tab across all
- * frames including requests the browser issues itself — coverage this
- * mechanism cannot reach because it only observes calls the page's own
- * JavaScript makes. `CollectorSet`'s no-overlap guard enforces this split at
- * construction: both collectors claiming "network" would throw immediately.
+ * on Firefox full-record is owned by `WebRequestNetworkCollector`, which sees
+ * the whole tab across all frames including browser-issued requests. In-page
+ * START therefore disables fetch/XHR patches (`captureNetwork: false`) so
+ * page-script network rows are never produced on this path. `CollectorSet`'s
+ * no-overlap guard also enforces the capability split at construction.
  *
- * Wraps the exact injection sequence `FirefoxRecordingRuntime` used before this
- * seam existed: inject ISOLATED bridge, inject MAIN patcher (both `allFrames`),
- * verify the MAIN script landed in the page realm (not a sandbox or a
- * CSP-blocked injection), then send START. Reordering or dropping a step here
- * reintroduces bugs measured earlier this session (silent wrong-realm capture,
- * iframes invisible to injection) — see the comments on each step for the
- * evidence.
+ * Lifecycle is two-phase:
+ * - `attach` injects both worlds and verifies the MAIN realm (while activeTab
+ *   is still valid). It does **not** START capture.
+ * - `beginSession` sends START after the caller has committed the session
+ *   (share picker accepted). That avoids recording the picker detour and
+ *   leaves the page uninstrumented if the user cancels.
+ *
+ * Response bodies are intentionally not claimed or armed here: webRequest has
+ * no body sink yet, and optimistic `network-bodies` would lie to readers.
  */
 
 import type { RecordingCapability } from "../../../packages/replay-core/src/schema/package";
@@ -23,6 +25,7 @@ import { injectScriptFile } from "../../shared/inject-script";
 import type {
   EvidenceAttachInput,
   EvidenceAttachResult,
+  EvidenceBeginSessionInput,
   EvidenceCollector,
   EvidenceDetachResult,
 } from "./types";
@@ -31,11 +34,9 @@ const MAIN_SCRIPT = "content/in-page-capture-main.js";
 const BRIDGE_SCRIPT = "content/in-page-capture-bridge.js";
 
 /**
- * What in-page capture delivers when it lands. No "network": webRequest now
- * owns network evidence on Firefox (fuller coverage — all frames, browser-
- * issued requests included). No "network-bodies" either: in-page network
- * entries always write `responseBody: null` (same rationale as
- * `FIREFOX_EXTENSION_CAPABILITIES` in `packages/replay-core/src/schema/package.ts`).
+ * What in-page capture delivers on Firefox full-record when inject lands.
+ * No "network" / "network-bodies": webRequest owns network metadata; bodies
+ * are a later phase. Console + websocket only.
  */
 const IN_PAGE_CAPABILITIES: readonly RecordingCapability[] = ["console", "websocket"];
 
@@ -43,48 +44,71 @@ export class InPageEvidenceCollector implements EvidenceCollector {
   readonly id = "in-page";
   readonly provides = IN_PAGE_CAPABILITIES;
   #tabId: number | null = null;
-  /** Remembered from the last attach() so reattach() after a navigation can
-   * restart capture with the same response-body policy, not silently fall
-   * back to "off". */
-  #responseBodyMode: EvidenceAttachInput["responseBodyMode"];
-  #maxResponseBodyBytes: EvidenceAttachInput["maxResponseBodyBytes"];
+  #sessionId: string | null = null;
+  /** True after attach prepared successfully; beginSession is a no-op otherwise. */
+  #prepared = false;
 
   async attach(input: EvidenceAttachInput): Promise<EvidenceAttachResult> {
     this.#tabId = input.tabId;
-    this.#responseBodyMode = input.responseBodyMode;
-    this.#maxResponseBodyBytes = input.maxResponseBodyBytes;
+    this.#sessionId = input.sessionId;
+    this.#prepared = false;
     const outcome = await this.#injectAndVerify(input.tabId);
     if (!outcome.ok) {
       return { ok: false, capabilities: [], limitations: [outcome.error] };
     }
 
-    await chrome.tabs.sendMessage(input.tabId, {
-      target: "in-page-capture",
-      type: "START",
-      sessionId: input.sessionId,
-      responseBodyMode: input.responseBodyMode,
-      maxResponseBodyBytes: input.maxResponseBodyBytes,
-    });
+    this.#prepared = true;
+    const limitations = frameFailureLimitation(outcome.partialFailures);
+    return {
+      ok: true,
+      capabilities: [...IN_PAGE_CAPABILITIES],
+      limitations,
+    };
+  }
 
-    const limitations = [
-      ...frameFailureLimitation(outcome.partialFailures),
-      ...responseBodyLimitation(input.responseBodyMode),
-    ];
-    const capabilities: RecordingCapability[] = [...IN_PAGE_CAPABILITIES];
-    if ((input.responseBodyMode ?? "off") !== "off") {
-      // Reported optimistically: the actual eligibility gate (MIME, size,
-      // XHR responseType) runs per-request inside the capture patch, so some
-      // requests will still have no body even with a mode configured. That
-      // matches how the CDP path already reports "network-bodies" — the
-      // capability means "can capture bodies", not "captured every body".
-      capabilities.push("network-bodies");
+  async beginSession(input: EvidenceBeginSessionInput): Promise<{ limitations: string[] }> {
+    this.#tabId = input.tabId;
+    this.#sessionId = input.sessionId;
+
+    // Attach may have prepared scripts that died during the long share-picker arm
+    // window (navigation, discard, content-script GC). Prefer a fast START when
+    // the bridge still answers; on failure re-inject + START like reattach so a
+    // committed media session is not discarded solely for a dead bridge.
+    if (this.#prepared) {
+      try {
+        await this.#sendStart(input.tabId, input.sessionId);
+        return { limitations: [] };
+      } catch {
+        // Fall through to re-inject.
+      }
     }
-    return { ok: true, capabilities, limitations };
+
+    const outcome = await this.#injectAndVerify(input.tabId);
+    if (!outcome.ok) {
+      this.#prepared = false;
+      return { limitations: [outcome.error] };
+    }
+    this.#prepared = true;
+    try {
+      await this.#sendStart(input.tabId, input.sessionId);
+      return { limitations: frameFailureLimitation(outcome.partialFailures) };
+    } catch (error) {
+      this.#prepared = false;
+      return {
+        limitations: [
+          "In-page console capture could not start after screen sharing was accepted " +
+            `(${(error as Error)?.message || String(error)}). Video still records; ` +
+            "console and WebSocket evidence may be missing.",
+        ],
+      };
+    }
   }
 
   async detach(): Promise<EvidenceDetachResult> {
     const tabId = this.#tabId;
     this.#tabId = null;
+    this.#sessionId = null;
+    this.#prepared = false;
     if (tabId == null) {
       return { limitations: [] };
     }
@@ -106,28 +130,40 @@ export class InPageEvidenceCollector implements EvidenceCollector {
   /**
    * Re-arm after navigation destroyed the injected content scripts.
    *
-   * Only user-event capture and the drawing overlay used to be re-armed here;
-   * in-page evidence was not, which is why a recording on a reloading dev
-   * server ended with an empty console.json.
+   * Inject + START together: the session is already committed, so there is no
+   * share-picker phase to wait for.
    */
   async reattach(tabId: number, sessionId: string): Promise<void> {
+    this.#tabId = tabId;
+    this.#sessionId = sessionId;
     const outcome = await this.#injectAndVerify(tabId);
     if (!outcome.ok) {
+      this.#prepared = false;
       console.warn(`[GN Tracing] ${outcome.error}`);
       return;
     }
+    this.#prepared = true;
     try {
-      await chrome.tabs.sendMessage(tabId, {
-        target: "in-page-capture",
-        type: "START",
-        sessionId,
-        responseBodyMode: this.#responseBodyMode,
-        maxResponseBodyBytes: this.#maxResponseBodyBytes,
-      });
+      await this.#sendStart(tabId, sessionId);
       console.info("[GN Tracing] Re-armed in-page capture after navigation.");
     } catch (error) {
       console.warn("[GN Tracing] Could not restart in-page capture after navigation:", error);
     }
+  }
+
+  /**
+   * START without network patches and without body mode: full-record network
+   * is owned by webRequest, and Firefox has no body sink yet.
+   */
+  async #sendStart(tabId: number, sessionId: string): Promise<void> {
+    await chrome.tabs.sendMessage(tabId, {
+      target: "in-page-capture",
+      type: "START",
+      sessionId,
+      // Sole network owner on full-record is webRequest; do not emit page-script
+      // network rows that would either duplicate metadata or need to be dropped.
+      captureNetwork: false,
+    });
   }
 
   /**
@@ -152,8 +188,8 @@ export class InPageEvidenceCollector implements EvidenceCollector {
     }
 
     // allFrames: without it only the top document is instrumented, so every
-    // iframe's console and network traffic is missing — a gap Chromium does not
-    // have because CDP attaches to the whole tab.
+    // iframe's console traffic is missing — a gap Chromium does not have
+    // because CDP attaches to the whole tab.
     const main = await injectScriptFile({
       tabId,
       file: MAIN_SCRIPT,
@@ -196,9 +232,9 @@ export class InPageEvidenceCollector implements EvidenceCollector {
 
   #describeFailure(detail: string): string {
     return (
-      "In-page console/network capture could not be installed in the recorded tab " +
+      "In-page console capture could not be installed in the recorded tab " +
       `(${detail}). Grant GN Tracing access to this site to capture console and ` +
-      "network evidence."
+      "WebSocket evidence."
     );
   }
 }
@@ -210,16 +246,5 @@ function frameFailureLimitation(partialFailures: string[]): string[] {
   return [
     `Console evidence is missing for ${partialFailures.length} ` +
       "frame(s) that refused instrumentation (typically cross-origin or sandboxed iframes).",
-  ];
-}
-
-function responseBodyLimitation(mode: string | undefined): string[] {
-  if ((mode ?? "off") === "off") {
-    return [];
-  }
-  return [
-    "Response bodies are captured only for fetch/XHR calls the page itself makes " +
-      "with a readable text response; requests the browser issues directly, and " +
-      "XHR reads using responseType other than text, have no body.",
   ];
 }

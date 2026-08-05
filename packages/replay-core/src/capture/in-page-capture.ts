@@ -54,6 +54,12 @@ export interface InPageCaptureOptions {
   responseBodyMode?: InPageResponseBodyCaptureMode;
   /** No limit when omitted, matching the CDP path's `maxResponseBodyBytes: null` default. */
   maxResponseBodyBytes?: number | null;
+  /**
+   * When false, skip fetch/XHR patches (console, uncaught errors, and WebSocket
+   * still capture). Default true. Firefox full-record sets this false because
+   * `webRequest` is the sole network metadata owner on that path.
+   */
+  captureNetwork?: boolean;
 }
 
 function isJsonMime(mime: string): boolean {
@@ -430,8 +436,10 @@ export function installInPageCapture(
 
   installConsoleCapture(scope, emit, restorers);
   installUncaughtErrorCapture(scope, emit, restorers);
-  installFetchCapture(scope, emit, restorers, inflightNetwork, options);
-  installXhrCapture(scope, emit, restorers, inflightNetwork, options);
+  if (options.captureNetwork !== false) {
+    installFetchCapture(scope, emit, restorers, inflightNetwork, options);
+    installXhrCapture(scope, emit, restorers, inflightNetwork, options);
+  }
   installWebSocketCapture(scope, emit, restorers);
 
   // Storage is captured via start/stop snapshots (the player's StorageSnapshot

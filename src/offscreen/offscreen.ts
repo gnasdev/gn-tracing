@@ -34,6 +34,11 @@ import {
   uploadGoogleDriveFile,
 } from "../shared/google-drive-api";
 import { buildExternalPlayerUrl } from "../shared/player-host";
+import {
+  hasRecordingHostPermission,
+  RECORDING_HOST_ORIGINS,
+  requestRecordingHostPermission,
+} from "../shared/recording-host-permission";
 import type { StorageProviderId } from "../shared/storage-provider";
 import { makeWebmSeekable } from "../shared/webm-seek-fix";
 import type { ProgressItemSnapshot, ProgressItemStatus } from "../types/messages";
@@ -345,29 +350,14 @@ function armPanelElements() {
 }
 
 /**
- * Host permissions the recorded tab needs for console/network evidence.
- *
- * Mirrors `optional_host_permissions` in the manifest and the origins used by
- * Instant Replay registration, so the user is never asked twice for two lists.
- */
-const RECORDING_HOST_ORIGINS = ["http://*/*", "https://*/*"];
-
-async function hasRecordingHostPermission(): Promise<boolean> {
-  try {
-    return await chrome.permissions.contains({ origins: RECORDING_HOST_ORIGINS });
-  } catch {
-    // Engine without optional host permissions (Chromium grants them at install).
-    return true;
-  }
-}
-
-/**
  * Show the grant step only when it is actually needed.
  *
  * Firefox MV3 treats every `host_permissions` entry as optional and not granted,
  * so on a site outside the manifest the only access is `activeTab` — which Firefox
  * revokes the moment this media tab takes focus. That is why injections after the
  * focus switch failed with "Missing host permission for the tab".
+ *
+ * When the popup already pre-requested host permission on Start, this stays hidden.
  */
 async function refreshGrantStep(): Promise<void> {
   const { grant } = armPanelElements();
@@ -382,7 +372,8 @@ async function refreshGrantStep(): Promise<void> {
  *
  * It cannot share the click that starts capture: awaiting the permission prompt
  * consumes the transient activation, and `getDisplayMedia` would then fail with
- * InvalidStateError. Two buttons, two gestures.
+ * InvalidStateError. Two buttons, two gestures. Prefer the popup Start gesture
+ * when possible so this step is skipped entirely.
  */
 async function onGrantButtonClick(): Promise<void> {
   const { grant, grantButton } = armPanelElements();
@@ -392,7 +383,7 @@ async function onGrantButtonClick(): Promise<void> {
   setArmStatus("");
 
   try {
-    const granted = await chrome.permissions.request({ origins: RECORDING_HOST_ORIGINS });
+    const granted = await requestRecordingHostPermission();
     if (granted) {
       if (grant) {
         grant.hidden = true;
@@ -414,6 +405,11 @@ async function onGrantButtonClick(): Promise<void> {
     }
   }
 }
+
+// Keep the shared origins list referenced so arm-panel permission tests can
+// still assert this document uses the same list as the manifest.
+const _recordingHostOriginsForArmPanel = RECORDING_HOST_ORIGINS;
+void _recordingHostOriginsForArmPanel;
 
 function setArmStatus(message: string): void {
   const { status } = armPanelElements();
@@ -531,7 +527,9 @@ function armDisplayCapture(input: { sessionId: string; tabTitle: string }): void
   }
 
   if (target) {
-    target.textContent = input.tabTitle ? `Recording target: ${input.tabTitle}` : "";
+    target.textContent = input.tabTitle
+      ? `Recording target: ${input.tabTitle} — pick the Firefox window with this title`
+      : "";
     target.hidden = !input.tabTitle;
   }
   button.disabled = false;

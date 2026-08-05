@@ -162,15 +162,14 @@ export const SDK_CAPABILITIES: RecordingCapability[] = [
 ];
 
 /**
- * Firefox extension producer: in-page console/network, optional getDisplayMedia
- * video, raster screenshots, no CDP cross-origin or source maps.
+ * Firefox extension producer: in-page console/websocket, webRequest network
+ * metadata (no response bodies), optional getDisplayMedia video, raster
+ * screenshots, no CDP cross-origin or source maps.
  *
- * No "network-bodies": in-page capture always writes `responseBody: null`
- * (see `installFetchCapture`/`installXhrCapture` in
- * `packages/replay-core/src/capture/in-page-capture.ts`). Declaring the
- * capability here told the player and MCP agent that bodies were available
- * when none ever were — the opposite of this module's stated purpose ("so the
- * player/MCP never assume CDP-quality network on a Firefox package").
+ * No "network-bodies": full-record network is owned by observe-only webRequest,
+ * which always stores `responseBody: null`. In-page capture on that path also
+ * disables fetch/XHR patches so page-script network rows are not dual-written.
+ * Declaring bodies here would tell the player/MCP they exist when none do.
  *
  * Declared here so readers/tests can import without the extension platform
  * package.

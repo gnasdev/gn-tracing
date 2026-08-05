@@ -31,14 +31,17 @@ export interface InPageCaptureControlMessage {
   /** Present on STOP so MAIN can ack STOP_COMPLETE for this request. */
   requestId?: string;
   /**
-   * Present on START. Mirrors `InPageCaptureOptions` in
-   * `packages/replay-core/src/capture/in-page-capture.ts` — kept as plain
-   * fields on the control message (not a nested object referencing that
-   * type) so this shared protocol file stays free of a dependency on the
-   * capture module's option shape evolving independently.
+   * Optional START fields. The bridge must forward every field present on the
+   * SW → bridge message into the MAIN control postMessage — stripping them
+   * here is how body/network policy silently fell back to defaults before.
+   *
+   * Kept as plain fields (not a nested options object) so this shared protocol
+   * file stays free of a hard dependency on the capture module's option shape.
    */
   responseBodyMode?: "off" | "text" | "text-json" | "eligible";
   maxResponseBodyBytes?: number | null;
+  /** When false, MAIN skips fetch/XHR patches. Omitted means true. */
+  captureNetwork?: boolean;
 }
 
 export interface InPageCaptureEntryMessage {
@@ -76,6 +79,40 @@ export function isInPageCaptureStopComplete(
     data.direction === "result" &&
     data.type === "STOP_COMPLETE"
   );
+}
+
+/**
+ * Build the MAIN-world control postMessage from a SW → bridge START/STOP
+ * payload. Forwards optional START policy fields when present so install
+ * options match what the runtime intended.
+ *
+ * Exported for unit tests that drive the real shipped helper (not a reimplementation).
+ */
+export function buildInPageControlMessage(input: {
+  type: InPageCaptureControlType;
+  sessionId?: string;
+  requestId?: string;
+  responseBodyMode?: InPageCaptureControlMessage["responseBodyMode"];
+  maxResponseBodyBytes?: number | null;
+  captureNetwork?: boolean;
+}): InPageCaptureControlMessage {
+  const message: InPageCaptureControlMessage = {
+    [IN_PAGE_CAPTURE_TAG]: true,
+    direction: "control",
+    type: input.type,
+    sessionId: input.sessionId,
+    requestId: input.requestId,
+  };
+  if (input.responseBodyMode !== undefined) {
+    message.responseBodyMode = input.responseBodyMode;
+  }
+  if (input.maxResponseBodyBytes !== undefined) {
+    message.maxResponseBodyBytes = input.maxResponseBodyBytes;
+  }
+  if (input.captureNetwork !== undefined) {
+    message.captureNetwork = input.captureNetwork;
+  }
+  return message;
 }
 
 /** Service-worker action for forwarded entries (must match MessageAction). */

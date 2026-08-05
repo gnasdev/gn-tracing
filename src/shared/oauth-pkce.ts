@@ -234,3 +234,78 @@ export function buildRefreshTokenParams(params: {
     grant_type: "refresh_token",
   });
 }
+
+/** OAuth error codes that mean the refresh token is permanently unusable. */
+export const OAUTH_REFRESH_AUTH_DEATH_ERRORS = new Set([
+  "invalid_grant",
+  "invalid_token",
+  "invalid_client",
+  "unauthorized_client",
+]);
+
+/**
+ * Whether a failed token refresh should clear the local token cache.
+ * Auth-death (401, or 400 with invalid_grant/etc.) is fatal.
+ * Rate limits (429), request timeouts (408), other 4xx/5xx keep the refresh token.
+ *
+ * `bare400IsFatal`: Dropbox often returns bare 400 for a dead refresh token;
+ * Google's path treats any non-OK as soft-fail without this helper.
+ */
+export function isOAuthRefreshAuthDeath(
+  status: number,
+  errorCode?: string,
+  options: { bare400IsFatal?: boolean } = {},
+): boolean {
+  const bare400IsFatal = options.bare400IsFatal ?? true;
+  if (status === 401) {
+    return true;
+  }
+  if (status === 400) {
+    const code = String(errorCode || "")
+      .trim()
+      .toLowerCase();
+    if (!code) {
+      return bare400IsFatal;
+    }
+    return OAUTH_REFRESH_AUTH_DEATH_ERRORS.has(code);
+  }
+  return false;
+}
+
+/** Shared leeway when converting `expires_in` seconds into an absolute expiry. */
+export const OAUTH_TOKEN_EXPIRY_BUFFER_MS = 60_000;
+
+export function computeAccessTokenExpiresAt(
+  expiresInSeconds: number,
+  nowMs = Date.now(),
+  bufferMs = OAUTH_TOKEN_EXPIRY_BUFFER_MS,
+): number {
+  return nowMs + expiresInSeconds * 1000 - bufferMs;
+}
+
+/**
+ * POST a form body to a token endpoint with an abort timeout.
+ * Shared by Drive/Dropbox refresh and exchange paths.
+ */
+export async function fetchOAuthTokenResponse(input: {
+  url: string;
+  body: URLSearchParams;
+  timeoutMs: number;
+  headers?: Record<string, string>;
+}): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), input.timeoutMs);
+  try {
+    return await fetch(input.url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        ...input.headers,
+      },
+      body: input.body,
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}

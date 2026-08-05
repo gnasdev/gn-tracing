@@ -9,7 +9,9 @@ import {
   buildGoogleAuthorizationUrl,
   buildPkceAuthorizationCodeTokenParams,
   buildRefreshTokenParams,
+  computeAccessTokenExpiresAt,
   createPkcePair,
+  fetchOAuthTokenResponse,
   generateOAuthState,
   grantedScopesInclude,
   parseOAuthAuthorizationRedirect,
@@ -56,10 +58,10 @@ const TOKEN_EXCHANGE_ENDPOINT = GOOGLE_TOKEN_PROXY_URL || GOOGLE_TOKEN_ENDPOINT;
 const GOOGLE_AUTH_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth";
 const TOKEN_REVOKE_ENDPOINT = "https://oauth2.googleapis.com/revoke";
 const DRIVE_VERIFY_ENDPOINT = "https://www.googleapis.com/drive/v3/files?pageSize=1";
-const TOKEN_EXPIRY_BUFFER_MS = 60_000;
 // Refresh tokens issued by Google for installed/public clients do not expire on
-// a fixed schedule; we keep this constant for code-level symmetry with the
-// legacy short-lived token migration path.
+// a fixed schedule. Access-token expiry buffer is applied via
+// computeAccessTokenExpiresAt. MIGRATED_TOKEN_EXPIRY_MS is only for the legacy
+// short-lived token migration path.
 const MIGRATED_TOKEN_EXPIRY_MS = 55 * 60_000;
 const REFRESH_LEEWAY_MS = 30_000;
 const TOKEN_REFRESH_TIMEOUT_MS = 8_000;
@@ -432,7 +434,7 @@ class WebAuthFlowProvider implements TokenProvider {
       }
 
       const expiresIn = Number.parseInt(`${exchanged.payload.expires_in || 3600}`, 10);
-      const expiresAt = Date.now() + expiresIn * 1000 - TOKEN_EXPIRY_BUFFER_MS;
+      const expiresAt = computeAccessTokenExpiresAt(expiresIn);
       const tokens: WebAuthTokens = {
         accessToken,
         refreshToken: mergedRefreshToken,
@@ -505,22 +507,14 @@ class WebAuthFlowProvider implements TokenProvider {
       return null;
     }
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), TOKEN_REFRESH_TIMEOUT_MS);
-      let response: Response;
-      try {
-        response = await fetch(TOKEN_EXCHANGE_ENDPOINT, {
-          method: "POST",
-          headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: buildRefreshTokenParams({
-            clientId: GOOGLE_WEB_CLIENT_ID,
-            refreshToken,
-          }),
-          signal: controller.signal,
-        });
-      } finally {
-        clearTimeout(timeoutId);
-      }
+      const response = await fetchOAuthTokenResponse({
+        url: TOKEN_EXCHANGE_ENDPOINT,
+        body: buildRefreshTokenParams({
+          clientId: GOOGLE_WEB_CLIENT_ID,
+          refreshToken,
+        }),
+        timeoutMs: TOKEN_REFRESH_TIMEOUT_MS,
+      });
       if (!response.ok) {
         return null;
       }
@@ -532,7 +526,7 @@ class WebAuthFlowProvider implements TokenProvider {
         return null;
       }
       const expiresIn = Number.parseInt(`${payload.expires_in ?? 3600}`, 10);
-      const expiresAt = Date.now() + expiresIn * 1000 - TOKEN_EXPIRY_BUFFER_MS;
+      const expiresAt = computeAccessTokenExpiresAt(expiresIn);
       // Persist refreshed tokens, preserving the existing refresh token.
       const current = await this.getCachedTokens();
       if (current) {

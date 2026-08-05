@@ -6,6 +6,8 @@
  * asserted directly.
  */
 
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import {
   createRegistrationDeps,
@@ -154,5 +156,15 @@ describe("createRegistrationDeps", () => {
     expect(typeof deps.register).toBe("function");
     expect(typeof deps.hasHostPermission).toBe("function");
     expect(typeof deps.unregister).toBe("function");
+  });
+
+  it("uses shared RECORDING_HOST_ORIGINS instead of a private duplicate array", () => {
+    const source = readFileSync(resolve(__dirname, "instant-replay-registration.ts"), "utf8");
+    expect(source).toContain("RECORDING_HOST_ORIGINS");
+    expect(source).toContain("hasRecordingHostPermission");
+    expect(source).toContain("requestRecordingHostPermission");
+    // No private hard-coded origin list left in this module.
+    expect(source).not.toMatch(/const origins = \["http:\/\/\*\/\*", "https:\/\/\*\/\*"\]/);
+    expect(source).not.toMatch(/matches:\s*\["http:\/\/\*\/\*"/);
   });
 });

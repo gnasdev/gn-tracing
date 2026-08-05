@@ -5,6 +5,8 @@
  * that file stays under the size budget while message contracts stay stable.
  */
 
+import { describeFirefoxArmInvalidStateMessage } from "../shared/firefox-arm-copy";
+
 export type SessionRecordingSnapshot = {
   blob: Blob;
   mimeType: string;
@@ -48,9 +50,7 @@ export function describeDisplayCaptureError(error: unknown): DisplayCaptureFailu
     case "InvalidStateError":
       return {
         cancelled: false,
-        message:
-          "The browser refused screen sharing because it was not requested from a click. " +
-          "Open the GN Tracing capture tab and press Choose what to share.",
+        message: describeFirefoxArmInvalidStateMessage(),
       };
     case "NotFoundError":
       return {

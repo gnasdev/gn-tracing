@@ -114,16 +114,19 @@
       <h1 class="arm-title" id="arm-title">Choose what to share to start recording</h1>
       <p class="arm-help" id="arm-help">
         Firefox only starts screen sharing from a click on this page, and it shares a
-        <strong>window or a whole screen</strong> — it cannot share a single tab. Pick the Firefox
-        window holding the page below; sharing an entire screen also records everything else on it.
-        Keep this tab open until you stop the recording.
+        <strong>window or a whole screen</strong> — it cannot share a single tab.
+        In the browser picker, select the <strong>Firefox window</strong> that holds the
+        recording target below (match the title). Prefer a window over a whole screen —
+        sharing an entire screen also records everything else on it.
+        Keep this capture tab open until you stop the recording.
       </p>
       <p class="arm-target" id="arm-target" hidden></p>
       <div id="arm-grant" hidden>
         <p class="arm-grant-help" id="arm-grant-help">
           Console and network evidence needs access to the recorded site. Without it
           the video is still recorded, but console and network stay empty once the
-          page navigates.
+          page navigates. If you already allowed site access when starting, this step
+          stays hidden.
         </p>
         <button type="button" id="arm-grant-btn">Grant site access</button>
       </div>

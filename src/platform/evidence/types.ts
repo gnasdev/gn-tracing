@@ -2,17 +2,22 @@
  * The seam that lets a Firefox runtime combine two evidence sources.
  *
  * Chromium gets everything from one CDP session. Firefox needs `webRequest`
- * for network (a later phase) alongside in-page capture for console — two
- * mechanisms that must compose without either runtime knowing about the
- * other's existence. This is the Strategy interface each mechanism implements;
- * `CollectorSet` is the Composite that runs a browser's collectors together.
+ * for network alongside in-page capture for console — two mechanisms that must
+ * compose without either runtime knowing about the other's existence. This is
+ * the Strategy interface each mechanism implements; `CollectorSet` is the
+ * Composite that runs a browser's collectors together.
  *
- * Deliberately narrow: only the lifecycle every collector shares (attach,
- * detach, reattach-after-navigation) plus the capabilities/limitations it
- * actually delivered. Anything collector-specific (CDP's source maps, in-page's
- * frame-injection failures) stays on the concrete collector, not here — forcing
- * it into this interface would make every collector implement methods that
- * mean nothing to it.
+ * Lifecycle is two-phase on purpose:
+ * - `attach` prepares observers (inject scripts, install listeners, open CDP)
+ *   while the tab still holds activeTab / before the user commits the share picker.
+ * - `beginSession` arms capture for a committed session (in-page START; webRequest
+ *   tab scoping). Callers that wait on a cancelable media step must not arm until
+ *   that step succeeds, or a cancelled start leaves the page instrumented and
+ *   records the picker detour as session evidence.
+ *
+ * Deliberately narrow: only the lifecycle every collector shares plus the
+ * capabilities/limitations it actually delivered. Collector-specific details
+ * (CDP source maps, in-page frame-injection failures) stay on the concrete type.
  */
 
 import type { RecordingCapability } from "../../../packages/replay-core/src/schema/package";
@@ -20,17 +25,20 @@ import type { RecordingCapability } from "../../../packages/replay-core/src/sche
 export interface EvidenceAttachInput {
   tabId: number;
   sessionId: string;
-  /**
-   * Response-body capture policy, mirroring `UploadSettingsStore`. Optional and
-   * narrowed to just these two fields (not the whole settings object) so a
-   * collector that ignores bodies entirely (CDP reads this from its own
-   * settings call) does not need to know the settings shape evolved.
-   */
-  responseBodyMode?: "off" | "text" | "text-json" | "eligible";
-  maxResponseBodyBytes?: number | null;
+}
+
+export interface EvidenceBeginSessionInput {
+  tabId: number;
+  sessionId: string;
 }
 
 export interface EvidenceAttachResult {
+  /**
+   * True when at least one collector in the set prepared successfully.
+   * Product policy is best-effort evidence: one source failing (e.g. CSP-blocked
+   * in-page) must not discard another that is live (e.g. webRequest network).
+   * Runtimes fail the start only when this is false (nothing prepared).
+   */
   ok: boolean;
   /** Capabilities this collector actually delivered, not what it hoped to. */
   capabilities: readonly RecordingCapability[];
@@ -39,6 +47,15 @@ export interface EvidenceAttachResult {
 }
 
 export interface EvidenceDetachResult {
+  limitations: readonly string[];
+}
+
+/**
+ * Result of arming a committed session. Failures become limitations rather than
+ * hard errors when the media session is already live — discarding a user-accepted
+ * share solely because console re-arm failed is worse than packaging partial evidence.
+ */
+export interface EvidenceBeginSessionResult {
   limitations: readonly string[];
 }
 
@@ -51,7 +68,18 @@ export interface EvidenceCollector {
    */
   readonly provides: readonly RecordingCapability[];
 
+  /** Prepare observers; do not arm session-scoped capture yet when that is separate. */
   attach(input: EvidenceAttachInput): Promise<EvidenceAttachResult>;
+
+  /**
+   * Arm capture after the session is committed (e.g. after the user accepts the
+   * share picker). No-op for collectors that already observe continuously after
+   * attach (CDP). Safe to call only after a successful attach on this collector.
+   *
+   * Must not throw for recoverable arm failures: return limitations instead so
+   * the runtime can keep a committed media session and package what is available.
+   */
+  beginSession(input: EvidenceBeginSessionInput): Promise<EvidenceBeginSessionResult>;
 
   /** Flush in-flight rows, then stop observing. Safe to call when not attached. */
   detach(): Promise<EvidenceDetachResult>;
@@ -59,9 +87,9 @@ export interface EvidenceCollector {
   /**
    * Re-arm after a navigation destroyed the observer.
    *
-   * No-op for collectors whose observer survives navigation (CDP, `webRequest`).
-   * Required for in-page capture, whose content-script listeners a navigation
-   * always destroys.
+   * No-op for collectors whose observer survives navigation (CDP, `webRequest`
+   * listeners). Required for in-page capture, whose content-script listeners a
+   * navigation always destroys — re-inject and START again.
    */
   reattach(tabId: number, sessionId: string): Promise<void>;
 }

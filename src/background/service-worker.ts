@@ -11,6 +11,11 @@ import type { EvidenceEntry } from "../platform/recording-runtime/types";
 import { CAPTURE_PAGE_DOM_SNAPSHOT_ACTION } from "../shared/capture-page-dom";
 import { DEFAULT_DRAW_COLOR, normalizeDrawColor } from "../shared/drawing";
 import {
+  redactInPageNetworkEntry as applyInPageNetworkRedaction,
+  redactInPageStorageSnapshot as applyInPageStorageRedaction,
+  redactInPageWebSocketEntry as applyInPageWebSocketRedaction,
+} from "../shared/in-page-evidence-redaction";
+import {
   normalizeInstantReplayAllowedDomains,
   tabUrlMatchesInstantReplayAllowlist,
 } from "../shared/instant-replay-domain";
@@ -20,12 +25,7 @@ import { normalizeInstantReplayWindowSeconds } from "../shared/instant-replay-wi
 import {
   buildRecordingPrivacySummary,
   normalizeMaskDomSelectors,
-  REDACTED_VALUE,
-  redactBodyText,
-  redactHeaderMap,
-  redactJsonValue,
   redactReport,
-  redactUrl,
   redactUserEvent,
 } from "../shared/privacy-redaction";
 import { getRecordingTabTarget } from "../shared/recording-target";
@@ -49,9 +49,7 @@ import type {
 } from "../types/messages";
 import type {
   CaptureEnvironment,
-  CookieRecord,
   NetworkEntry,
-  RecordingDrawingArtifact,
   RecordingDrawStroke,
   RecordingPrivacySummary,
   RecordingReport,
@@ -59,7 +57,6 @@ import type {
   RecordingUserEventArtifact,
   RedactionHit,
   SourceMapDiagnosticsArtifact,
-  StorageKeyValue,
   StorageSnapshot,
   WebSocketEntry,
 } from "../types/recording";
@@ -70,6 +67,11 @@ import {
   normalizeRecordingUserEvent,
   truncateEventString,
 } from "./capture-environment";
+import {
+  buildDrawingArtifact,
+  enforceDrawingBudgets,
+  normalizeDrawingStroke,
+} from "./drawing-artifact";
 import { submitFeedback } from "./feedback-submit";
 import { createInstantReplayCdpHubForBrowser } from "./instant-replay-cdp";
 import {
@@ -197,10 +199,6 @@ interface OffscreenCaptureState {
 const STORAGE_KEY_ARTIFACTS = "gn_tracing_session_artifacts";
 const STORAGE_KEY_DRAWING_COLOR = "gn_tracing_drawing_color";
 const MAX_RECORDED_USER_EVENTS = 2000;
-const MAX_DRAWING_STROKES = 2000;
-const MAX_DRAWING_POINTS_PER_STROKE = 500;
-const MAX_TOTAL_DRAWING_POINTS = 100_000;
-const MAX_DRAWING_CLEARS = 100;
 const MAX_SCREENSHOT_DATA_URL_CHARS = 1536 * 1024;
 const RECORDING_EVENTS_SCRIPT = "content/recording-events.js";
 const DRAWING_OVERLAY_SCRIPT = "content/drawing-overlay.js";
@@ -1146,49 +1144,6 @@ async function setDrawingColor(
   return { ok: true, color };
 }
 
-function normalizeDrawingStroke(value: unknown): RecordingDrawStroke | null {
-  if (!value || typeof value !== "object") {
-    return null;
-  }
-  const raw = value as Record<string, unknown>;
-  if (typeof raw.strokeId !== "string" || !raw.strokeId) {
-    return null;
-  }
-  const timestamp = normalizeFiniteNumber(raw.timestamp);
-  if (!timestamp) {
-    return null;
-  }
-  const color = normalizeDrawColor(raw.color) || DEFAULT_DRAW_COLOR;
-  const width = normalizeFiniteNumber(raw.width) ?? 3;
-  if (!Array.isArray(raw.points)) {
-    return null;
-  }
-  const points: RecordingDrawStroke["points"] = [];
-  for (const point of raw.points) {
-    if (!point || typeof point !== "object") {
-      continue;
-    }
-    const p = point as Record<string, unknown>;
-    const x = normalizeFiniteNumber(p.x);
-    const y = normalizeFiniteNumber(p.y);
-    const t = normalizeFiniteNumber(p.t);
-    if (x == null || y == null || t == null) {
-      continue;
-    }
-    points.push({ x, y, t });
-  }
-  if (points.length === 0) {
-    return null;
-  }
-  return {
-    strokeId: raw.strokeId,
-    timestamp,
-    color,
-    width,
-    points: points.slice(0, MAX_DRAWING_POINTS_PER_STROKE),
-  };
-}
-
 function handleRecordingDrawStroke(
   data: Record<string, unknown> | undefined,
   sender: chrome.runtime.MessageSender,
@@ -1209,25 +1164,14 @@ function handleRecordingDrawStroke(
   }
 
   activeRecording.drawingStrokes.push(stroke);
-  if (activeRecording.drawingStrokes.length > MAX_DRAWING_STROKES) {
-    activeRecording.drawingStrokes.splice(
-      0,
-      activeRecording.drawingStrokes.length - MAX_DRAWING_STROKES,
-    );
-  }
-
-  const totalPoints = activeRecording.drawingStrokes.reduce((sum, s) => sum + s.points.length, 0);
-  if (totalPoints > MAX_TOTAL_DRAWING_POINTS) {
+  const { droppedPoints } = enforceDrawingBudgets(
+    activeRecording.drawingStrokes,
+    activeRecording.drawingClears,
+  );
+  if (droppedPoints) {
     addActivePrivacyLimitation(
       "Drawing capture reached the point budget; older strokes were dropped.",
     );
-    while (
-      activeRecording.drawingStrokes.length > 1 &&
-      activeRecording.drawingStrokes.reduce((sum, s) => sum + s.points.length, 0) >
-        MAX_TOTAL_DRAWING_POINTS
-    ) {
-      activeRecording.drawingStrokes.shift();
-    }
   }
 
   return { ok: true };
@@ -1253,170 +1197,32 @@ function handleRecordingDrawClear(
   }
 
   activeRecording.drawingClears.push(timestamp);
-  if (activeRecording.drawingClears.length > MAX_DRAWING_CLEARS) {
-    activeRecording.drawingClears.splice(
-      0,
-      activeRecording.drawingClears.length - MAX_DRAWING_CLEARS,
-    );
-  }
+  enforceDrawingBudgets(activeRecording.drawingStrokes, activeRecording.drawingClears);
 
   return { ok: true };
 }
 
-function buildDrawingArtifact(
-  strokes: RecordingDrawStroke[],
-  clears: number[],
-): string | undefined {
-  if (strokes.length === 0 && clears.length === 0) {
-    return undefined;
-  }
-  const artifact: RecordingDrawingArtifact = { schemaVersion: 1, strokes };
-  if (clears.length > 0) {
-    artifact.clears = clears;
-  }
-  return JSON.stringify(artifact);
-}
-
-/**
- * Redacts network rows from Instant Replay page instrumentation (and any other
- * non-CDP evidence path) before packaging — mirrors CDP capture-time redaction
- * for URL, request/response headers, and request body fields.
- */
 function redactInPageNetworkEntry(entry: NetworkEntry): NetworkEntry {
-  const settings = activeRecording.privacySettings;
-
-  const urlResult = redactUrl(entry.url, settings, "url", "network.request.url");
-  recordActiveRedactionHits(urlResult.applied);
-  entry.url = urlResult.value || entry.url;
-
-  if (entry.requestHeaders) {
-    const headers = redactHeaderMap(entry.requestHeaders, settings, "headers");
-    recordActiveRedactionHits(headers.applied);
-    entry.requestHeaders = headers.value;
-  }
-  if (entry.responseHeaders) {
-    const headers = redactHeaderMap(entry.responseHeaders, settings, "headers");
-    recordActiveRedactionHits(headers.applied);
-    entry.responseHeaders = headers.value;
-  }
-  if (entry.postData != null && settings.redactRequestBodyFields) {
-    const body = redactBodyText(
-      entry.postData,
-      settings,
-      "body",
-      "network.request.postData",
-      "body",
-    );
-    recordActiveRedactionHits(body.applied);
-    entry.postData = body.value;
-  }
-  return entry;
+  return applyInPageNetworkRedaction(
+    entry,
+    activeRecording.privacySettings,
+    recordActiveRedactionHits,
+  );
 }
 
-function redactInPageWebSocketPayload(payload: string): string {
-  const settings = activeRecording.privacySettings;
-  if (settings.redactWebSocketPayloads === "all") {
-    recordActiveRedactionHits([
-      {
-        artifact: "websocket",
-        class: "custom",
-        action: "redacted",
-        field: "websocket.payload",
-        ruleId: "websocket-payload-all",
-      },
-    ]);
-    return REDACTED_VALUE;
-  }
-  if (settings.redactWebSocketPayloads === "sensitive-fields") {
-    const redaction = redactBodyText(
-      payload,
-      settings,
-      "websocket",
-      "websocket.payload",
-      "websocket",
-    );
-    recordActiveRedactionHits(redaction.applied);
-    return redaction.value || "";
-  }
-  return payload;
-}
-
-/** Redacts a WebSocket entry from page instrumentation (URL + frame payloads). */
 function redactInPageWebSocketEntry(entry: WebSocketEntry): WebSocketEntry {
-  const settings = activeRecording.privacySettings;
-  const urlResult = redactUrl(entry.url, settings, "websocket", "websocket.url");
-  recordActiveRedactionHits(urlResult.applied);
-  entry.url = urlResult.value || entry.url;
-  entry.frames = entry.frames.map((frame) => ({
-    ...frame,
-    payloadData: redactInPageWebSocketPayload(frame.payloadData),
-  }));
-  return entry;
-}
-
-function redactInPageStorageItems(
-  items: StorageKeyValue[],
-  fieldPrefix: string,
-): StorageKeyValue[] {
-  const settings = activeRecording.privacySettings;
-  return items.map((item) => {
-    // Wrap as `{ [key]: value }` so the shared policy classifies the storage key
-    // by name and still applies value-based rules (same pattern as cdp-manager).
-    const result = redactJsonValue(
-      { [item.key]: item.value },
-      settings,
-      "storage",
-      fieldPrefix,
-      "body",
-    );
-    if (result.applied.length > 0) {
-      recordActiveRedactionHits(result.applied);
-    }
-    const redactedValue = (result.value as Record<string, unknown>)[item.key];
-    return {
-      key: item.key,
-      value: typeof redactedValue === "string" ? redactedValue : String(redactedValue),
-      redacted: result.applied.length > 0 ? true : item.redacted,
-    };
-  });
-}
-
-function redactInPageCookie(cookie: CookieRecord): CookieRecord {
-  const settings = activeRecording.privacySettings;
-  const result = redactJsonValue(
-    { [cookie.name]: cookie.value },
-    settings,
-    "storage",
-    "storage.cookies",
-    "body",
+  return applyInPageWebSocketRedaction(
+    entry,
+    activeRecording.privacySettings,
+    recordActiveRedactionHits,
   );
-  if (result.applied.length > 0) {
-    recordActiveRedactionHits(result.applied);
-  }
-  const redactedValue = (result.value as Record<string, unknown>)[cookie.name];
-  return {
-    ...cookie,
-    value: typeof redactedValue === "string" ? redactedValue : String(redactedValue),
-    redacted: result.applied.length > 0 ? true : cookie.redacted,
-  };
 }
 
-/**
- * Redacts a storage snapshot from page instrumentation, honoring
- * `redactStorageValues` the same way the CDP storage-capture path does.
- */
 function redactInPageStorageSnapshot(snapshot: StorageSnapshot): StorageSnapshot {
-  const redactValues = activeRecording.recordingSettings?.redactStorageValues ?? true;
-  if (!redactValues) {
-    return snapshot;
-  }
-  snapshot.localStorage = redactInPageStorageItems(snapshot.localStorage, "storage.localStorage");
-  snapshot.sessionStorage = redactInPageStorageItems(
-    snapshot.sessionStorage,
-    "storage.sessionStorage",
-  );
-  snapshot.cookies = snapshot.cookies.map((cookie) => redactInPageCookie(cookie));
-  return snapshot;
+  return applyInPageStorageRedaction(snapshot, activeRecording.privacySettings, {
+    redactStorageValues: activeRecording.recordingSettings?.redactStorageValues ?? true,
+    onHits: recordActiveRedactionHits,
+  });
 }
 
 async function captureVisibleTabScreenshot(tabId: number | null): Promise<string | undefined> {
@@ -1628,11 +1434,11 @@ async function startRecording(
     // the browser unloads when idle and then re-evaluates from scratch. The
     // Firefox start path waits for the user to pick a share target in the arm
     // panel — up to ARM_TIMEOUT_MS (180s) during which the background does
-    // nothing at all. An unload in that window destroys the suspended async
-    // continuation below, so the in-page capture START message is never sent
-    // and console/network evidence stays completely empty while the video (owned
-    // by the media tab, which already holds a live MediaRecorder) records fine.
-    // That is exactly the "video works, console.json empty" report.
+    // nothing at all after attach/prepare. An unload in that window destroys
+    // the suspended async continuation below, so beginSession (in-page START +
+    // webRequest tab scope) never runs and evidence stays empty while the video
+    // (owned by the media tab's live MediaRecorder) records fine. That is the
+    // "video works, console.json empty" report.
     //
     // Chrome never showed this because its evidence arrives over CDP, whose
     // steady event traffic keeps the service worker alive on its own.

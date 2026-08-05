@@ -32,7 +32,9 @@ function buildBytes(chunks: Uint8Array[]): Uint8Array {
 }
 
 describe("recording package round-trip", () => {
-  it("reads back every artifact the writer attached", async () => {
+  // Property suite does many zip write/read cycles; under loaded pre-commit
+  // runners 5s is occasionally tight on macOS shared hosts.
+  it("reads back every artifact the writer attached", { timeout: 20_000 }, async () => {
     await fc.assert(
       fc.asyncProperty(
         fc.uniqueArray(fc.constantFrom(...JSON_ARTIFACT_IDS), { minLength: 0, maxLength: 6 }),

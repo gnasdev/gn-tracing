@@ -11,8 +11,12 @@
 import {
   buildPkceAuthorizationCodeTokenParams,
   buildRefreshTokenParams,
+  computeAccessTokenExpiresAt,
   createPkcePair,
+  fetchOAuthTokenResponse,
   generateOAuthState,
+  isOAuthRefreshAuthDeath,
+  OAUTH_TOKEN_EXPIRY_BUFFER_MS,
   parseOAuthAuthorizationRedirect,
 } from "../shared/oauth-pkce";
 import { resolveRuntimeExtensionRedirectUriForProvider } from "../shared/oauth-redirect-policy";
@@ -42,40 +46,16 @@ const DROPBOX_SCOPES = [
 
 const WEB_AUTH_TOKENS_KEY = "gn_tracing_tokens_dropbox";
 const DROPBOX_CONNECTED_KEY = "gn_tracing_dropbox_connected";
-const TOKEN_EXPIRY_BUFFER_MS = 60_000;
+const TOKEN_EXPIRY_BUFFER_MS = OAUTH_TOKEN_EXPIRY_BUFFER_MS;
 const REFRESH_LEEWAY_MS = 30_000;
 const TOKEN_REFRESH_TIMEOUT_MS = 8_000;
 
-/** OAuth error codes that mean the refresh token is permanently unusable. */
-const REFRESH_AUTH_DEATH_ERRORS = new Set([
-  "invalid_grant",
-  "invalid_token",
-  "invalid_client",
-  "unauthorized_client",
-]);
-
 /**
  * Whether a failed token refresh should clear the local token cache.
- * Auth-death (401, or 400 with invalid_grant/etc.) → fatal.
- * Rate limits (429), request timeouts (408), other 4xx/5xx → keep refresh token.
+ * Delegates to shared OAuth helper (Dropbox bare-400 is fatal).
  */
 export function isDropboxRefreshAuthDeath(status: number, errorCode?: string): boolean {
-  if (status === 401) {
-    return true;
-  }
-  if (status === 400) {
-    const code = String(errorCode || "")
-      .trim()
-      .toLowerCase();
-    // Bare 400 without a known death code: treat as fatal only if OAuth named it.
-    // Missing code often still means invalid_grant from Dropbox — be conservative
-    // for 400 (common for dead refresh tokens) but never for 429/408.
-    if (!code) {
-      return true;
-    }
-    return REFRESH_AUTH_DEATH_ERRORS.has(code);
-  }
-  return false;
+  return isOAuthRefreshAuthDeath(status, errorCode, { bare400IsFatal: true });
 }
 
 interface WebAuthTokens {
@@ -357,22 +337,14 @@ export class DropboxAuth {
       return { ok: false, fatal: true };
     }
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), TOKEN_REFRESH_TIMEOUT_MS);
-      let response: Response;
-      try {
-        response = await fetch(TOKEN_EXCHANGE_ENDPOINT, {
-          method: "POST",
-          headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: buildRefreshTokenParams({
-            clientId: DROPBOX_CLIENT_ID,
-            refreshToken,
-          }),
-          signal: controller.signal,
-        });
-      } finally {
-        clearTimeout(timeoutId);
-      }
+      const response = await fetchOAuthTokenResponse({
+        url: TOKEN_EXCHANGE_ENDPOINT,
+        body: buildRefreshTokenParams({
+          clientId: DROPBOX_CLIENT_ID,
+          refreshToken,
+        }),
+        timeoutMs: TOKEN_REFRESH_TIMEOUT_MS,
+      });
       if (!response.ok) {
         // Only auth-death is fatal (clear cache). Rate limits (429), timeouts
         // (408), and other transient 4xx/5xx keep the refresh token for retry.
@@ -398,7 +370,7 @@ export class DropboxAuth {
         return { ok: false, fatal: true };
       }
       const expiresIn = Number.parseInt(`${payload.expires_in ?? 14400}`, 10);
-      const expiresAt = Date.now() + expiresIn * 1000 - TOKEN_EXPIRY_BUFFER_MS;
+      const expiresAt = computeAccessTokenExpiresAt(expiresIn);
       const current = await this.getCachedTokens();
       if (current) {
         await this.setCachedTokens({

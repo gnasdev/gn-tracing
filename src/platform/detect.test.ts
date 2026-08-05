@@ -86,8 +86,8 @@ describe("platform capabilities", () => {
     expect(caps).toEqual(FIREFOX_EXTENSION_CAPABILITIES);
     expect(caps).toContain("video");
     expect(caps).toContain("screenshot");
-    // In-page network capture always writes responseBody: null, so claiming
-    // "network-bodies" would tell readers bodies exist when none ever do.
+    // Full-record network is observe-only webRequest (responseBody always null);
+    // claiming "network-bodies" would tell readers bodies exist when none do.
     expect(caps).not.toContain("network-bodies");
     expect(caps).not.toContain("cross-origin");
     expect(caps).not.toContain("source-maps");

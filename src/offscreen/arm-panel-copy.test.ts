@@ -37,6 +37,15 @@ describe("Firefox arm panel copy", () => {
     expect(armPanelHtml).toMatch(/cannot share a single tab/i);
     // Sharing a whole screen captures more than the recording is about; say so.
     expect(armPanelHtml).toMatch(/records everything else on it/i);
+    // Steer the user to the Firefox window holding the target, not a random screen.
+    expect(armPanelHtml).toMatch(/Firefox window/i);
+    expect(armPanelHtml).toMatch(/Prefer a window over a whole screen/i);
+  });
+
+  it("page-host timeout never says Share this tab", () => {
+    const pageHost = readFileSync(resolve(__dirname, "../platform/media/page-host.ts"), "utf8");
+    expect(pageHost).not.toMatch(/Share this tab/i);
+    expect(pageHost).toContain("Choose what to share");
   });
 
   it("keeps the activation error message pointing at the real button label", () => {
@@ -45,5 +54,10 @@ describe("Firefox arm panel copy", () => {
       new DOMException("needs a gesture", "InvalidStateError"),
     ).message;
     expect(message).toContain(label);
+  });
+
+  it("matches the shared FIREFOX_ARM_BUTTON_LABEL constant", async () => {
+    const { FIREFOX_ARM_BUTTON_LABEL } = await import("../shared/firefox-arm-copy");
+    expect(armButtonLabel()).toBe(FIREFOX_ARM_BUTTON_LABEL);
   });
 });

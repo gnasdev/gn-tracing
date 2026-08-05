@@ -2,10 +2,18 @@
  * Firefox full-record path: in-page evidence + extension-page getDisplayMedia.
  *
  * Does not construct CdpManager.
+ *
+ * Evidence lifecycle is two-phase: attach prepares collectors while activeTab
+ * is valid; beginSession arms them only after the user commits the share
+ * picker. Network metadata is owned solely by webRequest; in-page posts of
+ * kind "network" are ignored so a request is never written twice.
  */
 
 import type { StorageManager } from "../../background/storage-manager";
-import { describeCaptureSurfaceLimitation } from "../../media-pipeline/capture-surface";
+import {
+  describeCaptureSurfaceLimitation,
+  describeSurfaceTitleMismatch,
+} from "../../media-pipeline/capture-surface";
 import type { ConsoleEntry, StorageSnapshot, WebSocketEntry } from "../../types/recording";
 import { CollectorSet } from "../evidence/collector-set";
 import { InPageEvidenceCollector } from "../evidence/in-page-collector";
@@ -24,7 +32,6 @@ export class FirefoxRecordingRuntime implements RecordingRuntime {
   readonly #storage: StorageManager;
   readonly #media = new ExtensionPageMediaHost();
   readonly #evidence: CollectorSet;
-  #tabId: number | null = null;
   #sessionId: string | null = null;
   /** Limitations from the most recent attach; merged into finalize's result. */
   #attachLimitations: string[] = [];
@@ -45,32 +52,63 @@ export class FirefoxRecordingRuntime implements RecordingRuntime {
     this.#storage.setCaptureSettings(input.settings);
     this.#storage.setPrivacySettings(input.privacySettings, input.onRedactionHits);
 
-    this.#tabId = input.tabId;
     this.#sessionId = input.sessionId;
 
-    // Attach while the tab still holds activeTab: startCapture below focuses
-    // the media host tab, which revokes it. A resolved executeScript is not
-    // proof the script ran on Firefox, so the collector inspects the outcome
-    // rather than discarding it.
+    // Prepare while the tab still holds activeTab: startCapture below focuses
+    // the media host tab, which revokes it. Attach injects scripts / installs
+    // listeners but does not START in-page capture or scope webRequest yet.
     const attached = await this.#evidence.attach({
       tabId: input.tabId,
       sessionId: input.sessionId,
-      responseBodyMode: input.settings.captureResponseBodyMode,
-      maxResponseBodyBytes: input.settings.maxResponseBodyBytes,
     });
-    this.#attachLimitations = [...attached.limitations];
+    this.#attachLimitations = [
+      ...attached.limitations,
+      ...describeMissingCapabilityLimitations(attached.capabilities),
+    ];
+    // Best-effort: ok when at least one collector prepared. Fail only when
+    // nothing is available (see CollectorSet.attach).
     if (!attached.ok) {
-      throw new Error(attached.limitations[0] ?? "In-page evidence capture could not attach.");
+      throw new Error(attached.limitations[0] ?? "Evidence capture could not attach.");
     }
 
-    // Media first: it blocks on the user clicking "Choose what to share" (and on
-    // the browser's share picker), and it is the step that can be cancelled.
-    // Starting in-page evidence before that would capture the picker detour, and a
-    // cancel would leave the page instrumented.
+    // Media first for arming: it blocks on the user clicking "Choose what to
+    // share" (and on the browser's share picker), and it is the step that can
+    // be cancelled. Arming in-page evidence before that would capture the
+    // picker detour, and a cancel would leave the page instrumented until
+    // discard (which the service worker does call — but START-before-confirm
+    // is still the wrong lifecycle).
     const firstFrameAt = await this.#media.startCapture(input.tabId, input.sessionId);
+
+    // User committed: arm webRequest tab scope + in-page START while focus is
+    // still on the media host, then restore the recorded tab. beginSession is
+    // best-effort — never discard a live share solely for console re-arm failure.
+    const armed = await this.#evidence.beginSession({
+      tabId: input.tabId,
+      sessionId: input.sessionId,
+    });
+    this.#attachLimitations.push(...armed.limitations);
+
+    const surfaceMismatch = describeSurfaceTitleMismatch(
+      this.#media.capturedSurface,
+      await this.#readTabTitle(input.tabId),
+    );
+    if (surfaceMismatch) {
+      this.#attachLimitations.push(surfaceMismatch);
+    }
+
+    await this.#media.restoreRecordedTabFocus(input.tabId);
 
     this.#media.hydrateActiveSession(input.sessionId);
     return { firstFrameAt: firstFrameAt ?? null };
+  }
+
+  async #readTabTitle(tabId: number): Promise<string> {
+    try {
+      const tab = await chrome.tabs.get(tabId);
+      return typeof tab.title === "string" ? tab.title : "";
+    } catch {
+      return "";
+    }
   }
 
   /**
@@ -94,7 +132,6 @@ export class FirefoxRecordingRuntime implements RecordingRuntime {
 
   async finalizeEvidence(_input: RecordingFinalizeInput): Promise<RecordingFinalizeResult> {
     const { limitations: detachLimitations } = await this.#evidence.detach();
-    this.#tabId = null;
     this.#sessionId = null;
     const limitations: string[] = [...this.#attachLimitations, ...detachLimitations];
 
@@ -111,7 +148,6 @@ export class FirefoxRecordingRuntime implements RecordingRuntime {
 
   async discard(): Promise<void> {
     await Promise.allSettled([this.#media.stopCapture(true), this.#evidence.detach()]);
-    this.#tabId = null;
     this.#sessionId = null;
     await this.#media.cleanup();
   }
@@ -148,12 +184,12 @@ export class FirefoxRecordingRuntime implements RecordingRuntime {
       this.#storage.addConsoleEntry(entry as ConsoleEntry);
       return;
     }
-    // No "network" branch: WebRequestNetworkCollector is the sole source of
-    // network evidence on Firefox now (see InPageEvidenceCollector's
-    // capability list). In-page capture's fetch/XHR patcher still runs — it is
-    // shared with Instant Replay, which has no webRequest listener of its own —
-    // but any "network" entry it posts here is intentionally dropped so a
-    // request is never written twice.
+    // Single network owner: WebRequestNetworkCollector. In-page START disables
+    // fetch/XHR patches on full-record; this branch is defense-in-depth so a
+    // stale MAIN script or Instant Replay residual cannot double-write.
+    if (kind === "network") {
+      return;
+    }
     if (kind === "websocket") {
       this.#storage.upsertWebSocketEntry(entry as WebSocketEntry);
       return;
@@ -166,4 +202,26 @@ export class FirefoxRecordingRuntime implements RecordingRuntime {
   async captureDomSnapshotMarker(_label: string): Promise<void> {
     // No CDP DOM snapshots on Firefox full record.
   }
+}
+
+/**
+ * Attach may succeed with only one of console/network. Surface that at start so
+ * a half-armed session is not mistaken for full evidence.
+ */
+function describeMissingCapabilityLimitations(capabilities: readonly string[]): string[] {
+  const have = new Set(capabilities);
+  const notes: string[] = [];
+  if (!have.has("console")) {
+    notes.push(
+      "Console evidence is unavailable for this recording. Grant site access " +
+        "(or allow page instrumentation) if you need console and WebSocket rows.",
+    );
+  }
+  if (!have.has("network")) {
+    notes.push(
+      "Network evidence is unavailable for this recording. The webRequest " +
+        "permission may be missing or the network collector failed to prepare.",
+    );
+  }
+  return notes;
 }

@@ -18,6 +18,11 @@ import { describe, expect, it } from "vitest";
 
 const markup = readFileSync(resolve(__dirname, "../../offscreen/offscreen.html"), "utf8");
 const source = readFileSync(resolve(__dirname, "offscreen.ts"), "utf8");
+const hostPermissionSource = readFileSync(
+  resolve(__dirname, "../shared/recording-host-permission.ts"),
+  "utf8",
+);
+const popupSource = readFileSync(resolve(__dirname, "../popup/popup.ts"), "utf8");
 
 function functionBody(name: string, span = 1400): string {
   const start = source.indexOf(name);
@@ -42,15 +47,19 @@ describe("arm panel host-permission grant step", () => {
     const manifest = readFileSync(resolve(__dirname, "../../manifest.template.json"), "utf8");
     const declared = JSON.parse(manifest).optional_host_permissions as string[];
     expect(declared).toEqual(expect.arrayContaining(["http://*/*", "https://*/*"]));
-    expect(source).toContain('const RECORDING_HOST_ORIGINS = ["http://*/*", "https://*/*"]');
+    expect(hostPermissionSource).toContain('["http://*/*", "https://*/*"]');
+    expect(source).toContain("RECORDING_HOST_ORIGINS");
   });
 
   it("requests the permission in the grant click, never in the share click", () => {
     expect(functionBody("async function onGrantButtonClick(")).toContain(
-      "chrome.permissions.request({ origins: RECORDING_HOST_ORIGINS })",
+      "requestRecordingHostPermission()",
     );
     // The share click must stay synchronous up to getDisplayMedia.
     expect(functionBody("async function onArmButtonClick(")).not.toContain("permissions.request");
+    expect(functionBody("async function onArmButtonClick(")).not.toContain(
+      "requestRecordingHostPermission",
+    );
   });
 
   it("only shows the grant step when the permission is missing", () => {
@@ -61,7 +70,8 @@ describe("arm panel host-permission grant step", () => {
 
   it("treats an engine without optional host permissions as already granted", () => {
     // Chromium grants host permissions at install; contains() must not gate it.
-    expect(functionBody("async function hasRecordingHostPermission(")).toContain("return true");
+    expect(hostPermissionSource).toContain("return true");
+    expect(hostPermissionSource).toMatch(/optional host permissions|Chromium grants/i);
   });
 
   it("keeps recording possible when the user declines", () => {
@@ -70,5 +80,21 @@ describe("arm panel host-permission grant step", () => {
     expect(body).toContain("setArmStatus(");
     expect(body).not.toContain("disarmDisplayCapture(");
     expect(body).toMatch(/video still records/i);
+  });
+
+  it("pre-requests host permission from the popup Start gesture on Firefox", () => {
+    // Earliest viable gesture: popup click, not the share click.
+    expect(popupSource).toContain("isFirefoxTarget()");
+    expect(popupSource).toContain("requestRecordingHostPermission");
+    expect(popupSource).toContain("hasRecordingHostPermission");
+    const startAt = popupSource.indexOf("async function startRecordingSession(");
+    expect(startAt).toBeGreaterThan(-1);
+    const startBody = popupSource.slice(startAt, startAt + 2200);
+    expect(startBody).toContain("requestRecordingHostPermission");
+    // Must run before START_RECORDING is sent.
+    const requestAt = startBody.indexOf("requestRecordingHostPermission");
+    const startMsgAt = startBody.indexOf("START_RECORDING");
+    expect(requestAt).toBeGreaterThan(-1);
+    expect(startMsgAt).toBeGreaterThan(requestAt);
   });
 });

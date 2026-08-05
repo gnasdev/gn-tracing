@@ -8,6 +8,9 @@
  * This class only re-shapes its existing lifecycle calls into the collector
  * contract; `attach`/`detach` here are the exact calls
  * `ChromiumRecordingRuntime` made directly before this seam existed.
+ *
+ * CDP begins observing as soon as the debugger attaches, so `beginSession` is
+ * a no-op (there is no separate START step like in-page capture).
  */
 
 import type { RecordingCapability } from "../../../packages/replay-core/src/schema/package";
@@ -15,6 +18,7 @@ import type { CdpManager } from "../../background/cdp-manager";
 import type {
   EvidenceAttachInput,
   EvidenceAttachResult,
+  EvidenceBeginSessionInput,
   EvidenceCollector,
   EvidenceDetachResult,
 } from "./types";
@@ -44,6 +48,11 @@ export class CdpEvidenceCollector implements EvidenceCollector {
   async attach(input: EvidenceAttachInput): Promise<EvidenceAttachResult> {
     await this.#cdp.attach(input.tabId);
     return { ok: true, capabilities: CDP_CAPABILITIES, limitations: [] };
+  }
+
+  async beginSession(_input: EvidenceBeginSessionInput): Promise<{ limitations: string[] }> {
+    // CDP already observes after attach; nothing to arm later.
+    return { limitations: [] };
   }
 
   async detach(): Promise<EvidenceDetachResult> {

@@ -29,27 +29,7 @@ describe("WebRequestNetworkCollector", () => {
     expect(result.limitations[0]).toMatch(/response bodies are not captured/i);
   });
 
-  it("only records traffic from the attached tab", async () => {
-    const storage = new StorageManager();
-    vi.spyOn(storage, "addNetworkEntry");
-    const collector = new WebRequestNetworkCollector(storage);
-    await collector.attach({ tabId: 7, sessionId: "s1" });
-
-    emit(chrome.webRequest.onBeforeRequest, {
-      requestId: "1",
-      url: "https://example.com/a",
-      method: "GET",
-      type: "xmlhttprequest",
-      timeStamp: 0,
-      frameId: 0,
-      tabId: 999, // a different tab
-    });
-    emit(chrome.webRequest.onCompleted, { requestId: "1", statusCode: 200, tabId: 999 });
-
-    expect(storage.addNetworkEntry).not.toHaveBeenCalled();
-  });
-
-  it("writes a completed request from the attached tab into storage", async () => {
+  it("does not record traffic until beginSession scopes the tab", async () => {
     const storage = new StorageManager();
     vi.spyOn(storage, "addNetworkEntry");
     const collector = new WebRequestNetworkCollector(storage);
@@ -66,9 +46,69 @@ describe("WebRequestNetworkCollector", () => {
     });
     emit(chrome.webRequest.onCompleted, { requestId: "1", statusCode: 200, tabId: 7 });
 
+    expect(storage.addNetworkEntry).not.toHaveBeenCalled();
+
+    await collector.beginSession({ tabId: 7, sessionId: "s1" });
+
+    emit(chrome.webRequest.onBeforeRequest, {
+      requestId: "2",
+      url: "https://example.com/b",
+      method: "GET",
+      type: "xmlhttprequest",
+      timeStamp: 1,
+      frameId: 0,
+      tabId: 7,
+    });
+    emit(chrome.webRequest.onCompleted, { requestId: "2", statusCode: 200, tabId: 7 });
+
     expect(storage.addNetworkEntry).toHaveBeenCalledTimes(1);
     expect(storage.addNetworkEntry).toHaveBeenCalledWith(
-      expect.objectContaining({ requestId: "1", status: 200 }),
+      expect.objectContaining({ requestId: "2", status: 200, responseBody: null }),
+    );
+  });
+
+  it("only records traffic from the attached tab after beginSession", async () => {
+    const storage = new StorageManager();
+    vi.spyOn(storage, "addNetworkEntry");
+    const collector = new WebRequestNetworkCollector(storage);
+    await collector.attach({ tabId: 7, sessionId: "s1" });
+    await collector.beginSession({ tabId: 7, sessionId: "s1" });
+
+    emit(chrome.webRequest.onBeforeRequest, {
+      requestId: "1",
+      url: "https://example.com/a",
+      method: "GET",
+      type: "xmlhttprequest",
+      timeStamp: 0,
+      frameId: 0,
+      tabId: 999, // a different tab
+    });
+    emit(chrome.webRequest.onCompleted, { requestId: "1", statusCode: 200, tabId: 999 });
+
+    expect(storage.addNetworkEntry).not.toHaveBeenCalled();
+  });
+
+  it("writes a completed request from the recorded tab into storage with null body", async () => {
+    const storage = new StorageManager();
+    vi.spyOn(storage, "addNetworkEntry");
+    const collector = new WebRequestNetworkCollector(storage);
+    await collector.attach({ tabId: 7, sessionId: "s1" });
+    await collector.beginSession({ tabId: 7, sessionId: "s1" });
+
+    emit(chrome.webRequest.onBeforeRequest, {
+      requestId: "1",
+      url: "https://example.com/a",
+      method: "GET",
+      type: "xmlhttprequest",
+      timeStamp: 0,
+      frameId: 0,
+      tabId: 7,
+    });
+    emit(chrome.webRequest.onCompleted, { requestId: "1", statusCode: 200, tabId: 7 });
+
+    expect(storage.addNetworkEntry).toHaveBeenCalledTimes(1);
+    expect(storage.addNetworkEntry).toHaveBeenCalledWith(
+      expect.objectContaining({ requestId: "1", status: 200, responseBody: null }),
     );
   });
 
@@ -77,6 +117,7 @@ describe("WebRequestNetworkCollector", () => {
     vi.spyOn(storage, "addNetworkEntry");
     const collector = new WebRequestNetworkCollector(storage);
     await collector.attach({ tabId: 7, sessionId: "s1" });
+    await collector.beginSession({ tabId: 7, sessionId: "s1" });
 
     emit(chrome.webRequest.onBeforeRequest, {
       requestId: "1",
@@ -114,12 +155,6 @@ describe("WebRequestNetworkCollector", () => {
   });
 
   it("reports failure and no capability when webRequest is unavailable", async () => {
-    // Real Chrome never throws for a missing optional-permission namespace —
-    // chrome.webRequest is simply undefined while still being an existing key,
-    // which is exactly what an optional permission that was never granted
-    // looks like. The guarded mock's Proxy allows this: `"webRequest" in obj`
-    // stays true, so the property reads as undefined without tripping the
-    // "not mocked" guard that catches genuine typos.
     const chromeMock = chrome as unknown as { webRequest: unknown };
     const original = chromeMock.webRequest;
     chromeMock.webRequest = undefined;
