@@ -30,6 +30,15 @@ export interface InPageCaptureControlMessage {
   sessionId?: string;
   /** Present on STOP so MAIN can ack STOP_COMPLETE for this request. */
   requestId?: string;
+  /**
+   * Present on START. Mirrors `InPageCaptureOptions` in
+   * `packages/replay-core/src/capture/in-page-capture.ts` — kept as plain
+   * fields on the control message (not a nested object referencing that
+   * type) so this shared protocol file stays free of a dependency on the
+   * capture module's option shape evolving independently.
+   */
+  responseBodyMode?: "off" | "text" | "text-json" | "eligible";
+  maxResponseBodyBytes?: number | null;
 }
 
 export interface InPageCaptureEntryMessage {

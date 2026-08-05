@@ -398,6 +398,13 @@ function applyBrowserManifestPatches(manifest) {
     if (!manifest.permissions.includes("tabs")) {
       manifest.permissions.push("tabs");
     }
+    // webRequest is Firefox's CDP-Network equivalent: full-tab, all-frames,
+    // browser-issued-requests-included network visibility that in-page capture
+    // cannot reach (see WebRequestNetworkCollector). Chrome does not get this
+    // permission added because its evidence already comes from CDP.
+    if (!manifest.permissions.includes("webRequest")) {
+      manifest.permissions.push("webRequest");
+    }
     // Firefox stable does not support background.service_worker yet; MV3 uses
     // non-persistent event pages via background.scripts (same bundled entry).
     // https://extensionworkshop.com/documentation/develop/manifest-v3-migration-guide/

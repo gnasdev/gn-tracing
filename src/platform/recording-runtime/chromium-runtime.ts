@@ -4,6 +4,8 @@
 
 import { CdpManager } from "../../background/cdp-manager";
 import type { StorageManager } from "../../background/storage-manager";
+import { CdpEvidenceCollector } from "../evidence/cdp-collector";
+import { CollectorSet } from "../evidence/collector-set";
 import { OffscreenMediaHost } from "../media/offscreen-host";
 import type {
   EvidenceEntry,
@@ -18,10 +20,12 @@ export class ChromiumRecordingRuntime implements RecordingRuntime {
   readonly #storage: StorageManager;
   readonly #cdp: CdpManager;
   readonly #media = new OffscreenMediaHost();
+  readonly #evidence: CollectorSet;
 
   constructor(storage: StorageManager) {
     this.#storage = storage;
     this.#cdp = new CdpManager(storage);
+    this.#evidence = new CollectorSet([new CdpEvidenceCollector(this.#cdp)]);
   }
 
   get activeSessionId(): string | null {
@@ -33,7 +37,7 @@ export class ChromiumRecordingRuntime implements RecordingRuntime {
     this.#cdp.setPrivacySettings(input.privacySettings, input.onRedactionHits);
 
     const [, firstFrameAt] = await Promise.all([
-      this.#cdp.attach(input.tabId),
+      this.#evidence.attach({ tabId: input.tabId, sessionId: input.sessionId }),
       this.#media.startCapture(input.tabId, input.sessionId),
     ]);
 
@@ -60,19 +64,14 @@ export class ChromiumRecordingRuntime implements RecordingRuntime {
     if (input.captureDomSnapshots) {
       await this.#cdp.captureDomSnapshot("stop");
     }
-    const privacyLimitations = this.#cdp.getStorageLimitations();
-    try {
-      await this.#cdp.detach();
-    } catch {
-      // Capture already stopped.
-    }
+    const { limitations: privacyLimitations } = await this.#evidence.detach();
 
     const sourceMaps = this.#cdp.getSourceMapDiagnostics();
     this.#storage.resolveSourceMaps(this.#cdp.sourceMapResolver, sourceMaps);
     this.#cdp.releaseSourceMaps();
 
     return {
-      privacyLimitations,
+      privacyLimitations: [...privacyLimitations],
       sourceMapDiagnostics:
         sourceMaps.length === 0
           ? null
@@ -85,7 +84,7 @@ export class ChromiumRecordingRuntime implements RecordingRuntime {
   }
 
   async discard(): Promise<void> {
-    await Promise.allSettled([this.#media.stopCapture(true), this.#cdp.detach()]);
+    await Promise.allSettled([this.#media.stopCapture(true), this.#evidence.detach()]);
     this.releaseSourceMaps();
     await this.#media.cleanup();
   }
@@ -125,7 +124,6 @@ export class ChromiumRecordingRuntime implements RecordingRuntime {
   async reinjectEvidenceCapture(_tabId: number, _sessionId: string): Promise<void> {
     // CDP stays attached across navigations, so there is nothing to re-arm.
   }
-
   captureDomSnapshotMarker(label: string): Promise<void> {
     return this.#cdp.captureDomSnapshot(label);
   }

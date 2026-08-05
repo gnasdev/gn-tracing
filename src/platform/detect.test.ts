@@ -86,7 +86,9 @@ describe("platform capabilities", () => {
     expect(caps).toEqual(FIREFOX_EXTENSION_CAPABILITIES);
     expect(caps).toContain("video");
     expect(caps).toContain("screenshot");
-    expect(caps).toContain("network-bodies");
+    // In-page network capture always writes responseBody: null, so claiming
+    // "network-bodies" would tell readers bodies exist when none ever do.
+    expect(caps).not.toContain("network-bodies");
     expect(caps).not.toContain("cross-origin");
     expect(caps).not.toContain("source-maps");
     expect(caps).not.toContain("cookies");

@@ -44,6 +44,70 @@ type BoundSend = (
   entry: ConsoleEntry | NetworkEntry | WebSocketEntry | StorageSnapshot,
 ) => void;
 
+/** Mirrors `ResponseBodyCaptureMode` in src/types/messages.ts; kept as a local
+ * literal type rather than an import so this package stays free of a
+ * dependency on `src/`. */
+export type InPageResponseBodyCaptureMode = "off" | "text" | "text-json" | "eligible";
+
+export interface InPageCaptureOptions {
+  /** Default "off": reading a response/XHR body is extra work on every request. */
+  responseBodyMode?: InPageResponseBodyCaptureMode;
+  /** No limit when omitted, matching the CDP path's `maxResponseBodyBytes: null` default. */
+  maxResponseBodyBytes?: number | null;
+}
+
+function isJsonMime(mime: string): boolean {
+  return mime.includes("json") || mime.includes("+json");
+}
+
+function isJavascriptMime(mime: string): boolean {
+  return (
+    mime.includes("javascript") ||
+    mime.includes("ecmascript") ||
+    mime.startsWith("application/javascript") ||
+    mime.startsWith("application/x-javascript") ||
+    mime.startsWith("text/javascript")
+  );
+}
+
+/**
+ * Same text-like eligibility CDP uses (see `shouldFetchResponseBody` in
+ * `src/shared/network-response-body.ts`), duplicated rather than imported: this
+ * package has no dependency on `src/`, and the rule is small enough that
+ * copying it is cheaper than introducing a shared package boundary for it.
+ * Divergence risk is covered by `response-body-eligibility.test.ts` asserting
+ * both copies agree on the same fixture table.
+ */
+export function isEligibleResponseBodyMime(
+  mode: InPageResponseBodyCaptureMode,
+  mimeType: string | null,
+): boolean {
+  if (mode === "off" || !mimeType) {
+    return false;
+  }
+  const mime = mimeType.toLowerCase().trim();
+  if (!mime) {
+    return false;
+  }
+  if (mode === "text") {
+    return mime.startsWith("text/");
+  }
+  if (mode === "text-json") {
+    return mime.startsWith("text/") || isJsonMime(mime);
+  }
+  if (mime.startsWith("text/")) return true;
+  if (isJsonMime(mime)) return true;
+  if (isJavascriptMime(mime)) return true;
+  const eligiblePrefixes = [
+    "application/xml",
+    "application/xhtml+xml",
+    "application/manifest+json",
+    "application/ld+json",
+    "image/svg+xml",
+  ];
+  return eligiblePrefixes.some((prefix) => mime.startsWith(prefix));
+}
+
 /**
  * The subset of global APIs the capture monkey-patches. Tests can pass a mock
  * scope to verify patch/restore behavior without touching the real page.
@@ -357,6 +421,7 @@ export function installInPageCapture(
   scope: InPageCaptureScope,
   sessionId: string,
   send: InPageCaptureSend,
+  options: InPageCaptureOptions = {},
 ): () => void {
   const emit: BoundSend = (kind, entry) => send(sessionId, kind, entry);
   const restorers: Array<() => void> = [];
@@ -365,8 +430,8 @@ export function installInPageCapture(
 
   installConsoleCapture(scope, emit, restorers);
   installUncaughtErrorCapture(scope, emit, restorers);
-  installFetchCapture(scope, emit, restorers, inflightNetwork);
-  installXhrCapture(scope, emit, restorers, inflightNetwork);
+  installFetchCapture(scope, emit, restorers, inflightNetwork, options);
+  installXhrCapture(scope, emit, restorers, inflightNetwork, options);
   installWebSocketCapture(scope, emit, restorers);
 
   // Storage is captured via start/stop snapshots (the player's StorageSnapshot
@@ -522,11 +587,14 @@ function installFetchCapture(
   send: BoundSend,
   restorers: Array<() => void>,
   inflight: Set<PendingNetworkCapture>,
+  options: InPageCaptureOptions,
 ): void {
   const originalFetch = scope.fetch;
   if (typeof originalFetch !== "function") {
     return;
   }
+  const mode = options.responseBodyMode ?? "off";
+  const maxBytes = options.maxResponseBodyBytes ?? null;
   const patched: typeof fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = resolveRequestUrl(scope, input);
     const method = resolveRequestMethod(input, init);
@@ -540,12 +608,42 @@ function installFetchCapture(
     inflight.add(pending);
     try {
       const response = await originalFetch(input as RequestInfo, init);
+      // Clone before any body read: the page's own code still needs the
+      // original Response's body stream, and a Response body can only be
+      // consumed once.
+      const bodyClone = mode === "off" ? null : response.clone();
+      const mimeType = response.headers?.get?.("content-type") ?? null;
+      const encodedDataLength = Number(response.headers?.get?.("content-length") ?? 0) || 0;
+      const eligible =
+        bodyClone &&
+        isEligibleResponseBodyMime(mode, mimeType) &&
+        (maxBytes == null || encodedDataLength <= maxBytes);
+
       settleNetworkCapture(pending, inflight, send, (e) => {
         e.status = response.status;
         e.statusText = response.statusText;
         e.responseHeaders = responseHeadersToRecord(response.headers);
-        e.mimeType = response.headers?.get?.("content-type") ?? null;
+        e.mimeType = mimeType;
+        e.encodedDataLength = encodedDataLength;
       });
+
+      if (eligible && bodyClone) {
+        // Read after settleNetworkCapture posts the entry: a slow or hanging
+        // body read must not delay delivering the metadata row, and a read
+        // failure here is caught on its own so it cannot affect the entry
+        // already sent.
+        void bodyClone
+          .text()
+          .then((body) => {
+            if (maxBytes == null || body.length <= maxBytes) {
+              send("network", { ...entry, responseBody: { body, base64Encoded: false } });
+            }
+          })
+          .catch(() => {
+            // Body unreadable (e.g. already-disturbed edge case) — the
+            // metadata row already went out; nothing to salvage.
+          });
+      }
       return response;
     } catch (error) {
       settleNetworkCapture(pending, inflight, send, (e) => {
@@ -569,11 +667,14 @@ function installXhrCapture(
   send: BoundSend,
   restorers: Array<() => void>,
   inflight: Set<PendingNetworkCapture>,
+  options: InPageCaptureOptions,
 ): void {
   const OriginalXHR = scope.XMLHttpRequest;
   if (typeof OriginalXHR !== "function") {
     return;
   }
+  const mode = options.responseBodyMode ?? "off";
+  const maxBytes = options.maxResponseBodyBytes ?? null;
 
   const stateKey = "__gnTracingXhrState";
   const proto = OriginalXHR.prototype as XMLHttpRequest & Record<string, unknown>;
@@ -606,13 +707,39 @@ function installXhrCapture(
       }
       inflight.add(state.pending);
       const onLoadEnd = (): void => {
+        const mimeType = this.getResponseHeader?.("content-type") ?? null;
+        // responseText throws for any responseType other than "" or "text"
+        // (blob/arraybuffer/document reads are not safe to stringify here),
+        // so eligibility gates on that before touching the mode/MIME rules.
+        const canReadText = this.responseType === "" || this.responseType === "text";
+        const encodedDataLength = Number(this.getResponseHeader?.("content-length") ?? 0) || 0;
+        const eligible =
+          canReadText &&
+          isEligibleResponseBodyMime(mode, mimeType) &&
+          (maxBytes == null || encodedDataLength <= maxBytes);
+
         settleNetworkCapture(state.pending, inflight, send, (entry) => {
           entry.status = this.status || null;
           entry.statusText = this.statusText || null;
           const rawHeaders = this.getAllResponseHeaders?.() ?? "";
           entry.responseHeaders = parseRawHeaders(rawHeaders);
-          entry.mimeType = this.getResponseHeader?.("content-type") ?? entry.mimeType;
+          entry.mimeType = mimeType ?? entry.mimeType;
+          entry.encodedDataLength = encodedDataLength;
         });
+
+        if (eligible) {
+          try {
+            const body = this.responseText;
+            if (body && (maxBytes == null || body.length <= maxBytes)) {
+              send("network", {
+                ...state.pending.entry,
+                responseBody: { body, base64Encoded: false },
+              });
+            }
+          } catch {
+            // responseText access failed — the metadata row already went out.
+          }
+        }
         this.removeEventListener("loadend", onLoadEnd);
         this.removeEventListener("error", onError);
       };

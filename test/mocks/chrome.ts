@@ -90,6 +90,8 @@ export type DebuggerEventListener = (
 
 /** Listener shape of `chrome.debugger.onDetach`. */
 export type DebuggerDetachListener = (source: chrome.debugger.Debuggee, reason: string) => void;
+/** Listener shape shared by every `chrome.webRequest.on*` event this mock exposes. */
+export type WebRequestListener = (details: Record<string, unknown>) => void;
 
 /** The shape of the mocked `chrome` global. */
 export interface ChromeMock {
@@ -127,6 +129,13 @@ export interface ChromeMock {
   action: {
     setBadgeText: MockSpy;
     setBadgeBackgroundColor: MockSpy;
+  };
+  webRequest: {
+    onBeforeRequest: MockEvent<WebRequestListener>;
+    onSendHeaders: MockEvent<WebRequestListener>;
+    onHeadersReceived: MockEvent<WebRequestListener>;
+    onCompleted: MockEvent<WebRequestListener>;
+    onErrorOccurred: MockEvent<WebRequestListener>;
   };
 }
 
@@ -428,6 +437,17 @@ export function createChromeMock(): ChromeMock {
     "chrome.action",
   );
 
+  const webRequest = guardNamespace(
+    {
+      onBeforeRequest: createEvent<WebRequestListener>(counter, spies, events),
+      onSendHeaders: createEvent<WebRequestListener>(counter, spies, events),
+      onHeadersReceived: createEvent<WebRequestListener>(counter, spies, events),
+      onCompleted: createEvent<WebRequestListener>(counter, spies, events),
+      onErrorOccurred: createEvent<WebRequestListener>(counter, spies, events),
+    },
+    "chrome.webRequest",
+  );
+
   const chrome = guardNamespace(
     {
       storage,
@@ -437,6 +457,7 @@ export function createChromeMock(): ChromeMock {
       alarms,
       debugger: debuggerNs,
       action,
+      webRequest,
     },
     "chrome",
   ) as ChromeMock;

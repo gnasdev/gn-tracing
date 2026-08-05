@@ -10,6 +10,7 @@
 
 import {
   type InPageCaptureScope,
+  type InPageResponseBodyCaptureMode,
   installInPageCapture,
 } from "../../packages/replay-core/src/capture/in-page-capture";
 import {
@@ -50,7 +51,10 @@ import {
     }
   }
 
-  function startCapture(sessionId: string): void {
+  function startCapture(
+    sessionId: string,
+    options: { responseBodyMode?: string; maxResponseBodyBytes?: number | null },
+  ): void {
     // Drop previous session without STOP_COMPLETE (no SW waiter).
     pageWindow.__gnTracingInPageCaptureCleanup?.();
     pageWindow.__gnTracingInPageCaptureCleanup = null;
@@ -68,6 +72,10 @@ import {
         };
         window.postMessage(message, "*");
       },
+      {
+        responseBodyMode: options.responseBodyMode as InPageResponseBodyCaptureMode | undefined,
+        maxResponseBodyBytes: options.maxResponseBodyBytes,
+      },
     );
   }
 
@@ -81,7 +89,10 @@ import {
     }
     const control = data as InPageCaptureControlMessage;
     if (control.type === "START" && control.sessionId) {
-      startCapture(control.sessionId);
+      startCapture(control.sessionId, {
+        responseBodyMode: control.responseBodyMode,
+        maxResponseBodyBytes: control.maxResponseBodyBytes,
+      });
       return;
     }
     if (control.type === "STOP") {
