@@ -40,6 +40,7 @@ graphify-out/
 .serena/
 .cursor/
 .grok/
+.kiro/
 AGENTS.md
 .idea/
 .vscode/
