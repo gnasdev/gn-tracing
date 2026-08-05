@@ -70,11 +70,21 @@ describe("createRecordingRuntime", () => {
     runtime.ingestEvidenceEntry("s", "console", { timestamp: 1 } as never);
   });
 
-  it("edge target uses Chromium runtime", () => {
+  it("chrome target uses Chromium runtime", () => {
     vi.mocked(CdpManager).mockClear();
-    const runtime = createRecordingRuntime(fakeStorage(), "edge");
+    const runtime = createRecordingRuntime(fakeStorage(), "chrome");
     expect(runtime).toBeInstanceOf(ChromiumRecordingRuntime);
     expect(CdpManager).toHaveBeenCalledTimes(1);
+  });
+
+  it("edge and opera targets use Chromium runtime", () => {
+    for (const target of ["edge", "opera"] as const) {
+      vi.mocked(CdpManager).mockClear();
+      const runtime = createRecordingRuntime(fakeStorage(), target);
+      expect(runtime).toBeInstanceOf(ChromiumRecordingRuntime);
+      expect(runtime.mediaKind).toBe("offscreen");
+      expect(CdpManager).toHaveBeenCalledTimes(1);
+    }
   });
 
   it("firefox target never constructs CdpManager", () => {

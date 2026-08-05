@@ -1,5 +1,6 @@
 /**
- * Chromium media host backed by chrome.offscreen + tabCapture.
+ * Chromium-family media host (Chrome / Edge / Opera) backed by
+ * chrome.offscreen + tabCapture.
  */
 
 import { RecorderManager } from "../../background/recorder-manager";

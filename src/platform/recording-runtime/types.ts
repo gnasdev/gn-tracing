@@ -28,8 +28,8 @@ export interface RecordingStartInput {
   privacySettings: PrivacyRedactionSettings;
   onRedactionHits: (hits: RedactionHit[]) => void;
   /**
-   * Firefox: popup already ran getDisplayMedia and handed the stream to the
-   * media host. Skip focusing the capture tab / arm panel.
+   * Firefox legacy: stream already adopted into the media host. Skip focusing
+   * the capture tab / arm panel. Current popup does not set this.
    */
   mediaPrearmed?: boolean;
   firstFrameAt?: number | null;

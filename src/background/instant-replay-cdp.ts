@@ -8,6 +8,7 @@
  */
 
 import type { InstantReplayEvidenceBundle } from "../../packages/replay-core/src/capture/instant-replay-evidence";
+import { getFeatureFlags } from "../platform/detect";
 import { tabUrlMatchesInstantReplayAllowlist } from "../shared/instant-replay-domain";
 import { CdpManager } from "./cdp-manager";
 import { pickPrivacyRedactionSettings, type UploadSettingsStore } from "./settings-store";
@@ -285,11 +286,12 @@ export function createInstantReplayCdpHub(
 }
 
 /**
- * Build-time selection: Chromium gets a live hub; Firefox gets a no-op.
+ * Build-time selection via platform feature flags: Chrome gets a live hub;
+ * Firefox gets a no-op. Optional `hasCdp` override is for tests.
  */
 export function createInstantReplayCdpHubForBrowser(
   getSettings: () => Promise<UploadSettingsStore>,
-  hasCdp: boolean,
+  hasCdp: boolean = getFeatureFlags().cdp,
 ): InstantReplayCdpHubLike {
   if (!hasCdp) {
     return new NullInstantReplayCdpHub();

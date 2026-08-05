@@ -1,12 +1,14 @@
 /**
  * Media host contract: owns video capture lifecycle and packaging document.
  *
- * Chromium uses chrome.offscreen; Firefox uses a dedicated extension page.
+ * Chromium uses chrome.offscreen + tabCapture. Firefox has neither, so it uses
+ * getDisplayMedia inside a small extension popup window (windows.create type
+ * "popup") — never a tab in the user's browser strip.
  */
 
 export type MediaStartCaptureOptions = {
   /**
-   * Firefox: stream already adopted into the media host from the popup gesture.
+   * Firefox legacy: stream already adopted into the media host.
    * Skip focusing the media tab / arm panel; only bind session metadata.
    */
   prearmed?: boolean;

@@ -74,13 +74,13 @@ It runs every context, accumulates failures, and exits 1 if any context failed.
 
 | Alias | What it runs |
 | --- | --- |
-| `task build:all` | `task build` + `task player:build` |
-| `task dist:all` | `task dist` + `task player:dist` |
-| `task dev` | `concurrently -n ext:chrome,player,worker 'task watch BROWSER=chrome' 'task player:dev' 'task worker:dev'` |
-| `task dev:edge` / `task dev:firefox` | Same, with `BROWSER=edge` / `BROWSER=firefox` |
-| `task dev:all` | Chrome + Edge + Firefox watchers together, plus player and Worker (5 processes) |
+| `task build:all` | Chrome + Edge + Opera + Firefox development packages |
+| `task dist:all` | Chrome + Edge + Opera + Firefox production packages |
+| `task dev` | Full stack for one browser (default Chrome): watch + player + Worker |
+| `task dev:chrome` / `dev:edge` / `dev:opera` / `dev:firefox` | Same stack for that browser |
+| `task dev BROWSER=all` / `task dev:all` | All four extension watchers + player + Worker (6 processes) |
 
-`task dev` is the local development workhorse: it keeps the extension, player, and Worker hot-reloading simultaneously under prefixed output streams. The extension watcher is the only per-browser process — the player (`:5176`) and Worker (`:8787`) serve every target — so pick one with `task dev BROWSER=chrome|edge|firefox` (default `chrome`). `task watch` takes the same variable, and an unsupported value fails on a precondition before anything starts.
+`task dev` is the local development workhorse: it keeps the extension, player, and Worker hot-reloading simultaneously under prefixed output streams. The extension watcher is the only per-browser process — the player (`:5176`) and Worker (`:8787`) serve every target — so pick one with `task dev BROWSER=chrome|edge|opera|firefox` (default `chrome`), or use `BROWSER=all` / `task dev:all` to watch every target. CLI var and env `BROWSER` both work. `task watch` takes the same variable (single target only; no `all`), and an unsupported value fails on a precondition before anything starts.
 
 Because the player and Worker are per-repo rather than per-target, `player:dev` and `worker:dev` probe their port with `scripts/port-listening.mjs` and reuse a running instance instead of failing to bind. Two `task dev` stacks for different browsers can therefore run side by side.
 

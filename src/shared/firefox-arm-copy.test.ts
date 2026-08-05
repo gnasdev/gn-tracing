@@ -26,6 +26,7 @@ describe("FIREFOX_ARM_BUTTON_LABEL single source", () => {
     expect(describeDisplayCaptureError(new DOMException("x", "InvalidStateError")).message).toBe(
       describeFirefoxArmInvalidStateMessage(),
     );
+    expect(describeFirefoxArmInvalidStateMessage()).toMatch(/capture window/i);
   });
 
   it("page-host timeout path imports the shared helper", () => {

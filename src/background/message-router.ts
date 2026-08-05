@@ -66,7 +66,7 @@ export interface MessageHandlers {
   saveAnnotatedScreenshot: (data: Record<string, unknown> | undefined) => Promise<MessageResponse>;
   captureInstantReplay: (tabId: number | undefined) => Promise<MessageResponse>;
   handleInPageCaptureEntry: (message: ServiceWorkerMessage) => MessageResponse;
-  /** Firefox: park media host tab without focusing it (popup stream handoff). */
+  /** Firefox: park media host tab without focusing it (packaging / later arm). */
   ensureMediaHost: () => Promise<MessageResponse>;
 }
 

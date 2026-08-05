@@ -53,7 +53,7 @@ flowchart LR
 Requirements:
 
 - Node.js 22+ (see `.nvmrc`; builds use `--experimental-strip-types`)
-- A Chromium-based browser (Chrome, Edge, Brave, Vivaldi, Opera, etc.)
+- A Chromium browser for Chrome/Edge/Opera packages, and/or Firefox 128+
 - Task, if you want to use the documented `task` commands
 
 Install dependencies:
@@ -78,13 +78,14 @@ task typecheck      # Type-check root extension code
 task lint           # Run Biome lint checks for supported sources
 task format         # Format Biome-supported repository sources
 task check          # Run Biome checks plus docs hygiene validation
-task build:all      # Chrome + Edge + Firefox (development)
-task dist:all       # Chrome + Edge + Firefox (production)
+task build:all      # Chrome + Edge + Opera + Firefox (development)
+task dist:all       # Chrome + Edge + Opera + Firefox (production)
 task player:build   # Standalone player (dev)
 task player:dist    # Standalone player (production)
-task dev            # Full local stack (Chrome): extension watch + player (Vite proxies) + multi-issuer Worker (:8787 OAuth + /feedback)
-task dev BROWSER=firefox   # Same stack watching the Firefox build (also: BROWSER=edge, or task dev:edge / task dev:firefox)
-task dev:all        # Chrome + Edge + Firefox watchers together, plus player and Worker
+task dev            # Full local stack (Chrome default): extension watch + player (Vite) + Worker (:8787)
+task dev BROWSER=firefox   # Same stack for Firefox (also: edge|opera, or task dev:edge / :opera / :firefox / :chrome)
+task dev BROWSER=all       # All four browser watchers + player + Worker (alias: task dev:all)
+task dev:all        # Same as BROWSER=all
 task worker:dev     # Local Worker only (also included in `task dev`)
 task worker:sync-dev-vars  # Sync worker/.dev.vars from root .env (run automatically by task dev / worker:dev)
 task typecheck:all  # Type-check every context (root, replay-core, SDK, MCP, player, worker)
@@ -144,6 +145,8 @@ task player:typecheck
 4. Click `Load unpacked`.
 5. Select `dist/chrome/`.
 
+Chrome uses CDP + tabCapture + offscreen; Google Drive prefers `getAuthToken` when brand detection says Google Chrome.
+
 ### Microsoft Edge
 
 1. Run `task build:edge` (outputs `dist/edge/`).
@@ -152,7 +155,17 @@ task player:typecheck
 4. Click `Load unpacked`.
 5. Select `dist/edge/`.
 
-Edge uses the same Chromium capture path as Chrome (CDP + tabCapture + offscreen). Google Drive auth uses the web PKCE flow (not `getAuthToken`).
+Edge uses the same Chromium capture path as Chrome (CDP + tabCapture + offscreen). Google Drive auth uses the web PKCE flow (not `getAuthToken`). Optional `EDGE_EXTENSION_PUBLIC_KEY` (falls back to `CHROME_EXTENSION_PUBLIC_KEY`).
+
+### Opera
+
+1. Run `task build:opera` (outputs `dist/opera/`).
+2. Open `opera://extensions`.
+3. Enable `Developer mode`.
+4. Click `Load unpacked`.
+5. Select `dist/opera/`.
+
+Opera matches the Edge Chromium path (CDP + web PKCE). Optional `OPERA_EXTENSION_PUBLIC_KEY` (falls back to `CHROME_EXTENSION_PUBLIC_KEY`).
 
 ### Firefox
 
@@ -183,11 +196,13 @@ Rebuild and reload the unpacked extension after source changes. After changing O
 ```bash
 task build            # Chrome → dist/chrome
 task build:edge       # Edge → dist/edge
+task build:opera      # Opera → dist/opera
 task build:firefox    # Firefox → dist/firefox
-task build:all        # all three (development)
-task dist:all         # all three (production)
+task build:all        # all four (development)
+task dist:all         # all four (production)
 task store:zip        # Chrome Web Store zip
-task store:zip:edge   # Edge Add-ons zip
+task store:zip:edge
+task store:zip:opera
 task store:zip:firefox
 ```
 
@@ -229,7 +244,7 @@ Must follow [Google OAuth 2.0 Policies — domains](https://developers.google.co
 **Cloud Console checklist**
 
 1. Prefer a **Chrome Extension** OAuth client for Chrome Store builds (`getAuthToken`).
-2. For Edge / Firefox / web PKCE: a **Web application** client may be used only if Authorized redirect URIs are exactly the extension identity URLs (below) — not custom website paths.
+2. For Edge / Opera / Firefox / Chrome web PKCE: a **Web application** client may be used only if Authorized redirect URIs are exactly the extension identity URLs (below) — not custom website paths.
 3. Authorized JavaScript origins: leave empty for pure extension flows, or only domains you own if a web surface needs them.
 4. Branding name must match the product: **GN Tracing**.
 5. Production vs dev: separate Cloud projects when shipping (policy: separate testing and production projects).
@@ -293,16 +308,20 @@ The Dropbox proxy only accepts relative shared-link ids (`s/`, `scl/`, `sh/`, `s
 | Standalone player | Vite `:5176` | Replay UI + `/api/drive`, `/api/dropbox` download proxies |
 | Multi-issuer Worker | wrangler `:8787` | OAuth token exchange (Google `/`, Dropbox `/token/dropbox`) + optional `POST /feedback` |
 
-Only the extension watcher is per-browser; the player and Worker are shared by every target. Pick the target with `BROWSER`:
+Only the extension watcher is per-browser; the player and Worker are shared by every target. Pick the target with `BROWSER` (CLI flag or env):
 
 ```bash
 task dev                    # chrome (default)
 task dev BROWSER=edge       # same as task dev:edge
+task dev BROWSER=opera      # same as task dev:opera
 task dev BROWSER=firefox    # same as task dev:firefox
-task dev:all                # all three watchers at once (5 processes)
+task dev:chrome             # explicit chrome alias
+BROWSER=firefox task dev    # env form also works
+task dev BROWSER=all        # all four watchers + player + worker (6 processes)
+task dev:all                # alias for BROWSER=all
 ```
 
-An unsupported value fails fast on a precondition, before any long-running process starts. `task watch` takes the same `BROWSER` variable.
+An unsupported value fails fast on a precondition, before any long-running process starts. `task watch` takes the same `BROWSER` variable (`chrome|edge|opera|firefox` only — use `dev`/`dev:all` for the full stack).
 
 The player (`:5176`) and Worker (`:8787`) are per-repo, not per-target, so `player:dev` and `worker:dev` **reuse an instance already serving their port** instead of failing to bind. Two stacks can therefore coexist — `task dev` in one terminal and `task dev BROWSER=firefox` in another — with the second reusing the first's shared services:
 
@@ -361,9 +380,9 @@ Run these yourself when you intend to ship edge changes. Prefer Worker then Play
 
 1. Ensure `npm run quality:gate` (or a normal `git push` pre-push hook) is green.
 2. Bump root `package.json` version and keep `player/` + `worker/` package versions aligned (`npm run version:check`).
-3. After manual edge deploy (if needed): `GITHUB_REF_NAME=vX.Y.Z task release:ci` → zip with `chrome/`, `edge/`, and `firefox/`.
+3. After manual edge deploy (if needed): `GITHUB_REF_NAME=vX.Y.Z task release:ci` → zip with `chrome/`, `edge/`, `opera/`, and `firefox/`.
 4. Tag/push when ready: `git tag vX.Y.Z && git push origin vX.Y.Z`.
-   - GitHub Actions (`.github/workflows/release.yml`) builds all three browsers and uploads `gn-tracing-extension-vX.Y.Z.zip`.
+   - GitHub Actions (`.github/workflows/release.yml`) builds all four browsers and uploads `gn-tracing-extension-vX.Y.Z.zip`.
    - CI (`.github/workflows/test.yml`) also runs `task dist:all` on `main`/`dev` PRs so multi-browser packaging stays green.
 5. MCP npm publish stays manual: bump `mcp/package.json` + `mcp/server.json`, then `npm publish` from `mcp/` after `npm run mcp:check`.
 

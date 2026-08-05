@@ -4,7 +4,6 @@
 
 import type { Screenshot } from "../../packages/replay-core/src/schema/annotation";
 import type { DomSnapshot } from "../../packages/replay-core/src/schema/capture";
-import { getFeatureFlags } from "../platform/detect";
 import { getMediaMessageTarget } from "../platform/media/message-target";
 import { createRecordingRuntime } from "../platform/recording-runtime/create-recording-runtime";
 import type { EvidenceEntry } from "../platform/recording-runtime/types";
@@ -143,7 +142,7 @@ const storage = new StorageManager();
 /** Full-record evidence + media host (Chromium CDP or Firefox in-page). */
 const recordingRuntime = createRecordingRuntime(storage);
 /** Instant Replay CDP lookback; no-op hub on Firefox. */
-const irCdpHub = createInstantReplayCdpHubForBrowser(getUploadSettings, getFeatureFlags().cdp);
+const irCdpHub = createInstantReplayCdpHubForBrowser(getUploadSettings);
 /** Multi-cloud storage providers from the registry (Drive + Dropbox). */
 const googleDriveProvider = getGoogleDriveProvider();
 const googleAuth = googleDriveProvider.getAuth();

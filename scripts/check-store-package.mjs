@@ -3,7 +3,7 @@
  *
  * Usage:
  *   node scripts/check-store-package.mjs
- *   node scripts/check-store-package.mjs --browser chrome|edge|firefox
+ *   node scripts/check-store-package.mjs --browser chrome|edge|opera|firefox
  */
 
 import fs from "node:fs";
@@ -28,8 +28,8 @@ function getCliArgValue(flagName) {
 const browser = String(getCliArgValue("--browser") || "chrome")
   .trim()
   .toLowerCase();
-if (!["chrome", "edge", "firefox"].includes(browser)) {
-  fail(`unsupported --browser ${browser}`);
+if (!["chrome", "edge", "opera", "firefox"].includes(browser)) {
+  fail(`unsupported --browser ${browser} (use chrome, edge, opera, or firefox)`);
 }
 
 const distDir = path.join(root, "dist", browser);

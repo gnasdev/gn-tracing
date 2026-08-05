@@ -75,20 +75,22 @@ describe("popup pre-requests host permission without a grant-only tab", () => {
     "utf8",
   );
 
-  it("Start and Instant Replay enable call ensureRecordingHostPermission from the popup", () => {
-    expect(popupSource).toContain("ensureRecordingHostPermission");
+  it("Start uses platform preflight; Instant Replay enable requests host permission from the popup", () => {
+    // Start: browser-specific preflight (Firefox → ensureRecordingHostPermission).
+    expect(popupSource).toContain("runRecordingStartPreflight");
     const startAt = popupSource.indexOf("async function startRecordingSession(");
     expect(startAt).toBeGreaterThan(-1);
     const startBody = popupSource.slice(startAt, startAt + 1800);
-    // Firefox Start pre-requests host access before START_RECORDING (gesture).
-    expect(startBody).toContain("ensureRecordingHostPermission");
+    expect(startBody).toContain("runRecordingStartPreflight");
     expect(startBody.indexOf("START_RECORDING")).toBeGreaterThan(
-      startBody.indexOf("ensureRecordingHostPermission"),
+      startBody.indexOf("runRecordingStartPreflight"),
     );
     // Must not open getDisplayMedia from the popup (Firefox rejects it).
     expect(startBody).not.toContain("beginDisplayMediaFromGesture");
     expect(startBody).not.toMatch(/getDisplayMedia\s*\(/);
 
+    // Instant Replay enable still prompts directly (shared Chrome/Firefox path).
+    expect(popupSource).toContain("ensureRecordingHostPermission");
     const irAt = popupSource.indexOf("async function saveInstantReplayEnabled(");
     expect(irAt).toBeGreaterThan(-1);
     const irBody = popupSource.slice(irAt, irAt + 1800);

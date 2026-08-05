@@ -148,13 +148,13 @@ describe("popup Start does not call getDisplayMedia (Firefox rejects popup captu
     expect(popupSource).not.toContain("handoffDisplayStreamToMediaHost");
     expect(popupSource).not.toContain("mediaPrearmed: true");
     expect(popupSource).toContain("START_RECORDING");
-    expect(popupSource).toContain("ensureRecordingHostPermission");
+    expect(popupSource).toContain("runRecordingStartPreflight");
 
     const startAt = popupSource.indexOf("async function startRecordingSession(");
     expect(startAt).toBeGreaterThan(-1);
     const startBody = popupSource.slice(startAt, startAt + 1800);
     expect(startBody.indexOf("START_RECORDING")).toBeGreaterThan(
-      startBody.indexOf("ensureRecordingHostPermission"),
+      startBody.indexOf("runRecordingStartPreflight"),
     );
   });
 });

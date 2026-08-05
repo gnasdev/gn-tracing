@@ -2,9 +2,9 @@
  * Firefox media host arming.
  *
  * getDisplayMedia needs transient user activation, so the background cannot
- * start capture by message alone — it focuses the media page, waits for the
- * user's click there, and only then reports a live stream. These tests pin that
- * handshake plus the failure paths (cancel, unreachable page, timeout).
+ * start capture by message alone — it opens a capture popup window, waits for
+ * the user's click there, and only then reports a live stream. These tests pin
+ * that handshake plus the failure paths (cancel, unreachable page, timeout).
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -12,6 +12,7 @@ import type { ChromeMock } from "../../../test/mocks/chrome";
 import { ExtensionPageMediaHost } from "./page-host";
 
 const MEDIA_TAB_ID = 42;
+const MEDIA_WINDOW_ID = 9;
 const RECORDED_TAB_ID = 7;
 const SESSION_ID = "session-abc";
 
@@ -34,8 +35,8 @@ function armMessage(): { data?: { sessionId?: string; tabTitle?: string } } | un
   )?.args[0] as { data?: { sessionId?: string; tabTitle?: string } } | undefined;
 }
 
-function updateCalls(): Array<[number, Record<string, unknown>]> {
-  return mock().tabs.update.calls.map(
+function windowUpdateCalls(): Array<[number, Record<string, unknown>]> {
+  return mock().windows.update.calls.map(
     (call) => [call.args[0], call.args[1]] as [number, Record<string, unknown>],
   );
 }
@@ -44,31 +45,56 @@ describe("ExtensionPageMediaHost display-capture arming", () => {
   beforeEach(() => {
     const chromeMock = mock();
     chromeMock.tabs.query.mockImplementation(() => Promise.resolve([]) as never);
-    chromeMock.tabs.create.mockImplementation(
-      () => Promise.resolve({ id: MEDIA_TAB_ID, windowId: 1 }) as never,
-    );
     chromeMock.tabs.get.mockImplementation(
       () => Promise.resolve({ id: RECORDED_TAB_ID, title: "Checkout page", windowId: 1 }) as never,
     );
     chromeMock.tabs.update.mockImplementation(
-      () => Promise.resolve({ id: MEDIA_TAB_ID, windowId: 1 }) as never,
+      () => Promise.resolve({ id: RECORDED_TAB_ID, windowId: 1 }) as never,
     );
-    chromeMock.windows.update.mockImplementation(() => Promise.resolve({ id: 1 }) as never);
+    chromeMock.tabs.create.mockImplementation(() => {
+      throw new Error("Firefox media host must not open a browser tab");
+    });
+    chromeMock.windows.create.mockImplementation(
+      () =>
+        Promise.resolve({
+          id: MEDIA_WINDOW_ID,
+          tabs: [{ id: MEDIA_TAB_ID, windowId: MEDIA_WINDOW_ID }],
+        }) as never,
+    );
+    chromeMock.windows.update.mockImplementation(
+      () => Promise.resolve({ id: MEDIA_WINDOW_ID }) as never,
+    );
+    chromeMock.windows.remove.mockImplementation(() => Promise.resolve() as never);
     chromeMock.runtime.sendMessage.mockImplementation(() => Promise.resolve({ ok: true }) as never);
   });
 
-  it("focuses the media page, arms it, and resolves on the page's success", async () => {
+  it("opens a capture popup window (not a tab), arms it, and resolves on success", async () => {
     const host = new ExtensionPageMediaHost();
     const started = host.startCapture(RECORDED_TAB_ID, SESSION_ID);
 
     await vi.waitFor(() => expect(armMessage()).toBeDefined());
 
     expect(armMessage()?.data?.sessionId).toBe(SESSION_ID);
-    // The page tells the user which tab is being recorded.
     expect(armMessage()?.data?.tabTitle).toBe("Checkout page");
-    // A parked background tab cannot receive a click, so it must be surfaced.
-    expect(updateCalls()).toEqual(
-      expect.arrayContaining([[MEDIA_TAB_ID, { active: true, pinned: false }]]),
+    // Must use a popup window, never tabs.create in the user's strip.
+    const createArgs = mock().windows.create.calls.map(
+      (call) => call.args[0] as Record<string, unknown>,
+    );
+    expect(createArgs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "popup",
+          focused: true,
+          url: expect.stringContaining("offscreen/offscreen.html"),
+        }),
+      ]),
+    );
+    expect(mock().tabs.create.calls).toHaveLength(0);
+    // Capture window is focused for the share click.
+    expect(windowUpdateCalls()).toEqual(
+      expect.arrayContaining([
+        [MEDIA_WINDOW_ID, expect.objectContaining({ focused: true, state: "normal" })],
+      ]),
     );
 
     emitCaptureResult({ sessionId: SESSION_ID, ok: true, firstFrameAt: 1234 });
@@ -77,11 +103,14 @@ describe("ExtensionPageMediaHost display-capture arming", () => {
     expect(host.activeSessionId).toBe(SESSION_ID);
     // Evidence arms before focus restore; caller invokes restoreRecordedTabFocus.
     expect(
-      updateCalls().filter(([id, opts]) => id === RECORDED_TAB_ID && opts.active === true),
+      mock().tabs.update.calls.filter(
+        (call) =>
+          call.args[0] === RECORDED_TAB_ID && (call.args[1] as { active?: boolean })?.active,
+      ),
     ).toHaveLength(0);
   });
 
-  it("prearmed path binds session without focusing the media tab", async () => {
+  it("prearmed path binds session without opening or focusing the capture window", async () => {
     const host = new ExtensionPageMediaHost();
     const firstFrameAt = await host.startCapture(RECORDED_TAB_ID, SESSION_ID, {
       prearmed: true,
@@ -92,8 +121,7 @@ describe("ExtensionPageMediaHost display-capture arming", () => {
     expect(host.activeSessionId).toBe(SESSION_ID);
     expect(host.capturedSurface).toEqual({ label: "My Window" });
     expect(armMessage()).toBeUndefined();
-    // No focus steal and no arm handshake when the popup already handed off the stream.
-    expect(updateCalls()).toHaveLength(0);
+    expect(mock().windows.create.calls).toHaveLength(0);
     expect(
       mock().runtime.sendMessage.calls.filter(
         (call) => (call.args[0] as { type?: string })?.type === "ARM_DISPLAY_CAPTURE",
@@ -114,7 +142,6 @@ describe("ExtensionPageMediaHost display-capture arming", () => {
     });
 
     await expect(started).rejects.toThrow(/cancelled/);
-    // A failed start must not leave a session marked active.
     expect(host.activeSessionId).toBeNull();
   });
 
@@ -142,7 +169,6 @@ describe("ExtensionPageMediaHost display-capture arming", () => {
   });
 
   it("fails with an actionable error when the media page does not answer the arm", async () => {
-    // Ping succeeds so ensurePackagingContext returns quickly; only ARM fails.
     mock().runtime.sendMessage.mockImplementation((message: unknown) => {
       const type = (message as { type?: string })?.type;
       if (type === "MEDIA_HOST_PING") {
@@ -152,24 +178,20 @@ describe("ExtensionPageMediaHost display-capture arming", () => {
     });
 
     const host = new ExtensionPageMediaHost();
-    await expect(host.startCapture(RECORDED_TAB_ID, SESSION_ID)).rejects.toThrow(/capture tab/i);
+    await expect(host.startCapture(RECORDED_TAB_ID, SESSION_ID)).rejects.toThrow(/capture window/i);
     expect(host.activeSessionId).toBeNull();
   });
 
   it("stops waiting instead of hanging when the user never clicks share", async () => {
-    // Fake timers must be installed before startCapture so the arm window's
-    // timer is the fake one.
     vi.useFakeTimers();
     try {
       const host = new ExtensionPageMediaHost();
       const started = host.startCapture(RECORDED_TAB_ID, SESSION_ID);
       const assertion = expect(started).rejects.toThrow(/Timed out/);
 
-      // Drain the media-page settle delay and the arm handshake.
       await vi.advanceTimersByTimeAsync(300);
       expect(armMessage()).toBeDefined();
 
-      // No DISPLAY_CAPTURE_RESULT ever arrives; the arm window must expire.
       await vi.advanceTimersByTimeAsync(180_000);
       await assertion;
       expect(host.activeSessionId).toBeNull();
@@ -198,7 +220,7 @@ describe("ExtensionPageMediaHost display-capture arming", () => {
     }
   });
 
-  it("does not restore recorded-tab focus until restoreRecordedTabFocus is called", async () => {
+  it("minimizes the capture window and restores recorded-tab focus after share", async () => {
     const host = new ExtensionPageMediaHost();
     const started = host.startCapture(RECORDED_TAB_ID, SESSION_ID);
     await vi.waitFor(() => expect(armMessage()).toBeDefined());
@@ -206,12 +228,22 @@ describe("ExtensionPageMediaHost display-capture arming", () => {
     await expect(started).resolves.toBe(50);
 
     // After share commit, recorded tab should not yet have been focused back.
-    const focusAfterShare = updateCalls().filter(
-      ([id, opts]) => id === RECORDED_TAB_ID && opts.active === true,
-    );
-    expect(focusAfterShare).toHaveLength(0);
+    expect(
+      mock().tabs.update.calls.filter(
+        (call) =>
+          call.args[0] === RECORDED_TAB_ID && (call.args[1] as { active?: boolean })?.active,
+      ),
+    ).toHaveLength(0);
 
     await host.restoreRecordedTabFocus(RECORDED_TAB_ID);
-    expect(updateCalls()).toEqual(expect.arrayContaining([[RECORDED_TAB_ID, { active: true }]]));
+    expect(windowUpdateCalls()).toEqual(
+      expect.arrayContaining([[MEDIA_WINDOW_ID, expect.objectContaining({ state: "minimized" })]]),
+    );
+    expect(
+      mock().tabs.update.calls.some(
+        (call) =>
+          call.args[0] === RECORDED_TAB_ID && (call.args[1] as { active?: boolean })?.active,
+      ),
+    ).toBe(true);
   });
 });

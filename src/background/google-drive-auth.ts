@@ -636,8 +636,10 @@ export class GoogleDriveAuth {
         // Ignore storage read errors and fall through to detection.
       }
 
-      // Edge and Firefox packages never use getAuthToken (Chrome extension OAuth
-      // client only). Force web PKCE so store builds do not depend on brand UA.
+      // Edge / Opera / Firefox packages never use getAuthToken (Chrome extension
+      // OAuth client only). Chrome may use getAuthToken when brand detection says
+      // Google Chrome; otherwise force web PKCE so store builds do not depend on
+      // brand UA alone.
       const flags = getFeatureFlags();
       const detected: AuthStrategy =
         flags.chromeIdentityGetAuthToken && this.detectGoogleChrome() ? "chrome" : "web";

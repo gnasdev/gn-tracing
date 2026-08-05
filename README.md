@@ -1,6 +1,6 @@
 # GN Tracing
 
-GN Tracing is a browser extension that records one browser tab and packages the useful debugging evidence into a shareable replay. It works on Chrome, Edge, Brave, Vivaldi, Opera, and other Chromium-based browsers, and on Firefox with the differences noted under [Limits](#limits).
+GN Tracing is a browser extension that records one browser tab and packages the useful debugging evidence into a shareable replay. Official packages target **Chrome**, **Edge**, **Opera**, and **Firefox** (see [Limits](#limits) for Firefox differences).
 
 It captures:
 
@@ -61,8 +61,9 @@ GN Tracing is distributed as a packaged release from this repository.
 1. Download the latest release `.zip`.
 2. Extract it.
 3. Open your browser's extensions page:
-   - Chrome: `chrome://extensions` → load unpacked `dist/chrome/` (or the Chrome release zip)
+   - Chrome: `chrome://extensions` → load unpacked `dist/chrome/`
    - Edge: `edge://extensions` → load unpacked `dist/edge/` (`task build:edge`)
+   - Opera: `opera://extensions` → load unpacked `dist/opera/` (`task build:opera`)
    - Firefox: `about:debugging#/runtime/this-firefox` → temporary add-on → `dist/firefox/manifest.json` (`task build:firefox`)
 4. Turn on `Developer mode` (Chromium) and load the matching package folder.
 

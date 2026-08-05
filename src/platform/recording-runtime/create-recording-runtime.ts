@@ -10,7 +10,8 @@ import type { RecordingRuntime } from "./types";
 
 /**
  * When `browserTarget` is omitted, uses the build-time `__BROWSER_TARGET__`.
- * Tests pass an explicit target so they can assert Firefox never constructs CDP.
+ * Chromium family (chrome/edge/opera) shares {@link ChromiumRecordingRuntime};
+ * tests pass an explicit target so they can assert Firefox never constructs CDP.
  */
 export function createRecordingRuntime(
   storage: StorageManager,

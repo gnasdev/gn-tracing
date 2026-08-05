@@ -3,7 +3,7 @@
  */
 
 import { resolveManageCloudsPageUrl } from "../manage-clouds/page-model";
-import { isFirefoxTarget } from "../platform/detect";
+import { runRecordingStartPreflight } from "../platform/preflight/recording-start-preflight";
 import { buttonSpinnerHtml } from "../shared/button-loading";
 import { DEFAULT_DRAW_COLOR, DRAW_COLOR_PRESETS, normalizeDrawColor } from "../shared/drawing";
 import { buildFeedbackDiagnostics, validateFeedbackMessage } from "../shared/feedback";
@@ -1417,12 +1417,9 @@ async function startRecordingSession(): Promise<void> {
       return;
     }
 
-    // Firefox: pre-request host permission on this Start click (user gesture).
-    // Decline is fine: video still records; arm panel may show grant fallback.
-    // Never combine with getDisplayMedia — that runs later on the media tab.
-    if (isFirefoxTarget()) {
-      await ensureRecordingHostPermission().catch(() => false);
-    }
+    // Browser-specific popup preflight (e.g. Firefox host permission). Decline
+    // is fine: video still records; arm panel may show grant fallback.
+    await runRecordingStartPreflight();
 
     const result = (await chrome.runtime.sendMessage({
       action: "START_RECORDING",

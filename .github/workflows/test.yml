@@ -1,5 +1,5 @@
-# Quality gate for push/PR. Builds production packages for Chrome, Edge, and
-# Firefox so multi-browser packaging stays green without cutting a release.
+# Quality gate for push/PR. Builds production packages for Chrome, Edge, Opera,
+# and Firefox so multi-browser packaging stays green without cutting a release.
 name: Test
 
 on:
@@ -62,7 +62,7 @@ jobs:
         run: npm test
         working-directory: worker
 
-      - name: Production build Chrome, Edge, and Firefox
+      - name: Production build Chrome, Edge, Opera, and Firefox
         env:
           # Prefer repo secrets when present; otherwise use identity values that
           # match the public extension key so production packaging is exercised.
@@ -80,5 +80,6 @@ jobs:
           task dist:all
           test -f dist/chrome/manifest.json
           test -f dist/edge/manifest.json
+          test -f dist/opera/manifest.json
           test -f dist/firefox/manifest.json
-          echo "dist/{chrome,edge,firefox} production packages OK"
+          echo "dist/{chrome,edge,opera,firefox} production packages OK"

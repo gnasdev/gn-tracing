@@ -1,16 +1,19 @@
 <!DOCTYPE html>
 <!--
-  Media host document.
+  Media host document (shared path offscreen/ for Chromium + Firefox).
 
   Chromium loads this as a hidden chrome.offscreen document and never shows the
-  arm panel. Firefox has no offscreen API, so the same page is opened as a tab —
-  and getDisplayMedia there requires transient user activation, which only a real
-  click in this document provides. The arm panel is that click.
+  arm panel. Firefox has no offscreen / tabCapture APIs, so the same page is
+  opened as a small extension popup window (not a browser tab). getDisplayMedia
+  only works from a click in that durable document — not from the browser-action
+  popup — so the arm panel is that click surface. Host/site permission is
+  requested from the popup Start gesture when possible; the grant block here is
+  only a fallback.
 -->
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>gn-tracing offscreen</title>
+  <title>GN Tracing capture</title>
   <style>
     :root { color-scheme: light dark; }
     body {
@@ -111,22 +114,22 @@
   <!-- Hidden until the background asks this document to arm display capture. -->
   <section id="arm-panel" hidden>
     <div class="arm-card">
-      <h1 class="arm-title" id="arm-title">Choose what to share to start recording</h1>
+      <h1 class="arm-title" id="arm-title">Start screen capture</h1>
       <p class="arm-help" id="arm-help">
-        Firefox only starts screen sharing from a click on this page, and it shares a
-        <strong>window or a whole screen</strong> — it cannot share a single tab.
-        In the browser picker, select the <strong>Firefox window</strong> that holds the
-        recording target below (match the title). Prefer a window over a whole screen —
-        sharing an entire screen also records everything else on it.
-        Keep this capture tab open until you stop the recording.
+        This capture window records video for GN Tracing (Firefox has no silent tab capture like Chrome).
+        Firefox cannot open the share picker from the extension popup, so the next step happens here.
+        It shares a <strong>window or a whole screen</strong> — not a single tab.
+        In the browser picker, select the <strong>Firefox window</strong> that holds the recording target below (match the title).
+        Prefer a window over a whole screen — sharing an entire screen also records everything else on it.
+        After you share, this window minimizes; keep it running until you stop the recording.
       </p>
       <p class="arm-target" id="arm-target" hidden></p>
       <div id="arm-grant" hidden>
         <p class="arm-grant-help" id="arm-grant-help">
-          Console and network evidence needs access to the recorded site. Without it
-          the video is still recorded, but console and network stay empty once the
-          page navigates. If you already allowed site access when starting, this step
-          stays hidden.
+          Optional: site access for console and network evidence after navigation.
+          This is separate from screen sharing.
+          Without it the video still records, but console and network may stay empty once the page navigates.
+          If you already allowed site access when starting, this step stays hidden.
         </p>
         <button type="button" id="arm-grant-btn">Grant site access</button>
       </div>

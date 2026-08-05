@@ -54,8 +54,8 @@ export class FirefoxRecordingRuntime implements RecordingRuntime {
 
     this.#sessionId = input.sessionId;
 
-    // Prepare while the tab still holds activeTab. The legacy arm path focuses
-    // the media host (revoking activeTab); the prearmed popup path never does.
+    // Prepare while the tab still holds activeTab. Focusing the media host for
+    // getDisplayMedia revokes activeTab, so attach before that focus steal.
     const attached = await this.#evidence.attach({
       tabId: input.tabId,
       sessionId: input.sessionId,
@@ -70,16 +70,15 @@ export class FirefoxRecordingRuntime implements RecordingRuntime {
       throw new Error(attached.limitations[0] ?? "Evidence capture could not attach.");
     }
 
-    // Preferred: popup already opened the share picker and transferred the
-    // stream into a parked media host. Fallback: focus media tab + arm panel.
+    // Focus media tab + arm panel (getDisplayMedia cannot run from the popup).
+    // mediaPrearmed remains for a legacy adopted-stream path if ever re-enabled.
     const firstFrameAt = await this.#media.startCapture(input.tabId, input.sessionId, {
       prearmed: Boolean(input.mediaPrearmed),
       firstFrameAt: input.firstFrameAt,
       capturedSurface: input.capturedSurface,
     });
 
-    // User committed: arm webRequest tab scope + in-page START. When prearmed,
-    // focus never left the recorded tab; beginSession is best-effort.
+    // User committed share: arm webRequest tab scope + in-page START.
     const armed = await this.#evidence.beginSession({
       tabId: input.tabId,
       sessionId: input.sessionId,
@@ -94,7 +93,7 @@ export class FirefoxRecordingRuntime implements RecordingRuntime {
       this.#attachLimitations.push(surfaceMismatch);
     }
 
-    // Only restore focus after the legacy arm path stole it.
+    // Restore focus after the arm path stole it for the share picker.
     if (!input.mediaPrearmed) {
       await this.#media.restoreRecordedTabFocus(input.tabId);
     }
@@ -170,7 +169,7 @@ export class FirefoxRecordingRuntime implements RecordingRuntime {
   }
 
   async closeMediaHostIfIdle(): Promise<void> {
-    // Keep the extension media tab; tearing it down mid-upload is harmful.
+    // Keep the capture popup window; tearing it down mid-upload is harmful.
   }
 
   releaseSourceMaps(): void {

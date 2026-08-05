@@ -1,5 +1,6 @@
 /**
- * Chromium full-record path: CDP evidence + offscreen tabCapture media.
+ * Chromium-family full-record path (Chrome / Edge / Opera):
+ * CDP evidence + offscreen tabCapture media.
  */
 
 import { CdpManager } from "../../background/cdp-manager";

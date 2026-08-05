@@ -17,16 +17,22 @@ tasks:
     cmds:
       - node --experimental-strip-types esbuild.config.mjs --env development --browser edge
 
+  build:opera:
+    desc: Build the Opera extension into dist/opera (development).
+    cmds:
+      - node --experimental-strip-types esbuild.config.mjs --env development --browser opera
+
   build:firefox:
     desc: Build the Firefox extension into dist/firefox (development).
     cmds:
       - node --experimental-strip-types esbuild.config.mjs --env development --browser firefox
 
   build:all:
-    desc: Build Chrome, Edge, and Firefox development packages.
+    desc: Build Chrome, Edge, Opera, and Firefox development packages.
     cmds:
       - task: build
       - task: build:edge
+      - task: build:opera
       - task: build:firefox
 
   dist:
@@ -39,29 +45,42 @@ tasks:
     cmds:
       - node --experimental-strip-types esbuild.config.mjs --env production --browser edge
 
+  dist:opera:
+    desc: Build the Opera extension into dist/opera (production).
+    cmds:
+      - node --experimental-strip-types esbuild.config.mjs --env production --browser opera
+
   dist:firefox:
     desc: Build the Firefox extension into dist/firefox (production).
     cmds:
       - node --experimental-strip-types esbuild.config.mjs --env production --browser firefox
 
   dist:all:
-    desc: Build Chrome, Edge, and Firefox production packages.
+    desc: Build Chrome, Edge, Opera, and Firefox production packages.
     cmds:
       - task: dist
       - task: dist:edge
+      - task: dist:opera
       - task: dist:firefox
 
   watch:
     desc: >-
       Watch and rebuild extension sources for one browser target.
-      BROWSER=chrome|edge|firefox (default chrome).
+      BROWSER=chrome|edge|opera|firefox (default chrome). CLI var or env BROWSER.
     vars:
-      BROWSER: '{{.BROWSER | default "chrome"}}'
+      BROWSER: '{{.BROWSER | default (env "BROWSER") | default "chrome"}}'
     preconditions:
-      - sh: 'case "{{.BROWSER}}" in chrome|edge|firefox) exit 0 ;; *) exit 1 ;; esac'
-        msg: 'BROWSER must be chrome, edge, or firefox (got "{{.BROWSER}}").'
+      - sh: 'case "{{.BROWSER}}" in chrome|edge|opera|firefox) exit 0 ;; *) exit 1 ;; esac'
+        msg: 'BROWSER must be chrome, edge, opera, or firefox (got "{{.BROWSER}}").'
     cmds:
       - node --experimental-strip-types esbuild.config.mjs --watch --browser {{.BROWSER}}
+
+  watch:chrome:
+    desc: Watch and rebuild Chrome extension sources.
+    cmds:
+      - task: watch
+        vars:
+          BROWSER: chrome
 
   watch:edge:
     desc: Watch and rebuild Edge extension sources.
@@ -69,6 +88,13 @@ tasks:
       - task: watch
         vars:
           BROWSER: edge
+
+  watch:opera:
+    desc: Watch and rebuild Opera extension sources.
+    cmds:
+      - task: watch
+        vars:
+          BROWSER: opera
 
   watch:firefox:
     desc: Watch and rebuild Firefox extension sources.
@@ -295,23 +321,25 @@ tasks:
 
   release:zip:
     desc: >-
-      Zip dist/ (chrome/, edge/, firefox/) for a GitHub release.
+      Zip dist/ (chrome/, edge/, opera/, firefox/) for a GitHub release.
       Run task dist:all first so all browser packages are present.
     cmds:
       - |
         release_name="gn-tracing-extension-${GITHUB_REF_NAME:-local}"
         trap 'rm -rf "$release_name"' EXIT
         rm -rf "$release_name" "$release_name.zip"
-        if [ ! -d dist/chrome ] || [ ! -d dist/edge ] || [ ! -d dist/firefox ]; then
-          echo "Expected dist/chrome, dist/edge, and dist/firefox. Run task dist:all first." >&2
-          exit 1
-        fi
+        for browser in chrome edge opera firefox; do
+          if [ ! -d "dist/$browser" ]; then
+            echo "Expected dist/$browser. Run task dist:all first." >&2
+            exit 1
+          fi
+        done
         cp -R dist "$release_name"
         zip -r "$release_name.zip" "$release_name"
 
   release:ci:
     desc: >-
-      Build production Chrome + Edge + Firefox packages and zip them.
+      Build production Chrome + Edge + Opera + Firefox packages and zip them.
       Does not deploy Worker/Player — run task worker:deploy / player:deploy
       manually before shipping if edge changed.
     cmds:
@@ -335,6 +363,12 @@ tasks:
       - task: dist:edge
       - node scripts/check-store-package.mjs --browser edge
 
+  store:check:opera:
+    desc: Validate the production Opera package.
+    cmds:
+      - task: dist:opera
+      - node scripts/check-store-package.mjs --browser opera
+
   store:check:firefox:
     desc: Validate the production Firefox package.
     cmds:
@@ -352,6 +386,12 @@ tasks:
     cmds:
       - task: store:check:edge
       - node scripts/package-store-zip.mjs --browser edge
+
+  store:zip:opera:
+    desc: Build, validate, and zip the Opera Add-ons package.
+    cmds:
+      - task: store:check:opera
+      - node scripts/package-store-zip.mjs --browser opera
 
   store:zip:firefox:
     desc: Build, validate, and zip the Firefox AMO package.
@@ -386,25 +426,52 @@ tasks:
       - task: store:upload
       - task: store:publish
 
+  # Shared browser matrix for local full-stack dev. Keep in sync with
+  # esbuild.config.mjs normalizeBrowserTarget and test/task-dev-browsers.test.ts.
+  # Targets: chrome | edge | opera | firefox | all
+
   dev:
     desc: >-
-      Local full stack for one browser target — extension watch (esbuild →
-      localhost Worker proxies), standalone player (Vite + /api/drive|dropbox),
-      multi-issuer Worker (wrangler :8787 OAuth Google/Dropbox + POST /feedback).
-      Pick the target with BROWSER=chrome|edge|firefox (default chrome), or run
-      `task dev:all` to watch all three at once.
+      Local full stack — extension watch (esbuild → dist/<browser>/ with local
+      Worker proxies), standalone player (Vite :5176), multi-issuer Worker
+      (wrangler :8787). BROWSER=chrome|edge|opera|firefox (default chrome), or
+      BROWSER=all / `task dev:all` for every target at once. CLI var or env BROWSER.
     vars:
-      BROWSER: '{{.BROWSER | default "chrome"}}'
+      BROWSER: '{{.BROWSER | default (env "BROWSER") | default "chrome"}}'
     preconditions:
-      - sh: 'case "{{.BROWSER}}" in chrome|edge|firefox) exit 0 ;; *) exit 1 ;; esac'
-        msg: 'BROWSER must be chrome, edge, or firefox (got "{{.BROWSER}}").'
+      - sh: 'case "{{.BROWSER}}" in chrome|edge|opera|firefox|all) exit 0 ;; *) exit 1 ;; esac'
+        msg: 'BROWSER must be chrome, edge, opera, firefox, or all (got "{{.BROWSER}}").'
     cmds:
       # Sync worker secrets before concurrent start so wrangler sees OAuth + feedback vars.
       - task: worker:sync-dev-vars
-      # Three long-running processes: extension rebuild, player, local Worker on :8787.
-      # The player and Worker are shared by every browser target, so only the
-      # extension watcher is per-target.
-      - npx concurrently -n ext:{{.BROWSER}},player,worker -c blue,green,magenta 'task watch BROWSER={{.BROWSER}}' 'task player:dev' 'task worker:dev'
+      # Player + Worker are shared; only the extension watcher is per-target.
+      # BROWSER=all → four watchers + player + worker (same as task dev:all).
+      - cmd: |
+          browser="{{.BROWSER}}"
+          if [ "$browser" = "all" ]; then
+            exec npx concurrently \
+              -n ext:chrome,ext:edge,ext:opera,ext:firefox,player,worker \
+              -c blue,cyan,yellow,red,green,magenta \
+              'task watch BROWSER=chrome' \
+              'task watch BROWSER=edge' \
+              'task watch BROWSER=opera' \
+              'task watch BROWSER=firefox' \
+              'task player:dev' \
+              'task worker:dev'
+          fi
+          exec npx concurrently \
+            -n "ext:${browser},player,worker" \
+            -c blue,green,magenta \
+            "task watch BROWSER=${browser}" \
+            'task player:dev' \
+            'task worker:dev'
+
+  dev:chrome:
+    desc: Local full stack watching the Chrome extension build.
+    cmds:
+      - task: dev
+        vars:
+          BROWSER: chrome
 
   dev:edge:
     desc: Local full stack watching the Edge extension build.
@@ -412,6 +479,13 @@ tasks:
       - task: dev
         vars:
           BROWSER: edge
+
+  dev:opera:
+    desc: Local full stack watching the Opera extension build.
+    cmds:
+      - task: dev
+        vars:
+          BROWSER: opera
 
   dev:firefox:
     desc: Local full stack watching the Firefox extension build.
@@ -422,17 +496,11 @@ tasks:
 
   dev:all:
     desc: >-
-      Local full stack watching Chrome, Edge, and Firefox builds together, plus
-      the player and the local Worker. Five long-running processes — heavier than
-      `task dev`; use it when a change has to be verified on every target.
+      Local full stack watching Chrome, Edge, Opera, and Firefox builds together,
+      plus the player and the local Worker. Six long-running processes — heavier
+      than single-target `task dev`; use when a change must be verified on every target.
+      Alias for `task dev BROWSER=all`.
     cmds:
-      - task: worker:sync-dev-vars
-      - >-
-        npx concurrently
-        -n ext:chrome,ext:edge,ext:firefox,player,worker
-        -c blue,cyan,yellow,green,magenta
-        'task watch BROWSER=chrome'
-        'task watch BROWSER=edge'
-        'task watch BROWSER=firefox'
-        'task player:dev'
-        'task worker:dev'
+      - task: dev
+        vars:
+          BROWSER: all

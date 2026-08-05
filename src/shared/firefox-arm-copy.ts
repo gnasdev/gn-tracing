@@ -21,6 +21,6 @@ export function describeFirefoxArmTimeoutMessage(): string {
 export function describeFirefoxArmInvalidStateMessage(): string {
   return (
     "The browser refused screen sharing because it was not requested from a click. " +
-    `Open the GN Tracing capture tab and press ${FIREFOX_ARM_BUTTON_LABEL}.`
+    `Open the GN Tracing capture window and press ${FIREFOX_ARM_BUTTON_LABEL}.`
   );
 }

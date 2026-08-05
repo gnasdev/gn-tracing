@@ -1,5 +1,5 @@
-# Tag-driven extension release: production builds for Chrome, Edge, and Firefox
-# are zipped into gn-tracing-extension-<tag>.zip and uploaded to the GitHub Release.
+# Tag-driven extension release: production builds for Chrome, Edge, Opera, and
+# Firefox are zipped into gn-tracing-extension-<tag>.zip and uploaded to the GitHub Release.
 #
 # Trigger: git tag vX.Y.Z && git push origin vX.Y.Z
 # Does not deploy Worker/Player (manual: task worker:deploy / player:deploy).
@@ -53,7 +53,7 @@ jobs:
             fi
           done
 
-      - name: Build Chrome, Edge, and Firefox release zip
+      - name: Build Chrome, Edge, Opera, and Firefox release zip
         env:
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_WEB_CLIENT_ID: ${{ secrets.GOOGLE_WEB_CLIENT_ID }}
@@ -64,6 +64,7 @@ jobs:
           CHROME_EXTENSION_PUBLIC_KEY: ${{ secrets.CHROME_EXTENSION_PUBLIC_KEY }}
           CHROME_EXTENSION_PRIVATE_KEY: ${{ secrets.CHROME_EXTENSION_PRIVATE_KEY }}
           EDGE_EXTENSION_PUBLIC_KEY: ${{ secrets.EDGE_EXTENSION_PUBLIC_KEY }}
+          OPERA_EXTENSION_PUBLIC_KEY: ${{ secrets.OPERA_EXTENSION_PUBLIC_KEY }}
           FIREFOX_EXTENSION_ID: ${{ secrets.FIREFOX_EXTENSION_ID }}
           FEEDBACK_PROXY_URL: ${{ secrets.FEEDBACK_PROXY_URL }}
         run: task release:ci
@@ -72,10 +73,10 @@ jobs:
         run: |
           release_zip="gn-tracing-extension-${{ github.ref_name }}.zip"
           test -f "$release_zip"
-          unzip -l "$release_zip" | grep -q "chrome/manifest.json"
-          unzip -l "$release_zip" | grep -q "edge/manifest.json"
-          unzip -l "$release_zip" | grep -q "firefox/manifest.json"
-          echo "Release zip contains chrome/, edge/, and firefox/ packages."
+          for browser in chrome edge opera firefox; do
+            unzip -l "$release_zip" | grep -q "${browser}/manifest.json"
+          done
+          echo "Release zip contains chrome/, edge/, opera/, and firefox/ packages."
 
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
@@ -88,6 +89,7 @@ jobs:
             |---------|----------------|
             | Chrome | `gn-tracing-extension-${{ github.ref_name }}/chrome/` |
             | Edge | `gn-tracing-extension-${{ github.ref_name }}/edge/` |
+            | Opera | `gn-tracing-extension-${{ github.ref_name }}/opera/` |
             | Firefox | `gn-tracing-extension-${{ github.ref_name }}/firefox/` |
 
             GitHub may also show automatically generated Source code archives for the tag. Those are not installable extension packages.

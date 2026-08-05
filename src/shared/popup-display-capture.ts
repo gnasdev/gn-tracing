@@ -1,10 +1,11 @@
 /**
- * Firefox full-record: open the share picker from the popup (active UI / user
- * gesture) and hand the stream to the parked media-host tab for MediaRecorder.
+ * Firefox display-stream handoff helpers (media host adopt path).
  *
- * Avoids focusing offscreen/offscreen.html solely so the user can click
- * "Choose what to share" there. The media tab may still exist in the background
- * for durable packaging, but the user stays on their active tab for the picker.
+ * Historical attempt: open getDisplayMedia from the browser-action popup and
+ * transfer tracks into the parked media-host tab. Firefox rejects that popup
+ * capture (NotAllowedError), so full-record now arms getDisplayMedia only on
+ * the media host tab. These helpers remain for adopt-message wiring tests and
+ * any future durable surface that is not the browser-action popup.
  */
 
 import type { CapturedSurface } from "../media-pipeline/capture-surface";

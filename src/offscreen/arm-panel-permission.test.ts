@@ -82,18 +82,18 @@ describe("arm panel host-permission grant step", () => {
     expect(body).toMatch(/video still records/i);
   });
 
-  it("pre-requests host permission from the popup Start gesture on Firefox", () => {
-    // Earliest viable gesture: popup click over the active tab, not a grant-only tab.
-    expect(popupSource).toContain("isFirefoxTarget()");
-    expect(popupSource).toContain("ensureRecordingHostPermission");
+  it("runs platform start preflight from the popup Start gesture before START_RECORDING", () => {
+    // Earliest viable gesture: popup click over the active tab. Firefox preflight
+    // requests host permission inside runRecordingStartPreflight; Chrome is a no-op.
+    expect(popupSource).toContain("runRecordingStartPreflight");
     const startAt = popupSource.indexOf("async function startRecordingSession(");
     expect(startAt).toBeGreaterThan(-1);
     const startBody = popupSource.slice(startAt, startAt + 2200);
-    expect(startBody).toContain("ensureRecordingHostPermission");
+    expect(startBody).toContain("runRecordingStartPreflight");
     // Must run before START_RECORDING is sent.
-    const requestAt = startBody.indexOf("ensureRecordingHostPermission");
+    const preflightAt = startBody.indexOf("runRecordingStartPreflight");
     const startMsgAt = startBody.indexOf("START_RECORDING");
-    expect(requestAt).toBeGreaterThan(-1);
-    expect(startMsgAt).toBeGreaterThan(requestAt);
+    expect(preflightAt).toBeGreaterThan(-1);
+    expect(startMsgAt).toBeGreaterThan(preflightAt);
   });
 });

@@ -1,5 +1,5 @@
 /**
- * Build store zip from dist/<browser>/ for Chrome Web Store, Edge Add-ons, or AMO.
+ * Build store zip from dist/<browser>/ for Chrome Web Store, Edge/Opera Add-ons, or AMO.
  *
  * Chrome Web Store rejects packages whose manifest includes a "key" field.
  * Local/unpacked builds keep "key" so the extension ID stays stable; the Store
@@ -9,6 +9,7 @@
  *   node scripts/package-store-zip.mjs
  *   node scripts/package-store-zip.mjs --browser chrome
  *   node scripts/package-store-zip.mjs --browser edge
+ *   node scripts/package-store-zip.mjs --browser opera
  *   node scripts/package-store-zip.mjs --browser firefox
  */
 
@@ -36,8 +37,8 @@ function getCliArgValue(flagName) {
 const browser = String(getCliArgValue("--browser") || "chrome")
   .trim()
   .toLowerCase();
-if (!["chrome", "edge", "firefox"].includes(browser)) {
-  fail(`unsupported --browser ${browser}`);
+if (!["chrome", "edge", "opera", "firefox"].includes(browser)) {
+  fail(`unsupported --browser ${browser} (use chrome, edge, opera, or firefox)`);
 }
 
 const distDir = path.join(root, "dist", browser);

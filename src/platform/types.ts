@@ -2,11 +2,17 @@
  * Browser build targets and shared platform contracts.
  *
  * Build injects `__BROWSER_TARGET__`. Runtime code should prefer that constant
- * over UA sniffing so Edge/Firefox packages never accidentally take the Chrome
- * identity path.
+ * over UA sniffing so non-Chrome packages never accidentally take the Chrome
+ * identity (`getAuthToken`) path.
+ *
+ * Chromium family: chrome | edge | opera (CDP + offscreen + tabCapture).
+ * Firefox: in-page + webRequest + extension-page media host.
  */
 
-export type BrowserTarget = "chrome" | "edge" | "firefox";
+export type BrowserTarget = "chrome" | "edge" | "opera" | "firefox";
+
+/** Official Chromium-based store/dev packages (not Firefox). */
+export type ChromiumBrowserTarget = Exclude<BrowserTarget, "firefox">;
 
 export type CaptureMode = "cdp" | "in-page";
 

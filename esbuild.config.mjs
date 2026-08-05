@@ -34,8 +34,8 @@ if (!isProductRouteVersion(packageVersion)) {
   );
 }
 const googleClientId = getConfigValue("GOOGLE_CLIENT_ID");
-// Web application client for launchWebAuthFlow + PKCE (Edge / fallback). Falls
-// back to GOOGLE_CLIENT_ID when empty (single-client setups).
+// Web application client for launchWebAuthFlow + PKCE (Edge / Opera / Firefox /
+// Chrome fallback). Falls back to GOOGLE_CLIENT_ID when empty (single-client setups).
 const googleWebClientId = getConfigValue("GOOGLE_WEB_CLIENT_ID", googleClientId);
 const dropboxClientId = getConfigValue("DROPBOX_CLIENT_ID");
 // Dev/watch builds default to the multi-issuer Worker started by `task worker:dev`
@@ -57,8 +57,13 @@ const chromeExtensionId = getConfigValue(
   "CHROME_EXTENSION_ID",
   chromeExtensionPublicKey ? getChromeExtensionId(chromeExtensionPublicKey) : "",
 );
+// Edge / Opera may ship a distinct store key; default to Chrome key for local unpack.
 const edgeExtensionPublicKey = getConfigValue(
   "EDGE_EXTENSION_PUBLIC_KEY",
+  chromeExtensionPublicKey,
+);
+const operaExtensionPublicKey = getConfigValue(
+  "OPERA_EXTENSION_PUBLIC_KEY",
   chromeExtensionPublicKey,
 );
 const firefoxExtensionId = getConfigValue("FIREFOX_EXTENSION_ID", "gn-tracing@gnas.dev");
@@ -117,10 +122,26 @@ function normalizeBrowserTarget(value) {
   const normalized = String(value || "chrome")
     .trim()
     .toLowerCase();
-  if (normalized === "chrome" || normalized === "edge" || normalized === "firefox") {
+  if (
+    normalized === "chrome" ||
+    normalized === "edge" ||
+    normalized === "opera" ||
+    normalized === "firefox"
+  ) {
     return normalized;
   }
-  throw new Error(`Unsupported --browser value: ${value}. Use chrome, edge, or firefox.`);
+  throw new Error(`Unsupported --browser value: ${value}. Use chrome, edge, opera, or firefox.`);
+}
+
+/** Manifest `key` for Chromium-family packages (stable unpacked id). */
+function resolveChromiumPublicKey() {
+  if (browserTarget === "edge") {
+    return edgeExtensionPublicKey || chromeExtensionPublicKey;
+  }
+  if (browserTarget === "opera") {
+    return operaExtensionPublicKey || chromeExtensionPublicKey;
+  }
+  return chromeExtensionPublicKey;
 }
 
 function resolveGoogleTokenProxyUrl() {
@@ -249,10 +270,7 @@ function validateChromeExtensionIdentity() {
     return;
   }
 
-  const publicKey =
-    browserTarget === "edge"
-      ? edgeExtensionPublicKey || chromeExtensionPublicKey
-      : chromeExtensionPublicKey;
+  const publicKey = resolveChromiumPublicKey();
 
   if (isProductionBuild && browserTarget === "chrome" && !hasConfigValue("CHROME_EXTENSION_ID")) {
     throw new Error("CHROME_EXTENSION_ID is required for production Chrome builds.");
@@ -260,7 +278,7 @@ function validateChromeExtensionIdentity() {
 
   if (!publicKey) {
     throw new Error(
-      "CHROME_EXTENSION_PUBLIC_KEY (or EDGE_EXTENSION_PUBLIC_KEY) is required to generate manifest.json.",
+      "CHROME_EXTENSION_PUBLIC_KEY (or EDGE_EXTENSION_PUBLIC_KEY / OPERA_EXTENSION_PUBLIC_KEY) is required to generate manifest.json.",
     );
   }
 
@@ -367,9 +385,7 @@ function generateManifest(outputPath) {
   validateChromeExtensionIdentity();
 
   const publicKey =
-    browserTarget === "edge"
-      ? edgeExtensionPublicKey || chromeExtensionPublicKey
-      : chromeExtensionPublicKey;
+    browserTarget === "firefox" ? chromeExtensionPublicKey : resolveChromiumPublicKey();
 
   const template = fs
     .readFileSync(templatePath, "utf-8")
@@ -387,6 +403,7 @@ function generateManifest(outputPath) {
 
 /**
  * Apply per-browser permission/identity differences on top of the shared template.
+ * Official targets: chrome | edge | opera | firefox.
  */
 function applyBrowserManifestPatches(manifest) {
   if (browserTarget === "firefox") {
@@ -430,9 +447,9 @@ function applyBrowserManifestPatches(manifest) {
     return;
   }
 
-  if (browserTarget === "edge") {
-    // Edge is Chromium: keep CDP/offscreen/tabCapture. Prefer web OAuth at
-    // runtime; oauth2 block remains optional for compatibility.
+  if (browserTarget === "edge" || browserTarget === "opera") {
+    // Same Chromium capture APIs as Chrome; web OAuth at runtime (no getAuthToken).
+    // oauth2 block remains optional for compatibility with Chromium stores.
     if (!manifest.permissions.includes("tabs")) {
       manifest.permissions.push("tabs");
     }

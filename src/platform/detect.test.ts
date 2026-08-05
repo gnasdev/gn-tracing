@@ -42,14 +42,17 @@ describe("platform detect", () => {
     expect(getMediaHostKind("chrome")).toBe("offscreen");
   });
 
-  it("edge matches chromium capture APIs but forces web auth", () => {
-    const flags = getFeatureFlags("edge");
-    expect(flags.cdp).toBe(true);
-    expect(flags.tabCapture).toBe(true);
-    expect(flags.offscreen).toBe(true);
-    expect(flags.chromeIdentityGetAuthToken).toBe(false);
-    expect(getCaptureMode("edge")).toBe("cdp");
-    expect(getMediaHostKind("edge")).toBe("offscreen");
+  it("edge and opera match chromium capture but force web auth", () => {
+    for (const target of ["edge", "opera"] as const) {
+      const flags = getFeatureFlags(target);
+      expect(flags.cdp).toBe(true);
+      expect(flags.tabCapture).toBe(true);
+      expect(flags.offscreen).toBe(true);
+      expect(flags.chromeIdentityGetAuthToken).toBe(false);
+      expect(getCaptureMode(target)).toBe("cdp");
+      expect(getMediaHostKind(target)).toBe("offscreen");
+      expect(isChromiumTarget(target)).toBe(true);
+    }
   });
 
   it("firefox uses in-page capture and extension-page media host", () => {
@@ -77,8 +80,9 @@ describe("platform capabilities", () => {
     expect(caps).toContain("video");
   });
 
-  it("edge uses the same capability set as chrome", () => {
+  it("edge and opera use the same capability set as chrome", () => {
     expect(getProducerCapabilities("edge")).toEqual(getProducerCapabilities("chrome"));
+    expect(getProducerCapabilities("opera")).toEqual(getProducerCapabilities("chrome"));
   });
 
   it("firefox omits CDP-only capabilities but keeps video and screenshot", () => {

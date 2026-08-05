@@ -27,6 +27,21 @@ function armButtonLabel(): string {
 }
 
 describe("Firefox arm panel copy", () => {
+  it("titles the tab as capture, not offscreen", () => {
+    // "offscreen" is an implementation path shared with Chromium; the user-facing
+    // tab must read as the capture surface for screen sharing.
+    expect(armPanelHtml).toMatch(/<title>\s*GN Tracing capture\s*<\/title>/i);
+    expect(armPanelHtml).not.toMatch(/<title>[^<]*offscreen[^<]*<\/title>/i);
+  });
+
+  it("separates screen share from optional site access", () => {
+    expect(armPanelHtml).toMatch(/cannot open the share picker from the extension popup/i);
+    expect(armPanelHtml).toMatch(/separate from screen sharing/i);
+    expect(armPanelHtml).toMatch(/Grant site access/i);
+    expect(armPanelHtml).toMatch(/capture window/i);
+    expect(armPanelHtml).toMatch(/no silent tab capture/i);
+  });
+
   it("does not promise tab sharing, which Firefox cannot do", () => {
     expect(armPanelHtml).not.toMatch(/Share this tab/i);
     expect(armPanelHtml).not.toMatch(/pick the tab you want to record/i);
@@ -34,7 +49,7 @@ describe("Firefox arm panel copy", () => {
 
   it("says a window or whole screen is what gets shared", () => {
     expect(armPanelHtml).toMatch(/window or a whole screen/i);
-    expect(armPanelHtml).toMatch(/cannot share a single tab/i);
+    expect(armPanelHtml).toMatch(/not a single tab/i);
     // Sharing a whole screen captures more than the recording is about; say so.
     expect(armPanelHtml).toMatch(/records everything else on it/i);
     // Steer the user to the Firefox window holding the target, not a random screen.
@@ -42,10 +57,12 @@ describe("Firefox arm panel copy", () => {
     expect(armPanelHtml).toMatch(/Prefer a window over a whole screen/i);
   });
 
-  it("page-host timeout never says Share this tab", () => {
+  it("page-host uses capture popup window and shared timeout helper", () => {
     const pageHost = readFileSync(resolve(__dirname, "../platform/media/page-host.ts"), "utf8");
     expect(pageHost).not.toMatch(/Share this tab/i);
-    expect(pageHost).toContain("Choose what to share");
+    expect(pageHost).toContain("describeFirefoxArmTimeoutMessage");
+    expect(pageHost).toContain('type: "popup"');
+    expect(pageHost).toContain("windows.create");
   });
 
   it("keeps the activation error message pointing at the real button label", () => {

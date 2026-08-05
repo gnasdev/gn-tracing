@@ -14,7 +14,7 @@ import {
 import { getBrowserTarget } from "./detect";
 import type { BrowserTarget } from "./types";
 
-/** Chromium extension (Chrome + Edge): full CDP + silent tabCapture path. */
+/** Chromium-family extension (Chrome / Edge / Opera): full CDP + tabCapture. */
 export const CHROMIUM_EXTENSION_CAPABILITIES: RecordingCapability[] = [...EXTENSION_CAPABILITIES];
 
 export function getProducerCapabilities(
@@ -23,6 +23,7 @@ export function getProducerCapabilities(
   if (target === "firefox") {
     return [...FIREFOX_EXTENSION_CAPABILITIES];
   }
+  // chrome | edge | opera share the same capability declaration.
   return [...CHROMIUM_EXTENSION_CAPABILITIES];
 }
 
