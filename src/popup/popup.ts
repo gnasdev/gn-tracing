@@ -3,7 +3,6 @@
  */
 
 import { resolveManageCloudsPageUrl } from "../manage-clouds/page-model";
-import { describeDisplayCaptureError } from "../media-pipeline/record-session";
 import { isFirefoxTarget } from "../platform/detect";
 import { buttonSpinnerHtml } from "../shared/button-loading";
 import { DEFAULT_DRAW_COLOR, DRAW_COLOR_PRESETS, normalizeDrawColor } from "../shared/drawing";
@@ -23,11 +22,6 @@ import {
   normalizeInstantReplayWindowSeconds,
 } from "../shared/instant-replay-window";
 import { resolveReplayOpenUrl } from "../shared/player-host";
-import {
-  beginDisplayMediaFromGesture,
-  createRecordingSessionId,
-  handoffDisplayStreamToMediaHost,
-} from "../shared/popup-display-capture";
 import { openPopupExternalUrl, popupTabOpenModeForSessionAction } from "../shared/popup-navigation";
 import { ensureRecordingHostPermission } from "../shared/recording-host-permission";
 import { getRecordingTabTarget } from "../shared/recording-target";
@@ -1385,77 +1379,17 @@ async function saveInstantReplayWindowSeconds(seconds: number): Promise<void> {
   }
 }
 
-function stopMediaStreamTracks(stream: MediaStream | null | undefined): void {
-  if (!stream) {
-    return;
-  }
-  for (const track of stream.getTracks()) {
-    try {
-      track.stop();
-    } catch {
-      // Ignore.
-    }
-  }
-}
-
 /**
- * Firefox preferred path: share picker from this popup (active UI), then hand
- * the stream to a parked media-host tab. Never focuses offscreen.html for the
- * arm panel when handoff succeeds.
+ * Start a full recording session.
+ *
+ * Firefox cannot run getDisplayMedia from the browser-action popup: the popup
+ * is not a durable fully-active document, so the share picker rejects with
+ * NotAllowedError ("Screen sharing was cancelled…"). Video capture runs on the
+ * parked media-host tab (offscreen/offscreen.html) after the user clicks
+ * "Choose what to share" there. Host permission is pre-requested here (gesture)
+ * so the arm panel can skip the grant step when the user accepts.
  */
-async function startFirefoxRecordingWithPopupDisplayMedia(
-  tabId: number,
-  displayStreamPromise: Promise<MediaStream>,
-): Promise<MessageResponse> {
-  const ensure = (await chrome.runtime.sendMessage({
-    action: "ENSURE_MEDIA_HOST",
-  })) as MessageResponse;
-  if (!ensure?.ok) {
-    stopMediaStreamTracks(await displayStreamPromise.catch(() => null));
-    return {
-      ok: false,
-      error: ensure?.error || "Could not prepare the capture host page.",
-    };
-  }
-
-  // Host access in parallel with the share picker (do not await before
-  // getDisplayMedia — that already started in the click gesture).
-  void ensureRecordingHostPermission().catch(() => false);
-
-  let stream: MediaStream;
-  try {
-    stream = await displayStreamPromise;
-  } catch (error) {
-    const failure = describeDisplayCaptureError(error);
-    return { ok: false, error: failure.message };
-  }
-
-  const sessionId = createRecordingSessionId();
-  const handoff = await handoffDisplayStreamToMediaHost(stream, sessionId);
-  if (!handoff.ok) {
-    stopMediaStreamTracks(stream);
-    // Fallback: legacy media-tab arm panel (focus + second click).
-    return (await chrome.runtime.sendMessage({
-      action: "START_RECORDING",
-      tabId,
-    })) as MessageResponse;
-  }
-
-  return (await chrome.runtime.sendMessage({
-    action: "START_RECORDING",
-    tabId,
-    data: {
-      mediaPrearmed: true,
-      sessionId,
-      firstFrameAt: handoff.firstFrameAt ?? null,
-      capturedSurface: handoff.surface ?? {},
-    },
-  })) as MessageResponse;
-}
-
-async function startRecordingSession(options?: {
-  displayStreamPromise?: Promise<MediaStream> | null;
-}): Promise<void> {
+async function startRecordingSession(): Promise<void> {
   toggleActionInFlight = true;
   toggleBtn.disabled = true;
   if (instantReplayBtn) {
@@ -1463,22 +1397,14 @@ async function startRecordingSession(options?: {
   }
   errorMsg.classList.add("hidden");
 
-  const displayStreamPromise = options?.displayStreamPromise ?? null;
-
   try {
     const currentState = await loadStateFromStorage();
     if (!getActiveStorageConnection(currentState).isConnected) {
-      if (displayStreamPromise) {
-        stopMediaStreamTracks(await displayStreamPromise.catch(() => null));
-      }
       showError(t("storage.connectBeforeRecord"));
       return;
     }
 
     if (currentState?.recording?.isRecording) {
-      if (displayStreamPromise) {
-        stopMediaStreamTracks(await displayStreamPromise.catch(() => null));
-      }
       return;
     }
 
@@ -1486,35 +1412,26 @@ async function startRecordingSession(options?: {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     const target = getRecordingTabTarget(tab);
     if (target.error) {
-      if (displayStreamPromise) {
-        stopMediaStreamTracks(await displayStreamPromise.catch(() => null));
-      }
       activeTabRecordingError = target.error;
       updateRecordingUI(currentState?.recording ?? null);
       return;
     }
 
-    let result: MessageResponse;
-    if (isFirefoxTarget() && displayStreamPromise && typeof tab.id === "number") {
-      result = await startFirefoxRecordingWithPopupDisplayMedia(tab.id, displayStreamPromise);
-    } else {
-      // Chromium tabCapture path, or Firefox without a gesture-captured stream.
-      if (isFirefoxTarget()) {
-        // Decline is fine: video still records; arm panel may show grant fallback.
-        await ensureRecordingHostPermission().catch(() => false);
-      }
-      result = (await chrome.runtime.sendMessage({
-        action: "START_RECORDING",
-        tabId: tab.id,
-      })) as MessageResponse;
+    // Firefox: pre-request host permission on this Start click (user gesture).
+    // Decline is fine: video still records; arm panel may show grant fallback.
+    // Never combine with getDisplayMedia — that runs later on the media tab.
+    if (isFirefoxTarget()) {
+      await ensureRecordingHostPermission().catch(() => false);
     }
+
+    const result = (await chrome.runtime.sendMessage({
+      action: "START_RECORDING",
+      tabId: tab.id,
+    })) as MessageResponse;
     if (!result.ok) {
       showError(result.error || t("messages.startFailed"));
     }
   } catch (error) {
-    if (displayStreamPromise) {
-      stopMediaStreamTracks(await displayStreamPromise.catch(() => null));
-    }
     showError((error as Error).message);
   } finally {
     toggleActionInFlight = false;
@@ -2450,28 +2367,14 @@ function openSettingsDialog(): void {
 toggleBtn.addEventListener("click", async () => {
   errorMsg.classList.add("hidden");
 
-  // Firefox: call getDisplayMedia in this turn so transient activation still
-  // holds. Any await before beginDisplayMediaFromGesture loses the gesture and
-  // forces the offscreen arm-panel tab. Use painted UI state (sync) to decide
-  // start vs stop — do not await storage first.
-  const looksLikeStart =
-    isFirefoxTarget() && !toggleActionInFlight && !latestPopupState?.recording?.isRecording;
-  const displayStreamPromise = looksLikeStart ? beginDisplayMediaFromGesture() : null;
-
   try {
     const currentState = await loadStateFromStorage();
     if (!getActiveStorageConnection(currentState).isConnected) {
-      if (displayStreamPromise) {
-        stopMediaStreamTracks(await displayStreamPromise.catch(() => null));
-      }
       showError(t("storage.connectBeforeRecord"));
       return;
     }
 
     if (currentState?.recording?.isRecording) {
-      if (displayStreamPromise) {
-        stopMediaStreamTracks(await displayStreamPromise.catch(() => null));
-      }
       toggleActionInFlight = true;
       toggleBtn.disabled = true;
       if (instantReplayBtn) {
@@ -2488,11 +2391,8 @@ toggleBtn.addEventListener("click", async () => {
       return;
     }
 
-    await startRecordingSession({ displayStreamPromise });
+    await startRecordingSession();
   } catch (error) {
-    if (displayStreamPromise) {
-      stopMediaStreamTracks(await displayStreamPromise.catch(() => null));
-    }
     showError((error as Error).message);
   } finally {
     if (toggleActionMode === "stop") {

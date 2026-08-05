@@ -136,22 +136,25 @@ describe("createRecordingSessionId", () => {
   });
 });
 
-describe("popup Start prefers popup display media over focusing offscreen", () => {
-  it("wires beginDisplayMediaFromGesture before START_RECORDING on Firefox", async () => {
+describe("popup Start does not call getDisplayMedia (Firefox rejects popup capture)", () => {
+  it("starts via START_RECORDING and leaves share picker to the media-host arm panel", async () => {
+    // getDisplayMedia from browser_action popup rejects with NotAllowedError on
+    // Firefox ("Screen sharing was cancelled…"). Capture must run from the
+    // durable media-host tab after the user clicks "Choose what to share".
     const { readFileSync } = await import("node:fs");
     const { resolve } = await import("node:path");
     const popupSource = readFileSync(resolve(__dirname, "../popup/popup.ts"), "utf8");
-    expect(popupSource).toContain("beginDisplayMediaFromGesture");
-    expect(popupSource).toContain("handoffDisplayStreamToMediaHost");
-    expect(popupSource).toContain("ENSURE_MEDIA_HOST");
-    expect(popupSource).toContain("mediaPrearmed: true");
-    // Gesture must be captured in the click handler, not after awaits.
-    const clickAt = popupSource.indexOf('toggleBtn.addEventListener("click"');
-    expect(clickAt).toBeGreaterThan(-1);
-    const clickBody = popupSource.slice(clickAt, clickAt + 1200);
-    const beginAt = clickBody.indexOf("beginDisplayMediaFromGesture");
-    const loadAt = clickBody.indexOf("loadStateFromStorage");
-    expect(beginAt).toBeGreaterThan(-1);
-    expect(loadAt).toBeGreaterThan(beginAt);
+    expect(popupSource).not.toContain("beginDisplayMediaFromGesture");
+    expect(popupSource).not.toContain("handoffDisplayStreamToMediaHost");
+    expect(popupSource).not.toContain("mediaPrearmed: true");
+    expect(popupSource).toContain("START_RECORDING");
+    expect(popupSource).toContain("ensureRecordingHostPermission");
+
+    const startAt = popupSource.indexOf("async function startRecordingSession(");
+    expect(startAt).toBeGreaterThan(-1);
+    const startBody = popupSource.slice(startAt, startAt + 1800);
+    expect(startBody.indexOf("START_RECORDING")).toBeGreaterThan(
+      startBody.indexOf("ensureRecordingHostPermission"),
+    );
   });
 });

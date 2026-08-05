@@ -79,11 +79,15 @@ describe("popup pre-requests host permission without a grant-only tab", () => {
     expect(popupSource).toContain("ensureRecordingHostPermission");
     const startAt = popupSource.indexOf("async function startRecordingSession(");
     expect(startAt).toBeGreaterThan(-1);
-    const startBody = popupSource.slice(startAt, startAt + 2400);
+    const startBody = popupSource.slice(startAt, startAt + 1800);
+    // Firefox Start pre-requests host access before START_RECORDING (gesture).
     expect(startBody).toContain("ensureRecordingHostPermission");
     expect(startBody.indexOf("START_RECORDING")).toBeGreaterThan(
       startBody.indexOf("ensureRecordingHostPermission"),
     );
+    // Must not open getDisplayMedia from the popup (Firefox rejects it).
+    expect(startBody).not.toContain("beginDisplayMediaFromGesture");
+    expect(startBody).not.toMatch(/getDisplayMedia\s*\(/);
 
     const irAt = popupSource.indexOf("async function saveInstantReplayEnabled(");
     expect(irAt).toBeGreaterThan(-1);
