@@ -15,6 +15,7 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test --config e2e/playwright.config.mjs",
+    "test:e2e:extension": "playwright test --config e2e/extension.playwright.config.mjs",
     "test:e2e:player": "playwright test --config e2e/playwright.config.mjs e2e/specs/player-*.spec.mjs",
     "lint": "biome lint . --files-ignore-unknown=true",
     "format": "biome format --write . --files-ignore-unknown=true",
