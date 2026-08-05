@@ -1,8 +1,137 @@
 <!DOCTYPE html>
-<!-- Hidden MV3 offscreen document that hosts media capture and upload workers. -->
+<!--
+  Media host document.
+
+  Chromium loads this as a hidden chrome.offscreen document and never shows the
+  arm panel. Firefox has no offscreen API, so the same page is opened as a tab —
+  and getDisplayMedia there requires transient user activation, which only a real
+  click in this document provides. The arm panel is that click.
+-->
 <html lang="en">
-<head><title>gn-tracing offscreen</title></head>
+<head>
+  <meta charset="utf-8">
+  <title>gn-tracing offscreen</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: Canvas;
+      color: CanvasText;
+    }
+    #arm-panel[hidden] { display: none; }
+    #arm-panel {
+      display: flex;
+      min-height: 100vh;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      box-sizing: border-box;
+    }
+    .arm-card {
+      width: 100%;
+      max-width: 460px;
+      padding: 28px;
+      border-radius: 14px;
+      border: 1px solid color-mix(in srgb, CanvasText 18%, transparent);
+      background: color-mix(in srgb, CanvasText 4%, Canvas);
+    }
+    .arm-title { margin: 0 0 10px; font-size: 19px; font-weight: 700; }
+    .arm-help { margin: 0 0 20px; font-size: 14px; line-height: 1.5; opacity: 0.8; }
+    .arm-target {
+      margin: 0 0 20px;
+      padding: 10px 12px;
+      border-radius: 8px;
+      background: color-mix(in srgb, CanvasText 8%, transparent);
+      font-size: 13px;
+      word-break: break-all;
+    }
+    .arm-target[hidden] { display: none; }
+    #arm-btn {
+      width: 100%;
+      padding: 13px 18px;
+      border: 0;
+      border-radius: 10px;
+      background: #3b6cf5;
+      color: #fff;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    #arm-btn:hover { background: #2f5ad6; }
+    #arm-btn:disabled { opacity: 0.6; cursor: progress; }
+    #arm-cancel-btn {
+      width: 100%;
+      margin-top: 10px;
+      padding: 11px 18px;
+      border: 1px solid color-mix(in srgb, CanvasText 22%, transparent);
+      border-radius: 10px;
+      background: transparent;
+      color: inherit;
+      font-size: 14px;
+      cursor: pointer;
+    }
+    #arm-grant[hidden] { display: none; }
+    #arm-grant {
+      margin: 0 0 18px;
+      padding: 12px 14px;
+      border: 1px solid color-mix(in srgb, #d98324 45%, transparent);
+      border-radius: 10px;
+      background: color-mix(in srgb, #d98324 10%, transparent);
+      text-align: left;
+    }
+    .arm-grant-help {
+      margin: 0 0 10px;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+    #arm-grant-btn {
+      width: 100%;
+      padding: 10px 16px;
+      border: 1px solid color-mix(in srgb, CanvasText 30%, transparent);
+      border-radius: 9px;
+      background: transparent;
+      color: inherit;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    #arm-grant-btn:disabled { opacity: 0.6; cursor: progress; }
+    #arm-status {
+      margin: 14px 0 0;
+      min-height: 1.3em;
+      font-size: 13px;
+      line-height: 1.45;
+      font-weight: 600;
+      color: #d64550;
+    }
+  </style>
+</head>
 <body>
+  <!-- Hidden until the background asks this document to arm display capture. -->
+  <section id="arm-panel" hidden>
+    <div class="arm-card">
+      <h1 class="arm-title" id="arm-title">Choose what to share to start recording</h1>
+      <p class="arm-help" id="arm-help">
+        Firefox only starts screen sharing from a click on this page, and it shares a
+        <strong>window or a whole screen</strong> — it cannot share a single tab. Pick the Firefox
+        window holding the page below; sharing an entire screen also records everything else on it.
+        Keep this tab open until you stop the recording.
+      </p>
+      <p class="arm-target" id="arm-target" hidden></p>
+      <div id="arm-grant" hidden>
+        <p class="arm-grant-help" id="arm-grant-help">
+          Console and network evidence needs access to the recorded site. Without it
+          the video is still recorded, but console and network stay empty once the
+          page navigates.
+        </p>
+        <button type="button" id="arm-grant-btn">Grant site access</button>
+      </div>
+      <button type="button" id="arm-btn">Choose what to share</button>
+      <button type="button" id="arm-cancel-btn">Cancel</button>
+      <p id="arm-status" role="alert" aria-live="assertive"></p>
+    </div>
+  </section>
   <script src="./offscreen.js"></script>
 </body>
 </html>

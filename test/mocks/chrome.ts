@@ -107,7 +107,11 @@ export interface ChromeMock {
     query: MockSpy;
     get: MockSpy;
     create: MockSpy;
+    update: MockSpy;
     sendMessage: MockSpy;
+  };
+  windows: {
+    update: MockSpy;
   };
   alarms: {
     create: MockSpy;
@@ -384,9 +388,17 @@ export function createChromeMock(): ChromeMock {
       query: createSpy(counter, spies, () => Promise.resolve([])),
       get: createSpy(counter, spies),
       create: createSpy(counter, spies),
+      update: createSpy(counter, spies, () => Promise.resolve({ id: 1, windowId: 1 })),
       sendMessage: createSpy(counter, spies),
     },
     "chrome.tabs",
+  );
+
+  const windows = guardNamespace(
+    {
+      update: createSpy(counter, spies, () => Promise.resolve({ id: 1 })),
+    },
+    "chrome.windows",
   );
 
   const alarms = guardNamespace(
@@ -421,6 +433,7 @@ export function createChromeMock(): ChromeMock {
       storage,
       runtime,
       tabs,
+      windows,
       alarms,
       debugger: debuggerNs,
       action,

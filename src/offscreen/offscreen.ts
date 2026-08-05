@@ -9,14 +9,17 @@ import {
   buildRecordingPackage,
 } from "../../packages/replay-core/src/write";
 import { getScreenshotPackageStaging } from "../background/screenshot-package-staging-idb";
+import type { CapturedSurface } from "../media-pipeline/capture-surface";
 import {
   acquireCaptureStream,
+  describeDisplayCaptureError,
   pickRecorderMimeType,
   type SessionRecordingSnapshot,
+  stopRecorderAndWaitForFlush,
   waitForFirstFrame,
 } from "../media-pipeline/record-session";
 import { getProducerCapabilities } from "../platform/capabilities";
-import { isMediaMessageTarget } from "../platform/media/message-target";
+import { isMediaMessageTarget, MEDIA_PAGE_MESSAGE_TARGET } from "../platform/media/message-target";
 import { getProductVersionOrDefault } from "../shared/app-version";
 import {
   DROPBOX_UPLOAD_SESSION_THRESHOLD_BYTES,
@@ -56,7 +59,49 @@ let playbackAudioContext: AudioContext | null = null;
 let playbackSourceNode: MediaStreamAudioSourceNode | null = null;
 let shouldDiscardActiveCapture = false;
 
+/**
+ * Emit a chunk every second instead of buffering the whole recording until stop.
+ * Data then accumulates in `activeChunks` as the recording runs, so a lost final
+ * flush costs at most the last second rather than the entire video.
+ */
+const RECORDER_TIMESLICE_MS = 1000;
+
+/** How long to wait for the recorder's `stop` event to deliver its last chunk. */
+const RECORDER_FLUSH_TIMEOUT_MS = 5000;
+
+/** Resolves once the recorder's `stop` handler has finished building the blob. */
+let recorderFlush: { promise: Promise<void>; resolve: () => void } | null = null;
+
+/** Recorder failure text for the active session, surfaced when upload finds no blob. */
+let activeRecorderError: string | null = null;
+
+/** Mime type of the in-flight recorder, needed by the timeout finalize path. */
+let activeRecorderMimeType = "";
+
+/**
+ * Sessions already finalized, so the `stop` event and the flush timeout cannot
+ * both build a snapshot (or both report RECORDING_COMPLETE) for one recording.
+ */
+const finalizedSessionIds = new Set<string>();
+
 const sessionSnapshots = new Map<string, SessionRecordingSnapshot>();
+
+/**
+ * Sessions whose recorder finished without producing any bytes.
+ *
+ * Kept apart from `sessionSnapshots` so upload can say "no video was produced"
+ * instead of the misleading "snapshot is no longer available", which reads as if
+ * a good recording had expired.
+ */
+const emptyRecordingSessions = new Map<string, string>();
+
+function createFlushDeferred(): { promise: Promise<void>; resolve: () => void } {
+  let resolve: () => void = () => {};
+  const promise = new Promise<void>((res) => {
+    resolve = res;
+  });
+  return { promise, resolve };
+}
 
 interface OffscreenIncomingMessage {
   target: string;
@@ -165,6 +210,22 @@ chrome.runtime.onMessage.addListener((message: OffscreenIncomingMessage, _sender
         .catch((error: Error) => sendResponse({ ok: false, error: error.message }));
       return true;
 
+    case "ARM_DISPLAY_CAPTURE":
+      // Firefox only: render the click surface and acknowledge immediately. The
+      // capture result arrives later as DISPLAY_CAPTURE_RESULT, because
+      // getDisplayMedia must run inside the user's click on this document.
+      armDisplayCapture({
+        sessionId: String(message.data?.sessionId || ""),
+        tabTitle: typeof message.data?.tabTitle === "string" ? message.data.tabTitle : "",
+      });
+      sendResponse({ ok: true });
+      return false;
+
+    case "CANCEL_DISPLAY_CAPTURE":
+      disarmDisplayCapture();
+      sendResponse({ ok: true });
+      return false;
+
     case "STOP_CAPTURE":
       stopCapture()
         .then(() => sendResponse({ ok: true }))
@@ -259,6 +320,270 @@ function clearActiveCapture(): void {
   void stopActiveMediaStream();
 }
 
+/**
+ * Firefox display-capture arming.
+ *
+ * `getDisplayMedia` needs transient user activation, which a background message
+ * cannot supply — hence the visible button. The panel stays hidden on Chromium,
+ * where this document is an offscreen document driven by chrome.tabCapture.
+ */
+type ArmedDisplayCapture = { sessionId: string };
+
+let armedDisplayCapture: ArmedDisplayCapture | null = null;
+let armWired = false;
+
+function armPanelElements() {
+  return {
+    panel: document.getElementById("arm-panel"),
+    button: document.getElementById("arm-btn") as HTMLButtonElement | null,
+    cancelButton: document.getElementById("arm-cancel-btn") as HTMLButtonElement | null,
+    status: document.getElementById("arm-status"),
+    target: document.getElementById("arm-target"),
+    grant: document.getElementById("arm-grant"),
+    grantButton: document.getElementById("arm-grant-btn") as HTMLButtonElement | null,
+  };
+}
+
+/**
+ * Host permissions the recorded tab needs for console/network evidence.
+ *
+ * Mirrors `optional_host_permissions` in the manifest and the origins used by
+ * Instant Replay registration, so the user is never asked twice for two lists.
+ */
+const RECORDING_HOST_ORIGINS = ["http://*/*", "https://*/*"];
+
+async function hasRecordingHostPermission(): Promise<boolean> {
+  try {
+    return await chrome.permissions.contains({ origins: RECORDING_HOST_ORIGINS });
+  } catch {
+    // Engine without optional host permissions (Chromium grants them at install).
+    return true;
+  }
+}
+
+/**
+ * Show the grant step only when it is actually needed.
+ *
+ * Firefox MV3 treats every `host_permissions` entry as optional and not granted,
+ * so on a site outside the manifest the only access is `activeTab` — which Firefox
+ * revokes the moment this media tab takes focus. That is why injections after the
+ * focus switch failed with "Missing host permission for the tab".
+ */
+async function refreshGrantStep(): Promise<void> {
+  const { grant } = armPanelElements();
+  if (!grant) {
+    return;
+  }
+  grant.hidden = await hasRecordingHostPermission();
+}
+
+/**
+ * Ask for the host permission in its own click.
+ *
+ * It cannot share the click that starts capture: awaiting the permission prompt
+ * consumes the transient activation, and `getDisplayMedia` would then fail with
+ * InvalidStateError. Two buttons, two gestures.
+ */
+async function onGrantButtonClick(): Promise<void> {
+  const { grant, grantButton } = armPanelElements();
+  if (grantButton) {
+    grantButton.disabled = true;
+  }
+  setArmStatus("");
+
+  try {
+    const granted = await chrome.permissions.request({ origins: RECORDING_HOST_ORIGINS });
+    if (granted) {
+      if (grant) {
+        grant.hidden = true;
+      }
+      return;
+    }
+    setArmStatus(
+      "Site access was declined. The video still records, but console and network " +
+        "evidence will be missing. You can grant it later in about:addons.",
+    );
+  } catch (error) {
+    setArmStatus(
+      `Could not request site access: ${(error as Error)?.message || String(error)}. ` +
+        "Grant it in about:addons instead.",
+    );
+  } finally {
+    if (grantButton) {
+      grantButton.disabled = false;
+    }
+  }
+}
+
+function setArmStatus(message: string): void {
+  const { status } = armPanelElements();
+  if (status) {
+    status.textContent = message;
+  }
+}
+
+function sendDisplayCaptureResult(result: {
+  sessionId: string;
+  ok: boolean;
+  firstFrameAt?: number | null;
+  cancelled?: boolean;
+  error?: string;
+  surface?: CapturedSurface;
+}): void {
+  // Fire-and-forget: the background may have already given up (arm timeout).
+  void chrome.runtime
+    .sendMessage({
+      target: MEDIA_PAGE_MESSAGE_TARGET,
+      type: "DISPLAY_CAPTURE_RESULT",
+      data: result,
+    })
+    .catch(() => {
+      // Background listener gone — nothing useful to do here.
+    });
+}
+
+function disarmDisplayCapture(): void {
+  armedDisplayCapture = null;
+  const { panel, button } = armPanelElements();
+  if (panel) {
+    panel.hidden = true;
+  }
+  if (button) {
+    button.disabled = false;
+  }
+  setArmStatus("");
+}
+
+async function onArmButtonClick(): Promise<void> {
+  const armed = armedDisplayCapture;
+  if (!armed) {
+    return;
+  }
+  const { button } = armPanelElements();
+  if (button) {
+    button.disabled = true;
+  }
+  setArmStatus("");
+
+  try {
+    // Called synchronously inside the click so transient activation still holds.
+    const firstFrameAt = await startCapture("", armed.sessionId, "display-media");
+    // Read the surface before disarming: it is what the user actually picked, and
+    // Firefox can only offer a window or a screen, never the recorded tab alone.
+    const surface = readCapturedSurface(activeStream);
+    armedDisplayCapture = null;
+    disarmDisplayCapture();
+    sendDisplayCaptureResult({ sessionId: armed.sessionId, ok: true, firstFrameAt, surface });
+  } catch (error) {
+    const failure = describeDisplayCaptureError(error);
+    if (button) {
+      button.disabled = false;
+    }
+    // Cancelling closes the panel; a real failure keeps it open so the user can
+    // read the reason and retry without restarting from the popup.
+    if (failure.cancelled) {
+      armedDisplayCapture = null;
+      disarmDisplayCapture();
+    } else {
+      setArmStatus(failure.message);
+    }
+    sendDisplayCaptureResult({
+      sessionId: armed.sessionId,
+      ok: false,
+      cancelled: failure.cancelled,
+      error: failure.message,
+    });
+  }
+}
+
+function armDisplayCapture(input: { sessionId: string; tabTitle: string }): void {
+  if (!input.sessionId) {
+    return;
+  }
+  armedDisplayCapture = { sessionId: input.sessionId };
+
+  const { panel, button, cancelButton, target } = armPanelElements();
+  if (!panel || !button) {
+    // Chromium offscreen document has no arm markup and never arms.
+    return;
+  }
+
+  if (!armWired) {
+    armWired = true;
+    button.addEventListener("click", () => {
+      void onArmButtonClick();
+    });
+    armPanelElements().grantButton?.addEventListener("click", () => {
+      void onGrantButtonClick();
+    });
+    cancelButton?.addEventListener("click", () => {
+      const armed = armedDisplayCapture;
+      disarmDisplayCapture();
+      if (armed) {
+        sendDisplayCaptureResult({
+          sessionId: armed.sessionId,
+          ok: false,
+          cancelled: true,
+          error: "Screen sharing was cancelled, so recording did not start.",
+        });
+      }
+    });
+  }
+
+  if (target) {
+    target.textContent = input.tabTitle ? `Recording target: ${input.tabTitle}` : "";
+    target.hidden = !input.tabTitle;
+  }
+  button.disabled = false;
+  setArmStatus("");
+  panel.hidden = false;
+  button.focus();
+  // Async, so the panel is already visible; the grant step appears only if needed.
+  void refreshGrantStep();
+}
+
+/**
+ * What the browser says was actually captured.
+ *
+ * Firefox 153 omits `displaySurface` from `getSettings()` (measured: it is absent,
+ * and `getSupportedConstraints().displaySurface` is false), but it does name the
+ * surface in `track.label` — "Primary Monitor" for a whole screen, the window
+ * title for a window. Chromium supplies `displaySurface` directly. Recording both
+ * makes a "why is my whole desktop in the video" report self-diagnosing.
+ */
+function describeCapturedSurface(stream: MediaStream): string {
+  const [track] = stream.getVideoTracks();
+  if (!track) {
+    return "no video track";
+  }
+  const settings = track.getSettings() as MediaTrackSettings & { displaySurface?: string };
+  const parts = [
+    `label="${track.label || "(unnamed)"}"`,
+    `displaySurface=${settings.displaySurface ?? "(absent)"}`,
+    `size=${settings.width ?? "?"}x${settings.height ?? "?"}`,
+  ];
+  return parts.join(" ");
+}
+
+/**
+ * The machine-readable form of the same signals, for the privacy limitations.
+ *
+ * Read from the live track rather than from the constraints we asked for: Firefox
+ * ignores `displaySurface` and `preferCurrentTab`, so what we requested says
+ * nothing about what the user actually picked.
+ */
+function readCapturedSurface(stream: MediaStream | null): CapturedSurface {
+  const track = stream?.getVideoTracks()[0];
+  if (!track) {
+    return {};
+  }
+  const settings = track.getSettings() as MediaTrackSettings & { displaySurface?: string };
+  return {
+    label: track.label || "",
+    ...(settings.displaySurface ? { displaySurface: settings.displaySurface } : {}),
+  };
+}
+
 async function startCapture(
   streamId: string,
   sessionId: string,
@@ -285,13 +610,28 @@ async function startCapture(
     source.connect(playbackAudioContext.destination);
   }
 
-  const finalMimeType = pickRecorderMimeType();
+  const finalMimeType = pickRecorderMimeType(stream);
 
-  recorder = new MediaRecorder(stream, { mimeType: finalMimeType });
+  recorder = new MediaRecorder(stream, finalMimeType ? { mimeType: finalMimeType } : undefined);
   activeStream = stream;
   activeSessionId = sessionId;
   activeChunks = [];
   shouldDiscardActiveCapture = false;
+  activeRecorderError = null;
+  // Read it back: when no mimeType was requested the browser resolved its own.
+  activeRecorderMimeType = recorder.mimeType || finalMimeType || "video/webm";
+  recorderFlush = createFlushDeferred();
+  emptyRecordingSessions.delete(sessionId);
+  finalizedSessionIds.delete(sessionId);
+
+  console.info(
+    `[GN Tracing] Recorder armed: mime="${activeRecorderMimeType}" ` +
+      `tracks=${stream
+        .getTracks()
+        .map((track) => track.kind)
+        .join("+")} ` +
+      `surface: ${describeCapturedSurface(stream)}`,
+  );
 
   recorder.ondataavailable = (event: BlobEvent) => {
     if (event.data.size > 0) {
@@ -299,36 +639,99 @@ async function startCapture(
     }
   };
 
-  recorder.onstop = () => {
-    const completedSessionId = activeSessionId;
-    const blob = new Blob(activeChunks, { type: finalMimeType });
-
-    if (!shouldDiscardActiveCapture && completedSessionId && blob.size > 0) {
-      sessionSnapshots.set(completedSessionId, {
-        blob,
-        mimeType: finalMimeType,
-        createdAt: Date.now(),
-      });
-    }
-
-    chrome.runtime.sendMessage({
-      action: "RECORDING_COMPLETE",
-      data: {
-        sessionId: completedSessionId,
-        mimeType: finalMimeType,
-        size: blob.size,
-      },
-    });
-
-    clearActiveCapture();
+  // Firefox can fail a recorder mid-session (source track died, encoder error).
+  // Without this the failure is silent and only shows up as a zero-byte blob.
+  recorder.onerror = (event: Event) => {
+    const detail = (event as { error?: DOMException }).error;
+    activeRecorderError = detail?.message || detail?.name || "The recorder reported an error.";
+    console.error("[GN Tracing] MediaRecorder error:", detail ?? event);
   };
 
-  recorder.start();
+  recorder.onstop = () => {
+    finalizeRecordingSnapshot("stop-event");
+    clearActiveCapture();
+    // Signals stopCapture that the final chunk has landed and the tracks may go.
+    recorderFlush?.resolve();
+  };
+
+  // Timeslice keeps chunks flowing so the blob does not depend on one final flush.
+  recorder.start(RECORDER_TIMESLICE_MS);
 
   // Capture the wall-clock time of the first produced video frame. This is the
   // closest approximation we have to "video t=0", so it becomes the recording's
   // logical startTime in the service worker.
   return waitForFirstFrame(stream);
+}
+
+/** Compact description of the capture's tracks — the useful bit when stop misbehaves. */
+function describeActiveTracks(): string {
+  const tracks = activeStream?.getTracks() ?? [];
+  if (tracks.length === 0) {
+    return "none";
+  }
+  return tracks
+    .map((track) => `${track.kind}:${track.readyState}${track.muted ? ":muted" : ""}`)
+    .join(",");
+}
+
+/**
+ * Build and store the recording snapshot from whatever chunks have arrived.
+ *
+ * Deliberately does NOT depend on the recorder's `stop` event. Firefox has been
+ * observed not firing `stop` for a `getDisplayMedia` capture whose page sits in a
+ * background tab, and the whole recording used to be lost with it. Because the
+ * recorder runs with a timeslice, `activeChunks` already holds everything except
+ * the last second, so the timeout path can finalize too.
+ *
+ * Idempotent: whichever path runs first wins, the other is a no-op.
+ */
+function finalizeRecordingSnapshot(reason: "stop-event" | "flush-timeout"): void {
+  const completedSessionId = activeSessionId;
+  if (!completedSessionId || finalizedSessionIds.has(completedSessionId)) {
+    return;
+  }
+  finalizedSessionIds.add(completedSessionId);
+
+  const blob = new Blob(activeChunks, { type: activeRecorderMimeType });
+
+  if (!shouldDiscardActiveCapture) {
+    if (blob.size > 0) {
+      sessionSnapshots.set(completedSessionId, {
+        blob,
+        mimeType: activeRecorderMimeType,
+        createdAt: Date.now(),
+      });
+      if (reason === "flush-timeout") {
+        console.warn(
+          `[GN Tracing] Recorder never fired stop; salvaged ${activeChunks.length} buffered ` +
+            `chunk(s) (${blob.size} bytes). The final second may be missing. ` +
+            `tracks=${describeActiveTracks()}`,
+        );
+      }
+    } else {
+      emptyRecordingSessions.set(
+        completedSessionId,
+        activeRecorderError ||
+          "The browser produced no video data for this recording. " +
+            "If you pressed Stop sharing in the browser before stopping the recording, " +
+            "record again and stop from the GN Tracing popup.",
+      );
+      console.error(
+        `[GN Tracing] Recording finished with no data (${reason}). ` +
+          `chunks=${activeChunks.length} tracks=${describeActiveTracks()} ` +
+          `recorderError=${activeRecorderError ?? "none"}`,
+      );
+    }
+  }
+
+  chrome.runtime.sendMessage({
+    action: "RECORDING_COMPLETE",
+    data: {
+      sessionId: completedSessionId,
+      mimeType: activeRecorderMimeType,
+      size: blob.size,
+    },
+  });
 }
 
 async function stopCapture(): Promise<void> {
@@ -337,12 +740,23 @@ async function stopCapture(): Promise<void> {
     return;
   }
 
-  try {
-    recorder.requestData();
-    recorder.stop();
-  } finally {
-    // MediaRecorder finalization is asynchronous; release every stream/audio
-    // reference now so Chrome clears the capture indicator before upload work starts.
+  console.info(
+    `[GN Tracing] Stopping recorder: state=${recorder.state} ` +
+      `chunks=${activeChunks.length} tracks=${describeActiveTracks()}`,
+  );
+
+  // The recorder's own `stop` handler releases the stream once the blob exists.
+  const { flushed } = await stopRecorderAndWaitForFlush(
+    recorder,
+    recorderFlush?.promise ?? Promise.resolve(),
+    RECORDER_FLUSH_TIMEOUT_MS,
+  );
+
+  if (!flushed) {
+    // No stop event. Save the buffered chunks rather than losing the recording,
+    // then release the stream ourselves since the stop handler never ran.
+    finalizeRecordingSnapshot("flush-timeout");
+    clearActiveCapture();
     await stopActiveMediaStream();
   }
 }
@@ -361,6 +775,8 @@ function deleteSessionSnapshot(sessionId: string): void {
     return;
   }
   sessionSnapshots.delete(sessionId);
+  emptyRecordingSessions.delete(sessionId);
+  finalizedSessionIds.delete(sessionId);
 }
 
 function splitBlobIntoParts(blob: Blob, maxChunkSize: number): Blob[] {
@@ -661,6 +1077,12 @@ async function uploadRecordingPackage(data: StorageUploadData): Promise<{
 
   const snapshot = sessionSnapshots.get(sessionId);
   if (!snapshot) {
+    // A recording that produced no bytes is a different failure from a snapshot
+    // that existed and was dropped — say which one happened.
+    const emptyReason = emptyRecordingSessions.get(sessionId);
+    if (emptyReason) {
+      return { ok: false, error: emptyReason };
+    }
     return { ok: false, error: "Recording snapshot is no longer available for upload." };
   }
 
