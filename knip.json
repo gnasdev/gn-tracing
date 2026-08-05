@@ -4,6 +4,7 @@
     "src/popup/popup.ts",
     "src/offscreen/offscreen.ts",
     "src/annotate/annotate.ts",
+    "src/manage-clouds/manage-clouds.ts",
     "src/content/recording-events.ts",
     "src/content/drawing-overlay.ts",
     "src/content/instant-replay.ts",

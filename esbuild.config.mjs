@@ -78,6 +78,12 @@ const STATIC_ASSET_ENTRIES = [
   { type: "file", src: "popup/popup.css", dest: "popup/popup.css" },
   { type: "text", src: "annotate/annotate.html", dest: "annotate/annotate.html" },
   { type: "file", src: "annotate/annotate.css", dest: "annotate/annotate.css" },
+  {
+    type: "text",
+    src: "manage-clouds/manage-clouds.html",
+    dest: "manage-clouds/manage-clouds.html",
+  },
+  { type: "file", src: "manage-clouds/manage-clouds.css", dest: "manage-clouds/manage-clouds.css" },
   { type: "text", src: "offscreen/offscreen.html", dest: "offscreen/offscreen.html" },
   { type: "dir", src: "icons", dest: "icons" },
   { type: "file", src: "shared/theme.css", dest: "shared/theme.css" },
@@ -392,10 +398,26 @@ function applyBrowserManifestPatches(manifest) {
     if (!manifest.permissions.includes("tabs")) {
       manifest.permissions.push("tabs");
     }
+    // Firefox stable does not support background.service_worker yet; MV3 uses
+    // non-persistent event pages via background.scripts (same bundled entry).
+    // https://extensionworkshop.com/documentation/develop/manifest-v3-migration-guide/
+    const backgroundEntry = manifest.background?.service_worker || "background/service-worker.js";
+    manifest.background = {
+      scripts: [backgroundEntry],
+      type: "module",
+    };
     manifest.browser_specific_settings = {
       gecko: {
         id: firefoxExtensionId,
-        strict_min_version: "115.0",
+        // 128.0, not 115.0: full-record console/network evidence is injected with
+        // `world: "MAIN"`, which Mozilla shipped in Firefox 128 ("In Firefox 128,
+        // support is now available for the MAIN execution world for content
+        // scripts declared in the manifest.json file and scripting.executeScript").
+        // On 115-127 that injection lands in the isolated content-script sandbox
+        // instead of the page realm, so the capture patches the sandbox's own
+        // console/fetch and records nothing at all, with no error. Refusing to
+        // install is honest; recording empty evidence is not.
+        strict_min_version: "128.0",
       },
     };
     return;
@@ -494,6 +516,7 @@ async function build() {
       { in: "src/popup/popup.ts", out: "popup/popup" },
       { in: "src/offscreen/offscreen.ts", out: "offscreen/offscreen" },
       { in: "src/annotate/annotate.ts", out: "annotate/annotate" },
+      { in: "src/manage-clouds/manage-clouds.ts", out: "manage-clouds/manage-clouds" },
     ],
     outdir: distRoot,
     format: "iife",
