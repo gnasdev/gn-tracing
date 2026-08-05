@@ -76,9 +76,13 @@ It runs every context, accumulates failures, and exits 1 if any context failed.
 | --- | --- |
 | `task build:all` | `task build` + `task player:build` |
 | `task dist:all` | `task dist` + `task player:dist` |
-| `task dev` | `concurrently -n ext,player,worker 'task watch' 'task player:dev' 'task worker:dev'` |
+| `task dev` | `concurrently -n ext:chrome,player,worker 'task watch BROWSER=chrome' 'task player:dev' 'task worker:dev'` |
+| `task dev:edge` / `task dev:firefox` | Same, with `BROWSER=edge` / `BROWSER=firefox` |
+| `task dev:all` | Chrome + Edge + Firefox watchers together, plus player and Worker (5 processes) |
 
-`task dev` is the local development workhorse: it keeps the extension, player, and Worker hot-reloading simultaneously under prefixed output streams.
+`task dev` is the local development workhorse: it keeps the extension, player, and Worker hot-reloading simultaneously under prefixed output streams. The extension watcher is the only per-browser process — the player (`:5176`) and Worker (`:8787`) serve every target — so pick one with `task dev BROWSER=chrome|edge|firefox` (default `chrome`). `task watch` takes the same variable, and an unsupported value fails on a precondition before anything starts.
+
+Because the player and Worker are per-repo rather than per-target, `player:dev` and `worker:dev` probe their port with `scripts/port-listening.mjs` and reuse a running instance instead of failing to bind. Two `task dev` stacks for different browsers can therefore run side by side.
 
 ## 9.5 Release Aliases
 

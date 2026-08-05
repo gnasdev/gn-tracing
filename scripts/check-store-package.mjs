@@ -154,9 +154,21 @@ for (const permission of requiredPermissions) {
   }
 }
 
-const backgroundPath = path.join(distDir, manifest.background?.service_worker || "");
-if (!fs.existsSync(backgroundPath)) {
-  fail("background service worker path does not exist.");
+const backgroundRel =
+  manifest.background?.service_worker ||
+  (Array.isArray(manifest.background?.scripts) ? manifest.background.scripts[0] : "") ||
+  "";
+const backgroundPath = path.join(distDir, backgroundRel);
+if (!backgroundRel || !fs.existsSync(backgroundPath)) {
+  fail("background service worker / scripts path does not exist.");
+}
+if (browser === "firefox") {
+  if (manifest.background?.service_worker) {
+    fail("Firefox package must use background.scripts (service_worker is disabled on Firefox).");
+  }
+  if (!Array.isArray(manifest.background?.scripts) || manifest.background.scripts.length === 0) {
+    fail("Firefox package requires background.scripts.");
+  }
 }
 
 const popupPath = path.join(distDir, manifest.action?.default_popup || "");

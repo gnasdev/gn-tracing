@@ -1,6 +1,6 @@
 # GN Tracing
 
-GN Tracing is a Chromium-based browser extension that records one browser tab and packages the useful debugging evidence into a shareable replay. It works on Chrome, Edge, Brave, Vivaldi, Opera, and other Chromium-based browsers.
+GN Tracing is a browser extension that records one browser tab and packages the useful debugging evidence into a shareable replay. It works on Chrome, Edge, Brave, Vivaldi, Opera, and other Chromium-based browsers, and on Firefox with the differences noted under [Limits](#limits).
 
 It captures:
 
@@ -148,7 +148,7 @@ Two additional evidence sources are available in Settings. Both default to **on*
 
 Both expand the captured surface of personal data; keep redaction on unless you deliberately need raw values for debugging.
 
-Full **Record** sessions collect console, network, WebSocket, and optional storage/DOM evidence through the Chrome Debugger Protocol (CDP). While recording, Chrome may show a "debugging this tab" banner. (Instant Replay evidence and the browser SDK use separate page instrumentation; they are not alternate Record capture modes.)
+Full **Record** sessions collect console, network, WebSocket, and optional storage/DOM evidence through the Chrome Debugger Protocol (CDP) on Chromium browsers, and through page instrumentation on Firefox. While recording, Chrome may show a "debugging this tab" banner. (Instant Replay evidence and the browser SDK use separate page instrumentation; they are not alternate Record capture modes.)
 
 ### Third-party components and attribution
 
@@ -157,10 +157,17 @@ The replay player renders objects and JSON with vendored, prebuilt [luna](https:
 ## Limits
 
 - Records one tab at a time.
-- Cannot record browser system pages, extension pages, Chrome Web Store pages, DevTools/internal URLs, or tabs without a normal `http:`, `https:`, or `file:` URL.
-- Keeps unfinished recording data in extension memory until upload.
+- Cannot record browser system pages, extension pages, Chrome Web Store pages, DevTools/internal URLs, or tabs without a normal `http:`, `https:`, or `file:` URL.- Keeps unfinished recording data in extension memory until upload.
 - A browser or extension restart can interrupt an unfinished local recording.
 - On non-Chrome Chromium browsers, some OAuth access tokens expire after approximately one hour and may require silent refresh or reconnection depending on the provider. Brave Shields may block the OAuth popup; disable Shields for the extension page if cloud storage connect fails.
+
+### On Firefox
+
+Firefox records through different browser APIs, so three things behave differently:
+
+- **The video is not tab-scoped.** Firefox allows only a window or a whole screen to be captured, never a single tab, and no option changes that. GN Tracing opens a page asking you to choose what to share — pick the Firefox window to keep other applications out of the video. Whatever you pick is named in the recording's privacy limitations, so whoever opens the replay knows what is in it.
+- **Recording starts with a click in that page**, not from the popup alone, because Firefox requires a user gesture in the page that requests the capture.
+- **Console and network evidence needs site access.** Firefox treats site permissions as optional, so the share page offers a `Grant site access` button when the permission is missing. Without it the video still records, but console and network evidence stops as soon as the page navigates. You can also grant it in `about:addons` → GN Tracing → Permissions.
 
 ## Developers
 

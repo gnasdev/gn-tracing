@@ -52,19 +52,30 @@ tasks:
       - task: dist:firefox
 
   watch:
-    desc: Watch and rebuild Chrome extension sources.
+    desc: >-
+      Watch and rebuild extension sources for one browser target.
+      BROWSER=chrome|edge|firefox (default chrome).
+    vars:
+      BROWSER: '{{.BROWSER | default "chrome"}}'
+    preconditions:
+      - sh: 'case "{{.BROWSER}}" in chrome|edge|firefox) exit 0 ;; *) exit 1 ;; esac'
+        msg: 'BROWSER must be chrome, edge, or firefox (got "{{.BROWSER}}").'
     cmds:
-      - node --experimental-strip-types esbuild.config.mjs --watch --browser chrome
+      - node --experimental-strip-types esbuild.config.mjs --watch --browser {{.BROWSER}}
 
   watch:edge:
     desc: Watch and rebuild Edge extension sources.
     cmds:
-      - node --experimental-strip-types esbuild.config.mjs --watch --browser edge
+      - task: watch
+        vars:
+          BROWSER: edge
 
   watch:firefox:
     desc: Watch and rebuild Firefox extension sources.
     cmds:
-      - node --experimental-strip-types esbuild.config.mjs --watch --browser firefox
+      - task: watch
+        vars:
+          BROWSER: firefox
 
   typecheck:
     desc: Run root TypeScript checks (production sources and test files).
@@ -123,11 +134,19 @@ tasks:
       - node scripts/sync-player.js
 
   player:dev:
-    desc: Run hosted player dev server (Vite + public/player.js runtime).
+    desc: >-
+      Run hosted player dev server (Vite + public/player.js runtime) on :5176.
+      Reuses an instance already serving that port instead of failing to bind, so
+      several `task dev` stacks (one per browser target) can coexist.
     dir: player
     cmds:
-      - node scripts/sync-player.js
-      - npm exec -- vite --port 5176
+      - cmd: |
+          if node ../scripts/port-listening.mjs 5176; then
+            echo "[player:dev] http://localhost:5176 is already serving — reusing it."
+            exit 0
+          fi
+          node scripts/sync-player.js
+          exec npm exec -- vite --port 5176
 
   player:build:
     desc: Sync theme and build the hosted player (development mode).
@@ -187,12 +206,19 @@ tasks:
   worker:dev:
     desc: >-
       Run the multi-issuer Worker locally (OAuth Google/Dropbox + POST /feedback,
-      hot reload, port 8787). Also started by `task dev`.
+      hot reload, port 8787). Also started by `task dev`. Reuses an instance
+      already serving that port instead of failing to bind, so several `task dev`
+      stacks (one per browser target) can coexist.
     deps:
       - worker:sync-dev-vars
     dir: worker
     cmds:
-      - npm exec -- wrangler dev
+      - cmd: |
+          if node ../scripts/port-listening.mjs 8787; then
+            echo "[worker:dev] http://localhost:8787 is already serving — reusing it."
+            exit 0
+          fi
+          exec npm exec -- wrangler dev
 
   worker:typecheck:
     desc: Run OAuth Worker TypeScript checks.
@@ -362,11 +388,51 @@ tasks:
 
   dev:
     desc: >-
-      Local full stack — extension watch (esbuild → localhost Worker proxies),
-      standalone player (Vite + /api/drive|dropbox), multi-issuer Worker
-      (wrangler :8787 OAuth Google/Dropbox + POST /feedback).
+      Local full stack for one browser target — extension watch (esbuild →
+      localhost Worker proxies), standalone player (Vite + /api/drive|dropbox),
+      multi-issuer Worker (wrangler :8787 OAuth Google/Dropbox + POST /feedback).
+      Pick the target with BROWSER=chrome|edge|firefox (default chrome), or run
+      `task dev:all` to watch all three at once.
+    vars:
+      BROWSER: '{{.BROWSER | default "chrome"}}'
+    preconditions:
+      - sh: 'case "{{.BROWSER}}" in chrome|edge|firefox) exit 0 ;; *) exit 1 ;; esac'
+        msg: 'BROWSER must be chrome, edge, or firefox (got "{{.BROWSER}}").'
     cmds:
       # Sync worker secrets before concurrent start so wrangler sees OAuth + feedback vars.
       - task: worker:sync-dev-vars
       # Three long-running processes: extension rebuild, player, local Worker on :8787.
-      - npx concurrently -n ext,player,worker -c blue,green,magenta 'task watch' 'task player:dev' 'task worker:dev'
+      # The player and Worker are shared by every browser target, so only the
+      # extension watcher is per-target.
+      - npx concurrently -n ext:{{.BROWSER}},player,worker -c blue,green,magenta 'task watch BROWSER={{.BROWSER}}' 'task player:dev' 'task worker:dev'
+
+  dev:edge:
+    desc: Local full stack watching the Edge extension build.
+    cmds:
+      - task: dev
+        vars:
+          BROWSER: edge
+
+  dev:firefox:
+    desc: Local full stack watching the Firefox extension build.
+    cmds:
+      - task: dev
+        vars:
+          BROWSER: firefox
+
+  dev:all:
+    desc: >-
+      Local full stack watching Chrome, Edge, and Firefox builds together, plus
+      the player and the local Worker. Five long-running processes — heavier than
+      `task dev`; use it when a change has to be verified on every target.
+    cmds:
+      - task: worker:sync-dev-vars
+      - >-
+        npx concurrently
+        -n ext:chrome,ext:edge,ext:firefox,player,worker
+        -c blue,cyan,yellow,green,magenta
+        'task watch BROWSER=chrome'
+        'task watch BROWSER=edge'
+        'task watch BROWSER=firefox'
+        'task player:dev'
+        'task worker:dev'

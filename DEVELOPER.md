@@ -82,7 +82,9 @@ task build:all      # Chrome + Edge + Firefox (development)
 task dist:all       # Chrome + Edge + Firefox (production)
 task player:build   # Standalone player (dev)
 task player:dist    # Standalone player (production)
-task dev            # Full local stack: extension watch + player (Vite proxies) + multi-issuer Worker (:8787 OAuth + /feedback)
+task dev            # Full local stack (Chrome): extension watch + player (Vite proxies) + multi-issuer Worker (:8787 OAuth + /feedback)
+task dev BROWSER=firefox   # Same stack watching the Firefox build (also: BROWSER=edge, or task dev:edge / task dev:firefox)
+task dev:all        # Chrome + Edge + Firefox watchers together, plus player and Worker
 task worker:dev     # Local Worker only (also included in `task dev`)
 task worker:sync-dev-vars  # Sync worker/.dev.vars from root .env (run automatically by task dev / worker:dev)
 task typecheck:all  # Type-check every context (root, replay-core, SDK, MCP, player, worker)
@@ -159,7 +161,20 @@ Edge uses the same Chromium capture path as Chrome (CDP + tabCapture + offscreen
 3. Click **Load Temporary Add-on…**.
 4. Select `dist/firefox/manifest.json`.
 
-Firefox has no `debugger` / `offscreen` / `tabCapture`. Console and network use in-page capture (same-origin bodies). Video uses `getDisplayMedia` (browser picker). Set `FIREFOX_EXTENSION_ID` (default `gn-tracing@gnas.dev`) and register the redirect URI `https://<id>.extensions.allizom.org/` on OAuth apps.
+Firefox has no `debugger` / `offscreen` / `tabCapture`. Console and network use in-page capture (same-origin bodies), injected as an ISOLATED bridge plus a `world: "MAIN"` patcher. `world: "MAIN"` needs **Firefox 128+**.
+
+Two Firefox behaviours make that injection fragile, and both bit us:
+
+- **A resolved `executeScript` is not proof the script ran.** Per MDN, "in Firefox and Safari, partial lack of host permissions can result in a successful execution (with the partial results in the resolved promise)". `src/shared/inject-script.ts` inspects each `InjectionResult` so a failed injection fails the recording start instead of shipping an empty `console.json`.
+- **A navigation destroys the injected scripts.** The `tabs.onUpdated` re-arm covers all three surfaces — user events, drawing overlay, and `reinjectEvidenceCapture` on the runtime (a no-op on Chromium, whose CDP survives navigation).
+
+Host permissions are the remaining gap: Firefox MV3 treats every entry in `host_permissions` as **optional and not granted**, so on a site outside the manifest the only access is `activeTab` — granted on the popup click and revoked as soon as another tab becomes active. Because the record path focuses the media host tab, injections after that point fail with "Missing host permission for the tab" until the user grants access (about:addons → the add-on → Permissions, or a `permissions.request()` from a user gesture).
+
+Video uses `getDisplayMedia`, which Firefox only permits while the calling document holds **transient user activation** — a background message cannot supply that. So `Start Recording` focuses the media host page (`offscreen/offscreen.html`, opened as a pinned tab) and shows a **Choose what to share** button; that click opens the browser's share picker. Once the stream is live, focus returns to the recorded tab and in-page evidence capture starts. Cancelling the picker aborts the whole start, so the page is never left instrumented.
+
+Firefox cannot share a single tab, and no constraint narrows its picker: it "allows windows and screens only to be captured with `getDisplayMedia()`" while Chrome also offers tabs. Measured on Firefox 153, `getSupportedConstraints()` reports `displaySurface=false` (also `cursor=false`, `logicalSurface=false`; only the non-standard `mediaSource=true`), and `track.getSettings()` omits `displaySurface` entirely — a whole-screen pick comes back only as `track.label === "Primary Monitor"`. So the arm panel tells the user to pick the Firefox window; a whole-screen pick records everything else on that screen. `preferCurrentTab` and `displaySurface: "browser"` are still sent for engines that honour them.
+
+Set `FIREFOX_EXTENSION_ID` (default `gn-tracing@gnas.dev`) and register the redirect URI `https://<id>.extensions.allizom.org/` on OAuth apps. Google additionally accepts the mozoauth2 loopback (`http://127.0.0.1/mozoauth2/<sha1-of-id>`) which the extension uses for Drive; Dropbox rejects `http://` on any host but `localhost`, so Dropbox must get the `allizom` URI. Run `node scripts/check-oauth-domain-console.mjs` to print both.
 
 Rebuild and reload the unpacked extension after source changes. After changing OAuth client ids or token proxy URLs, always rebuild so esbuild defines and `host_permissions` are regenerated.
 
@@ -274,9 +289,29 @@ The Dropbox proxy only accepts relative shared-link ids (`s/`, `scl/`, `sh/`, `s
 
 | Process | Port / path | Role |
 |---------|-------------|------|
-| Extension watch | esbuild → `dist/` | Injects **local** Worker proxies (not production Worker URLs) |
+| Extension watch | esbuild → `dist/<browser>/` | Injects **local** Worker proxies (not production Worker URLs) |
 | Standalone player | Vite `:5176` | Replay UI + `/api/drive`, `/api/dropbox` download proxies |
 | Multi-issuer Worker | wrangler `:8787` | OAuth token exchange (Google `/`, Dropbox `/token/dropbox`) + optional `POST /feedback` |
+
+Only the extension watcher is per-browser; the player and Worker are shared by every target. Pick the target with `BROWSER`:
+
+```bash
+task dev                    # chrome (default)
+task dev BROWSER=edge       # same as task dev:edge
+task dev BROWSER=firefox    # same as task dev:firefox
+task dev:all                # all three watchers at once (5 processes)
+```
+
+An unsupported value fails fast on a precondition, before any long-running process starts. `task watch` takes the same `BROWSER` variable.
+
+The player (`:5176`) and Worker (`:8787`) are per-repo, not per-target, so `player:dev` and `worker:dev` **reuse an instance already serving their port** instead of failing to bind. Two stacks can therefore coexist — `task dev` in one terminal and `task dev BROWSER=firefox` in another — with the second reusing the first's shared services:
+
+```
+[player:dev] http://localhost:5176 is already serving — reusing it.
+[worker:dev] http://localhost:8787 is already serving — reusing it.
+```
+
+The probe is `scripts/port-listening.mjs`, which checks both loopback families (Vite binds `[::1]` only, workerd binds both).
 
 Before wrangler starts, `task worker:sync-dev-vars` copies client ids/secrets and optional `GITHUB_FEEDBACK_TOKEN` from root `.env` into `worker/.dev.vars` (git-ignored). Keep `*_TOKEN_PROXY_URL_DEV` / `FEEDBACK_PROXY_URL_DEV` empty to use the localhost defaults (`http://localhost:8787`, `/token/dropbox`, `/feedback`); set them only to override.
 
