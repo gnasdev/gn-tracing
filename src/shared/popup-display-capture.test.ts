@@ -25,7 +25,9 @@ describe("buildDisplayMediaConstraints", () => {
 describe("beginDisplayMediaFromGesture", () => {
   it("invokes getDisplayMedia immediately with shared constraints", async () => {
     const stream = { getTracks: () => [] } as unknown as MediaStream;
-    const getDisplayMedia = vi.fn(async () => stream);
+    const getDisplayMedia = vi.fn(
+      async (_constraints?: DisplayMediaStreamOptions): Promise<MediaStream> => stream,
+    );
     const result = await beginDisplayMediaFromGesture(getDisplayMedia);
     expect(result).toBe(stream);
     expect(getDisplayMedia).toHaveBeenCalledOnce();
@@ -64,10 +66,10 @@ describe("handoffDisplayStreamToMediaHost", () => {
       postMessage,
     } as unknown as Window;
 
-    let messageListener: ((event: MessageEvent) => void) | null = null;
+    const listeners: Array<(event: MessageEvent) => void> = [];
     const messageBus = {
       addEventListener: (_type: "message", listener: (event: MessageEvent) => void) => {
-        messageListener = listener;
+        listeners.push(listener);
       },
       removeEventListener: vi.fn(),
       setTimeout: vi.fn(() => 1),
@@ -80,8 +82,12 @@ describe("handoffDisplayStreamToMediaHost", () => {
       messageBus,
     });
 
-    expect(messageListener).toBeTypeOf("function");
-    messageListener?.({
+    expect(listeners).toHaveLength(1);
+    const onMessage = listeners[0];
+    if (!onMessage) {
+      throw new Error("expected handoff to register a message listener");
+    }
+    onMessage({
       source: mediaView,
       data: {
         type: ADOPT_DISPLAY_STREAM_RESULT,
