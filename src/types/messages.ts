@@ -50,7 +50,9 @@ type MessageAction =
   /** Collect always-on Instant Replay buffer on the active tab and upload. */
   | "CAPTURE_INSTANT_REPLAY"
   /** Firefox in-page capture bridge → storage (MAIN world evidence). */
-  | "IN_PAGE_CAPTURE_ENTRY";
+  | "IN_PAGE_CAPTURE_ENTRY"
+  /** Firefox: open parked media host tab without focusing (popup stream handoff). */
+  | "ENSURE_MEDIA_HOST";
 
 type RecordingPhase = "idle" | "recording" | "interrupted";
 

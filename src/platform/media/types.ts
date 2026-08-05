@@ -4,6 +4,16 @@
  * Chromium uses chrome.offscreen; Firefox uses a dedicated extension page.
  */
 
+export type MediaStartCaptureOptions = {
+  /**
+   * Firefox: stream already adopted into the media host from the popup gesture.
+   * Skip focusing the media tab / arm panel; only bind session metadata.
+   */
+  prearmed?: boolean;
+  firstFrameAt?: number | null;
+  capturedSurface?: import("../../media-pipeline/capture-surface").CapturedSurface;
+};
+
 export interface MediaHost {
   readonly kind: "offscreen" | "extension-page";
 
@@ -11,7 +21,11 @@ export interface MediaHost {
    * Start tab/screen video capture for a session. Returns first-frame wall time
    * when available (used as recording timeline anchor).
    */
-  startCapture(tabId: number, sessionId: string): Promise<number | null>;
+  startCapture(
+    tabId: number,
+    sessionId: string,
+    options?: MediaStartCaptureOptions,
+  ): Promise<number | null>;
 
   stopCapture(discard?: boolean): Promise<void>;
 
@@ -22,6 +36,11 @@ export interface MediaHost {
   hydrateActiveSession(sessionId: string | null): void;
 
   get activeSessionId(): string | null;
+
+  /**
+   * Surface metadata after capture (Firefox display-media). Chromium may omit.
+   */
+  readonly capturedSurface?: import("../../media-pipeline/capture-surface").CapturedSurface;
 
   /**
    * Ensure a DOM-capable context exists for packaging (OffscreenCanvas / Blob

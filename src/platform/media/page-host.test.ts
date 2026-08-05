@@ -81,6 +81,26 @@ describe("ExtensionPageMediaHost display-capture arming", () => {
     ).toHaveLength(0);
   });
 
+  it("prearmed path binds session without focusing the media tab", async () => {
+    const host = new ExtensionPageMediaHost();
+    const firstFrameAt = await host.startCapture(RECORDED_TAB_ID, SESSION_ID, {
+      prearmed: true,
+      firstFrameAt: 99,
+      capturedSurface: { label: "My Window" },
+    });
+    expect(firstFrameAt).toBe(99);
+    expect(host.activeSessionId).toBe(SESSION_ID);
+    expect(host.capturedSurface).toEqual({ label: "My Window" });
+    expect(armMessage()).toBeUndefined();
+    // No focus steal and no arm handshake when the popup already handed off the stream.
+    expect(updateCalls()).toHaveLength(0);
+    expect(
+      mock().runtime.sendMessage.calls.filter(
+        (call) => (call.args[0] as { type?: string })?.type === "ARM_DISPLAY_CAPTURE",
+      ),
+    ).toHaveLength(0);
+  });
+
   it("rejects with the page's reason when the user cancels sharing", async () => {
     const host = new ExtensionPageMediaHost();
     const started = host.startCapture(RECORDED_TAB_ID, SESSION_ID);
@@ -122,7 +142,14 @@ describe("ExtensionPageMediaHost display-capture arming", () => {
   });
 
   it("fails with an actionable error when the media page does not answer the arm", async () => {
-    mock().runtime.sendMessage.mockImplementation(() => Promise.resolve(undefined) as never);
+    // Ping succeeds so ensurePackagingContext returns quickly; only ARM fails.
+    mock().runtime.sendMessage.mockImplementation((message: unknown) => {
+      const type = (message as { type?: string })?.type;
+      if (type === "MEDIA_HOST_PING") {
+        return Promise.resolve({ ok: true }) as never;
+      }
+      return Promise.resolve(undefined) as never;
+    });
 
     const host = new ExtensionPageMediaHost();
     await expect(host.startCapture(RECORDED_TAB_ID, SESSION_ID)).rejects.toThrow(/capture tab/i);

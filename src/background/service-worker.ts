@@ -736,6 +736,7 @@ function patchUploadProgress(sessionId: string, data: Record<string, unknown>): 
 
 registerMessageListeners({
   startRecording,
+  ensureMediaHost,
   stopRecording,
   removeRecording,
   getRecordingStatus,
@@ -1381,6 +1382,18 @@ function buildPrivacySummary(
   );
 }
 
+async function ensureMediaHost(): Promise<MessageResponse> {
+  try {
+    await recordingRuntime.ensurePackagingContext();
+    return { ok: true };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "Could not open the capture host page.",
+    };
+  }
+}
+
 async function startRecording(
   tabId: number,
   data?: Record<string, unknown>,
@@ -1391,14 +1404,25 @@ async function startRecording(
 
   try {
     const settings = await getUploadSettings();
-    void data;
+    const mediaPrearmed = data?.mediaPrearmed === true;
+    const prearmedSessionId =
+      typeof data?.sessionId === "string" && data.sessionId.trim() ? data.sessionId.trim() : null;
+    const prearmedFirstFrameAt =
+      typeof data?.firstFrameAt === "number" && Number.isFinite(data.firstFrameAt)
+        ? data.firstFrameAt
+        : null;
+    const prearmedSurface =
+      data?.capturedSurface && typeof data.capturedSurface === "object"
+        ? (data.capturedSurface as { label?: string; displaySurface?: string })
+        : undefined;
+
     const tab = await chrome.tabs.get(tabId);
     const target = getRecordingTabTarget(tab);
     if (target.error) {
       return { ok: false, error: target.error };
     }
 
-    const sessionId = createSessionId();
+    const sessionId = mediaPrearmed && prearmedSessionId ? prearmedSessionId : createSessionId();
     activeRecording.sessionId = sessionId;
     activeRecording.isRecording = false;
     activeRecording.tabId = tabId;
@@ -1424,21 +1448,18 @@ async function startRecording(
     // Full recordings keep all evidence (no rolling Instant Replay retention).
     storage.setRollingWindowMs(null);
 
-    // Inject before the runtime starts: the Firefox path focuses the media host
-    // tab to get transient activation, and that revokes activeTab for this tab.
+    // Inject before the runtime starts: the legacy Firefox arm path focuses the
+    // media host tab (revoking activeTab). Prearmed popup capture never focuses
+    // that tab, but pre-inject is still cheap insurance for evidence attach.
     await preinjectRecordedTabScripts(tabId);
 
     // Keepalive BEFORE the runtime starts, not after it returns.
     //
     // On Firefox the background is an event page (`background.scripts`), which
     // the browser unloads when idle and then re-evaluates from scratch. The
-    // Firefox start path waits for the user to pick a share target in the arm
-    // panel — up to ARM_TIMEOUT_MS (180s) during which the background does
-    // nothing at all after attach/prepare. An unload in that window destroys
-    // the suspended async continuation below, so beginSession (in-page START +
-    // webRequest tab scope) never runs and evidence stays empty while the video
-    // (owned by the media tab's live MediaRecorder) records fine. That is the
-    // "video works, console.json empty" report.
+    // legacy arm path waits for the user to pick a share target — up to
+    // ARM_TIMEOUT_MS (180s). Prearmed capture is shorter, but keepalive still
+    // covers beginSession / packaging work after share commit.
     //
     // Chrome never showed this because its evidence arrives over CDP, whose
     // steady event traffic keeps the service worker alive on its own.
@@ -1450,6 +1471,9 @@ async function startRecording(
       settings,
       privacySettings: activeRecording.privacySettings,
       onRedactionHits: recordActiveRedactionHits,
+      mediaPrearmed,
+      firstFrameAt: prearmedFirstFrameAt,
+      capturedSurface: prearmedSurface,
     });
 
     // Anchor the timeline at the first produced video frame when available;

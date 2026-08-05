@@ -27,6 +27,13 @@ export interface RecordingStartInput {
   settings: UploadSettingsStore;
   privacySettings: PrivacyRedactionSettings;
   onRedactionHits: (hits: RedactionHit[]) => void;
+  /**
+   * Firefox: popup already ran getDisplayMedia and handed the stream to the
+   * media host. Skip focusing the capture tab / arm panel.
+   */
+  mediaPrearmed?: boolean;
+  firstFrameAt?: number | null;
+  capturedSurface?: import("../../media-pipeline/capture-surface").CapturedSurface;
 }
 
 export interface RecordingFinalizeInput {

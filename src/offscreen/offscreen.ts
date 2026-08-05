@@ -35,6 +35,10 @@ import {
 } from "../shared/google-drive-api";
 import { buildExternalPlayerUrl } from "../shared/player-host";
 import {
+  ADOPT_DISPLAY_STREAM_MESSAGE,
+  ADOPT_DISPLAY_STREAM_RESULT,
+} from "../shared/popup-display-capture";
+import {
   hasRecordingHostPermission,
   RECORDING_HOST_ORIGINS,
   requestRecordingHostPermission,
@@ -216,13 +220,16 @@ chrome.runtime.onMessage.addListener((message: OffscreenIncomingMessage, _sender
       return true;
 
     case "ARM_DISPLAY_CAPTURE":
-      // Firefox only: render the click surface and acknowledge immediately. The
-      // capture result arrives later as DISPLAY_CAPTURE_RESULT, because
-      // getDisplayMedia must run inside the user's click on this document.
+      // Firefox fallback only: render the click surface when popup handoff is
+      // unavailable. Preferred path adopts a stream from the popup gesture.
       armDisplayCapture({
         sessionId: String(message.data?.sessionId || ""),
         tabTitle: typeof message.data?.tabTitle === "string" ? message.data.tabTitle : "",
       });
+      sendResponse({ ok: true });
+      return false;
+
+    case "MEDIA_HOST_PING":
       sendResponse({ ok: true });
       return false;
 
@@ -492,6 +499,97 @@ async function onArmButtonClick(): Promise<void> {
   }
 }
 
+/**
+ * Preferred Firefox path: popup opened getDisplayMedia and transferred tracks.
+ * Start MediaRecorder without focusing this tab or showing the arm panel.
+ */
+async function adoptDisplayStreamFromPopup(input: {
+  sessionId: string;
+  tracks: MediaStreamTrack[];
+  source: MessageEventSource | null;
+  origin: string;
+}): Promise<void> {
+  const reply = (payload: {
+    ok: boolean;
+    firstFrameAt?: number | null;
+    cancelled?: boolean;
+    error?: string;
+    surface?: CapturedSurface;
+  }) => {
+    const target = input.source as Window | null;
+    if (target && typeof target.postMessage === "function") {
+      try {
+        target.postMessage(
+          {
+            type: ADOPT_DISPLAY_STREAM_RESULT,
+            sessionId: input.sessionId,
+            ...payload,
+          },
+          input.origin,
+        );
+      } catch {
+        // Popup may have closed; runtime result still helps the SW path.
+      }
+    }
+    sendDisplayCaptureResult({
+      sessionId: input.sessionId,
+      ok: payload.ok,
+      firstFrameAt: payload.firstFrameAt,
+      cancelled: payload.cancelled,
+      error: payload.error,
+      surface: payload.surface,
+    });
+  };
+
+  if (!input.sessionId || !Array.isArray(input.tracks) || input.tracks.length === 0) {
+    reply({ ok: false, error: "Missing display stream tracks from the popup." });
+    return;
+  }
+
+  try {
+    // Drop arm UI if a fallback arm was in flight.
+    armedDisplayCapture = null;
+    disarmDisplayCapture();
+    const stream = new MediaStream(input.tracks);
+    const firstFrameAt = await startCaptureWithStream(stream, input.sessionId, false);
+    const surface = readCapturedSurface(activeStream);
+    reply({ ok: true, firstFrameAt, surface });
+  } catch (error) {
+    const failure = describeDisplayCaptureError(error);
+    reply({
+      ok: false,
+      cancelled: failure.cancelled,
+      error: failure.message,
+    });
+  }
+}
+
+function wirePopupDisplayStreamAdoption(): void {
+  window.addEventListener("message", (event: MessageEvent) => {
+    const data = event.data as {
+      type?: string;
+      sessionId?: string;
+      tracks?: MediaStreamTrack[];
+    } | null;
+    if (!data || data.type !== ADOPT_DISPLAY_STREAM_MESSAGE) {
+      return;
+    }
+    // Only accept from our own extension origin (popup / other extension pages).
+    const extensionOrigin = chrome.runtime.getURL("").replace(/\/$/, "");
+    if (event.origin !== extensionOrigin) {
+      return;
+    }
+    void adoptDisplayStreamFromPopup({
+      sessionId: String(data.sessionId || ""),
+      tracks: Array.isArray(data.tracks) ? data.tracks : [],
+      source: event.source,
+      origin: event.origin,
+    });
+  });
+}
+
+wirePopupDisplayStreamAdoption();
+
 function armDisplayCapture(input: { sessionId: string; tabTitle: string }): void {
   if (!input.sessionId) {
     return;
@@ -594,11 +692,25 @@ async function startCapture(
     throw new Error("Missing capture session metadata.");
   }
 
+  const { stream, loopbackTabAudio } = await acquireCaptureStream(streamId, mode);
+  return startCaptureWithStream(stream, sessionId, loopbackTabAudio);
+}
+
+/**
+ * Arm MediaRecorder on an already-acquired stream (tabCapture or popup handoff).
+ */
+async function startCaptureWithStream(
+  stream: MediaStream,
+  sessionId: string,
+  loopbackTabAudio: boolean,
+): Promise<number | null> {
+  if (!sessionId) {
+    throw new Error("Missing capture session metadata.");
+  }
+
   if (recorder && recorder.state !== "inactive") {
     throw new Error("A recording is already active.");
   }
-
-  const { stream, loopbackTabAudio } = await acquireCaptureStream(streamId, mode);
 
   if (loopbackTabAudio) {
     // Tab capture audio must be piped to speakers so the user still hears the tab.

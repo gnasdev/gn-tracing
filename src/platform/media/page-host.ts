@@ -1,17 +1,17 @@
 /**
  * Firefox media host: reuses offscreen/offscreen.html as a normal extension tab.
  *
- * Firefox has no chrome.offscreen / chrome.tabCapture. Video uses
- * getDisplayMedia inside that page, which Firefox only allows while the document
- * holds transient user activation — so the page is focused and the user clicks
- * "Choose what to share" there. Packaging and upload stay in the same document
- * code path as Chromium.
+ * Firefox has no chrome.offscreen / chrome.tabCapture. Preferred path: popup
+ * calls getDisplayMedia (user gesture over the active tab), then transfers the
+ * stream into this parked tab for MediaRecorder + packaging — no focus steal
+ * and no "Choose what to share" arm panel. Fallback path still focuses the tab
+ * and arms the panel when the popup handoff is unavailable.
  */
 
 import type { CapturedSurface } from "../../media-pipeline/capture-surface";
 import { describeFirefoxArmTimeoutMessage } from "../../shared/firefox-arm-copy";
 import { MEDIA_PAGE_MESSAGE_TARGET } from "./message-target";
-import type { MediaHost } from "./types";
+import type { MediaHost, MediaStartCaptureOptions } from "./types";
 
 /** Same HTML/JS as Chromium offscreen document — opened as a tab on Firefox. */
 const MEDIA_PAGE_PATH = "offscreen/offscreen.html";
@@ -49,12 +49,24 @@ export class ExtensionPageMediaHost implements MediaHost {
     return this.#capturedSurface;
   }
 
-  async startCapture(tabId: number, sessionId: string): Promise<number | null> {
+  async startCapture(
+    tabId: number,
+    sessionId: string,
+    options?: MediaStartCaptureOptions,
+  ): Promise<number | null> {
+    // Popup already opened the share picker and transferred the stream into the
+    // parked media host — bind session state without focusing that tab.
+    if (options?.prearmed) {
+      this.#activeSessionId = sessionId;
+      this.#capturedSurface = options.capturedSurface ?? {};
+      return options.firstFrameAt ?? null;
+    }
+
     await this.ensurePackagingContext();
 
-    // getDisplayMedia requires transient user activation, which a background
-    // message cannot provide. So the media page is focused and asks the user to
-    // click; that click is what actually opens the browser's share picker.
+    // Fallback: getDisplayMedia requires transient user activation, which a
+    // background message cannot provide. Focus the media page and ask the user
+    // to click; that click opens the browser's share picker.
     const tabTitle = await this.#readTabTitle(tabId);
     const armed = this.#waitForDisplayCaptureResult(sessionId);
 
@@ -293,8 +305,8 @@ export class ExtensionPageMediaHost implements MediaHost {
 
     const created = await chrome.tabs.create({
       url: pageUrl,
-      // Parked out of the way; startCapture focuses it only while arming, because
-      // the share picker must be opened by a click in this document.
+      // Always park inactive. Preferred path: popup getDisplayMedia + stream
+      // handoff. Fallback arm path focuses only when prearmed is false.
       active: false,
       pinned: true,
     });
@@ -303,8 +315,27 @@ export class ExtensionPageMediaHost implements MediaHost {
     }
     this.#mediaTabId = created.id;
 
-    // Give the page a moment to register its message listener.
-    await new Promise((resolve) => setTimeout(resolve, 250));
+    // Wait until the page answers so popup handoff / arm messages are not lost.
+    await this.#waitUntilMediaPageReady();
+  }
+
+  async #waitUntilMediaPageReady(timeoutMs = 3_000): Promise<void> {
+    const started = Date.now();
+    while (Date.now() - started < timeoutMs) {
+      try {
+        const ack = (await chrome.runtime.sendMessage({
+          target: MEDIA_PAGE_MESSAGE_TARGET,
+          type: "MEDIA_HOST_PING",
+        })) as { ok?: boolean } | undefined;
+        if (ack?.ok) {
+          return;
+        }
+      } catch {
+        // Page still loading.
+      }
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    // Best-effort: callers still try; arm/handoff will surface a clear error.
   }
 
   async cleanup(): Promise<void> {

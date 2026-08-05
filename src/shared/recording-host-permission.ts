@@ -7,7 +7,9 @@
  * `optional_host_permissions` in the manifest.
  *
  * `permissions.request` requires a user gesture in the calling context. Prefer
- * the popup Start click (earliest viable gesture) over the media-tab grant step.
+ * the popup Start / Instant Replay enable click (active extension UI over the
+ * current browser tab) — never open a dedicated tab solely to ask for access.
+ * The media-tab grant button is only a fallback when the user declined earlier.
  * Never combine this request with the getDisplayMedia click — awaiting the
  * permission prompt consumes transient activation.
  */
@@ -37,4 +39,20 @@ export async function requestRecordingHostPermission(
   } catch {
     return false;
   }
+}
+
+/**
+ * Ensure host permission is held, prompting only when missing.
+ *
+ * Call from a popup (or other extension-page) user gesture so the prompt is
+ * tied to the active browser window — not a newly opened grant-only tab.
+ * Returns true when already granted or the user accepts.
+ */
+export async function ensureRecordingHostPermission(
+  origins: readonly string[] = RECORDING_HOST_ORIGINS,
+): Promise<boolean> {
+  if (await hasRecordingHostPermission(origins)) {
+    return true;
+  }
+  return requestRecordingHostPermission(origins);
 }

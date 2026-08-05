@@ -126,6 +126,8 @@ export const POPUP_TRANSLATIONS: Record<PopupLanguage, Record<string, string>> =
     "instantReplay.windowSaved": "Instant Replay window saved.",
     "instantReplay.enabledSaved": "Instant Replay enabled.",
     "instantReplay.disabledSaved": "Instant Replay disabled.",
+    "instantReplay.permissionNeeded":
+      "Instant Replay needs permission to run on the pages you browse. It stays off until that is granted.",
     "instantReplay.captureFailed": "Could not capture Instant Replay.",
     "instantReplay.disabledTitle": "Enable Instant Replay first",
     "instantReplay.domainNotAllowedTitle":
@@ -291,6 +293,8 @@ export const POPUP_TRANSLATIONS: Record<PopupLanguage, Record<string, string>> =
     "instantReplay.windowSaved": "Đã lưu cửa sổ Instant Replay.",
     "instantReplay.enabledSaved": "Đã bật Instant Replay.",
     "instantReplay.disabledSaved": "Đã tắt Instant Replay.",
+    "instantReplay.permissionNeeded":
+      "Instant Replay cần quyền chạy trên các trang bạn duyệt. Tính năng giữ tắt cho đến khi được cấp quyền.",
     "instantReplay.captureFailed": "Không capture được Instant Replay.",
     "instantReplay.disabledTitle": "Bật Instant Replay trước",
     "instantReplay.domainNotAllowedTitle":

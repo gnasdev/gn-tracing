@@ -162,7 +162,9 @@ describe("createRegistrationDeps", () => {
     const source = readFileSync(resolve(__dirname, "instant-replay-registration.ts"), "utf8");
     expect(source).toContain("RECORDING_HOST_ORIGINS");
     expect(source).toContain("hasRecordingHostPermission");
-    expect(source).toContain("requestRecordingHostPermission");
+    // SW must not prompt — popup owns gesture-backed requestRecordingHostPermission.
+    expect(source).not.toContain("requestRecordingHostPermission");
+    expect(source).toMatch(/requestHostPermission:\s*async\s*\(\)\s*=>\s*false/);
     // No private hard-coded origin list left in this module.
     expect(source).not.toMatch(/const origins = \["http:\/\/\*\/\*", "https:\/\/\*\/\*"\]/);
     expect(source).not.toMatch(/matches:\s*\["http:\/\/\*\/\*"/);

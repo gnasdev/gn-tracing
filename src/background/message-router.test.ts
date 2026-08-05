@@ -47,6 +47,7 @@ function makeHandlers(overrides: Partial<MessageHandlers> = {}): MessageHandlers
     saveAnnotatedScreenshot: vi.fn(async () => ({ ok: true })),
     captureInstantReplay: vi.fn(async () => ({ ok: true })),
     handleInPageCaptureEntry: vi.fn(() => ({ ok: true })),
+    ensureMediaHost: vi.fn(async () => ({ ok: true })),
     ...overrides,
   };
   return {

@@ -66,6 +66,8 @@ export interface MessageHandlers {
   saveAnnotatedScreenshot: (data: Record<string, unknown> | undefined) => Promise<MessageResponse>;
   captureInstantReplay: (tabId: number | undefined) => Promise<MessageResponse>;
   handleInPageCaptureEntry: (message: ServiceWorkerMessage) => MessageResponse;
+  /** Firefox: park media host tab without focusing it (popup stream handoff). */
+  ensureMediaHost: () => Promise<MessageResponse>;
 }
 
 export function registerMessageListeners(handlers: MessageHandlers): void {
@@ -112,6 +114,8 @@ async function handleMessage(
       return typeof message.tabId === "number"
         ? handlers.startRecording(message.tabId, message.data)
         : { ok: false, error: "Open a browser tab before starting a recording." };
+    case "ENSURE_MEDIA_HOST":
+      return handlers.ensureMediaHost();
     case "STOP_RECORDING":
       return handlers.stopRecording();
     case "REMOVE_RECORDING":

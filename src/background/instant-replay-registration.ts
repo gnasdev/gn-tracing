@@ -17,7 +17,6 @@
 import {
   hasRecordingHostPermission,
   RECORDING_HOST_ORIGINS,
-  requestRecordingHostPermission,
 } from "../shared/recording-host-permission";
 
 export const INSTANT_REPLAY_SCRIPT_ID = "gn-tracing-instant-replay";
@@ -140,7 +139,10 @@ export function createRegistrationDeps(): RegistrationDeps {
     unregister: (filter) => chrome.scripting.unregisterContentScripts(filter),
     // Same origins as full-record Firefox host permission (shared constant).
     hasHostPermission: () => hasRecordingHostPermission(),
-    requestHostPermission: () => requestRecordingHostPermission(),
+    // Do not prompt from the service worker: Firefox (and Chrome) require a
+    // user gesture on an extension page. Popup IR enable / Start pre-request
+    // via ensureRecordingHostPermission before messaging the worker.
+    requestHostPermission: async () => false,
     injectIntoOpenTabs: async () => {
       const tabs = await chrome.tabs.query({
         url: [...RECORDING_HOST_ORIGINS],

@@ -54,9 +54,8 @@ export class FirefoxRecordingRuntime implements RecordingRuntime {
 
     this.#sessionId = input.sessionId;
 
-    // Prepare while the tab still holds activeTab: startCapture below focuses
-    // the media host tab, which revokes it. Attach injects scripts / installs
-    // listeners but does not START in-page capture or scope webRequest yet.
+    // Prepare while the tab still holds activeTab. The legacy arm path focuses
+    // the media host (revoking activeTab); the prearmed popup path never does.
     const attached = await this.#evidence.attach({
       tabId: input.tabId,
       sessionId: input.sessionId,
@@ -71,17 +70,16 @@ export class FirefoxRecordingRuntime implements RecordingRuntime {
       throw new Error(attached.limitations[0] ?? "Evidence capture could not attach.");
     }
 
-    // Media first for arming: it blocks on the user clicking "Choose what to
-    // share" (and on the browser's share picker), and it is the step that can
-    // be cancelled. Arming in-page evidence before that would capture the
-    // picker detour, and a cancel would leave the page instrumented until
-    // discard (which the service worker does call — but START-before-confirm
-    // is still the wrong lifecycle).
-    const firstFrameAt = await this.#media.startCapture(input.tabId, input.sessionId);
+    // Preferred: popup already opened the share picker and transferred the
+    // stream into a parked media host. Fallback: focus media tab + arm panel.
+    const firstFrameAt = await this.#media.startCapture(input.tabId, input.sessionId, {
+      prearmed: Boolean(input.mediaPrearmed),
+      firstFrameAt: input.firstFrameAt,
+      capturedSurface: input.capturedSurface,
+    });
 
-    // User committed: arm webRequest tab scope + in-page START while focus is
-    // still on the media host, then restore the recorded tab. beginSession is
-    // best-effort — never discard a live share solely for console re-arm failure.
+    // User committed: arm webRequest tab scope + in-page START. When prearmed,
+    // focus never left the recorded tab; beginSession is best-effort.
     const armed = await this.#evidence.beginSession({
       tabId: input.tabId,
       sessionId: input.sessionId,
@@ -96,7 +94,10 @@ export class FirefoxRecordingRuntime implements RecordingRuntime {
       this.#attachLimitations.push(surfaceMismatch);
     }
 
-    await this.#media.restoreRecordedTabFocus(input.tabId);
+    // Only restore focus after the legacy arm path stole it.
+    if (!input.mediaPrearmed) {
+      await this.#media.restoreRecordedTabFocus(input.tabId);
+    }
 
     this.#media.hydrateActiveSession(input.sessionId);
     return { firstFrameAt: firstFrameAt ?? null };

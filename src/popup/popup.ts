@@ -3,6 +3,7 @@
  */
 
 import { resolveManageCloudsPageUrl } from "../manage-clouds/page-model";
+import { describeDisplayCaptureError } from "../media-pipeline/record-session";
 import { isFirefoxTarget } from "../platform/detect";
 import { buttonSpinnerHtml } from "../shared/button-loading";
 import { DEFAULT_DRAW_COLOR, DRAW_COLOR_PRESETS, normalizeDrawColor } from "../shared/drawing";
@@ -23,9 +24,12 @@ import {
 } from "../shared/instant-replay-window";
 import { resolveReplayOpenUrl } from "../shared/player-host";
 import {
-  hasRecordingHostPermission,
-  requestRecordingHostPermission,
-} from "../shared/recording-host-permission";
+  beginDisplayMediaFromGesture,
+  createRecordingSessionId,
+  handoffDisplayStreamToMediaHost,
+} from "../shared/popup-display-capture";
+import { openPopupExternalUrl, popupTabOpenModeForSessionAction } from "../shared/popup-navigation";
+import { ensureRecordingHostPermission } from "../shared/recording-host-permission";
 import { getRecordingTabTarget } from "../shared/recording-target";
 import {
   attachSettingsForm,
@@ -1278,6 +1282,17 @@ async function saveInstantReplayEnabled(enabled: boolean): Promise<void> {
     instantReplayEnableBtn.disabled = true;
   }
   try {
+    // Request host access from this popup click (user gesture). Never open a
+    // new tab solely for the permission prompt; the service worker cannot
+    // show a gesture-backed permissions.request on Firefox.
+    if (enabled) {
+      const granted = await ensureRecordingHostPermission().catch(() => false);
+      if (!granted) {
+        showToast(t("instantReplay.permissionNeeded"), 3600, { variant: "error" });
+        return;
+      }
+    }
+
     const result = (await chrome.runtime.sendMessage({
       action: "UPDATE_SETTINGS",
       data: { instantReplayEnabled: enabled },
@@ -1370,7 +1385,77 @@ async function saveInstantReplayWindowSeconds(seconds: number): Promise<void> {
   }
 }
 
-async function startRecordingSession(): Promise<void> {
+function stopMediaStreamTracks(stream: MediaStream | null | undefined): void {
+  if (!stream) {
+    return;
+  }
+  for (const track of stream.getTracks()) {
+    try {
+      track.stop();
+    } catch {
+      // Ignore.
+    }
+  }
+}
+
+/**
+ * Firefox preferred path: share picker from this popup (active UI), then hand
+ * the stream to a parked media-host tab. Never focuses offscreen.html for the
+ * arm panel when handoff succeeds.
+ */
+async function startFirefoxRecordingWithPopupDisplayMedia(
+  tabId: number,
+  displayStreamPromise: Promise<MediaStream>,
+): Promise<MessageResponse> {
+  const ensure = (await chrome.runtime.sendMessage({
+    action: "ENSURE_MEDIA_HOST",
+  })) as MessageResponse;
+  if (!ensure?.ok) {
+    stopMediaStreamTracks(await displayStreamPromise.catch(() => null));
+    return {
+      ok: false,
+      error: ensure?.error || "Could not prepare the capture host page.",
+    };
+  }
+
+  // Host access in parallel with the share picker (do not await before
+  // getDisplayMedia — that already started in the click gesture).
+  void ensureRecordingHostPermission().catch(() => false);
+
+  let stream: MediaStream;
+  try {
+    stream = await displayStreamPromise;
+  } catch (error) {
+    const failure = describeDisplayCaptureError(error);
+    return { ok: false, error: failure.message };
+  }
+
+  const sessionId = createRecordingSessionId();
+  const handoff = await handoffDisplayStreamToMediaHost(stream, sessionId);
+  if (!handoff.ok) {
+    stopMediaStreamTracks(stream);
+    // Fallback: legacy media-tab arm panel (focus + second click).
+    return (await chrome.runtime.sendMessage({
+      action: "START_RECORDING",
+      tabId,
+    })) as MessageResponse;
+  }
+
+  return (await chrome.runtime.sendMessage({
+    action: "START_RECORDING",
+    tabId,
+    data: {
+      mediaPrearmed: true,
+      sessionId,
+      firstFrameAt: handoff.firstFrameAt ?? null,
+      capturedSurface: handoff.surface ?? {},
+    },
+  })) as MessageResponse;
+}
+
+async function startRecordingSession(options?: {
+  displayStreamPromise?: Promise<MediaStream> | null;
+}): Promise<void> {
   toggleActionInFlight = true;
   toggleBtn.disabled = true;
   if (instantReplayBtn) {
@@ -1378,14 +1463,22 @@ async function startRecordingSession(): Promise<void> {
   }
   errorMsg.classList.add("hidden");
 
+  const displayStreamPromise = options?.displayStreamPromise ?? null;
+
   try {
     const currentState = await loadStateFromStorage();
     if (!getActiveStorageConnection(currentState).isConnected) {
+      if (displayStreamPromise) {
+        stopMediaStreamTracks(await displayStreamPromise.catch(() => null));
+      }
       showError(t("storage.connectBeforeRecord"));
       return;
     }
 
     if (currentState?.recording?.isRecording) {
+      if (displayStreamPromise) {
+        stopMediaStreamTracks(await displayStreamPromise.catch(() => null));
+      }
       return;
     }
 
@@ -1393,30 +1486,35 @@ async function startRecordingSession(): Promise<void> {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     const target = getRecordingTabTarget(tab);
     if (target.error) {
+      if (displayStreamPromise) {
+        stopMediaStreamTracks(await displayStreamPromise.catch(() => null));
+      }
       activeTabRecordingError = target.error;
       updateRecordingUI(currentState?.recording ?? null);
       return;
     }
 
-    // Firefox: pre-request host permission on this Start click (user gesture).
-    // That skips the separate media-tab grant step when the user accepts here.
-    // Never combine this with getDisplayMedia — that runs later on the media tab.
-    if (isFirefoxTarget()) {
-      const alreadyGranted = await hasRecordingHostPermission();
-      if (!alreadyGranted) {
-        await requestRecordingHostPermission().catch(() => false);
+    let result: MessageResponse;
+    if (isFirefoxTarget() && displayStreamPromise && typeof tab.id === "number") {
+      result = await startFirefoxRecordingWithPopupDisplayMedia(tab.id, displayStreamPromise);
+    } else {
+      // Chromium tabCapture path, or Firefox without a gesture-captured stream.
+      if (isFirefoxTarget()) {
         // Decline is fine: video still records; arm panel may show grant fallback.
+        await ensureRecordingHostPermission().catch(() => false);
       }
+      result = (await chrome.runtime.sendMessage({
+        action: "START_RECORDING",
+        tabId: tab.id,
+      })) as MessageResponse;
     }
-
-    const result = (await chrome.runtime.sendMessage({
-      action: "START_RECORDING",
-      tabId: tab.id,
-    })) as MessageResponse;
     if (!result.ok) {
       showError(result.error || t("messages.startFailed"));
     }
   } catch (error) {
+    if (displayStreamPromise) {
+      stopMediaStreamTracks(await displayStreamPromise.catch(() => null));
+    }
     showError((error as Error).message);
   } finally {
     toggleActionInFlight = false;
@@ -2052,7 +2150,11 @@ async function setActiveStorageProvider(provider: string): Promise<void> {
 
 function openManageCloudsPage(): void {
   const url = resolveManageCloudsPageUrl((path) => chrome.runtime.getURL(path));
-  void chrome.tabs.create({ url, active: true });
+  void openPopupExternalUrl(url, {
+    mode: "open-and-close-popup",
+    createTab: (tabUrl) => chrome.tabs.create({ url: tabUrl, active: true }),
+    closePopup: () => window.close(),
+  });
 }
 
 function setCaptureUiVisibility(isVisible: boolean): void {
@@ -2323,8 +2425,17 @@ async function refreshStorageStatus(): Promise<void> {
   await refreshAllProviderStatuses();
 }
 
+/**
+ * Open a URL in a new tab and dismiss the popup.
+ * Used for uploaded-item navigation (replay / open remote / manage clouds).
+ * Upload actions must not use this — they keep the popup open for progress.
+ */
 function openExternalUrl(url: string): void {
-  chrome.tabs.create({ url });
+  void openPopupExternalUrl(url, {
+    mode: "open-and-close-popup",
+    createTab: (tabUrl) => chrome.tabs.create({ url: tabUrl, active: true }),
+    closePopup: () => window.close(),
+  });
 }
 
 /** Open replay in the external/hosted player. */
@@ -2339,14 +2450,28 @@ function openSettingsDialog(): void {
 toggleBtn.addEventListener("click", async () => {
   errorMsg.classList.add("hidden");
 
+  // Firefox: call getDisplayMedia in this turn so transient activation still
+  // holds. Any await before beginDisplayMediaFromGesture loses the gesture and
+  // forces the offscreen arm-panel tab. Use painted UI state (sync) to decide
+  // start vs stop — do not await storage first.
+  const looksLikeStart =
+    isFirefoxTarget() && !toggleActionInFlight && !latestPopupState?.recording?.isRecording;
+  const displayStreamPromise = looksLikeStart ? beginDisplayMediaFromGesture() : null;
+
   try {
     const currentState = await loadStateFromStorage();
     if (!getActiveStorageConnection(currentState).isConnected) {
+      if (displayStreamPromise) {
+        stopMediaStreamTracks(await displayStreamPromise.catch(() => null));
+      }
       showError(t("storage.connectBeforeRecord"));
       return;
     }
 
     if (currentState?.recording?.isRecording) {
+      if (displayStreamPromise) {
+        stopMediaStreamTracks(await displayStreamPromise.catch(() => null));
+      }
       toggleActionInFlight = true;
       toggleBtn.disabled = true;
       if (instantReplayBtn) {
@@ -2363,8 +2488,11 @@ toggleBtn.addEventListener("click", async () => {
       return;
     }
 
-    await startRecordingSession();
+    await startRecordingSession({ displayStreamPromise });
   } catch (error) {
+    if (displayStreamPromise) {
+      stopMediaStreamTracks(await displayStreamPromise.catch(() => null));
+    }
     showError((error as Error).message);
   } finally {
     if (toggleActionMode === "stop") {
@@ -2748,6 +2876,9 @@ sessionList.addEventListener("click", async (event) => {
   }
 
   const action = target.getAttribute("data-action");
+  // Navigation out of the popup closes it; upload / copy / delete keep it open.
+  const navMode = popupTabOpenModeForSessionAction(action);
+
   if (action === "open-replay") {
     const url = target.getAttribute("data-url");
     if (url) {
@@ -2788,6 +2919,10 @@ sessionList.addEventListener("click", async (event) => {
   }
 
   if (action === "upload-session") {
+    // Keep popup open so the user can watch upload progress.
+    if (navMode !== "keep-popup-open") {
+      return;
+    }
     const sessionId = target.getAttribute("data-session-id");
     if (!sessionId) {
       return;
