@@ -1,0 +1,135 @@
+/**
+ * Manage clouds full-page surface (extension tab).
+ * Uses shared theme tokens from shared/theme.css.
+ */
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif,
+    "Apple Color Emoji", "Segoe UI Emoji";
+  font-size: 14px;
+  color: var(--text-primary);
+  background: var(--bg-base);
+  min-height: 100vh;
+}
+
+#app {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.mc-topbar {
+  flex-shrink: 0;
+}
+
+.mc-main {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  padding: 28px 20px 48px;
+}
+
+.mc-card {
+  width: 100%;
+  max-width: 560px;
+  padding: 22px 22px 20px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 14px;
+  background: var(--bg-surface);
+  box-shadow: 0 8px 28px color-mix(in srgb, var(--text-primary) 6%, transparent);
+}
+
+.mc-card-header {
+  margin-bottom: 8px;
+}
+
+.mc-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.mc-title .ph {
+  font-size: 1.25rem;
+  color: var(--accent, #4361ee);
+}
+
+.mc-lead {
+  margin: 0 0 18px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+
+.mc-provider-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.mc-provider-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  background: var(--bg-base);
+}
+
+.mc-provider-card .meta {
+  flex: 1;
+  min-width: 0;
+}
+
+.mc-provider-card .name {
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.mc-provider-card .status {
+  margin-top: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.mc-provider-card .status.is-connected {
+  color: var(--success, #16a34a);
+}
+
+.mc-provider-card .status.is-busy {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mc-provider-card .status.is-error {
+  color: var(--danger, #e35);
+  font-weight: 500;
+}
+
+.mc-provider-card .actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 6px;
+  padding-top: 2px;
+}
+
+.mc-provider-card .status .btn-spinner {
+  width: 12px;
+  height: 12px;
+}

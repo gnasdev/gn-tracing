@@ -194,9 +194,6 @@
               type="button"
               id="manage-storage-btn"
               class="btn btn-start btn-small"
-              aria-haspopup="dialog"
-              aria-expanded="false"
-              aria-controls="manage-clouds-dialog"
               data-i18n="storage.connectClouds"
             >
               Connect clouds
@@ -482,64 +479,6 @@
             (debugger banner) only on allowed domains. After a bug, click Instant Replay to annotate,
             then save to upload. Nothing leaves your browser until you save.
           </p>
-        </div>
-      </div>
-    </div>
-
-    <div
-      id="manage-clouds-dialog"
-      class="popup-dialog-root hidden"
-      aria-hidden="true"
-    >
-      <button
-        type="button"
-        class="popup-dialog-backdrop"
-        data-popup-dialog-dismiss
-        tabindex="-1"
-        aria-label="Close"
-        data-i18n-aria="dialog.close"
-      ></button>
-      <div
-        id="manage-clouds-panel"
-        class="popup-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="manage-clouds-dialog-title"
-      >
-        <div class="popup-dialog-header">
-          <div class="section-title" id="manage-clouds-dialog-title">
-            <i class="ph ph-cloud section-title-icon" aria-hidden="true"></i>
-            <span data-i18n="storage.manageCloudsTitle">Manage clouds</span>
-            <button
-              type="button"
-              class="field-info-btn section-info-btn"
-              data-section-info="manage-cloud"
-              data-i18n-aria="info.buttonLabel"
-              data-i18n-title="info.buttonLabel"
-              aria-label="Explain this section"
-              title="Explain this section"
-              aria-haspopup="dialog"
-              aria-expanded="false"
-              aria-controls="setting-info-popover"
-            >i</button>
-          </div>
-          <button
-            type="button"
-            id="manage-clouds-close-btn"
-            class="icon-btn popup-dialog-close"
-            aria-label="Close"
-            title="Close"
-            data-i18n-aria="dialog.close"
-            data-i18n-title="dialog.close"
-          >
-            <i class="ph ph-x" aria-hidden="true"></i>
-          </button>
-        </div>
-        <div class="popup-dialog-body">
-          <p class="popup-dialog-lead" data-i18n="storage.manageCloudsLead">
-            Connect Google Drive or Dropbox. The extension can only access files it uploads — not your full cloud drive. OAuth may briefly close this popup; reopen it after signing in.
-          </p>
-          <div id="popup-provider-list" class="popup-provider-list" role="list"></div>
         </div>
       </div>
     </div>

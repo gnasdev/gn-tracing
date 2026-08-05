@@ -2,6 +2,7 @@
  * Drives the extension popup UI and service-worker message interactions.
  */
 
+import { resolveManageCloudsPageUrl } from "../manage-clouds/page-model";
 import { buttonSpinnerHtml } from "../shared/button-loading";
 import { DEFAULT_DRAW_COLOR, DRAW_COLOR_PRESETS, normalizeDrawColor } from "../shared/drawing";
 import { buildFeedbackDiagnostics, validateFeedbackMessage } from "../shared/feedback";
@@ -93,7 +94,7 @@ const POPUP_TRANSLATIONS: Record<PopupLanguage, Record<string, string>> = {
     "storage.manageClouds": "Manage clouds",
     "storage.manageCloudsTitle": "Manage clouds",
     "storage.manageCloudsLead":
-      "Connect Google Drive or Dropbox. The extension can only access files it uploads — not your full cloud drive. OAuth may briefly close this popup; reopen it after signing in.",
+      "Connect Google Drive or Dropbox. The extension can only access files it uploads — not your full cloud drive. Manage clouds opens a full page that stays open during OAuth.",
     "storage.cloudInfoTitle": "Cloud storage access",
     "storage.cloudInfoBody":
       "Connecting a cloud only authorizes GN Tracing for files this extension uploads (and related package metadata). It does not get full access to browse or read your entire Drive or Dropbox. OAuth uses limited scopes so recordings stay in the extension’s own files.",
@@ -260,7 +261,7 @@ const POPUP_TRANSLATIONS: Record<PopupLanguage, Record<string, string>> = {
     "storage.manageClouds": "Quản lý cloud",
     "storage.manageCloudsTitle": "Quản lý cloud",
     "storage.manageCloudsLead":
-      "Kết nối Google Drive hoặc Dropbox. Extension chỉ truy cập file do chính nó upload — không đọc toàn bộ cloud. OAuth có thể đóng popup; mở lại sau khi đăng nhập.",
+      "Kết nối Google Drive hoặc Dropbox. Extension chỉ truy cập file do chính nó upload — không đọc toàn bộ cloud. Quản lý cloud mở trang riêng, giữ mở trong OAuth.",
     "storage.cloudInfoTitle": "Quyền truy cập cloud",
     "storage.cloudInfoBody":
       "Kết nối cloud chỉ cấp quyền cho GN Tracing với các file extension này upload (và metadata package liên quan). Extension không được quyền duyệt hay đọc toàn bộ Drive/Dropbox của bạn. OAuth dùng scope hạn chế để recording nằm trong file của extension.",
@@ -587,9 +588,6 @@ function applyTranslations(): void {
   }
 
   renderPopupUploadHistory(currentUploadHistory, { animateLatestSuccess: false });
-  if (isPopupDialogOpen("manage-clouds")) {
-    renderManageCloudsProviderList();
-  }
   renderDrawColorSwatches();
   updateZipPasswordUi(Boolean(latestPopupState?.settings?.zipPasswordConfigured));
   applyInstantReplaySettingsFromSnapshot(latestPopupState?.settings);
@@ -661,12 +659,6 @@ const instantReplayPanel = document.getElementById("instant-replay-panel");
 const instantReplaySettingsCloseBtn = document.getElementById(
   "instant-replay-settings-close-btn",
 ) as HTMLButtonElement | null;
-const manageCloudsDialog = document.getElementById("manage-clouds-dialog");
-const manageCloudsPanel = document.getElementById("manage-clouds-panel");
-const manageCloudsCloseBtn = document.getElementById(
-  "manage-clouds-close-btn",
-) as HTMLButtonElement | null;
-const popupProviderList = document.getElementById("popup-provider-list");
 const uploadHistoryDialog = document.getElementById("upload-history-dialog");
 const uploadHistoryPanel = document.getElementById("upload-history-panel");
 const uploadHistoryCloseBtn = document.getElementById(
@@ -697,12 +689,7 @@ let instantReplayWindowSaveInFlight = false;
 let instantReplayEnableSaveInFlight = false;
 let instantReplayCaptureInFlight = false;
 let instantReplayDomainSaveInFlight = false;
-type PopupDialogId =
-  | "feedback"
-  | "instant-replay"
-  | "manage-clouds"
-  | "upload-history"
-  | "settings";
+type PopupDialogId = "feedback" | "instant-replay" | "upload-history" | "settings";
 const popupDialogHost = new PopupDialogHost<PopupDialogId>();
 type PopupDialogEntry = {
   root: HTMLElement | null;
@@ -711,8 +698,6 @@ type PopupDialogEntry = {
   onOpen?: () => void;
 };
 const popupDialogEntries = new Map<PopupDialogId, PopupDialogEntry>();
-const manageCloudsBusy = new Set<"google-drive" | "dropbox">();
-const manageCloudsErrors = new Map<"google-drive" | "dropbox", string>();
 /** Host just added — chip + button feedback until next update. */
 let instantReplayJustAddedDomain: string | null = null;
 let instantReplayAddButtonFeedbackTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -1267,10 +1252,6 @@ function setInstantReplaySettingsOpen(open: boolean): void {
   setPopupDialogOpen("instant-replay", open);
 }
 
-function setManageCloudsDialogOpen(open: boolean): void {
-  setPopupDialogOpen("manage-clouds", open);
-}
-
 function setUploadHistoryDialogOpen(open: boolean): void {
   setPopupDialogOpen("upload-history", open);
 }
@@ -1295,14 +1276,6 @@ function registerPopupDialogs(): void {
       updateInstantReplayControls({
         recordingActive: Boolean(latestPopupState?.recording?.isRecording),
       });
-    },
-  });
-  popupDialogEntries.set("manage-clouds", {
-    root: manageCloudsDialog,
-    trigger: manageStorageBtn,
-    focusOnOpen: manageCloudsCloseBtn,
-    onOpen: () => {
-      void refreshManageCloudsAndRender();
     },
   });
   popupDialogEntries.set("upload-history", {
@@ -2141,126 +2114,6 @@ function renderPopupUploadHistory(
   }
 }
 
-function renderManageCloudsProviderList(): void {
-  if (!popupProviderList) {
-    return;
-  }
-  const providers: Array<"google-drive" | "dropbox"> = ["google-drive", "dropbox"];
-  popupProviderList.innerHTML = "";
-  for (const id of providers) {
-    const connected = Boolean(connectedProviders.get(id));
-    const busy = manageCloudsBusy.has(id);
-    const error = manageCloudsErrors.get(id);
-    const name = storageProviderDisplayName(id);
-
-    const card = document.createElement("div");
-    card.className = "popup-provider-card";
-    card.dataset.provider = id;
-    card.setAttribute("role", "listitem");
-
-    const meta = document.createElement("div");
-    meta.className = "meta";
-    const nameEl = document.createElement("div");
-    nameEl.className = "name";
-    nameEl.textContent = name;
-    const statusEl = document.createElement("div");
-    statusEl.className = "status";
-    if (busy) {
-      statusEl.classList.add("is-busy");
-      statusEl.innerHTML = `${buttonSpinnerHtml()}<span>${escapeHtml(t("storage.working"))}</span>`;
-    } else if (error) {
-      statusEl.classList.add("is-error");
-      statusEl.textContent = error;
-    } else if (connected) {
-      statusEl.classList.add("is-connected");
-      statusEl.textContent = t("storage.connected");
-    } else {
-      statusEl.textContent = t("storage.notConnectedStatus");
-    }
-    meta.append(nameEl, statusEl);
-
-    const actions = document.createElement("div");
-    actions.className = "actions";
-    const actionBtn = document.createElement("button");
-    actionBtn.type = "button";
-    actionBtn.className = connected ? "btn btn-secondary btn-small" : "btn btn-start btn-small";
-    actionBtn.disabled = busy;
-    actionBtn.textContent = connected
-      ? t("storage.disconnect")
-      : t("storage.connectProvider", { name });
-    actionBtn.addEventListener("click", () => {
-      if (connected) {
-        void disconnectCloudProvider(id);
-      } else {
-        void connectCloudProvider(id);
-      }
-    });
-    actions.append(actionBtn);
-    card.append(meta, actions);
-    popupProviderList.append(card);
-  }
-}
-
-async function refreshManageCloudsAndRender(): Promise<void> {
-  await refreshAllProviderStatuses();
-  renderManageCloudsProviderList();
-}
-
-async function connectCloudProvider(provider: "google-drive" | "dropbox"): Promise<void> {
-  manageCloudsBusy.add(provider);
-  manageCloudsErrors.delete(provider);
-  renderManageCloudsProviderList();
-  try {
-    const result = (await chrome.runtime.sendMessage({
-      action: "STORAGE_CONNECT",
-      data: { provider },
-    })) as MessageResponse;
-    if (!result.ok) {
-      throw new Error(
-        result.error || t("storage.notConnected", { name: storageProviderDisplayName(provider) }),
-      );
-    }
-    connectedProviders.set(provider, true);
-    await chrome.runtime.sendMessage({
-      action: "UPDATE_SETTINGS",
-      data: { activeStorageProvider: provider },
-    });
-    await refreshPopupFromStorage();
-    await refreshAllProviderStatuses();
-    updateStorageUI(true, provider);
-  } catch (error) {
-    manageCloudsErrors.set(provider, error instanceof Error ? error.message : String(error));
-  } finally {
-    manageCloudsBusy.delete(provider);
-    renderManageCloudsProviderList();
-  }
-}
-
-async function disconnectCloudProvider(provider: "google-drive" | "dropbox"): Promise<void> {
-  manageCloudsBusy.add(provider);
-  manageCloudsErrors.delete(provider);
-  renderManageCloudsProviderList();
-  try {
-    const result = (await chrome.runtime.sendMessage({
-      action: "STORAGE_DISCONNECT",
-      data: { provider },
-    })) as MessageResponse;
-    if (!result.ok) {
-      throw new Error(result.error || t("storage.switchFailed"));
-    }
-    connectedProviders.set(provider, false);
-    await refreshPopupFromStorage();
-    await refreshAllProviderStatuses();
-    const next = listConnectedProviderIds()[0] || provider;
-    updateStorageUI(Boolean(listConnectedProviderIds().length), next);
-  } catch (error) {
-    manageCloudsErrors.set(provider, error instanceof Error ? error.message : String(error));
-  } finally {
-    manageCloudsBusy.delete(provider);
-    renderManageCloudsProviderList();
-  }
-}
-
 function storageProviderDisplayName(provider: string | undefined): string {
   if (provider === "dropbox") return "Dropbox";
   return "Google Drive";
@@ -2517,8 +2370,9 @@ async function setActiveStorageProvider(provider: string): Promise<void> {
   void refreshAllProviderStatuses();
 }
 
-function openManageCloudsDialog(): void {
-  setManageCloudsDialogOpen(true);
+function openManageCloudsPage(): void {
+  const url = resolveManageCloudsPageUrl((path) => chrome.runtime.getURL(path));
+  void chrome.tabs.create({ url, active: true });
 }
 
 function setCaptureUiVisibility(isVisible: boolean): void {
@@ -2861,10 +2715,6 @@ instantReplaySettingsCloseBtn?.addEventListener("click", () => {
   setInstantReplaySettingsOpen(false);
 });
 
-manageCloudsCloseBtn?.addEventListener("click", () => {
-  setManageCloudsDialogOpen(false);
-});
-
 uploadHistoryCloseBtn?.addEventListener("click", () => {
   setUploadHistoryDialogOpen(false);
 });
@@ -2879,7 +2729,6 @@ function wirePopupDialogDismiss(root: HTMLElement | null, close: () => void): vo
 
 wirePopupDialogDismiss(feedbackDialog, () => setFeedbackDialogOpen(false));
 wirePopupDialogDismiss(instantReplayDialog, () => setInstantReplaySettingsOpen(false));
-wirePopupDialogDismiss(manageCloudsDialog, () => setManageCloudsDialogOpen(false));
 wirePopupDialogDismiss(uploadHistoryDialog, () => setUploadHistoryDialogOpen(false));
 wirePopupDialogDismiss(settingsDialog, () => setSettingsDialogOpen(false));
 feedbackCloseBtn?.addEventListener("click", () => {
@@ -2890,7 +2739,7 @@ settingsCloseBtn?.addEventListener("click", () => {
 });
 
 // Keep clicks inside dialog panels from reaching the backdrop.
-for (const panel of [feedbackPanel, instantReplayPanel, manageCloudsPanel, uploadHistoryPanel]) {
+for (const panel of [feedbackPanel, instantReplayPanel, uploadHistoryPanel]) {
   panel?.addEventListener("click", (event) => {
     event.stopPropagation();
   });
@@ -3120,7 +2969,7 @@ storageProviderSelect?.addEventListener("change", async () => {
   const provider = normalizePopupStorageProvider(raw);
   if (!connectedProviders.get(provider)) {
     showError(t("storage.connectCloudFirst"));
-    openManageCloudsDialog();
+    openManageCloudsPage();
     return;
   }
   storageProviderSelect.disabled = true;
@@ -3138,7 +2987,7 @@ storageProviderSelect?.addEventListener("change", async () => {
 });
 
 manageStorageBtn?.addEventListener("click", () => {
-  setManageCloudsDialogOpen(!isPopupDialogOpen("manage-clouds"));
+  openManageCloudsPage();
 });
 
 storageEditBtn?.addEventListener("click", () => {

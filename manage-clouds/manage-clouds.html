@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Manage clouds — GN Tracing</title>
+  <link rel="stylesheet" href="../shared/theme.css">
+  <link rel="stylesheet" href="../icons/phosphor-icons.css">
+  <link rel="stylesheet" href="manage-clouds.css">
+  <script src="../shared/theme-init.js"></script>
+</head>
+<body>
+  <div id="app">
+    <header class="mc-topbar gn-topbar">
+      <div class="gn-topbar-brand" aria-label="GN Tracing">
+        <img class="gn-topbar-logo" src="../icons/icon.svg" alt="">
+        <span class="gn-topbar-name" data-i18n="storage.manageCloudsTitle">Manage clouds</span>
+      </div>
+      <div class="gn-topbar-actions">
+        <button id="lang-toggle-btn" class="icon-btn gn-lang-toggle" type="button" aria-label="Switch language">VI</button>
+        <button
+          id="theme-toggle-btn"
+          class="icon-btn"
+          type="button"
+          aria-label="Theme: System"
+          title="Theme: System"
+        >
+          <i id="theme-toggle-icon" class="ph ph-desktop" aria-hidden="true"></i>
+        </button>
+      </div>
+    </header>
+
+    <main class="mc-main">
+      <section class="mc-card" aria-labelledby="mc-title">
+        <div class="mc-card-header">
+          <h1 id="mc-title" class="mc-title">
+            <i class="ph ph-cloud" aria-hidden="true"></i>
+            <span data-i18n="storage.manageCloudsTitle">Manage clouds</span>
+          </h1>
+        </div>
+        <p class="mc-lead" data-i18n="storage.manageCloudsLead">
+          Connect Google Drive or Dropbox. The extension can only access files it uploads — not your full cloud drive. This page stays open during OAuth so you can finish sign-in without losing status.
+        </p>
+        <div id="provider-list" class="mc-provider-list" role="list"></div>
+
+      </section>
+    </main>
+  </div>
+  <script src="manage-clouds.js"></script>
+</body>
+</html>

@@ -9,7 +9,9 @@
  * 3. The storage package barrel only re-exports the minimal public surface.
  * 4. Root ignore rules cover nested build/deps, secrets, wrangler, and agent noise.
  * 5. Legacy standalone auth pages (drive-auth / storage-auth) stay removed —
- *    cloud connect lives in the popup Manage clouds dialog.
+ *    cloud connect lives on the dedicated manage-clouds extension page.
+ * 6. Manage clouds is a packaged page (not an in-popup dialog) and is wired in
+ *    esbuild + knip.
  */
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -96,6 +98,43 @@ describe("cleanup hygiene: inject entry scripts stay wired", () => {
     expect(knip.entry.some((e) => e.includes("drive-auth") || e.includes("storage-auth"))).toBe(
       false,
     );
+  });
+
+  it("ships Manage clouds as a dedicated extension page (not a popup dialog)", () => {
+    const required = [
+      "manage-clouds/manage-clouds.html",
+      "manage-clouds/manage-clouds.css",
+      "src/manage-clouds/manage-clouds.ts",
+      "src/manage-clouds/page-model.ts",
+    ] as const;
+    for (const rel of required) {
+      expect(existsSync(join(ROOT, rel)), `missing manage-clouds surface: ${rel}`).toBe(true);
+    }
+
+    const esbuildSource = readRoot("esbuild.config.mjs");
+    expect(esbuildSource).toContain("src/manage-clouds/manage-clouds.ts");
+    expect(esbuildSource).toContain("manage-clouds/manage-clouds.html");
+
+    const knip = JSON.parse(readRoot("knip.json")) as { entry: string[] };
+    expect(knip.entry).toContain("src/manage-clouds/manage-clouds.ts");
+
+    const popupHtml = readRoot("popup/popup.html");
+    expect(popupHtml).not.toContain("manage-clouds-dialog");
+    expect(popupHtml).not.toContain("popup-provider-list");
+
+    const popupTs = readRoot("src/popup/popup.ts");
+    expect(popupTs).toContain("resolveManageCloudsPageUrl");
+    expect(popupTs).toContain("openManageCloudsPage");
+    expect(popupTs).not.toMatch(/setManageCloudsDialogOpen|manage-clouds-dialog/);
+
+    const pageHtml = readRoot("manage-clouds/manage-clouds.html");
+    expect(pageHtml).toContain('id="provider-list"');
+    expect(pageHtml).toContain("manage-clouds.js");
+
+    const pageTs = readRoot("src/manage-clouds/manage-clouds.ts");
+    expect(pageTs).toContain("STORAGE_CONNECT");
+    expect(pageTs).toContain("STORAGE_DISCONNECT");
+    expect(pageTs).toContain("STORAGE_STATUS");
   });
 
   it("does not package the replay player into the extension build", () => {
