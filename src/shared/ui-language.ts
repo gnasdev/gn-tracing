@@ -4,7 +4,7 @@
  *
  * Storage is shared so picking EN/VI on one page carries to the others.
  * Markup expects a single click-to-toggle control in the topbar:
- *   <button id="lang-toggle-btn" class="icon-btn gn-lang-toggle" type="button">EN</button>
+ *   <button id="lang-toggle-btn" class="icon-btn gn-lang-toggle" type="button">🇺🇸</button>
  */
 
 export type UiLanguage = "en" | "vi";
@@ -57,9 +57,7 @@ export function setUiLanguage(language: UiLanguage): void {
 }
 
 export function syncLanguageToggleButton(language: UiLanguage, button: HTMLButtonElement): void {
-  // Show the language that a click will switch TO (clearer for a toggle).
-  const next = getOppositeUiLanguage(language);
-  button.textContent = next.toUpperCase();
+  button.textContent = language === "vi" ? "🇻🇳" : "🇺🇸";
   button.dataset.language = language;
   button.setAttribute(
     "aria-label",

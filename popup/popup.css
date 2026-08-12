@@ -113,7 +113,9 @@ body.popup-dialog-open #app {
 }
 
 #header .icon-btn.gn-lang-toggle {
-  font-size: 10px;
+  font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
+  font-size: 16px;
+  line-height: 1;
 }
 
 /* Recording timer sits with the brand so the right side stays open. */
