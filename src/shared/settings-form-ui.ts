@@ -13,6 +13,8 @@ export const DEFAULT_SETTINGS: UploadSettings = {
   folderInput: "/gn-tracing",
   folderId: null,
   zipPasswordConfigured: false,
+  microphoneDeviceId: "",
+  speakerDeviceId: "",
   ...getPrivacyProfileSettings("custom"),
   captureConsole: true,
   captureConsoleArgs: true,
@@ -57,6 +59,7 @@ export const SETTINGS_FORM_TRANSLATIONS: Record<UiLanguage, Record<string, strin
     "sections.privacyData": "Data redaction",
     "sections.visualMasking": "Visual masking",
     "sections.capture": "Capture",
+    "sections.audio": "Audio",
     "sections.console": "Console",
     "sections.network": "Network",
     "sections.websocket": "WebSocket",
@@ -69,6 +72,8 @@ export const SETTINGS_FORM_TRANSLATIONS: Record<UiLanguage, Record<string, strin
     "fields.redactEventMetadata.label": "Redact event/report metadata",
     "fields.redactWebSocketPayloads.label": "WebSocket payload redaction",
     "fields.maskDomSelectors.label": "DOM selectors to mask",
+    "fields.microphoneDeviceId.label": "Microphone",
+    "fields.speakerDeviceId.label": "System audio source (loopback)",
     "fields.captureConsole.label": "Capture console artifact",
     "fields.captureConsoleArgs.label": "Store console args and previews",
     "fields.consolePreviewDepth.label": "Preview depth",
@@ -92,6 +97,8 @@ export const SETTINGS_FORM_TRANSLATIONS: Record<UiLanguage, Record<string, strin
     "fields.redactStorageValues.label": "Redact storage values",
     "fields.captureDomSnapshots.label": "Capture DOM snapshots",
     "fields.redactDomTextContent.label": "Redact DOM text content",
+    "options.browserDefault": "Browser default",
+    "options.unavailable": "unavailable",
     "options.none": "None",
     "options.shallow": "Shallow",
     "options.fullWithinLimit": "Full within limit",
@@ -115,8 +122,12 @@ export const SETTINGS_FORM_TRANSLATIONS: Record<UiLanguage, Record<string, strin
     "placeholders.maskDomSelectors": "[data-private]\n.customer-email",
     "hints.visualMasking":
       "Selectors are applied before capture when possible. They do not cover canvas, video, or closed shadow DOM.",
+    "hints.audioCapture":
+      "Speaker audio means audio from the shared tab or screen. It is not an output-device selector.",
     "hints.inspectorCapture":
       "Storage and DOM capture turn on automatically while network/request capture is enabled, and lock to it. They capture more sensitive data (storage, cookies, DOM text) and increase package size. Turn off network capture to disable them, and keep redaction on to mask values that match sensitive patterns.",
+    "hints.inspectorCaptureCoupling":
+      "Network capture keeps storage and DOM snapshots on while it is enabled.",
     "messages.settingsSaved": "Settings saved.",
     "messages.sectionSaved": "Section saved.",
     "messages.loadFailed": "Failed to load settings",
@@ -134,6 +145,7 @@ export const SETTINGS_FORM_TRANSLATIONS: Record<UiLanguage, Record<string, strin
     "sections.privacyData": "Che dữ liệu",
     "sections.visualMasking": "Che giao diện",
     "sections.capture": "Capture",
+    "sections.audio": "Âm thanh",
     "sections.console": "Console",
     "sections.network": "Network",
     "sections.websocket": "WebSocket",
@@ -146,6 +158,8 @@ export const SETTINGS_FORM_TRANSLATIONS: Record<UiLanguage, Record<string, strin
     "fields.redactEventMetadata.label": "Che metadata event/report",
     "fields.redactWebSocketPayloads.label": "Che payload WebSocket",
     "fields.maskDomSelectors.label": "DOM selector cần che",
+    "fields.microphoneDeviceId.label": "Microphone",
+    "fields.speakerDeviceId.label": "Nguồn audio hệ thống (loopback)",
     "fields.captureConsole.label": "Capture artifact console",
     "fields.captureConsoleArgs.label": "Lưu tham số và preview console",
     "fields.consolePreviewDepth.label": "Độ sâu preview",
@@ -169,6 +183,8 @@ export const SETTINGS_FORM_TRANSLATIONS: Record<UiLanguage, Record<string, strin
     "fields.redactStorageValues.label": "Che giá trị storage",
     "fields.captureDomSnapshots.label": "Capture snapshot DOM",
     "fields.redactDomTextContent.label": "Che nội dung text DOM",
+    "options.browserDefault": "Mặc định của trình duyệt",
+    "options.unavailable": "không khả dụng",
     "options.none": "Không lưu",
     "options.shallow": "Nông",
     "options.fullWithinLimit": "Đầy đủ trong giới hạn",
@@ -192,8 +208,12 @@ export const SETTINGS_FORM_TRANSLATIONS: Record<UiLanguage, Record<string, strin
     "placeholders.maskDomSelectors": "[data-private]\n.customer-email",
     "hints.visualMasking":
       "Selector được áp dụng trước khi capture nếu có thể. Không che canvas, video hoặc closed shadow DOM.",
+    "hints.audioCapture":
+      "Audio speaker là audio từ tab hoặc màn hình được chia sẻ, không phải chọn thiết bị output.",
     "hints.inspectorCapture":
       "Capture storage và DOM tự động bật và khoá theo khi network/request capture đang bật. Chúng capture thêm dữ liệu nhạy cảm (storage, cookie, text DOM) và làm tăng kích thước package. Tắt network capture để tắt chúng, và giữ redaction bật để che các giá trị khớp pattern nhạy cảm.",
+    "hints.inspectorCaptureCoupling":
+      "Khi Network capture đang bật, storage và DOM snapshot luôn được bật theo.",
     "messages.settingsSaved": "Đã lưu cài đặt.",
     "messages.sectionSaved": "Đã lưu section.",
     "messages.loadFailed": "Không tải được cài đặt",
@@ -470,6 +490,8 @@ function withDefaultSettings(settings: Partial<UploadSettings>): UploadSettings 
     folderInput: settings.folderInput ?? DEFAULT_SETTINGS.folderInput,
     folderId: settings.folderId ?? DEFAULT_SETTINGS.folderId,
     zipPasswordConfigured: settings.zipPasswordConfigured ?? DEFAULT_SETTINGS.zipPasswordConfigured,
+    microphoneDeviceId: settings.microphoneDeviceId ?? DEFAULT_SETTINGS.microphoneDeviceId,
+    speakerDeviceId: settings.speakerDeviceId ?? DEFAULT_SETTINGS.speakerDeviceId,
     privacyProfile: settings.privacyProfile ?? DEFAULT_SETTINGS.privacyProfile,
     redactSensitiveHeaders:
       settings.redactSensitiveHeaders ?? DEFAULT_SETTINGS.redactSensitiveHeaders,
@@ -923,9 +945,11 @@ export function attachSettingsForm(options: AttachSettingsFormOptions): Settings
   }
 
   async function saveSection(section: SettingsSectionId, button: HTMLButtonElement): Promise<void> {
-    const previousLabel = button.textContent;
     button.disabled = true;
-    button.textContent = t("actions.savingSection");
+    button.classList.add("is-saving");
+    button.setAttribute("aria-busy", "true");
+    button.setAttribute("aria-label", t("actions.savingSection"));
+    button.title = t("actions.savingSection");
     try {
       const result = (await chrome.runtime.sendMessage({
         action: "UPDATE_SETTINGS",
@@ -945,7 +969,10 @@ export function attachSettingsForm(options: AttachSettingsFormOptions): Settings
       showMessage((error as Error).message, false);
     } finally {
       button.disabled = false;
-      button.textContent = previousLabel || t("actions.saveSection");
+      button.classList.remove("is-saving");
+      button.removeAttribute("aria-busy");
+      button.setAttribute("aria-label", t("actions.saveSection"));
+      button.title = t("actions.saveSection");
     }
   }
 

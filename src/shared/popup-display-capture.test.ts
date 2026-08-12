@@ -15,9 +15,9 @@ import {
 } from "./popup-display-capture";
 
 describe("buildDisplayMediaConstraints", () => {
-  it("requests video + audio with browser surface hints", () => {
+  it("requests video only because audio comes from selected input devices", () => {
     const c = buildDisplayMediaConstraints();
-    expect(c.audio).toBe(true);
+    expect(c.audio).toBe(false);
     expect(c.video).toBeTruthy();
   });
 });
@@ -42,8 +42,12 @@ describe("isMediaHostViewUrl / findMediaHostView", () => {
   });
 
   it("finds the media host among extension tab views", () => {
-    const media = { location: { href: "moz-extension://id/offscreen/offscreen.html" } } as Window;
-    const other = { location: { href: "moz-extension://id/popup/popup.html" } } as Window;
+    const media = {
+      location: { href: "moz-extension://id/offscreen/offscreen.html" },
+    } as Window;
+    const other = {
+      location: { href: "moz-extension://id/popup/popup.html" },
+    } as Window;
     const view = findMediaHostView(() => [other, media]);
     expect(view).toBe(media);
   });
@@ -55,7 +59,10 @@ describe("isMediaHostViewUrl / findMediaHostView", () => {
 
 describe("handoffDisplayStreamToMediaHost", () => {
   it("transfers tracks and resolves on adopt result", async () => {
-    const track = { kind: "video", stop: vi.fn() } as unknown as MediaStreamTrack;
+    const track = {
+      kind: "video",
+      stop: vi.fn(),
+    } as unknown as MediaStreamTrack;
     const stream = { getTracks: () => [track] } as unknown as MediaStream;
     const postMessage = vi.fn();
     const mediaView = {
@@ -112,6 +119,8 @@ describe("handoffDisplayStreamToMediaHost", () => {
         type: ADOPT_DISPLAY_STREAM_MESSAGE,
         sessionId: "sess-1",
         tracks: [track],
+        microphoneDeviceId: "",
+        speakerDeviceId: "",
       },
       "moz-extension://id",
       [track],
@@ -136,25 +145,35 @@ describe("createRecordingSessionId", () => {
   });
 });
 
-describe("popup Start does not call getDisplayMedia (Firefox rejects popup capture)", () => {
-  it("starts via START_RECORDING and leaves share picker to the media-host arm panel", async () => {
-    // getDisplayMedia from browser_action popup rejects with NotAllowedError on
-    // Firefox ("Screen sharing was cancelled…"). Capture must run from the
-    // durable media-host tab after the user clicks "Choose what to share".
+describe("popup Start opens the share picker immediately on Firefox", () => {
+  it("starts getDisplayMedia in the Start click before any await and parks host only after share", async () => {
+    // Preferred path: OS share picker from the toolbar popup gesture — no
+    // intermediate "Choose what to share" panel. Park offscreen.html only after
+    // the stream is live (MediaRecorder handoff), not before the picker.
     const { readFileSync } = await import("node:fs");
     const { resolve } = await import("node:path");
     const popupSource = readFileSync(resolve(__dirname, "../popup/popup.ts"), "utf8");
-    expect(popupSource).not.toContain("beginDisplayMediaFromGesture");
-    expect(popupSource).not.toContain("handoffDisplayStreamToMediaHost");
-    expect(popupSource).not.toContain("mediaPrearmed: true");
+    expect(popupSource).toContain("beginDisplayMediaFromGesture");
+    expect(popupSource).toContain("handoffDisplayStreamToMediaHost");
+    expect(popupSource).toContain("mediaPrearmed: true");
+    expect(popupSource).toContain("parkMediaHostWindowFromPopup");
     expect(popupSource).toContain("START_RECORDING");
-    expect(popupSource).toContain("runRecordingStartPreflight");
 
-    const startAt = popupSource.indexOf("async function startRecordingSession(");
-    expect(startAt).toBeGreaterThan(-1);
-    const startBody = popupSource.slice(startAt, startAt + 1800);
-    expect(startBody.indexOf("START_RECORDING")).toBeGreaterThan(
-      startBody.indexOf("runRecordingStartPreflight"),
+    const clickAt = popupSource.indexOf('toggleBtn.addEventListener("click"');
+    expect(clickAt).toBeGreaterThan(-1);
+    const clickBody = popupSource.slice(clickAt, clickAt + 2400);
+    const shareAt = clickBody.indexOf("beginDisplayMediaFromGesture");
+    const firstRealAwait = clickBody.search(/^[ \t]*const currentState = await /m);
+    expect(shareAt).toBeGreaterThan(-1);
+    expect(firstRealAwait).toBeGreaterThan(-1);
+    expect(shareAt).toBeLessThan(firstRealAwait);
+    expect(clickBody.indexOf("parkMediaHostWindowFromPopup")).toBe(-1);
+
+    const handoffAt = popupSource.indexOf("async function completeFirefoxPopupShare(");
+    expect(handoffAt).toBeGreaterThan(-1);
+    const handoffBody = popupSource.slice(handoffAt, handoffAt + 2800);
+    expect(handoffBody.indexOf("parkMediaHostWindowFromPopup")).toBeGreaterThan(
+      handoffBody.indexOf("streamPromise"),
     );
   });
 });

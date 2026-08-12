@@ -1,15 +1,10 @@
 /**
- * Firefox media host: durable extension page for getDisplayMedia + MediaRecorder.
+ * Firefox media host: getDisplayMedia + MediaRecorder (tab-frame as last resort).
  *
- * Firefox has no chrome.offscreen / chrome.tabCapture. Full-record video uses
- * getDisplayMedia, which the browser-action popup cannot host (NotAllowedError).
- * Chromium's substitute is a hidden offscreen document; Firefox's substitute is
- * a small extension **popup window** (`windows.create({ type: "popup" })`) — not
- * a tab in the user's tab strip.
- *
- * Flow: Start in the extension popup (host permission) → capture window opens
- * for one share click → after the stream is live the window is minimized and
- * focus returns to the recorded tab. MediaRecorder stays in the minimized window.
+ * Preferred full-record video uses the OS share picker. The popup Start path
+ * usually hands off a prearmed stream; otherwise this host opens a small popup
+ * window and auto-starts getDisplayMedia (no intermediate "Choose what to share"
+ * button until the engine blocks auto-start). Tab-frame snapshots are last resort.
  */
 
 import type { CapturedSurface } from "../../media-pipeline/capture-surface";
@@ -20,12 +15,12 @@ import type { MediaHost, MediaStartCaptureOptions } from "./types";
 /** Same HTML/JS as Chromium offscreen document — opened as a popup window on Firefox. */
 const MEDIA_PAGE_PATH = "offscreen/offscreen.html";
 
-/** Compact capture UI; large enough for arm panel + OS share chrome. */
+/** Compact capture UI; large enough for legacy arm panel fallback. */
 const CAPTURE_WINDOW_WIDTH = 480;
 const CAPTURE_WINDOW_HEIGHT = 460;
 
 /**
- * How long to wait for the user to press the arm button in the media page.
+ * How long to wait for the user to press the arm button in the legacy fallback.
  * The browser's own share picker sits inside this window, so it must be generous.
  */
 const ARM_TIMEOUT_MS = 180_000;
@@ -46,14 +41,16 @@ export class ExtensionPageMediaHost implements MediaHost {
   #stopTimeoutId: ReturnType<typeof setTimeout> | null = null;
   #mediaTabId: number | null = null;
   #mediaWindowId: number | null = null;
-  /** What the user actually shared, reported by the media page after the picker. */
+  /** What the user actually shared / how frames were sourced. */
   #capturedSurface: CapturedSurface = {};
+  /** True when start used tab frames (no focus steal for share). */
+  #usedTabFrames = false;
 
   get activeSessionId(): string | null {
     return this.#activeSessionId;
   }
 
-  /** Empty until a display capture has started; cleared by the next start. */
+  /** Empty until a capture has started; cleared by the next start. */
   get capturedSurface(): CapturedSurface {
     return this.#capturedSurface;
   }
@@ -67,14 +64,91 @@ export class ExtensionPageMediaHost implements MediaHost {
     if (options?.prearmed) {
       this.#activeSessionId = sessionId;
       this.#capturedSurface = options.capturedSurface ?? {};
+      this.#usedTabFrames = false;
       return options.firstFrameAt ?? null;
     }
 
-    // Open (or reuse) the capture popup window and bring it forward for the share click.
+    this.#usedTabFrames = false;
+    this.#capturedSurface = {};
+
+    // Prefer getDisplayMedia (OS share picker). Auto-starts in the media host
+    // without showing the arm-button panel first; tab-frame is last resort.
+    try {
+      return await this.#startDisplayCaptureArm(tabId, sessionId, options);
+    } catch (displayError) {
+      const message =
+        displayError instanceof Error ? displayError.message : String(displayError ?? "");
+      // User dismissed the picker — do not silently start snapshot capture.
+      if (/cancell?ed/i.test(message)) {
+        throw displayError;
+      }
+      console.warn(
+        "[GN Tracing] Display capture unavailable, falling back to tab-frame snapshots:",
+        displayError,
+      );
+    }
+
+    return this.#startTabFrameCapture(tabId, sessionId, options);
+  }
+
+  /**
+   * Capture the recorded tab via tabs.captureTab → canvas.captureStream.
+   * No user picker; tab is selected by tabId from Start.
+   */
+  async #startTabFrameCapture(
+    tabId: number,
+    sessionId: string,
+    options?: MediaStartCaptureOptions,
+  ): Promise<number | null> {
+    await this.ensurePackagingContext({ focused: false });
+    await this.#minimizeCaptureWindow();
+
+    const response = (await chrome.runtime.sendMessage({
+      target: MEDIA_PAGE_MESSAGE_TARGET,
+      type: "START_TAB_FRAME_CAPTURE",
+      data: {
+        tabId,
+        sessionId,
+        microphoneDeviceId: options?.microphoneDeviceId ?? "",
+        speakerDeviceId: options?.speakerDeviceId ?? "",
+      },
+    })) as
+      | {
+          ok?: boolean;
+          error?: string;
+          data?: {
+            firstFrameAt?: number | null;
+            surface?: CapturedSurface;
+          };
+        }
+      | undefined;
+
+    if (!response?.ok) {
+      throw new Error(
+        response?.error || "Could not start tab-frame capture on the media host page.",
+      );
+    }
+
+    this.#activeSessionId = sessionId;
+    this.#capturedSurface = response.data?.surface ?? {
+      displaySurface: "browser",
+      label: "Recorded tab",
+    };
+    this.#usedTabFrames = true;
+    return response.data?.firstFrameAt ?? null;
+  }
+
+  /**
+   * getDisplayMedia path: focus capture window, auto-open OS share picker, wait.
+   * Arm buttons stay hidden unless the engine requires a gesture in this document.
+   */
+  async #startDisplayCaptureArm(
+    tabId: number,
+    sessionId: string,
+    options?: MediaStartCaptureOptions,
+  ): Promise<number | null> {
     await this.ensurePackagingContext({ focused: true });
 
-    // getDisplayMedia needs a click in this durable document. Arm the share
-    // button; that click opens the browser share picker (window/screen only).
     const tabTitle = await this.#readTabTitle(tabId);
     const armed = this.#waitForDisplayCaptureResult(sessionId);
 
@@ -84,7 +158,12 @@ export class ExtensionPageMediaHost implements MediaHost {
       const ack = (await chrome.runtime.sendMessage({
         target: MEDIA_PAGE_MESSAGE_TARGET,
         type: "ARM_DISPLAY_CAPTURE",
-        data: { sessionId, tabTitle },
+        data: {
+          sessionId,
+          tabTitle,
+          microphoneDeviceId: options?.microphoneDeviceId ?? "",
+          speakerDeviceId: options?.speakerDeviceId ?? "",
+        },
       })) as { ok?: boolean; error?: string } | undefined;
 
       if (!ack?.ok) {
@@ -102,8 +181,7 @@ export class ExtensionPageMediaHost implements MediaHost {
 
       this.#activeSessionId = sessionId;
       this.#capturedSurface = result.surface ?? {};
-      // Leave the capture window focused until the runtime arms evidence.
-      // Callers must call restoreRecordedTabFocus after beginSession.
+      this.#usedTabFrames = false;
       return result.firstFrameAt ?? null;
     } catch (error) {
       await this.#cancelArm();
@@ -114,12 +192,14 @@ export class ExtensionPageMediaHost implements MediaHost {
   }
 
   /**
-   * Minimize the capture window and return the user to the recorded tab.
-   *
-   * Call after evidence `beginSession` so console/network arming races less with
-   * the focus restore that brings the user back to the page under test.
+   * After share-picker fallback, minimize capture window and return focus.
+   * Tab-frame path never steals focus, so this is a no-op minimize only.
    */
   async restoreRecordedTabFocus(tabId: number): Promise<void> {
+    if (this.#usedTabFrames) {
+      await this.#minimizeCaptureWindow();
+      return;
+    }
     await this.#restoreFocus(tabId);
   }
 
@@ -145,7 +225,11 @@ export class ExtensionPageMediaHost implements MediaHost {
 
     const promise = new Promise<DisplayCaptureResult>((resolve, reject) => {
       listener = (message: unknown) => {
-        const candidate = message as { target?: unknown; type?: unknown; data?: unknown };
+        const candidate = message as {
+          target?: unknown;
+          type?: unknown;
+          data?: unknown;
+        };
         if (
           candidate?.target !== MEDIA_PAGE_MESSAGE_TARGET ||
           candidate?.type !== "DISPLAY_CAPTURE_RESULT"
@@ -185,7 +269,6 @@ export class ExtensionPageMediaHost implements MediaHost {
     }
   }
 
-  /** Bring the capture popup forward so its button can receive a real click. */
   async #focusCaptureWindow(): Promise<void> {
     if (this.#mediaWindowId === null) {
       return;
@@ -200,21 +283,22 @@ export class ExtensionPageMediaHost implements MediaHost {
     }
   }
 
-  /**
-   * Park the capture surface (minimize — keeps MediaRecorder alive) and return
-   * the user to the recorded tab. Never injects a tab into the browser tab strip.
-   */
-  async #restoreFocus(tabId: number): Promise<void> {
-    if (this.#mediaWindowId !== null) {
-      try {
-        await chrome.windows.update(this.#mediaWindowId, {
-          state: "minimized",
-          focused: false,
-        });
-      } catch {
-        // Non-fatal; packaging can continue if the window is still open.
-      }
+  async #minimizeCaptureWindow(): Promise<void> {
+    if (this.#mediaWindowId === null) {
+      return;
     }
+    try {
+      await chrome.windows.update(this.#mediaWindowId, {
+        state: "minimized",
+        focused: false,
+      });
+    } catch {
+      // Non-fatal.
+    }
+  }
+
+  async #restoreFocus(tabId: number): Promise<void> {
+    await this.#minimizeCaptureWindow();
     try {
       const tab = await chrome.tabs.update(tabId, { active: true });
       if (typeof tab?.windowId === "number") {
@@ -225,7 +309,6 @@ export class ExtensionPageMediaHost implements MediaHost {
     }
   }
 
-  /** Hide the arm panel after a failed or abandoned attempt. */
   async #cancelArm(): Promise<void> {
     try {
       await chrome.runtime.sendMessage({
@@ -235,16 +318,7 @@ export class ExtensionPageMediaHost implements MediaHost {
     } catch {
       // Page already closed.
     }
-    if (this.#mediaWindowId !== null) {
-      try {
-        await chrome.windows.update(this.#mediaWindowId, {
-          state: "minimized",
-          focused: false,
-        });
-      } catch {
-        // Ignore.
-      }
-    }
+    await this.#minimizeCaptureWindow();
   }
 
   async stopCapture(discard = false): Promise<void> {
@@ -287,6 +361,7 @@ export class ExtensionPageMediaHost implements MediaHost {
 
   clearActiveSession(): void {
     this.#activeSessionId = null;
+    this.#usedTabFrames = false;
   }
 
   hydrateActiveSession(sessionId: string | null): void {
@@ -297,7 +372,7 @@ export class ExtensionPageMediaHost implements MediaHost {
    * Ensure a DOM-capable extension page exists for packaging / capture.
    *
    * Uses a popup window (not a browser tab) so full-record never steals a slot
-   * in the user's tab strip the way a pinned "offscreen" tab did.
+   * in the user's tab strip.
    */
   async ensurePackagingContext(options?: { focused?: boolean }): Promise<void> {
     const focused = Boolean(options?.focused);
@@ -327,7 +402,6 @@ export class ExtensionPageMediaHost implements MediaHost {
     if (typeof tabId === "number") {
       this.#mediaTabId = tabId;
     } else {
-      // Some engines omit tabs[] on create; resolve via query.
       const matches = await chrome.tabs.query({ windowId: created.id });
       const first = matches.find((tab) => typeof tab.id === "number");
       if (first?.id == null) {
@@ -336,11 +410,9 @@ export class ExtensionPageMediaHost implements MediaHost {
       this.#mediaTabId = first.id;
     }
 
-    // Wait until the page answers so arm messages are not lost on a cold open.
     await this.#waitUntilMediaPageReady();
   }
 
-  /** Reuse a live capture window if one already hosts our media page. */
   async #bindExistingMediaHost(pageUrl: string): Promise<boolean> {
     if (this.#mediaTabId !== null) {
       try {
@@ -391,7 +463,6 @@ export class ExtensionPageMediaHost implements MediaHost {
       }
       await new Promise((resolve) => setTimeout(resolve, 50));
     }
-    // Best-effort: callers still try; arm will surface a clear error.
   }
 
   async cleanup(): Promise<void> {
@@ -401,6 +472,7 @@ export class ExtensionPageMediaHost implements MediaHost {
     }
     this.#stopPromiseResolve = null;
     this.#activeSessionId = null;
+    this.#usedTabFrames = false;
 
     try {
       await chrome.runtime.sendMessage({

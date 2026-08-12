@@ -20,7 +20,14 @@ export class RecorderManager {
     return this.#activeSessionId;
   }
 
-  async startCapture(tabId: number, sessionId: string): Promise<number | null> {
+  async startCapture(
+    tabId: number,
+    sessionId: string,
+    options: {
+      microphoneDeviceId?: string;
+      speakerDeviceId?: string;
+    } = {},
+  ): Promise<number | null> {
     const contexts = await chrome.runtime.getContexts({
       contextTypes: [chrome.runtime.ContextType.OFFSCREEN_DOCUMENT],
     });
@@ -47,7 +54,12 @@ export class RecorderManager {
     const response = (await chrome.runtime.sendMessage({
       target: "offscreen",
       type: "START_CAPTURE",
-      data: { streamId, sessionId },
+      data: {
+        streamId,
+        sessionId,
+        microphoneDeviceId: options.microphoneDeviceId ?? "",
+        speakerDeviceId: options.speakerDeviceId ?? "",
+      },
     })) as { ok: boolean; data?: { firstFrameAt?: number | null } } | undefined;
 
     this.#activeSessionId = sessionId;

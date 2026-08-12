@@ -340,4 +340,31 @@ describe("activeStorageProvider clamp", () => {
     expect(settings.folderInput).toBe("/dropbox-only");
     expect(settings.folderByProvider["google-drive"]?.folderInput).toBe("/drive-only");
   });
+
+  it("defaults system audio to no selected input and microphone selection to the browser default", async () => {
+    const { getUploadSettings } = await importStore();
+    const settings = await getUploadSettings();
+    expect((settings as { speakerDeviceId?: unknown }).speakerDeviceId).toBe("");
+    expect((settings as { microphoneDeviceId?: unknown }).microphoneDeviceId).toBe("");
+  });
+
+  it("persists the selected microphone and system-audio input", async () => {
+    const { getUploadSettings, saveUploadSettings } = await importStore();
+    const settings = await getUploadSettings();
+    const next = {
+      ...settings,
+      speakerDeviceId: "loopback-1",
+      microphoneDeviceId: "mic-2",
+    } as typeof settings & {
+      speakerDeviceId: string;
+      microphoneDeviceId: string;
+    };
+    await saveUploadSettings(next);
+
+    vi.resetModules();
+    const reloaded = await importStore();
+    const again = await reloaded.getUploadSettings();
+    expect((again as { speakerDeviceId?: unknown }).speakerDeviceId).toBe("loopback-1");
+    expect((again as { microphoneDeviceId?: unknown }).microphoneDeviceId).toBe("mic-2");
+  });
 });

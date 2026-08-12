@@ -1889,6 +1889,14 @@ async function updateUploadSettingsFromMessage(
       : hasZipPassword
         ? (data.zipPassword as string)
         : existingSettings.zipPassword,
+    microphoneDeviceId:
+      typeof data?.microphoneDeviceId === "string"
+        ? data.microphoneDeviceId.trim()
+        : existingSettings.microphoneDeviceId,
+    speakerDeviceId:
+      typeof data?.speakerDeviceId === "string"
+        ? data.speakerDeviceId.trim()
+        : existingSettings.speakerDeviceId,
     // Non-UI fixed profile for redaction rule membership + privacy.json.
     privacyProfile: "custom",
     redactSensitiveHeaders: normalizeBoolean(

@@ -164,11 +164,10 @@ The replay player renders objects and JSON with vendored, prebuilt [luna](https:
 
 ### On Firefox
 
-Firefox records through different browser APIs, so three things behave differently:
+Firefox records through different browser APIs, so a few things behave differently:
 
-- **The video is not tab-scoped.** Firefox allows only a window or a whole screen to be captured, never a single tab, and no option changes that. GN Tracing opens a page asking you to choose what to share — pick the Firefox window to keep other applications out of the video. Whatever you pick is named in the recording's privacy limitations, so whoever opens the replay knows what is in it.
-- **Recording starts with a click in that page**, not from the popup alone, because Firefox requires a user gesture in the page that requests the capture.
-- **Console and network evidence needs site access.** Firefox treats site permissions as optional, so the share page offers a `Grant site access` button when the permission is missing. Without it the video still records, but console and network evidence stops as soon as the page navigates. You can also grant it in `about:addons` → GN Tracing → Permissions.
+- **Video uses the browser share picker.** Firefox has no Chrome-style silent continuous `tabCapture`. Start opens the OS share picker directly from the toolbar popup — pick the Firefox window that holds the page (a whole-screen pick also records other apps). There is no extra "Choose what to share" step in a second window when the picker opens successfully.
+- **Site access is optional.** Firefox treats host permissions as optional. After you share, the extension may ask once for site access; later starts skip that prompt when access is already held. Without it the video still records, but console and network evidence can stop after navigation. You can also grant it in `about:addons` → GN Tracing → Permissions.
 
 ## Developers
 

@@ -64,15 +64,46 @@
             id="screenshot-btn"
             class="btn btn-secondary"
             type="button"
+            aria-label="Capture and annotate a screenshot"
             title="Capture and annotate a screenshot"
+            data-i18n-aria="actions.screenshotTitle"
             data-i18n-title="actions.screenshotTitle"
           >
             <i class="ph ph-camera" aria-hidden="true"></i>
-            <span data-i18n="actions.screenshot">Screenshot</span>
           </button>
           <button id="remove-recording-btn" class="btn btn-danger hidden" type="button">
             <i class="ph ph-trash" aria-hidden="true"></i>
             <span data-i18n="actions.discard">Discard</span>
+          </button>
+        </div>
+        <div id="audio-settings-summary" class="audio-settings-summary">
+          <div class="audio-settings-summary-copy">
+            <span class="audio-settings-summary-label" data-i18n="audioSummary.label">Audio</span>
+            <span class="audio-settings-summary-values">
+              <span class="audio-settings-summary-source">
+                <span class="audio-settings-summary-source-label" data-i18n="audioSummary.microphone">Microphone</span>
+                <span id="audio-settings-microphone-summary" data-i18n="options.browserDefault">Browser default</span>
+              </span>
+              <span class="audio-settings-summary-source">
+                <span class="audio-settings-summary-source-label" data-i18n="audioSummary.systemAudio">System audio</span>
+                <span id="audio-settings-speaker-summary" data-i18n="options.noSystemAudio">No system audio</span>
+              </span>
+            </span>
+          </div>
+          <button
+            id="audio-settings-btn"
+            class="btn btn-secondary audio-settings-btn audio-settings-trigger"
+            type="button"
+            aria-haspopup="dialog"
+            aria-expanded="false"
+            aria-controls="audio-settings-dialog"
+            aria-label="Open audio device settings"
+            title="Audio device settings"
+            data-i18n-aria="actions.audioSettingsAria"
+            data-i18n-title="actions.audioSettingsTitle"
+          >
+            <i class="ph ph-faders-horizontal" aria-hidden="true"></i>
+            <span data-i18n="actions.audioSettings">Devices</span>
           </button>
         </div>
         <div class="recording-actions-row recording-actions-secondary">
@@ -129,7 +160,6 @@
               aria-label="Instant Replay settings"
             >
               <i class="ph ph-gear" aria-hidden="true"></i>
-              <span class="instant-replay-settings-label" data-i18n="actions.instantReplaySettings">Settings</span>
             </button>
           </div>
           </div>
@@ -484,6 +514,68 @@
     </div>
 
     <div
+      id="audio-settings-dialog"
+      class="popup-dialog-root hidden"
+      aria-hidden="true"
+    >
+      <button
+        type="button"
+        class="popup-dialog-backdrop"
+        data-popup-dialog-dismiss
+        tabindex="-1"
+        aria-label="Close"
+        data-i18n-aria="dialog.close"
+      ></button>
+      <div
+        id="audio-settings-panel"
+        class="popup-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="audio-settings-dialog-title"
+      >
+        <div class="popup-dialog-header">
+          <div class="section-title" id="audio-settings-dialog-title">
+            <i class="ph ph-faders-horizontal section-title-icon" aria-hidden="true"></i>
+            <span data-i18n="audioSettings.dialogTitle">Audio devices</span>
+          </div>
+          <button
+            type="button"
+            id="audio-settings-close-btn"
+            class="icon-btn popup-dialog-close"
+            aria-label="Close"
+            title="Close"
+            data-i18n-aria="dialog.close"
+            data-i18n-title="dialog.close"
+          >
+            <i class="ph ph-x" aria-hidden="true"></i>
+          </button>
+        </div>
+        <div class="popup-dialog-body audio-settings-body">
+          <p class="popup-dialog-lead" data-i18n="audioSettings.dialogLead">
+            Choose the microphone and tab audio to use for the next recording.
+          </p>
+          <div id="audio-controls" class="audio-controls">
+            <div class="audio-controls-fields">
+              <label class="audio-control-field" for="microphone-device-id-input">
+                <span class="audio-control-label" data-i18n="fields.microphoneDeviceId.label">Microphone</span>
+                <select id="microphone-device-id-input">
+                  <option value="" data-i18n="options.browserDefault">Browser default</option>
+                </select>
+              </label>
+              <label class="audio-control-field" for="speaker-device-id-input">
+                <span class="audio-control-label" data-i18n="fields.speakerDeviceId.label">System audio source (loopback)</span>
+                <select id="speaker-device-id-input">
+                  <option value="" data-i18n="options.noSystemAudio">No system audio</option>
+                </select>
+              </label>
+            </div>
+            <p class="audio-controls-hint" data-i18n="hints.systemAudioSource">Choose a virtual loopback input such as BlackHole or Loopback to record system audio.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div
       id="upload-history-dialog"
       class="popup-dialog-root hidden"
       aria-hidden="true"
@@ -571,39 +663,49 @@
             Choose what each recording captures before you start a session. Save each section when you finish editing it.
           </p>
 
-          <section class="settings-panel" aria-labelledby="popup-section-privacy" data-settings-section="privacy">
-            <div class="settings-panel-header">
+          <section class="settings-section" aria-labelledby="popup-section-privacy" data-settings-section="privacy">
+            <div class="settings-section-header">
               <h2 id="popup-section-privacy" data-i18n="sections.privacyRedaction">Privacy &amp; Redaction</h2>
-              <button type="button" class="btn btn-start btn-small settings-section-save" data-section="privacy" data-i18n="actions.saveSection">Save section</button>
+              <button
+                type="button"
+                class="settings-section-save"
+                data-section="privacy"
+                aria-label="Save section"
+                title="Save section"
+                data-i18n-aria="actions.saveSection"
+                data-i18n-title="actions.saveSection"
+              >
+                <i class="ph ph-floppy-disk" aria-hidden="true"></i>
+              </button>
             </div>
             <div class="settings-grid">
               <div class="settings-group">
                 <h3 data-i18n="sections.privacyData">Data redaction</h3>
-                <label class="settings-check" for="redact-sensitive-headers-input">
+                <label class="settings-check settings-switch" for="redact-sensitive-headers-input">
                   <input id="redact-sensitive-headers-input" type="checkbox" checked>
                   <span class="settings-check-text" data-i18n="fields.redactSensitiveHeaders.label">Redact sensitive headers</span>
                 </label>
-                <label class="settings-check" for="redact-sensitive-query-params-input">
+                <label class="settings-check settings-switch" for="redact-sensitive-query-params-input">
                   <input id="redact-sensitive-query-params-input" type="checkbox" checked>
                   <span class="settings-check-text" data-i18n="fields.redactSensitiveQueryParams.label">Redact sensitive query params</span>
                 </label>
-                <label class="settings-check" for="redact-request-body-fields-input">
+                <label class="settings-check settings-switch" for="redact-request-body-fields-input">
                   <input id="redact-request-body-fields-input" type="checkbox" checked>
                   <span class="settings-check-text" data-i18n="fields.redactRequestBodyFields.label">Redact request body fields</span>
                 </label>
-                <label class="settings-check" for="redact-response-body-fields-input">
+                <label class="settings-check settings-switch" for="redact-response-body-fields-input">
                   <input id="redact-response-body-fields-input" type="checkbox" checked>
                   <span class="settings-check-text" data-i18n="fields.redactResponseBodyFields.label">Redact response body fields</span>
                 </label>
-                <label class="settings-check" for="redact-console-values-input">
+                <label class="settings-check settings-switch" for="redact-console-values-input">
                   <input id="redact-console-values-input" type="checkbox" checked>
                   <span class="settings-check-text" data-i18n="fields.redactConsoleValues.label">Redact console values</span>
                 </label>
-                <label class="settings-check" for="redact-event-metadata-input">
+                <label class="settings-check settings-switch" for="redact-event-metadata-input">
                   <input id="redact-event-metadata-input" type="checkbox" checked>
                   <span class="settings-check-text" data-i18n="fields.redactEventMetadata.label">Redact event/report metadata</span>
                 </label>
-                <label class="setting-field" for="redact-websocket-payloads-input">
+                <label class="setting-field setting-field-inline" for="redact-websocket-payloads-input">
                   <span class="setting-field-label-row">
                     <span data-i18n="fields.redactWebSocketPayloads.label">WebSocket payload redaction</span>
                   </span>
@@ -616,7 +718,7 @@
               </div>
               <div class="settings-group">
                 <h3 data-i18n="sections.visualMasking">Visual masking</h3>
-                <label class="setting-field" for="mask-dom-selectors-input">
+                <label class="setting-field setting-field-inline" for="mask-dom-selectors-input">
                   <span class="setting-field-label-row">
                     <span data-i18n="fields.maskDomSelectors.label">DOM selectors to mask</span>
                   </span>
@@ -627,23 +729,33 @@
             </div>
           </section>
 
-          <section class="settings-panel" aria-labelledby="popup-section-capture" data-settings-section="capture">
-            <div class="settings-panel-header">
+          <section class="settings-section" aria-labelledby="popup-section-capture" data-settings-section="capture">
+            <div class="settings-section-header">
               <h2 id="popup-section-capture" data-i18n="sections.capture">Capture</h2>
-              <button type="button" class="btn btn-start btn-small settings-section-save" data-section="capture" data-i18n="actions.saveSection">Save section</button>
+              <button
+                type="button"
+                class="settings-section-save"
+                data-section="capture"
+                aria-label="Save section"
+                title="Save section"
+                data-i18n-aria="actions.saveSection"
+                data-i18n-title="actions.saveSection"
+              >
+                <i class="ph ph-floppy-disk" aria-hidden="true"></i>
+              </button>
             </div>
             <div class="settings-grid">
               <div class="settings-group">
                 <h3 data-i18n="sections.console">Console</h3>
-                <label class="settings-check" for="capture-console-input">
+                <label class="settings-check settings-switch" for="capture-console-input">
                   <input id="capture-console-input" type="checkbox" checked>
                   <span class="settings-check-text" data-i18n="fields.captureConsole.label">Capture console artifact</span>
                 </label>
-                <label class="settings-check" for="capture-console-args-input">
+                <label class="settings-check settings-switch" for="capture-console-args-input">
                   <input id="capture-console-args-input" type="checkbox" checked>
                   <span class="settings-check-text" data-i18n="fields.captureConsoleArgs.label">Store console args and previews</span>
                 </label>
-                <label class="setting-field" for="console-preview-depth-input">
+                <label class="setting-field setting-field-inline" for="console-preview-depth-input">
                   <span class="setting-field-label-row">
                     <span data-i18n="fields.consolePreviewDepth.label">Preview depth</span>
                   </span>
@@ -653,7 +765,7 @@
                     <option value="full" selected data-i18n="options.fullWithinLimit">Full within limit</option>
                   </select>
                 </label>
-                <label class="setting-field" for="capture-console-stacks-input">
+                <label class="setting-field setting-field-inline" for="capture-console-stacks-input">
                   <span class="setting-field-label-row">
                     <span data-i18n="fields.captureConsoleStacks.label">Stacks</span>
                   </span>
@@ -664,7 +776,7 @@
                     <option value="all" selected data-i18n="options.allEntries">All entries</option>
                   </select>
                 </label>
-                <label class="setting-field" for="capture-console-source-snippets-input">
+                <label class="setting-field setting-field-inline" for="capture-console-source-snippets-input">
                   <span class="setting-field-label-row">
                     <span data-i18n="fields.captureConsoleSourceSnippets.label">Source snippets</span>
                   </span>
@@ -675,7 +787,7 @@
                     <option value="all" selected data-i18n="options.allResolvedEntries">All resolved entries</option>
                   </select>
                 </label>
-                <label class="setting-field" for="max-console-entry-bytes-input">
+                <label class="setting-field setting-field-inline" for="max-console-entry-bytes-input">
                   <span class="setting-field-label-row">
                     <span data-i18n="fields.maxConsoleEntryBytes.label">Max entry bytes</span>
                   </span>
@@ -685,19 +797,19 @@
 
               <div class="settings-group">
                 <h3 data-i18n="sections.network">Network</h3>
-                <label class="settings-check" for="capture-network-input">
+                <label class="settings-check settings-switch" for="capture-network-input">
                   <input id="capture-network-input" type="checkbox" checked>
                   <span class="settings-check-text" data-i18n="fields.captureNetwork.label">Capture network artifact</span>
                 </label>
-                <label class="settings-check" for="capture-request-bodies-input">
+                <label class="settings-check settings-switch" for="capture-request-bodies-input">
                   <input id="capture-request-bodies-input" type="checkbox" checked>
                   <span class="settings-check-text" data-i18n="fields.captureRequestBodies.label">Capture request bodies</span>
                 </label>
-                <label class="settings-check" for="suppress-recorder-internal-requests-input">
+                <label class="settings-check settings-switch" for="suppress-recorder-internal-requests-input">
                   <input id="suppress-recorder-internal-requests-input" type="checkbox" checked>
                   <span class="settings-check-text" data-i18n="fields.suppressRecorderInternalRequests.label">Suppress recorder sourcemap fetches</span>
                 </label>
-                <label class="setting-field" for="capture-request-headers-input">
+                <label class="setting-field setting-field-inline" for="capture-request-headers-input">
                   <span class="setting-field-label-row">
                     <span data-i18n="fields.captureRequestHeaders.label">Request headers</span>
                   </span>
@@ -707,7 +819,7 @@
                     <option value="full" selected data-i18n="options.fullRedacted">Full redacted</option>
                   </select>
                 </label>
-                <label class="setting-field" for="capture-response-headers-input">
+                <label class="setting-field setting-field-inline" for="capture-response-headers-input">
                   <span class="setting-field-label-row">
                     <span data-i18n="fields.captureResponseHeaders.label">Response headers</span>
                   </span>
@@ -717,7 +829,7 @@
                     <option value="full" selected data-i18n="options.fullRedacted">Full redacted</option>
                   </select>
                 </label>
-                <label class="setting-field" for="capture-response-body-mode-input">
+                <label class="setting-field setting-field-inline" for="capture-response-body-mode-input">
                   <span class="setting-field-label-row">
                     <span data-i18n="fields.captureResponseBodyMode.label">Response bodies</span>
                   </span>
@@ -728,7 +840,7 @@
                     <option value="eligible" selected data-i18n="options.eligibleText">All eligible text types</option>
                   </select>
                 </label>
-                <label class="setting-field" for="capture-redirect-headers-input">
+                <label class="setting-field setting-field-inline" for="capture-redirect-headers-input">
                   <span class="setting-field-label-row">
                     <span data-i18n="fields.captureRedirectHeaders.label">Redirect headers</span>
                   </span>
@@ -738,7 +850,7 @@
                     <option value="full" selected data-i18n="options.fullRedacted">Full redacted</option>
                   </select>
                 </label>
-                <label class="setting-field" for="capture-initiator-input">
+                <label class="setting-field setting-field-inline" for="capture-initiator-input">
                   <span class="setting-field-label-row">
                     <span data-i18n="fields.captureInitiator.label">Initiator</span>
                   </span>
@@ -749,7 +861,7 @@
                     <option value="full-stack" selected data-i18n="options.fullStack">Full stack</option>
                   </select>
                 </label>
-                <label class="setting-field" for="max-response-body-bytes-input">
+                <label class="setting-field setting-field-inline" for="max-response-body-bytes-input">
                   <span class="setting-field-label-row">
                     <span data-i18n="fields.maxResponseBodyBytes.label">Max response body bytes</span>
                   </span>
@@ -761,19 +873,19 @@
             <div class="settings-grid settings-grid-follow">
               <div class="settings-group">
                 <h3 data-i18n="sections.websocket">WebSocket</h3>
-                <label class="settings-check" for="capture-websockets-input">
+                <label class="settings-check settings-switch" for="capture-websockets-input">
                   <input id="capture-websockets-input" type="checkbox" checked>
                   <span class="settings-check-text" data-i18n="fields.captureWebSockets.label">Capture WebSocket artifact</span>
                 </label>
-                <label class="settings-check" for="capture-websocket-frames-input">
+                <label class="settings-check settings-switch" for="capture-websocket-frames-input">
                   <input id="capture-websocket-frames-input" type="checkbox" checked>
                   <span class="settings-check-text" data-i18n="fields.captureWebSocketFrames.label">Store WebSocket frame payloads</span>
                 </label>
-                <label class="settings-check" for="capture-websocket-initiator-input">
+                <label class="settings-check settings-switch" for="capture-websocket-initiator-input">
                   <input id="capture-websocket-initiator-input" type="checkbox" checked>
                   <span class="settings-check-text" data-i18n="fields.captureWebSocketInitiator.label">Store WebSocket initiator</span>
                 </label>
-                <label class="setting-field" for="max-websocket-frame-bytes-input">
+                <label class="setting-field setting-field-inline" for="max-websocket-frame-bytes-input">
                   <span class="setting-field-label-row">
                     <span data-i18n="fields.maxWebSocketFrameBytes.label">Max frame bytes</span>
                   </span>
@@ -783,19 +895,22 @@
 
               <div class="settings-group">
                 <h3 data-i18n="sections.inspector">Inspector capture</h3>
-                <label class="settings-check" for="capture-storage-input">
+                <p class="settings-coupling-note" data-i18n="hints.inspectorCaptureCoupling">
+                  Network capture keeps storage and DOM snapshots on while it is enabled.
+                </p>
+                <label class="settings-check settings-switch" for="capture-storage-input">
                   <input id="capture-storage-input" type="checkbox" checked>
                   <span class="settings-check-text" data-i18n="fields.captureStorage.label">Capture storage snapshots</span>
                 </label>
-                <label class="settings-check" for="redact-storage-values-input">
+                <label class="settings-check settings-switch" for="redact-storage-values-input">
                   <input id="redact-storage-values-input" type="checkbox" checked>
                   <span class="settings-check-text" data-i18n="fields.redactStorageValues.label">Redact storage values</span>
                 </label>
-                <label class="settings-check" for="capture-dom-snapshots-input">
+                <label class="settings-check settings-switch" for="capture-dom-snapshots-input">
                   <input id="capture-dom-snapshots-input" type="checkbox" checked>
                   <span class="settings-check-text" data-i18n="fields.captureDomSnapshots.label">Capture DOM snapshots</span>
                 </label>
-                <label class="settings-check" for="redact-dom-text-content-input">
+                <label class="settings-check settings-switch" for="redact-dom-text-content-input">
                   <input id="redact-dom-text-content-input" type="checkbox" checked>
                   <span class="settings-check-text" data-i18n="fields.redactDomTextContent.label">Redact DOM text content</span>
                 </label>

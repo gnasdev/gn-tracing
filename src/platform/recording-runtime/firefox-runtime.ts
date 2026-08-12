@@ -1,12 +1,14 @@
 /**
- * Firefox full-record path: in-page evidence + extension-page getDisplayMedia.
+ * Firefox full-record path: in-page evidence + extension-page display video.
  *
  * Does not construct CdpManager.
  *
- * Evidence lifecycle is two-phase: attach prepares collectors while activeTab
- * is valid; beginSession arms them only after the user commits the share
- * picker. Network metadata is owned solely by webRequest; in-page posts of
- * kind "network" are ignored so a request is never written twice.
+ * Preferred video path is getDisplayMedia (often prearmed from the popup Start
+ * gesture). When not prearmed, the media host auto-opens the OS share picker.
+ * Tab-frame snapshots are last resort. Evidence attach still runs before media
+ * start so activeTab remains valid if the media host steals focus for share.
+ * Network metadata is owned solely by webRequest; in-page posts of kind
+ * "network" are ignored so a request is never written twice.
  */
 
 import type { StorageManager } from "../../background/storage-manager";
@@ -54,8 +56,8 @@ export class FirefoxRecordingRuntime implements RecordingRuntime {
 
     this.#sessionId = input.sessionId;
 
-    // Prepare while the tab still holds activeTab. Focusing the media host for
-    // getDisplayMedia revokes activeTab, so attach before that focus steal.
+    // Prepare while the tab still holds activeTab. A legacy getDisplayMedia
+    // fallback focuses the media host and revokes activeTab, so attach first.
     const attached = await this.#evidence.attach({
       tabId: input.tabId,
       sessionId: input.sessionId,
@@ -70,20 +72,29 @@ export class FirefoxRecordingRuntime implements RecordingRuntime {
       throw new Error(attached.limitations[0] ?? "Evidence capture could not attach.");
     }
 
-    // Focus media tab + arm panel (getDisplayMedia cannot run from the popup).
-    // mediaPrearmed remains for a legacy adopted-stream path if ever re-enabled.
+    // Display capture (preferred / prearmed) or tab-frame last resort.
     const firstFrameAt = await this.#media.startCapture(input.tabId, input.sessionId, {
       prearmed: Boolean(input.mediaPrearmed),
       firstFrameAt: input.firstFrameAt,
       capturedSurface: input.capturedSurface,
+      microphoneDeviceId: input.settings.microphoneDeviceId,
+      speakerDeviceId: input.settings.speakerDeviceId,
     });
 
-    // User committed share: arm webRequest tab scope + in-page START.
+    // Arm webRequest tab scope + in-page START once video is live.
     const armed = await this.#evidence.beginSession({
       tabId: input.tabId,
       sessionId: input.sessionId,
     });
     this.#attachLimitations.push(...armed.limitations);
+
+    // Tab-frame path is snapshot-based (not continuous compositor capture).
+    if ((this.#media.capturedSurface?.displaySurface || "").toLowerCase() === "browser") {
+      this.#attachLimitations.push(
+        "Video is captured as periodic snapshots of the recorded tab " +
+          "(not continuous screen share), so fast motion may look stepped.",
+      );
+    }
 
     const surfaceMismatch = describeSurfaceTitleMismatch(
       this.#media.capturedSurface,
@@ -93,7 +104,7 @@ export class FirefoxRecordingRuntime implements RecordingRuntime {
       this.#attachLimitations.push(surfaceMismatch);
     }
 
-    // Restore focus after the arm path stole it for the share picker.
+    // Tab-frame path does not steal focus; legacy share picker still needs restore.
     if (!input.mediaPrearmed) {
       await this.#media.restoreRecordedTabFocus(input.tabId);
     }

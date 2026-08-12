@@ -3,6 +3,7 @@
  */
 
 import { resolveManageCloudsPageUrl } from "../manage-clouds/page-model";
+import { isFirefoxTarget } from "../platform/detect";
 import { runRecordingStartPreflight } from "../platform/preflight/recording-start-preflight";
 import { buttonSpinnerHtml } from "../shared/button-loading";
 import { DEFAULT_DRAW_COLOR, DRAW_COLOR_PRESETS, normalizeDrawColor } from "../shared/drawing";
@@ -22,6 +23,13 @@ import {
   normalizeInstantReplayWindowSeconds,
 } from "../shared/instant-replay-window";
 import { resolveReplayOpenUrl } from "../shared/player-host";
+import {
+  beginDisplayMediaFromGesture,
+  createRecordingSessionId,
+  handoffDisplayStreamToMediaHost,
+  parkMediaHostWindowFromPopup,
+  waitForMediaHostView,
+} from "../shared/popup-display-capture";
 import { openPopupExternalUrl, popupTabOpenModeForSessionAction } from "../shared/popup-navigation";
 import { ensureRecordingHostPermission } from "../shared/recording-host-permission";
 import { getRecordingTabTarget } from "../shared/recording-target";
@@ -32,7 +40,7 @@ import {
 } from "../shared/settings-form-ui";
 import { buildCloudRemoteOpenUrl, resolveHistoryProvider } from "../shared/storage-provider";
 import { attachThemeToggle, type ThemeToggleController } from "../shared/theme";
-import { attachLanguageSwitch, type UiLanguage } from "../shared/ui-language";
+import { attachLanguageSwitch } from "../shared/ui-language";
 import {
   escapeHtml,
   formatDateTime,
@@ -51,6 +59,12 @@ import type {
   RecordingStatus,
   UploadHistoryEntry,
 } from "../types/messages";
+import {
+  buildAudioSettingsUpdate,
+  buildMicrophoneOptions,
+  type MicrophoneDeviceLike,
+  requestAudioInputPermission,
+} from "./audio-controls";
 import { PopupDialogHost } from "./dialog-host";
 import { POPUP_TRANSLATIONS, type PopupLanguage } from "./i18n-catalog";
 
@@ -254,9 +268,12 @@ function applyTranslations(): void {
     }
   }
 
-  renderPopupUploadHistory(currentUploadHistory, { animateLatestSuccess: false });
+  renderPopupUploadHistory(currentUploadHistory, {
+    animateLatestSuccess: false,
+  });
   renderDrawColorSwatches();
   updateZipPasswordUi(Boolean(latestPopupState?.settings?.zipPasswordConfigured));
+  renderAudioControls(latestPopupState?.settings);
   applyInstantReplaySettingsFromSnapshot(latestPopupState?.settings);
   updateInstantReplayControls({
     recordingActive: Boolean(latestPopupState?.recording?.isRecording),
@@ -284,7 +301,31 @@ const MIRRORED_DRIVE_CONNECTED_KEY = "gn_tracing_google_drive_connected";
 const MIRRORED_DROPBOX_CONNECTED_KEY = "gn_tracing_dropbox_connected";
 const UPLOAD_SETTINGS_KEY = "gn_tracing_upload_settings";
 
+for (const staleDialog of document.querySelectorAll<HTMLElement>("#audio-settings-dialog")) {
+  if (!staleDialog.querySelector("#speaker-device-id-input")) {
+    staleDialog.remove();
+  }
+}
+for (const legacyControl of document.querySelectorAll<HTMLInputElement>(
+  "#capture-speaker-audio-input",
+)) {
+  legacyControl.closest(".audio-controls")?.remove();
+}
+
 const recordingActions = document.getElementById("recording-actions")!;
+const audioSettingsBtn = document.getElementById("audio-settings-btn") as HTMLButtonElement;
+const audioSettingsMicrophoneSummary = document.getElementById(
+  "audio-settings-microphone-summary",
+) as HTMLElement;
+const audioSettingsSpeakerSummary = document.getElementById(
+  "audio-settings-speaker-summary",
+) as HTMLElement;
+const microphoneDeviceIdInput = document.getElementById(
+  "microphone-device-id-input",
+) as HTMLSelectElement;
+const speakerDeviceIdInput = document.getElementById(
+  "speaker-device-id-input",
+) as HTMLSelectElement;
 const toggleBtn = document.getElementById("toggle-btn") as HTMLButtonElement;
 const removeRecordingBtn = document.getElementById("remove-recording-btn") as HTMLButtonElement;
 const screenshotBtn = document.getElementById("screenshot-btn") as HTMLButtonElement;
@@ -334,6 +375,11 @@ const uploadHistoryCloseBtn = document.getElementById(
 const uploadHistoryEntrySummary = document.getElementById("upload-history-entry-summary");
 const uploadHistoryDialogSummary = document.getElementById("upload-history-dialog-summary");
 const settingsDialog = document.getElementById("settings-dialog");
+const audioSettingsDialog = document.getElementById("audio-settings-dialog");
+const audioSettingsPanel = document.getElementById("audio-settings-panel");
+const audioSettingsCloseBtn = document.getElementById(
+  "audio-settings-close-btn",
+) as HTMLButtonElement | null;
 const settingsCloseBtn = document.getElementById("settings-close-btn") as HTMLButtonElement | null;
 const settingsFormRoot = document.getElementById("settings-form-root");
 const settingInfoPopover = document.getElementById("setting-info-popover");
@@ -356,7 +402,7 @@ let instantReplayWindowSaveInFlight = false;
 let instantReplayEnableSaveInFlight = false;
 let instantReplayCaptureInFlight = false;
 let instantReplayDomainSaveInFlight = false;
-type PopupDialogId = "feedback" | "instant-replay" | "upload-history" | "settings";
+type PopupDialogId = "feedback" | "instant-replay" | "upload-history" | "audio" | "settings";
 const popupDialogHost = new PopupDialogHost<PopupDialogId>();
 type PopupDialogEntry = {
   root: HTMLElement | null;
@@ -434,6 +480,8 @@ let activeTabRecordingCheckId = 0;
 let activeTabRecordingCheckInFlight = false;
 let selectedDrawColor = DEFAULT_DRAW_COLOR;
 let drawColorUpdateInFlight = false;
+let audioSettingsSaveInFlight = false;
+let microphoneDevices: MicrophoneDeviceLike[] = [];
 
 type ToastVariant = "success" | "info" | "error";
 
@@ -923,8 +971,144 @@ function setUploadHistoryDialogOpen(open: boolean): void {
   setPopupDialogOpen("upload-history", open);
 }
 
+function setAudioSettingsOpen(open: boolean): void {
+  setPopupDialogOpen("audio", open);
+}
+
 function setSettingsDialogOpen(open: boolean): void {
   setPopupDialogOpen("settings", open);
+}
+
+function renderAudioControls(
+  settings: PopupState["settings"] | undefined = latestPopupState?.settings,
+): void {
+  if (!settings) {
+    return;
+  }
+
+  const selectedDeviceId = settings.microphoneDeviceId || "";
+  const options = buildMicrophoneOptions(microphoneDevices, selectedDeviceId, {
+    browserDefault: t("options.browserDefault"),
+    microphone: t("fields.microphoneDeviceId.label"),
+    unavailable: t("options.unavailable"),
+  });
+  microphoneDeviceIdInput.replaceChildren();
+  for (const optionData of options) {
+    const option = document.createElement("option");
+    option.value = optionData.value;
+    option.textContent = optionData.label;
+    option.selected = optionData.value === selectedDeviceId;
+    microphoneDeviceIdInput.append(option);
+  }
+  const selectedSpeakerDeviceId = settings.speakerDeviceId || "";
+  const speakerOptions = buildMicrophoneOptions(microphoneDevices, selectedSpeakerDeviceId, {
+    browserDefault: t("options.noSystemAudio"),
+    microphone: t("fields.speakerDeviceId.label"),
+    unavailable: t("options.unavailable"),
+  });
+  speakerDeviceIdInput.replaceChildren();
+  for (const optionData of speakerOptions) {
+    const option = document.createElement("option");
+    option.value = optionData.value;
+    option.textContent = optionData.label;
+    option.selected = optionData.value === selectedSpeakerDeviceId;
+    speakerDeviceIdInput.append(option);
+  }
+  audioSettingsMicrophoneSummary.textContent =
+    microphoneDeviceIdInput.selectedOptions[0]?.textContent || t("options.browserDefault");
+  audioSettingsSpeakerSummary.textContent =
+    speakerDeviceIdInput.selectedOptions[0]?.textContent || t("options.noSystemAudio");
+
+  const recordingActive = Boolean(latestPopupState?.recording?.isRecording);
+  if (recordingActive && isPopupDialogOpen("audio")) {
+    setAudioSettingsOpen(false);
+  }
+  const disabled = recordingActive || audioSettingsSaveInFlight;
+  audioSettingsBtn.disabled = disabled;
+  microphoneDeviceIdInput.disabled = disabled;
+  speakerDeviceIdInput.disabled = disabled;
+}
+
+async function refreshMicrophoneDevices(): Promise<void> {
+  const selectedDeviceId =
+    latestPopupState?.settings?.microphoneDeviceId ?? microphoneDeviceIdInput.value;
+  if (!navigator.mediaDevices?.enumerateDevices) {
+    renderAudioControls(
+      latestPopupState?.settings
+        ? {
+            ...latestPopupState.settings,
+            microphoneDeviceId: selectedDeviceId,
+          }
+        : undefined,
+    );
+    return;
+  }
+
+  if (navigator.mediaDevices.getUserMedia) {
+    await requestAudioInputPermission((constraints) =>
+      navigator.mediaDevices.getUserMedia(constraints),
+    );
+  }
+
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    microphoneDevices = devices.map((device) => ({
+      kind: device.kind,
+      deviceId: device.deviceId,
+      label: device.label,
+    }));
+  } catch {
+    microphoneDevices = [];
+  }
+
+  renderAudioControls(
+    latestPopupState?.settings
+      ? {
+          ...latestPopupState.settings,
+          microphoneDeviceId: selectedDeviceId,
+        }
+      : undefined,
+  );
+}
+
+async function saveAudioSettings(): Promise<void> {
+  if (audioSettingsSaveInFlight || latestPopupState?.recording?.isRecording) {
+    return;
+  }
+
+  audioSettingsSaveInFlight = true;
+  renderAudioControls();
+  try {
+    const result = (await chrome.runtime.sendMessage({
+      action: "UPDATE_SETTINGS",
+      data: buildAudioSettingsUpdate(microphoneDeviceIdInput.value, speakerDeviceIdInput.value),
+    })) as MessageResponse & { settings?: PopupState["settings"] };
+
+    if (!result.ok || !result.settings) {
+      showToast(result.error || t("messages.saveFailed"), 3200, {
+        variant: "error",
+      });
+      renderAudioControls();
+      return;
+    }
+
+    if (latestPopupState) {
+      latestPopupState = {
+        ...latestPopupState,
+        settings: result.settings,
+      };
+    }
+    renderAudioControls(result.settings);
+    showToast(t("messages.settingsSaved"), 1400, { variant: "success" });
+  } catch (error) {
+    showToast((error as Error).message || t("messages.saveFailed"), 3200, {
+      variant: "error",
+    });
+    renderAudioControls();
+  } finally {
+    audioSettingsSaveInFlight = false;
+    renderAudioControls();
+  }
 }
 
 function registerPopupDialogs(): void {
@@ -950,7 +1134,17 @@ function registerPopupDialogs(): void {
     trigger: uploadHistoryPageBtn,
     focusOnOpen: uploadHistoryCloseBtn,
     onOpen: () => {
-      renderPopupUploadHistory(currentUploadHistory, { animateLatestSuccess: false });
+      renderPopupUploadHistory(currentUploadHistory, {
+        animateLatestSuccess: false,
+      });
+    },
+  });
+  popupDialogEntries.set("audio", {
+    root: audioSettingsDialog,
+    trigger: audioSettingsBtn,
+    focusOnOpen: microphoneDeviceIdInput,
+    onOpen: () => {
+      void refreshMicrophoneDevices();
     },
   });
   popupDialogEntries.set("settings", {
@@ -1022,10 +1216,6 @@ function updateInstantReplayControls(options: { recordingActive?: boolean } = {}
     instantReplaySettingsBtn.disabled = recordingActive || instantReplayCaptureInFlight;
     instantReplaySettingsBtn.setAttribute("title", t("instantReplay.settingsTitle"));
     instantReplaySettingsBtn.setAttribute("aria-label", t("instantReplay.settingsAria"));
-    const settingsLabel = instantReplaySettingsBtn.querySelector(".instant-replay-settings-label");
-    if (settingsLabel) {
-      settingsLabel.textContent = t("actions.instantReplaySettings");
-    }
   }
 
   if (instantReplayPanel) {
@@ -1144,7 +1334,10 @@ async function persistInstantReplayAllowedDomains(
   })) as MessageResponse & { settings?: PopupState["settings"] };
 
   if (!result?.ok || !result.settings) {
-    return { ok: false, error: result?.error || t("instantReplay.saveFailed") };
+    return {
+      ok: false,
+      error: result?.error || t("instantReplay.saveFailed"),
+    };
   }
 
   let domains = normalizeInstantReplayAllowedDomains(
@@ -1186,7 +1379,10 @@ async function addCurrentSiteToInstantReplayAllowlist(): Promise<void> {
   instantReplayDomainSaveInFlight = true;
   updateInstantReplayControls();
   try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const [tab] = await chrome.tabs.query({
+      active: true,
+      currentWindow: true,
+    });
     // Keep Capture enablement in sync with the tab we just inspected. Without
     // this, activeTabUrl can stay null and Capture stays disabled after add.
     activeTabUrl = tab?.url || tab?.pendingUrl || null;
@@ -1194,7 +1390,9 @@ async function addCurrentSiteToInstantReplayAllowlist(): Promise<void> {
     const host = hostnameFromTabUrl(activeTabUrl);
     const pattern = normalizeInstantReplayDomainPattern(host);
     if (!pattern) {
-      showToast(t("instantReplay.domainInvalid"), 3600, { variant: "error" });
+      showToast(t("instantReplay.domainInvalid"), 3600, {
+        variant: "error",
+      });
       return;
     }
     if (instantReplayAllowedDomains.includes(pattern)) {
@@ -1220,7 +1418,9 @@ async function addCurrentSiteToInstantReplayAllowlist(): Promise<void> {
     });
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
-    showToast(detail || t("instantReplay.saveFailed"), 3600, { variant: "error" });
+    showToast(detail || t("instantReplay.saveFailed"), 3600, {
+      variant: "error",
+    });
   } finally {
     instantReplayDomainSaveInFlight = false;
     updateInstantReplayControls({
@@ -1258,7 +1458,9 @@ async function removeDomainFromInstantReplayAllowlist(domain: string): Promise<v
     });
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
-    showToast(detail || t("instantReplay.saveFailed"), 3600, { variant: "error" });
+    showToast(detail || t("instantReplay.saveFailed"), 3600, {
+      variant: "error",
+    });
   } finally {
     instantReplayDomainSaveInFlight = false;
     updateInstantReplayControls({
@@ -1282,7 +1484,9 @@ async function saveInstantReplayEnabled(enabled: boolean): Promise<void> {
     if (enabled) {
       const granted = await ensureRecordingHostPermission().catch(() => false);
       if (!granted) {
-        showToast(t("instantReplay.permissionNeeded"), 3600, { variant: "error" });
+        showToast(t("instantReplay.permissionNeeded"), 3600, {
+          variant: "error",
+        });
         return;
       }
     }
@@ -1293,7 +1497,9 @@ async function saveInstantReplayEnabled(enabled: boolean): Promise<void> {
     })) as MessageResponse & { settings?: PopupState["settings"] };
 
     if (!result?.ok || !result.settings) {
-      showToast(result?.error || t("instantReplay.saveFailed"), 3200, { variant: "error" });
+      showToast(result?.error || t("instantReplay.saveFailed"), 3200, {
+        variant: "error",
+      });
       return;
     }
 
@@ -1323,7 +1529,9 @@ async function saveInstantReplayEnabled(enabled: boolean): Promise<void> {
     }
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
-    showToast(detail || t("instantReplay.saveFailed"), 3200, { variant: "error" });
+    showToast(detail || t("instantReplay.saveFailed"), 3200, {
+      variant: "error",
+    });
   } finally {
     instantReplayEnableSaveInFlight = false;
     updateInstantReplayControls({
@@ -1348,7 +1556,9 @@ async function saveInstantReplayWindowSeconds(seconds: number): Promise<void> {
 
     if (!result?.ok || !result.settings) {
       setInstantReplayWindowDisplay(instantReplayWindowSeconds);
-      showToast(result?.error || t("instantReplay.saveFailed"), 3200, { variant: "error" });
+      showToast(result?.error || t("instantReplay.saveFailed"), 3200, {
+        variant: "error",
+      });
       return;
     }
 
@@ -1370,7 +1580,9 @@ async function saveInstantReplayWindowSeconds(seconds: number): Promise<void> {
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     setInstantReplayWindowDisplay(instantReplayWindowSeconds);
-    showToast(detail || t("instantReplay.saveFailed"), 3200, { variant: "error" });
+    showToast(detail || t("instantReplay.saveFailed"), 3200, {
+      variant: "error",
+    });
   } finally {
     instantReplayWindowSaveInFlight = false;
     updateInstantReplayControls({
@@ -1379,17 +1591,28 @@ async function saveInstantReplayWindowSeconds(seconds: number): Promise<void> {
   }
 }
 
+type FirefoxShareFromPopup = {
+  sessionId: string;
+  microphoneDeviceId: string;
+  speakerDeviceId: string;
+  streamPromise: Promise<MediaStream>;
+};
+
 /**
  * Start a full recording session.
  *
- * Firefox cannot run getDisplayMedia from the browser-action popup: the popup
- * is not a durable fully-active document, so the share picker rejects with
- * NotAllowedError ("Screen sharing was cancelled…"). Video capture runs on the
- * parked media-host tab (offscreen/offscreen.html) after the user clicks
- * "Choose what to share" there. Host permission is pre-requested here (gesture)
- * so the arm panel can skip the grant step when the user accepts.
+ * Firefox preferred path: the click handler already opened the OS share picker
+ * via getDisplayMedia (same user gesture) — no intermediate "Choose what to share"
+ * panel. This function waits for the stream, parks the media host only after the
+ * picker is live, hands off tracks, then START_RECORDING with mediaPrearmed.
+ * Fallback: normal START_RECORDING (media-host auto-arm, then tab-frame).
  */
-async function startRecordingSession(): Promise<void> {
+async function startRecordingSession(options?: {
+  /** Preflight already kicked off in the click turn (preserves Firefox gesture). */
+  preflight?: Promise<void>;
+  /** Firefox: share picker already started in the click turn. */
+  firefoxShare?: FirefoxShareFromPopup | null;
+}): Promise<void> {
   toggleActionInFlight = true;
   toggleBtn.disabled = true;
   if (instantReplayBtn) {
@@ -1400,6 +1623,15 @@ async function startRecordingSession(): Promise<void> {
   try {
     const currentState = await loadStateFromStorage();
     if (!getActiveStorageConnection(currentState).isConnected) {
+      if (options?.firefoxShare) {
+        void options.firefoxShare.streamPromise
+          .then((stream) =>
+            stream.getTracks().forEach((track) => {
+              track.stop();
+            }),
+          )
+          .catch(() => {});
+      }
       showError(t("storage.connectBeforeRecord"));
       return;
     }
@@ -1409,7 +1641,10 @@ async function startRecordingSession(): Promise<void> {
     }
 
     toggleActionMode = "start";
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const [tab] = await chrome.tabs.query({
+      active: true,
+      currentWindow: true,
+    });
     const target = getRecordingTabTarget(tab);
     if (target.error) {
       activeTabRecordingError = target.error;
@@ -1417,9 +1652,23 @@ async function startRecordingSession(): Promise<void> {
       return;
     }
 
+    if (options?.firefoxShare) {
+      const prearmed = await completeFirefoxPopupShare(options.firefoxShare, tab.id as number);
+      if (prearmed === "started") {
+        return;
+      }
+      if (prearmed === "cancelled") {
+        showError("Screen sharing was cancelled, so recording did not start.");
+        return;
+      }
+      // "fallback" — media-host auto-arm / tab-frame via START_RECORDING.
+    }
+
     // Browser-specific popup preflight (e.g. Firefox host permission). Decline
-    // is fine: video still records; arm panel may show grant fallback.
-    await runRecordingStartPreflight();
+    // is fine: video still records; console/network may be thinner without it.
+    // On the Firefox share path this runs only after share failed/fallback so
+    // the permission dialog never races the OS picker.
+    await (options?.preflight ?? runRecordingStartPreflight());
 
     const result = (await chrome.runtime.sendMessage({
       action: "START_RECORDING",
@@ -1442,6 +1691,79 @@ async function startRecordingSession(): Promise<void> {
       updateInstantReplayControls();
     }
   }
+}
+
+/**
+ * Wait for popup getDisplayMedia, park media host, hand tracks, start prearmed.
+ * Returns "started" | "cancelled" | "fallback".
+ */
+async function completeFirefoxPopupShare(
+  share: FirefoxShareFromPopup,
+  tabId: number,
+): Promise<"started" | "cancelled" | "fallback"> {
+  let stream: MediaStream;
+  try {
+    stream = await share.streamPromise;
+  } catch (error) {
+    const name = error instanceof DOMException ? error.name : "";
+    const message = error instanceof Error ? error.message : String(error);
+    if (name === "NotAllowedError" && /cancel|dismiss|deny|permission/i.test(message)) {
+      return "cancelled";
+    }
+    if (name === "NotAllowedError" || name === "AbortError") {
+      console.warn("[GN Tracing] Popup getDisplayMedia unavailable, falling back:", message);
+      return "fallback";
+    }
+    console.warn("[GN Tracing] Popup getDisplayMedia failed, falling back:", message);
+    return "fallback";
+  }
+
+  // Open media host only after the OS picker succeeded — avoids flashing
+  // offscreen.html with chooser buttons instead of the share UI.
+  parkMediaHostWindowFromPopup();
+  const view = await waitForMediaHostView();
+  if (!view) {
+    stream.getTracks().forEach((track) => {
+      track.stop();
+    });
+    console.warn("[GN Tracing] Media host did not open after share; falling back.");
+    return "fallback";
+  }
+
+  // Host permission after share is live (a permission dialog during the picker
+  // cancels screen sharing on Firefox).
+  await ensureRecordingHostPermission().catch(() => false);
+
+  const handoff = await handoffDisplayStreamToMediaHost(stream, share.sessionId, {
+    microphoneDeviceId: share.microphoneDeviceId,
+    speakerDeviceId: share.speakerDeviceId,
+  });
+  if (!handoff.ok) {
+    stream.getTracks().forEach((track) => {
+      track.stop();
+    });
+    console.warn("[GN Tracing] Share handoff failed, falling back:", handoff.error);
+    return "fallback";
+  }
+
+  const result = (await chrome.runtime.sendMessage({
+    action: "START_RECORDING",
+    tabId,
+    data: {
+      mediaPrearmed: true,
+      sessionId: share.sessionId,
+      firstFrameAt: handoff.firstFrameAt ?? null,
+      capturedSurface: handoff.surface,
+    },
+  })) as MessageResponse;
+
+  if (!result.ok) {
+    stream.getTracks().forEach((track) => {
+      track.stop();
+    });
+    throw new Error(result.error || t("messages.startFailed"));
+  }
+  return "started";
 }
 
 async function captureInstantReplayNow(): Promise<void> {
@@ -1471,7 +1793,10 @@ async function captureInstantReplayNow(): Promise<void> {
       return;
     }
 
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const [tab] = await chrome.tabs.query({
+      active: true,
+      currentWindow: true,
+    });
     activeTabUrl = tab?.url || tab?.pendingUrl || null;
     const target = getRecordingTabTarget(tab);
     if (target.error) {
@@ -1934,7 +2259,9 @@ function updateStorageFolderUi(settings?: PopupState["settings"] | null): void {
     return;
   }
   if (folderId) {
-    storageFolderHint.textContent = t("storage.folderHintId", { value: folderId });
+    storageFolderHint.textContent = t("storage.folderHintId", {
+      value: folderId,
+    });
     return;
   }
   storageFolderHint.textContent =
@@ -2017,7 +2344,9 @@ async function saveStorageFolder(options: { silent?: boolean } = {}): Promise<vo
     })) as MessageResponse & { settings?: PopupState["settings"] };
     if (!result.ok || !result.settings) {
       if (!options.silent) {
-        showToast(result.error || t("storage.folderSaveFailed"), 3200, { variant: "error" });
+        showToast(result.error || t("storage.folderSaveFailed"), 3200, {
+          variant: "error",
+        });
       }
       updateStorageFolderUi(latestPopupState?.settings);
       return;
@@ -2038,7 +2367,9 @@ async function saveStorageFolder(options: { silent?: boolean } = {}): Promise<vo
   } catch (error) {
     if (!options.silent) {
       const detail = error instanceof Error ? error.message : String(error);
-      showToast(detail || t("storage.folderSaveFailed"), 3200, { variant: "error" });
+      showToast(detail || t("storage.folderSaveFailed"), 3200, {
+        variant: "error",
+      });
     }
     updateStorageFolderUi(latestPopupState?.settings);
   } finally {
@@ -2049,7 +2380,11 @@ async function saveStorageFolder(options: { silent?: boolean } = {}): Promise<vo
 async function setActiveStorageProvider(provider: string): Promise<void> {
   const normalized = normalizePopupStorageProvider(provider);
   if (!connectedProviders.get(normalized)) {
-    throw new Error(t("storage.notConnected", { name: storageProviderDisplayName(normalized) }));
+    throw new Error(
+      t("storage.notConnected", {
+        name: storageProviderDisplayName(normalized),
+      }),
+    );
   }
   const result = (await chrome.runtime.sendMessage({
     action: "UPDATE_SETTINGS",
@@ -2147,7 +2482,10 @@ async function refreshActiveTabRecordingAvailability(): Promise<void> {
   }
 
   try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const [tab] = await chrome.tabs.query({
+      active: true,
+      currentWindow: true,
+    });
     if (checkId !== activeTabRecordingCheckId) {
       return;
     }
@@ -2180,6 +2518,10 @@ async function refreshActiveTabRecordingAvailability(): Promise<void> {
 }
 
 function updateRecordingUI(recording: RecordingStatus | null): void {
+  const audioControlsDisabled = Boolean(recording?.isRecording) || audioSettingsSaveInFlight;
+  microphoneDeviceIdInput.disabled = audioControlsDisabled;
+  speakerDeviceIdInput.disabled = audioControlsDisabled;
+
   if (recording?.isRecording) {
     updateInstantReplayControls({ recordingActive: true });
 
@@ -2274,6 +2616,7 @@ function handleStateUpdate(state: PopupState): void {
   renderPopupUploadHistory(state.uploadHistory, {
     animateLatestSuccess: isUploadHistoryAnimationReady,
   });
+  renderAudioControls(state.settings);
   updateZipPasswordUi(Boolean(state.settings?.zipPasswordConfigured));
   applyInstantReplaySettingsFromSnapshot(state.settings);
   updateInstantReplayControls({
@@ -2364,9 +2707,41 @@ function openSettingsDialog(): void {
 toggleBtn.addEventListener("click", async () => {
   errorMsg.classList.add("hidden");
 
+  // Use last-known UI state so Stop clicks do not open share/permission UI.
+  const looksLikeStart = !latestPopupState?.recording?.isRecording;
+
+  // Firefox Start: open the OS share picker in this same click (user gesture)
+  // before any await — no intermediate "Choose what to share" panel, and do
+  // not park offscreen.html first (that window is only for MediaRecorder after
+  // share succeeds). Host permission runs after the stream is live.
+  let firefoxShare: FirefoxShareFromPopup | null = null;
+  let preflightPromise: Promise<void> = Promise.resolve();
+  if (looksLikeStart && isFirefoxTarget()) {
+    const audioSettings = latestPopupState?.settings;
+    firefoxShare = {
+      sessionId: createRecordingSessionId(),
+      microphoneDeviceId: audioSettings?.microphoneDeviceId ?? "",
+      speakerDeviceId: audioSettings?.speakerDeviceId ?? "",
+      // Do not await or hydrate settings here: getDisplayMedia must remain
+      // in the original toolbar-popup click turn.
+      streamPromise: beginDisplayMediaFromGesture(),
+    };
+  } else if (looksLikeStart) {
+    preflightPromise = runRecordingStartPreflight();
+  }
+
   try {
     const currentState = await loadStateFromStorage();
     if (!getActiveStorageConnection(currentState).isConnected) {
+      if (firefoxShare) {
+        void firefoxShare.streamPromise
+          .then((stream) =>
+            stream.getTracks().forEach((track) => {
+              track.stop();
+            }),
+          )
+          .catch(() => {});
+      }
       showError(t("storage.connectBeforeRecord"));
       return;
     }
@@ -2388,7 +2763,10 @@ toggleBtn.addEventListener("click", async () => {
       return;
     }
 
-    await startRecordingSession();
+    await startRecordingSession({
+      preflight: preflightPromise,
+      firefoxShare,
+    });
   } catch (error) {
     showError((error as Error).message);
   } finally {
@@ -2435,6 +2813,7 @@ function wirePopupDialogDismiss(root: HTMLElement | null, close: () => void): vo
 wirePopupDialogDismiss(feedbackDialog, () => setFeedbackDialogOpen(false));
 wirePopupDialogDismiss(instantReplayDialog, () => setInstantReplaySettingsOpen(false));
 wirePopupDialogDismiss(uploadHistoryDialog, () => setUploadHistoryDialogOpen(false));
+wirePopupDialogDismiss(audioSettingsDialog, () => setAudioSettingsOpen(false));
 wirePopupDialogDismiss(settingsDialog, () => setSettingsDialogOpen(false));
 feedbackCloseBtn?.addEventListener("click", () => {
   setFeedbackDialogOpen(false);
@@ -2443,8 +2822,24 @@ settingsCloseBtn?.addEventListener("click", () => {
   setSettingsDialogOpen(false);
 });
 
+audioSettingsBtn.addEventListener("click", () => {
+  setAudioSettingsOpen(!isPopupDialogOpen("audio"));
+});
+
+audioSettingsCloseBtn?.addEventListener("click", () => {
+  setAudioSettingsOpen(false);
+});
+
+microphoneDeviceIdInput.addEventListener("change", () => {
+  void saveAudioSettings();
+});
+
+speakerDeviceIdInput.addEventListener("change", () => {
+  void saveAudioSettings();
+});
+
 // Keep clicks inside dialog panels from reaching the backdrop.
-for (const panel of [feedbackPanel, instantReplayPanel, uploadHistoryPanel]) {
+for (const panel of [feedbackPanel, instantReplayPanel, uploadHistoryPanel, audioSettingsPanel]) {
   panel?.addEventListener("click", (event) => {
     event.stopPropagation();
   });
@@ -2569,7 +2964,12 @@ async function syncDrawButtonState(): Promise<void> {
     const response = (await chrome.runtime.sendMessage({
       target: "service-worker",
       action: "GET_DRAWING_OVERLAY_STATE",
-    })) as { ok: boolean; active?: boolean; color?: string; error?: string };
+    })) as {
+      ok: boolean;
+      active?: boolean;
+      color?: string;
+      error?: string;
+    };
     if (response?.ok) {
       setDrawButtonActive(Boolean(response.active));
       if (response.color) {
@@ -2903,7 +3303,10 @@ popupUploadHistoryList.addEventListener("click", async (event) => {
         const result = (await chrome.runtime.sendMessage({
           action: "DELETE_UPLOAD_HISTORY_ENTRY",
           data: { historyEntryId },
-        })) as MessageResponse & { state?: PopupState; uploadHistory?: UploadHistoryEntry[] };
+        })) as MessageResponse & {
+          state?: PopupState;
+          uploadHistory?: UploadHistoryEntry[];
+        };
 
         if (!result.ok) {
           pendingDeletedHistoryIds.delete(historyEntryId);
@@ -2961,7 +3364,9 @@ async function saveZipPassword(options: { clear?: boolean } = {}): Promise<void>
     })) as MessageResponse & { settings?: PopupState["settings"] };
 
     if (!result?.ok) {
-      showToast(result?.error || t("password.saveFailed"), 3200, { variant: "error" });
+      showToast(result?.error || t("password.saveFailed"), 3200, {
+        variant: "error",
+      });
       return;
     }
 
@@ -2984,7 +3389,9 @@ async function saveZipPassword(options: { clear?: boolean } = {}): Promise<void>
     });
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
-    showToast(detail || t("password.saveFailed"), 3200, { variant: "error" });
+    showToast(detail || t("password.saveFailed"), 3200, {
+      variant: "error",
+    });
   } finally {
     zipPasswordSaveBtn.disabled = false;
     zipPasswordCancelBtn.disabled = false;
@@ -3078,17 +3485,21 @@ async function initPopup(): Promise<void> {
       uploadHistory?: UploadHistoryEntry[];
     };
     if (settingsResult.ok && settingsResult.settings) {
+      renderAudioControls(settingsResult.settings);
       applyInstantReplaySettingsFromSnapshot(settingsResult.settings);
       updateInstantReplayControls({
         recordingActive: Boolean(latestPopupState?.recording?.isRecording),
       });
     }
     if (settingsResult.ok && Array.isArray(settingsResult.uploadHistory)) {
-      renderPopupUploadHistory(settingsResult.uploadHistory, { animateLatestSuccess: false });
+      renderPopupUploadHistory(settingsResult.uploadHistory, {
+        animateLatestSuccess: false,
+      });
     }
   } catch {
     // Ignore worker warmup errors.
   }
+  await refreshMicrophoneDevices();
   isUploadHistoryAnimationReady = true;
 
   await refreshStorageStatus();

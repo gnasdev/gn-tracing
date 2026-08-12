@@ -1,11 +1,11 @@
 /**
- * Firefox display-stream handoff helpers (media host adopt path).
+ * Firefox display-stream handoff helpers (popup share → media host adopt).
  *
- * Historical attempt: open getDisplayMedia from the browser-action popup and
- * transfer tracks into the parked media-host tab. Firefox rejects that popup
- * capture (NotAllowedError), so full-record now arms getDisplayMedia only on
- * the media host tab. These helpers remain for adopt-message wiring tests and
- * any future durable surface that is not the browser-action popup.
+ * Preferred Firefox Start path: call getDisplayMedia from the toolbar-popup
+ * click so the OS share picker opens immediately — no intermediate "Choose what
+ * to share" panel. After the stream is live, park the media-host window and
+ * transfer tracks for MediaRecorder. If popup capture is rejected, the runtime
+ * falls back to media-host auto-arm (then tab-frame).
  */
 
 import type { CapturedSurface } from "../media-pipeline/capture-surface";
@@ -38,7 +38,7 @@ export function buildDisplayMediaConstraints(): DisplayMediaStreamOptions {
       height: { ideal: 1080, max: 1080 },
       frameRate: { ideal: 30, max: 30 },
     },
-    audio: true,
+    audio: false,
   } as DisplayMediaStreamOptions;
 }
 
@@ -64,7 +64,8 @@ export function isMediaHostViewUrl(
 
 /**
  * Locate the parked media-host extension page via chrome.extension.getViews.
- * Returns null when the tab is not open or getViews is unavailable.
+ * Media host is a `windows.create({ type: "popup" })` window (or window.open),
+ * so search all view types — not only `tab`.
  */
 export function findMediaHostView(
   getViews: (fetchProperties?: { type?: string }) => Window[] = (props) =>
@@ -72,10 +73,25 @@ export function findMediaHostView(
   mediaPagePath = "offscreen/offscreen.html",
 ): Window | null {
   try {
-    const views = getViews({ type: "tab" });
-    for (const view of views) {
+    const buckets: Window[] = [];
+    for (const props of [undefined, { type: "tab" }, { type: "popup" }] as const) {
       try {
-        if (view && isMediaHostViewUrl(view.location?.href || "", mediaPagePath)) {
+        const found = props ? getViews(props) : getViews();
+        if (Array.isArray(found)) {
+          buckets.push(...found);
+        }
+      } catch {
+        // Some engines reject certain type filters.
+      }
+    }
+    const seen = new Set<Window>();
+    for (const view of buckets) {
+      if (!view || seen.has(view)) {
+        continue;
+      }
+      seen.add(view);
+      try {
+        if (isMediaHostViewUrl(view.location?.href || "", mediaPagePath)) {
           return view;
         }
       } catch {
@@ -86,6 +102,59 @@ export function findMediaHostView(
     return null;
   }
   return null;
+}
+
+/** Named window so repeated Start clicks reuse one media host. */
+export const MEDIA_HOST_WINDOW_NAME = "gn-tracing-media-host";
+
+/**
+ * Open (or reuse) the media-host page for track handoff / MediaRecorder.
+ * Prefer calling this *after* the OS share picker is already up (or the stream
+ * is live) so the user is not shown offscreen.html instead of the picker.
+ * Window is tiny; packaging minimizes it once capture is armed.
+ */
+export function parkMediaHostWindowFromPopup(
+  openWindow: (url: string, target: string, features: string) => Window | null = (
+    url,
+    target,
+    features,
+  ) => window.open(url, target, features),
+  getUrl: (path: string) => string = (path) => chrome.runtime.getURL(path),
+  mediaPagePath = "offscreen/offscreen.html",
+): Window | null {
+  try {
+    const url = getUrl(mediaPagePath);
+    // Small unfocused-looking popup: MediaRecorder only; not a chooser UI.
+    return openWindow(url, MEDIA_HOST_WINDOW_NAME, "popup,width=1,height=1,left=0,top=0");
+  } catch {
+    return null;
+  }
+}
+
+/** Poll until the media host document is reachable via getViews. */
+export async function waitForMediaHostView(
+  options: {
+    timeoutMs?: number;
+    intervalMs?: number;
+    findView?: () => Window | null;
+    sleep?: (ms: number) => Promise<void>;
+  } = {},
+): Promise<Window | null> {
+  const timeoutMs = options.timeoutMs ?? 5_000;
+  const intervalMs = options.intervalMs ?? 50;
+  const findView = options.findView ?? (() => findMediaHostView());
+  const sleep = options.sleep ?? ((ms) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+  const started = Date.now();
+  for (;;) {
+    const view = findView();
+    if (view) {
+      return view;
+    }
+    if (Date.now() - started >= timeoutMs) {
+      return null;
+    }
+    await sleep(intervalMs);
+  }
 }
 
 export type HandoffMessageBus = {
@@ -117,6 +186,8 @@ export async function handoffDisplayStreamToMediaHost(
     findView?: () => Window | null;
     timeoutMs?: number;
     messageBus?: HandoffMessageBus;
+    microphoneDeviceId?: string;
+    speakerDeviceId?: string;
   } = {},
 ): Promise<AdoptDisplayStreamResult> {
   const findView = options.findView ?? (() => findMediaHostView());
@@ -133,7 +204,11 @@ export async function handoffDisplayStreamToMediaHost(
 
   const tracks = stream.getTracks();
   if (tracks.length === 0) {
-    return { sessionId, ok: false, error: "Screen share produced no media tracks." };
+    return {
+      sessionId,
+      ok: false,
+      error: "Screen share produced no media tracks.",
+    };
   }
 
   return new Promise<AdoptDisplayStreamResult>((resolve) => {
@@ -152,7 +227,9 @@ export async function handoffDisplayStreamToMediaHost(
       if (event.source !== view) {
         return;
       }
-      const data = event.data as { type?: string } & Partial<AdoptDisplayStreamResult>;
+      const data = event.data as {
+        type?: string;
+      } & Partial<AdoptDisplayStreamResult>;
       if (data?.type !== ADOPT_DISPLAY_STREAM_RESULT || data.sessionId !== sessionId) {
         return;
       }
@@ -182,6 +259,8 @@ export async function handoffDisplayStreamToMediaHost(
           type: ADOPT_DISPLAY_STREAM_MESSAGE,
           sessionId,
           tracks,
+          microphoneDeviceId: options.microphoneDeviceId ?? "",
+          speakerDeviceId: options.speakerDeviceId ?? "",
         },
         origin,
         tracks,

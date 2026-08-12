@@ -17,9 +17,12 @@ export class OffscreenMediaHost implements MediaHost {
   startCapture(
     tabId: number,
     sessionId: string,
-    _options?: import("./types").MediaStartCaptureOptions,
+    options?: import("./types").MediaStartCaptureOptions,
   ): Promise<number | null> {
-    return this.#recorder.startCapture(tabId, sessionId);
+    return this.#recorder.startCapture(tabId, sessionId, {
+      microphoneDeviceId: options?.microphoneDeviceId,
+      speakerDeviceId: options?.speakerDeviceId,
+    });
   }
 
   stopCapture(discard = false): Promise<void> {

@@ -2,20 +2,24 @@
  * Host permission helpers for Firefox full-record (and Instant Replay reuse).
  *
  * Firefox MV3 treats host_permissions as optional. Full-record needs them for
- * re-injection after navigation and for reliable evidence after the media host
- * tab steals focus (which revokes activeTab). The origins mirror
- * `optional_host_permissions` in the manifest.
+ * re-injection after navigation and for reliable evidence after focus moves
+ * away from the recorded tab. The origins mirror `optional_host_permissions`
+ * in the manifest.
  *
- * `permissions.request` requires a user gesture in the calling context. Prefer
- * the popup Start / Instant Replay enable click (active extension UI over the
- * current browser tab) — never open a dedicated tab solely to ask for access.
- * The media-tab grant button is only a fallback when the user declined earlier.
+ * `permissions.request` requires a user gesture in the calling context on
+ * Firefox, and the gesture dies at the first `await` in that turn. So
+ * {@link ensureRecordingHostPermission} calls `request()` immediately — it does
+ * **not** `await contains()` first. When access is already held, browsers
+ * resolve `request()` to `true` with no prompt, which is the "skip if granted"
+ * behaviour product needs.
+ *
+ * Prefer the popup Start / Instant Replay enable click. The media-page grant
+ * button is only a fallback when the user declined earlier or the gesture was
+ * lost.
  *
  * Never combine this request with an in-flight getDisplayMedia call — not even
  * fire-and-forget in parallel. The permission prompt steals focus and Firefox
  * rejects the share picker with NotAllowedError ("Screen sharing was cancelled").
- * Awaiting the permission prompt also consumes transient activation for a later
- * getDisplayMedia in the same click.
  */
 
 export const RECORDING_HOST_ORIGINS = ["http://*/*", "https://*/*"] as const;
@@ -34,6 +38,8 @@ export async function hasRecordingHostPermission(
 /**
  * Prompt for recording host permission. Returns true when granted.
  * Call only from a user-gesture context (popup click or arm-panel grant button).
+ *
+ * Safe to call when already granted: resolves `true` with no prompt.
  */
 export async function requestRecordingHostPermission(
   origins: readonly string[] = RECORDING_HOST_ORIGINS,
@@ -48,6 +54,10 @@ export async function requestRecordingHostPermission(
 /**
  * Ensure host permission is held, prompting only when missing.
  *
+ * Invokes `permissions.request` in the same turn (no prior `await`), so a
+ * Firefox popup click still counts as a user gesture. Already-granted access
+ * does not show a dialog.
+ *
  * Call from a popup (or other extension-page) user gesture so the prompt is
  * tied to the active browser window — not a newly opened grant-only tab.
  * Returns true when already granted or the user accepts.
@@ -55,8 +65,5 @@ export async function requestRecordingHostPermission(
 export async function ensureRecordingHostPermission(
   origins: readonly string[] = RECORDING_HOST_ORIGINS,
 ): Promise<boolean> {
-  if (await hasRecordingHostPermission(origins)) {
-    return true;
-  }
   return requestRecordingHostPermission(origins);
 }

@@ -9,6 +9,11 @@ import {
   buildRecordingPackage,
 } from "../../packages/replay-core/src/write";
 import { getScreenshotPackageStaging } from "../background/screenshot-package-staging-idb";
+import {
+  acquireMicrophoneStream,
+  acquireSpeakerStream,
+  mixCaptureAudio,
+} from "../media-pipeline/audio-capture";
 import type { CapturedSurface } from "../media-pipeline/capture-surface";
 import {
   acquireCaptureStream,
@@ -64,6 +69,10 @@ let recorder: MediaRecorder | null = null;
 let activeChunks: Blob[] = [];
 let activeSessionId: string | null = null;
 let activeStream: MediaStream | null = null;
+let activeMicrophoneStream: MediaStream | null = null;
+let activeSpeakerStream: MediaStream | null = null;
+let activeAudioMixCleanup: (() => Promise<void>) | null = null;
+let activeMixedInputTracks: MediaStreamTrack[] = [];
 let playbackAudioContext: AudioContext | null = null;
 let playbackSourceNode: MediaStreamAudioSourceNode | null = null;
 let shouldDiscardActiveCapture = false;
@@ -104,7 +113,10 @@ const sessionSnapshots = new Map<string, SessionRecordingSnapshot>();
  */
 const emptyRecordingSessions = new Map<string, string>();
 
-function createFlushDeferred(): { promise: Promise<void>; resolve: () => void } {
+function createFlushDeferred(): {
+  promise: Promise<void>;
+  resolve: () => void;
+} {
   let resolve: () => void = () => {};
   const promise = new Promise<void>((res) => {
     resolve = res;
@@ -214,16 +226,31 @@ chrome.runtime.onMessage.addListener((message: OffscreenIncomingMessage, _sender
         String(message.data?.streamId || ""),
         String(message.data?.sessionId || ""),
         String(message.data?.mode || ""),
+        {
+          microphoneDeviceId: String(message.data?.microphoneDeviceId || ""),
+          speakerDeviceId: String(message.data?.speakerDeviceId || ""),
+        },
       )
         .then((firstFrameAt) => sendResponse({ ok: true, data: { firstFrameAt } }))
         .catch((error: Error) => sendResponse({ ok: false, error: error.message }));
       return true;
 
+    case "START_TAB_FRAME_CAPTURE":
+      // Firefox preferred path: tabs.captureTab → canvas stream (no share picker).
+      startTabFrameCapture(Number(message.data?.tabId), String(message.data?.sessionId || ""), {
+        microphoneDeviceId: String(message.data?.microphoneDeviceId || ""),
+        speakerDeviceId: String(message.data?.speakerDeviceId || ""),
+      })
+        .then((result) => sendResponse({ ok: true, data: result }))
+        .catch((error: Error) => sendResponse({ ok: false, error: error.message }));
+      return true;
+
     case "ARM_DISPLAY_CAPTURE":
-      // Firefox fallback only: render the click surface when popup handoff is
-      // unavailable. Preferred path adopts a stream from the popup gesture.
+      // Firefox fallback only: getDisplayMedia when tab-frame capture is unavailable.
       armDisplayCapture({
         sessionId: String(message.data?.sessionId || ""),
+        microphoneDeviceId: String(message.data?.microphoneDeviceId || ""),
+        speakerDeviceId: String(message.data?.speakerDeviceId || ""),
         tabTitle: typeof message.data?.tabTitle === "string" ? message.data.tabTitle : "",
       });
       sendResponse({ ok: true });
@@ -299,6 +326,30 @@ function clampPercent(value: number): number {
 }
 
 async function stopActiveMediaStream(): Promise<void> {
+  stopTabFramePump();
+
+  if (activeAudioMixCleanup) {
+    const cleanup = activeAudioMixCleanup;
+    activeAudioMixCleanup = null;
+    await cleanup().catch(() => {});
+  }
+  activeMixedInputTracks.forEach((track) => {
+    track.stop();
+  });
+  activeMixedInputTracks = [];
+  if (activeMicrophoneStream) {
+    activeMicrophoneStream.getTracks().forEach((track) => {
+      track.stop();
+    });
+    activeMicrophoneStream = null;
+  }
+  if (activeSpeakerStream) {
+    activeSpeakerStream.getTracks().forEach((track) => {
+      track.stop();
+    });
+    activeSpeakerStream = null;
+  }
+
   if (playbackSourceNode) {
     playbackSourceNode.disconnect();
     playbackSourceNode = null;
@@ -319,6 +370,7 @@ async function stopActiveMediaStream(): Promise<void> {
 }
 
 function clearActiveCapture(): void {
+  stopTabFramePump();
   activeChunks = [];
   activeSessionId = null;
   shouldDiscardActiveCapture = false;
@@ -333,13 +385,209 @@ function clearActiveCapture(): void {
 }
 
 /**
+ * Firefox preferred video path: snapshot the recorded tab on an interval and
+ * feed a canvas MediaStream. Selects the Start tab by id — no share picker,
+ * no "Choose what to share" arm panel, and no window/screen over-capture.
+ *
+ * Requires `tabs.captureTab` (Firefox) or fails so the host can fall back to
+ * getDisplayMedia. Motion looks stepped vs real-time capture; that trade-off is
+ * recorded in package limitations by the runtime.
+ */
+type TabFramePump = { stop: () => void };
+let tabFramePump: TabFramePump | null = null;
+
+const TAB_FRAME_INTERVAL_MS = 100;
+const TAB_FRAME_JPEG_QUALITY = 70;
+
+type CaptureTabOptions = { format?: string; quality?: number };
+
+/**
+ * Promisified tabs.captureTab. Firefox's chrome.* namespace is often callback-
+ * based; awaiting the raw return yields undefined and forced the getDisplayMedia
+ * arm-panel fallback. Also try browser.tabs when present.
+ */
+function getCaptureTabApi():
+  | ((tabId: number, options?: CaptureTabOptions) => Promise<string>)
+  | null {
+  const chromeTabs = chrome.tabs as typeof chrome.tabs & {
+    captureTab?: (
+      tabId: number,
+      options?: CaptureTabOptions,
+      callback?: (dataUrl: string) => void,
+    ) => Promise<string> | undefined;
+  };
+  const browserTabs = (
+    globalThis as unknown as {
+      browser?: { tabs?: { captureTab?: typeof chromeTabs.captureTab } };
+    }
+  ).browser?.tabs;
+
+  const captureTab = browserTabs?.captureTab ?? chromeTabs.captureTab;
+  if (typeof captureTab !== "function") {
+    return null;
+  }
+
+  return (tabId, options) =>
+    new Promise<string>((resolve, reject) => {
+      let settled = false;
+      const finish = (fn: () => void) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        fn();
+      };
+
+      let maybePromise: unknown;
+      try {
+        maybePromise = captureTab(tabId, options, (dataUrl: string) => {
+          const err = chrome.runtime?.lastError?.message;
+          if (err) {
+            finish(() => reject(new Error(err)));
+            return;
+          }
+          finish(() => resolve(dataUrl));
+        });
+      } catch (error) {
+        finish(() => reject(error instanceof Error ? error : new Error(String(error))));
+        return;
+      }
+
+      // Promise-style API (browser.* or modern chrome.*).
+      if (maybePromise && typeof (maybePromise as Promise<string>).then === "function") {
+        void (maybePromise as Promise<string>).then(
+          (dataUrl) => finish(() => resolve(dataUrl)),
+          (error) =>
+            finish(() => reject(error instanceof Error ? error : new Error(String(error)))),
+        );
+      }
+    });
+}
+
+function stopTabFramePump(): void {
+  if (!tabFramePump) {
+    return;
+  }
+  tabFramePump.stop();
+  tabFramePump = null;
+}
+
+async function dataUrlToImageBitmap(dataUrl: string): Promise<ImageBitmap> {
+  const response = await fetch(dataUrl);
+  const blob = await response.blob();
+  return createImageBitmap(blob);
+}
+
+async function startTabFrameCapture(
+  tabId: number,
+  sessionId: string,
+  audioOptions: CaptureAudioOptions = {},
+): Promise<{ firstFrameAt: number | null; surface: CapturedSurface }> {
+  if (!sessionId || !Number.isFinite(tabId) || tabId <= 0) {
+    throw new Error("Missing tab-frame capture session metadata.");
+  }
+  if (recorder && recorder.state !== "inactive") {
+    throw new Error("A recording is already active.");
+  }
+
+  const captureTab = getCaptureTabApi();
+  if (!captureTab) {
+    throw new Error("tabs.captureTab is not available in this browser.");
+  }
+
+  // Fail fast before arming MediaRecorder if the tab cannot be snapshotted.
+  const firstDataUrl = await captureTab(tabId, {
+    format: "jpeg",
+    quality: TAB_FRAME_JPEG_QUALITY,
+  });
+  if (!firstDataUrl) {
+    throw new Error("Could not capture a frame from the recorded tab.");
+  }
+
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d", { alpha: false });
+  if (!ctx) {
+    throw new Error("Could not create a canvas for tab-frame capture.");
+  }
+
+  const firstBitmap = await dataUrlToImageBitmap(firstDataUrl);
+  canvas.width = firstBitmap.width || 1280;
+  canvas.height = firstBitmap.height || 720;
+  ctx.drawImage(firstBitmap, 0, 0);
+  firstBitmap.close();
+
+  // 10 fps target; actual rate is gated by captureTab latency.
+  const stream = canvas.captureStream(10);
+  let stopped = false;
+  let inFlight = false;
+
+  const tick = async () => {
+    if (stopped || inFlight) {
+      return;
+    }
+    inFlight = true;
+    try {
+      const dataUrl = await captureTab(tabId, {
+        format: "jpeg",
+        quality: TAB_FRAME_JPEG_QUALITY,
+      });
+      if (!dataUrl || stopped) {
+        return;
+      }
+      const bitmap = await dataUrlToImageBitmap(dataUrl);
+      if (stopped) {
+        bitmap.close();
+        return;
+      }
+      if (
+        bitmap.width > 0 &&
+        bitmap.height > 0 &&
+        (canvas.width !== bitmap.width || canvas.height !== bitmap.height)
+      ) {
+        canvas.width = bitmap.width;
+        canvas.height = bitmap.height;
+      }
+      ctx.drawImage(bitmap, 0, 0);
+      bitmap.close();
+    } catch {
+      // Tab may be restricted mid-session; keep the last good frame.
+    } finally {
+      inFlight = false;
+    }
+  };
+
+  const intervalId = setInterval(() => {
+    void tick();
+  }, TAB_FRAME_INTERVAL_MS);
+
+  stopTabFramePump();
+  tabFramePump = {
+    stop: () => {
+      stopped = true;
+      clearInterval(intervalId);
+    },
+  };
+
+  try {
+    const firstFrameAt = await startCaptureWithStream(stream, sessionId, false, audioOptions);
+    return {
+      firstFrameAt,
+      surface: { displaySurface: "browser", label: "Recorded tab" },
+    };
+  } catch (error) {
+    stopTabFramePump();
+    throw error;
+  }
+}
+
+/**
  * Firefox display-capture arming.
  *
  * `getDisplayMedia` needs transient user activation, which a background message
  * cannot supply — hence the visible button. The panel stays hidden on Chromium,
  * where this document is an offscreen document driven by chrome.tabCapture.
  */
-type ArmedDisplayCapture = { sessionId: string };
+type ArmedDisplayCapture = CaptureAudioOptions & { sessionId: string };
 
 let armedDisplayCapture: ArmedDisplayCapture | null = null;
 let armWired = false;
@@ -457,31 +705,49 @@ function disarmDisplayCapture(): void {
   setArmStatus("");
 }
 
-async function onArmButtonClick(): Promise<void> {
+async function onArmButtonClick(options?: { auto?: boolean }): Promise<boolean> {
   const armed = armedDisplayCapture;
   if (!armed) {
-    return;
+    return false;
   }
+  const auto = Boolean(options?.auto);
   const { button } = armPanelElements();
   if (button) {
     button.disabled = true;
   }
-  setArmStatus("");
+  if (!auto) {
+    setArmStatus("");
+  }
 
   try {
-    // Called synchronously inside the click so transient activation still holds.
-    const firstFrameAt = await startCapture("", armed.sessionId, "display-media");
+    // Prefer calling this from a real click so transient activation holds.
+    // Auto-start (no click) is attempted first; if the engine blocks it, the
+    // button is shown again for a manual gesture — without failing the session.
+    const firstFrameAt = await startCapture("", armed.sessionId, "display-media", armed);
     // Read the surface before disarming: it is what the user actually picked, and
     // Firefox can only offer a window or a screen, never the recorded tab alone.
     const surface = readCapturedSurface(activeStream);
     armedDisplayCapture = null;
     disarmDisplayCapture();
-    sendDisplayCaptureResult({ sessionId: armed.sessionId, ok: true, firstFrameAt, surface });
+    sendDisplayCaptureResult({
+      sessionId: armed.sessionId,
+      ok: true,
+      firstFrameAt,
+      surface,
+    });
+    return true;
   } catch (error) {
     const failure = describeDisplayCaptureError(error);
     if (button) {
       button.disabled = false;
     }
+
+    // Auto-start blocked (no gesture / NotAllowedError): keep session armed and
+    // let the user click. Do not report failure to the background yet.
+    if (auto) {
+      return false;
+    }
+
     // Cancelling closes the panel; a real failure keeps it open so the user can
     // read the reason and retry without restarting from the popup.
     if (failure.cancelled) {
@@ -496,6 +762,7 @@ async function onArmButtonClick(): Promise<void> {
       cancelled: failure.cancelled,
       error: failure.message,
     });
+    return false;
   }
 }
 
@@ -506,6 +773,8 @@ async function onArmButtonClick(): Promise<void> {
 async function adoptDisplayStreamFromPopup(input: {
   sessionId: string;
   tracks: MediaStreamTrack[];
+  microphoneDeviceId?: string;
+  speakerDeviceId?: string;
   source: MessageEventSource | null;
   origin: string;
 }): Promise<void> {
@@ -542,7 +811,10 @@ async function adoptDisplayStreamFromPopup(input: {
   };
 
   if (!input.sessionId || !Array.isArray(input.tracks) || input.tracks.length === 0) {
-    reply({ ok: false, error: "Missing display stream tracks from the popup." });
+    reply({
+      ok: false,
+      error: "Missing display stream tracks from the popup.",
+    });
     return;
   }
 
@@ -551,7 +823,7 @@ async function adoptDisplayStreamFromPopup(input: {
     armedDisplayCapture = null;
     disarmDisplayCapture();
     const stream = new MediaStream(input.tracks);
-    const firstFrameAt = await startCaptureWithStream(stream, input.sessionId, false);
+    const firstFrameAt = await startCaptureWithStream(stream, input.sessionId, false, input);
     const surface = readCapturedSurface(activeStream);
     reply({ ok: true, firstFrameAt, surface });
   } catch (error) {
@@ -570,6 +842,8 @@ function wirePopupDisplayStreamAdoption(): void {
       type?: string;
       sessionId?: string;
       tracks?: MediaStreamTrack[];
+      microphoneDeviceId?: string;
+      speakerDeviceId?: string;
     } | null;
     if (!data || data.type !== ADOPT_DISPLAY_STREAM_MESSAGE) {
       return;
@@ -582,6 +856,9 @@ function wirePopupDisplayStreamAdoption(): void {
     void adoptDisplayStreamFromPopup({
       sessionId: String(data.sessionId || ""),
       tracks: Array.isArray(data.tracks) ? data.tracks : [],
+      microphoneDeviceId:
+        typeof data.microphoneDeviceId === "string" ? data.microphoneDeviceId : "",
+      speakerDeviceId: typeof data.speakerDeviceId === "string" ? data.speakerDeviceId : "",
       source: event.source,
       origin: event.origin,
     });
@@ -590,11 +867,20 @@ function wirePopupDisplayStreamAdoption(): void {
 
 wirePopupDisplayStreamAdoption();
 
-function armDisplayCapture(input: { sessionId: string; tabTitle: string }): void {
+function armDisplayCapture(input: {
+  sessionId: string;
+  tabTitle: string;
+  microphoneDeviceId?: string;
+  speakerDeviceId?: string;
+}): void {
   if (!input.sessionId) {
     return;
   }
-  armedDisplayCapture = { sessionId: input.sessionId };
+  armedDisplayCapture = {
+    sessionId: input.sessionId,
+    microphoneDeviceId: input.microphoneDeviceId,
+    speakerDeviceId: input.speakerDeviceId,
+  };
 
   const { panel, button, cancelButton, target } = armPanelElements();
   if (!panel || !button) {
@@ -605,7 +891,7 @@ function armDisplayCapture(input: { sessionId: string; tabTitle: string }): void
   if (!armWired) {
     armWired = true;
     button.addEventListener("click", () => {
-      void onArmButtonClick();
+      void onArmButtonClick({ auto: false });
     });
     armPanelElements().grantButton?.addEventListener("click", () => {
       void onGrantButtonClick();
@@ -630,12 +916,25 @@ function armDisplayCapture(input: { sessionId: string; tabTitle: string }): void
       : "";
     target.hidden = !input.tabTitle;
   }
-  button.disabled = false;
+
+  // Open the OS share picker immediately — keep the arm panel hidden so the
+  // user does not see an intermediate "Choose what to share" dialog. Only reveal
+  // buttons if the engine blocks auto-start (no gesture in this document).
+  button.hidden = true;
+  button.disabled = true;
+  panel.hidden = true;
   setArmStatus("");
-  panel.hidden = false;
-  button.focus();
-  // Async, so the panel is already visible; the grant step appears only if needed.
-  void refreshGrantStep();
+  void onArmButtonClick({ auto: true }).then((ok) => {
+    if (ok || !armedDisplayCapture) {
+      return;
+    }
+    panel.hidden = false;
+    button.hidden = false;
+    button.disabled = false;
+    setArmStatus("Click Choose what to share to open the browser picker.");
+    void refreshGrantStep();
+    button.focus();
+  });
 }
 
 /**
@@ -652,7 +951,9 @@ function describeCapturedSurface(stream: MediaStream): string {
   if (!track) {
     return "no video track";
   }
-  const settings = track.getSettings() as MediaTrackSettings & { displaySurface?: string };
+  const settings = track.getSettings() as MediaTrackSettings & {
+    displaySurface?: string;
+  };
   const parts = [
     `label="${track.label || "(unnamed)"}"`,
     `displaySurface=${settings.displaySurface ?? "(absent)"}`,
@@ -673,7 +974,9 @@ function readCapturedSurface(stream: MediaStream | null): CapturedSurface {
   if (!track) {
     return {};
   }
-  const settings = track.getSettings() as MediaTrackSettings & { displaySurface?: string };
+  const settings = track.getSettings() as MediaTrackSettings & {
+    displaySurface?: string;
+  };
   return {
     label: track.label || "",
     ...(settings.displaySurface ? { displaySurface: settings.displaySurface } : {}),
@@ -684,6 +987,7 @@ async function startCapture(
   streamId: string,
   sessionId: string,
   mode = "",
+  audioOptions: CaptureAudioOptions = {},
 ): Promise<number | null> {
   if (!sessionId) {
     throw new Error("Missing capture session metadata.");
@@ -693,16 +997,22 @@ async function startCapture(
   }
 
   const { stream, loopbackTabAudio } = await acquireCaptureStream(streamId, mode);
-  return startCaptureWithStream(stream, sessionId, loopbackTabAudio);
+  return startCaptureWithStream(stream, sessionId, loopbackTabAudio, audioOptions);
 }
+
+type CaptureAudioOptions = {
+  microphoneDeviceId?: string;
+  speakerDeviceId?: string;
+};
 
 /**
  * Arm MediaRecorder on an already-acquired stream (tabCapture or popup handoff).
  */
 async function startCaptureWithStream(
-  stream: MediaStream,
+  inputStream: MediaStream,
   sessionId: string,
   loopbackTabAudio: boolean,
+  audioOptions: CaptureAudioOptions = {},
 ): Promise<number | null> {
   if (!sessionId) {
     throw new Error("Missing capture session metadata.");
@@ -715,10 +1025,23 @@ async function startCaptureWithStream(
   if (loopbackTabAudio) {
     // Tab capture audio must be piped to speakers so the user still hears the tab.
     playbackAudioContext = new AudioContext();
-    const source = playbackAudioContext.createMediaStreamSource(stream);
+    const source = playbackAudioContext.createMediaStreamSource(inputStream);
     playbackSourceNode = source;
     source.connect(playbackAudioContext.destination);
   }
+
+  activeMicrophoneStream = await acquireMicrophoneStream(audioOptions.microphoneDeviceId ?? "");
+  activeSpeakerStream = await acquireSpeakerStream(audioOptions.speakerDeviceId ?? "");
+  const audioInputs = [
+    ...(activeMicrophoneStream ? [activeMicrophoneStream] : []),
+    ...(activeSpeakerStream ? [activeSpeakerStream] : []),
+  ];
+  const mixedAudio = mixCaptureAudio(inputStream, audioInputs);
+  if (mixedAudio.audioContext) {
+    activeAudioMixCleanup = mixedAudio.cleanup;
+    activeMixedInputTracks = inputStream.getAudioTracks();
+  }
+  const stream = mixedAudio.stream;
 
   const finalMimeType = pickRecorderMimeType(stream);
 
@@ -1017,7 +1340,9 @@ async function uploadScreenshotPackage(data: ScreenshotUploadData): Promise<{
   const screenshotsIn = Array.isArray(data.screenshots) ? data.screenshots : [];
   const stagingId = typeof data.stagingId === "string" && data.stagingId ? data.stagingId : "";
 
-  let resolvedArtifacts: Partial<Record<string, string>> = { ...(data.artifacts ?? {}) };
+  let resolvedArtifacts: Partial<Record<string, string>> = {
+    ...(data.artifacts ?? {}),
+  };
   let stagedImageDataUrl: string | null = null;
 
   if (stagingId) {
@@ -1038,7 +1363,10 @@ async function uploadScreenshotPackage(data: ScreenshotUploadData): Promise<{
   // Instant Replay packages may ship lookback without a raster still when
   // captureVisibleTab is unavailable; require at least one of the two.
   if (screenshotsIn.length === 0 && !hasInstantReplayArtifact) {
-    return { ok: false, error: "No screenshots or Instant Replay to upload." };
+    return {
+      ok: false,
+      error: "No screenshots or Instant Replay to upload.",
+    };
   }
 
   const storageProvider: StorageProviderId =
@@ -1060,7 +1388,10 @@ async function uploadScreenshotPackage(data: ScreenshotUploadData): Promise<{
         (typeof item.imageDataUrl === "string" && item.imageDataUrl) || stagedImageDataUrl || "";
       const blob = createBlobFromDataUrl(imageDataUrl);
       if (!blob) {
-        return { ok: false, error: `Screenshot ${item.screenshot.id} has no image data.` };
+        return {
+          ok: false,
+          error: `Screenshot ${item.screenshot.id} has no image data.`,
+        };
       }
       screenshots.push({
         screenshot: item.screenshot,
@@ -1089,7 +1420,9 @@ async function uploadScreenshotPackage(data: ScreenshotUploadData): Promise<{
       packageKind: data.packageKind === "instant-replay" ? "instant-replay" : "screenshot",
     });
 
-    const zipBlob = new Blob(built.chunks as BlobPart[], { type: "application/zip" });
+    const zipBlob = new Blob(built.chunks as BlobPart[], {
+      type: "application/zip",
+    });
     const zipFileId = await uploadFile(zipFilename, zipBlob, targetFolderId);
     const shared = await makeShareable(zipFileId);
 
@@ -1193,7 +1526,10 @@ async function uploadRecordingPackage(data: StorageUploadData): Promise<{
     if (emptyReason) {
       return { ok: false, error: emptyReason };
     }
-    return { ok: false, error: "Recording snapshot is no longer available for upload." };
+    return {
+      ok: false,
+      error: "Recording snapshot is no longer available for upload.",
+    };
   }
 
   const now = new Date();
@@ -1425,7 +1761,9 @@ async function uploadRecordingPackage(data: StorageUploadData): Promise<{
         mimeType: snapshot.mimeType,
         totalBytes: packagedVideoBlob.size,
         parts: await Promise.all(
-          videoParts.map(async (part) => ({ bytes: new Uint8Array(await part.arrayBuffer()) })),
+          videoParts.map(async (part) => ({
+            bytes: new Uint8Array(await part.arrayBuffer()),
+          })),
         ),
       },
       artifacts: artifactBytes,
@@ -1435,7 +1773,9 @@ async function uploadRecordingPackage(data: StorageUploadData): Promise<{
 
     // Kept as a Blob rather than one contiguous buffer: a package is mostly
     // video, and the upload paths stream from a Blob anyway.
-    const zipBlob = new Blob(built.chunks as BlobPart[], { type: "application/zip" });
+    const zipBlob = new Blob(built.chunks as BlobPart[], {
+      type: "application/zip",
+    });
     totalUploadBytes = zipBlob.size;
     completedSteps += 1;
     uploadedBytes = 0;

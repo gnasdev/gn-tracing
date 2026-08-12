@@ -105,19 +105,14 @@ export async function acquireCaptureStream(
         height: { ideal: 1080, max: 1080 },
         frameRate: { ideal: 30, max: 30 },
       },
-      audio: true,
+      audio: false,
     } as DisplayMediaStreamOptions;
     const stream = await navigator.mediaDevices.getDisplayMedia(displayConstraints);
     return { stream, loopbackTabAudio: false };
   }
 
   const stream = await navigator.mediaDevices.getUserMedia({
-    audio: {
-      mandatory: {
-        chromeMediaSource: "tab",
-        chromeMediaSourceId: streamId,
-      },
-    } as MediaTrackConstraints,
+    audio: false,
     video: {
       mandatory: {
         chromeMediaSource: "tab",
@@ -128,7 +123,7 @@ export async function acquireCaptureStream(
       },
     } as MediaTrackConstraints,
   });
-  return { stream, loopbackTabAudio: true };
+  return { stream, loopbackTabAudio: false };
 }
 
 /** Minimal recorder surface needed to stop and flush — keeps this unit testable. */

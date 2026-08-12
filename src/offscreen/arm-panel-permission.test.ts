@@ -82,18 +82,40 @@ describe("arm panel host-permission grant step", () => {
     expect(body).toMatch(/video still records/i);
   });
 
-  it("runs platform start preflight from the popup Start gesture before START_RECORDING", () => {
-    // Earliest viable gesture: popup click over the active tab. Firefox preflight
-    // requests host permission inside runRecordingStartPreflight; Chrome is a no-op.
-    expect(popupSource).toContain("runRecordingStartPreflight");
+  it("opens the share picker from the Start click before any await on Firefox", () => {
+    // Preferred path: getDisplayMedia in the toolbar-popup gesture so the OS
+    // picker opens immediately (no intermediate Choose-what-to-share click).
+    // Media host is parked only after the stream is live.
+    expect(popupSource).toContain("beginDisplayMediaFromGesture");
+    const clickAt = popupSource.indexOf('toggleBtn.addEventListener("click"');
+    expect(clickAt).toBeGreaterThan(-1);
+    const clickBody = popupSource.slice(clickAt, clickAt + 2400);
+    const shareAt = clickBody.indexOf("beginDisplayMediaFromGesture");
+    const firstAwaitAt = clickBody.search(/^[ \t]*const currentState = await /m);
+    expect(shareAt).toBeGreaterThan(-1);
+    expect(firstAwaitAt).toBeGreaterThan(-1);
+    expect(shareAt).toBeLessThan(firstAwaitAt);
+    expect(clickBody.indexOf("parkMediaHostWindowFromPopup")).toBe(-1);
+
     const startAt = popupSource.indexOf("async function startRecordingSession(");
     expect(startAt).toBeGreaterThan(-1);
-    const startBody = popupSource.slice(startAt, startAt + 2200);
-    expect(startBody).toContain("runRecordingStartPreflight");
-    // Must run before START_RECORDING is sent.
-    const preflightAt = startBody.indexOf("runRecordingStartPreflight");
-    const startMsgAt = startBody.indexOf("START_RECORDING");
-    expect(preflightAt).toBeGreaterThan(-1);
-    expect(startMsgAt).toBeGreaterThan(preflightAt);
+    const startBody = popupSource.slice(startAt, startAt + 3200);
+    expect(startBody).toContain("completeFirefoxPopupShare");
+
+    const handoffAt = popupSource.indexOf("async function completeFirefoxPopupShare(");
+    expect(handoffAt).toBeGreaterThan(-1);
+    const handoffBody = popupSource.slice(handoffAt, handoffAt + 2800);
+    expect(handoffBody).toContain("mediaPrearmed: true");
+    expect(handoffBody.indexOf("parkMediaHostWindowFromPopup")).toBeGreaterThan(
+      handoffBody.indexOf("streamPromise"),
+    );
+  });
+
+  it("auto-starts display capture on arm and only shows the panel if that fails", () => {
+    const body = functionBody("function armDisplayCapture(", 2400);
+    expect(body).toContain("onArmButtonClick({ auto: true })");
+    expect(body).toContain("panel.hidden = true");
+    expect(body).toContain("button.hidden = true");
+    expect(body).toMatch(/Choose what to share/);
   });
 });

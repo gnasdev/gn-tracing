@@ -27,7 +27,7 @@ export interface BrowserFeatureFlags {
   offscreen: boolean;
   /** Prefer chrome.identity.getAuthToken when brand detection says Google Chrome */
   chromeIdentityGetAuthToken: boolean;
-  /** Video via getDisplayMedia picker (Firefox primary path) */
+  /** Legacy getDisplayMedia arm panel (Firefox fallback when tab-frame fails) */
   displayMediaPicker: boolean;
   /** Show Instant Replay CDP domain allowlist in settings */
   instantReplayCdpAllowlist: boolean;

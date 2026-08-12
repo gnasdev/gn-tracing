@@ -39,7 +39,10 @@ export class ChromiumRecordingRuntime implements RecordingRuntime {
 
     const [, firstFrameAt] = await Promise.all([
       this.#evidence.attach({ tabId: input.tabId, sessionId: input.sessionId }),
-      this.#media.startCapture(input.tabId, input.sessionId),
+      this.#media.startCapture(input.tabId, input.sessionId, {
+        microphoneDeviceId: input.settings.microphoneDeviceId,
+        speakerDeviceId: input.settings.speakerDeviceId,
+      }),
     ]);
     // CDP observes from attach; beginSession is a no-op on CdpEvidenceCollector
     // but kept so the runtime always uses the same two-phase collector API.

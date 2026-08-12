@@ -2,8 +2,9 @@
  * Media host contract: owns video capture lifecycle and packaging document.
  *
  * Chromium uses chrome.offscreen + tabCapture. Firefox has neither, so it uses
- * getDisplayMedia inside a small extension popup window (windows.create type
- * "popup") — never a tab in the user's browser strip.
+ * tabs.captureTab → canvas stream inside a small extension popup window
+ * (windows.create type "popup") — never a tab in the user's browser strip.
+ * getDisplayMedia arming remains only as a fallback.
  */
 
 export type MediaStartCaptureOptions = {
@@ -14,6 +15,8 @@ export type MediaStartCaptureOptions = {
   prearmed?: boolean;
   firstFrameAt?: number | null;
   capturedSurface?: import("../../media-pipeline/capture-surface").CapturedSurface;
+  microphoneDeviceId?: string;
+  speakerDeviceId?: string;
 };
 
 export interface MediaHost {
