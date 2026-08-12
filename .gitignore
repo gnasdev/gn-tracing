@@ -41,6 +41,7 @@ graphify-out/
 .cursor/
 .grok/
 .kiro/
+.superpowers/
 AGENTS.md
 .idea/
 .vscode/
