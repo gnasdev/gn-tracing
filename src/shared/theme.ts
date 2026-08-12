@@ -39,10 +39,6 @@ function resolveTheme(preference: ThemePreference): ThemeMode {
   return systemPrefersLight() ? "light" : "dark";
 }
 
-function applyTemplate(template: string, label: string): string {
-  return template.replaceAll("{label}", label);
-}
-
 function readPreferenceFromLocalStorage(): ThemePreference {
   try {
     const saved = localStorage.getItem(THEME_STORAGE_KEY);
