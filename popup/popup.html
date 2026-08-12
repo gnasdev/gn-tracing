@@ -35,9 +35,6 @@
           </button>
         </div>
         <button id="lang-toggle-btn" class="icon-btn gn-lang-toggle" type="button" aria-label="Switch language">🇺🇸</button>
-        <button id="theme-toggle-btn" class="icon-btn" type="button" aria-label="Theme: System" title="Theme: System (follows OS). Click to cycle System → Light → Dark.">
-          <i id="theme-toggle-icon" class="ph ph-desktop" aria-hidden="true"></i>
-        </button>
         <button
           id="settings-page-btn"
           class="icon-btn"
@@ -662,6 +659,39 @@
           <p class="popup-dialog-lead" data-i18n="settings.dialogLead">
             Choose what each recording captures before you start a session. Save each section when you finish editing it.
           </p>
+
+          <section class="settings-section" aria-labelledby="popup-section-theme" data-settings-section="theme">
+            <div class="settings-section-header">
+              <h2 id="popup-section-theme" data-i18n="theme.sectionTitle">Theme</h2>
+            </div>
+            <p class="settings-section-description" data-i18n="theme.description">Choose how GN Tracing appears.</p>
+            <fieldset class="theme-preference-options">
+              <legend data-i18n="theme.preferenceLabel">Appearance</legend>
+              <div class="theme-preference-option-list">
+                <label class="theme-preference-option" for="theme-system-input">
+                  <input id="theme-system-input" name="theme-preference" type="radio" value="system" checked>
+                  <span class="theme-preference-option-copy">
+                    <span class="theme-preference-option-label" data-i18n="theme.system">System</span>
+                    <span class="theme-preference-option-description" data-i18n="theme.systemDescription">Follow your device setting</span>
+                  </span>
+                </label>
+                <label class="theme-preference-option" for="theme-light-input">
+                  <input id="theme-light-input" name="theme-preference" type="radio" value="light">
+                  <span class="theme-preference-option-copy">
+                    <span class="theme-preference-option-label" data-i18n="theme.light">Light</span>
+                    <span class="theme-preference-option-description" data-i18n="theme.lightDescription">Always use a light appearance</span>
+                  </span>
+                </label>
+                <label class="theme-preference-option" for="theme-dark-input">
+                  <input id="theme-dark-input" name="theme-preference" type="radio" value="dark">
+                  <span class="theme-preference-option-copy">
+                    <span class="theme-preference-option-label" data-i18n="theme.dark">Dark</span>
+                    <span class="theme-preference-option-description" data-i18n="theme.darkDescription">Always use a dark appearance</span>
+                  </span>
+                </label>
+              </div>
+            </fieldset>
+          </section>
 
           <section class="settings-section" aria-labelledby="popup-section-privacy" data-settings-section="privacy">
             <div class="settings-section-header">

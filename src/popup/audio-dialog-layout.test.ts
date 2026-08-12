@@ -38,6 +38,31 @@ describe("popup audio device dialog layout", () => {
     expect(settingsDialog).not.toContain('data-i18n="actions.saveSection"');
   });
 
+  it("renders theme as a labeled Settings section with explicit preferences", () => {
+    const mainHeader = popupHtml.slice(
+      popupHtml.indexOf("<header"),
+      popupHtml.indexOf("</header>"),
+    );
+    const settingsDialog = popupHtml.slice(popupHtml.indexOf('id="settings-dialog"'));
+    const themeSectionStart = settingsDialog.indexOf('data-settings-section="theme"');
+    const privacySectionStart = settingsDialog.indexOf('data-settings-section="privacy"');
+    const themeSection = settingsDialog.slice(themeSectionStart, privacySectionStart);
+
+    expect(mainHeader).not.toContain('id="theme-toggle-btn"');
+    expect(settingsDialog).not.toContain('id="theme-toggle-btn"');
+    expect(themeSectionStart).toBeGreaterThanOrEqual(0);
+    expect(themeSectionStart).toBeLessThan(privacySectionStart);
+    expect(themeSection).toContain('data-i18n="theme.sectionTitle"');
+    expect(themeSection).toContain('data-i18n="theme.description"');
+    expect(themeSection).toContain('data-i18n="theme.preferenceLabel"');
+    expect(themeSection).toContain('id="theme-system-input"');
+    expect(themeSection).toContain('id="theme-light-input"');
+    expect(themeSection).toContain('id="theme-dark-input"');
+    expect(themeSection).toContain('data-i18n="theme.system"');
+    expect(themeSection).toContain('data-i18n="theme.light"');
+    expect(themeSection).toContain('data-i18n="theme.dark"');
+  });
+
   it("keeps screenshot as an icon-only accessible action", () => {
     const screenshotButtonId = popupHtml.indexOf('id="screenshot-btn"');
     const screenshotButtonStart = popupHtml.lastIndexOf("<button", screenshotButtonId);

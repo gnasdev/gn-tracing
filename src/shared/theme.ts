@@ -16,38 +16,10 @@ const THEME_CYCLE = ["system", "light", "dark"] as const;
 export type ThemePreference = (typeof THEME_CYCLE)[number];
 export type ThemeMode = "light" | "dark";
 
-export interface ThemeToggleLabels {
-  system: string;
-  light: string;
-  dark: string;
-  /** e.g. "Theme: {label}" */
-  aria: string;
-  /** e.g. "Theme: {label} (follows OS). Click to cycle System → Light → Dark." */
-  titleSystem: string;
-  /** e.g. "Theme: {label}. Click to cycle System → Light → Dark." */
-  titleFixed: string;
-}
-
-export interface ThemeToggleController {
-  refreshLabels: () => void;
+export interface ThemePreferenceController {
+  refresh: () => void;
   getPreference: () => ThemePreference;
 }
-
-const DEFAULT_LABELS: ThemeToggleLabels = {
-  system: "System",
-  light: "Light",
-  dark: "Dark",
-  aria: "Theme: {label}",
-  titleSystem: "Theme: {label} (follows OS). Click to cycle System → Light → Dark.",
-  titleFixed: "Theme: {label}. Click to cycle System → Light → Dark.",
-};
-
-/** Phosphor class names (same set as the player theme toggle). */
-const THEME_ICONS: Record<ThemePreference, string> = {
-  system: "ph ph-desktop",
-  light: "ph ph-sun",
-  dark: "ph ph-moon",
-};
 
 function normalizePreference(value: unknown): ThemePreference | null {
   if (value === "system" || value === "light" || value === "dark") {
@@ -111,51 +83,28 @@ async function writePreference(preference: ThemePreference): Promise<void> {
   }
 }
 
-/**
- * Attach theme toggle: System → Light → Dark (same cycle as the player).
- * Updates icon + aria/title; follows OS when preference is System.
- */
-export function attachThemeToggle(
-  buttonId: string,
-  iconId?: string,
-  options?: { getLabels?: () => ThemeToggleLabels },
-): ThemeToggleController | null {
-  const btn = document.getElementById(buttonId) as HTMLButtonElement | null;
-  if (!btn) {
-    return null;
+/** Attach labeled radio inputs that select a specific theme preference. */
+export function attachThemePreferenceInputs(
+  inputIds: Record<ThemePreference, string>,
+): ThemePreferenceController | null {
+  const inputs = new Map<ThemePreference, HTMLInputElement>();
+  for (const preference of THEME_CYCLE) {
+    const input = document.getElementById(inputIds[preference]) as HTMLInputElement | null;
+    if (!input) {
+      return null;
+    }
+    inputs.set(preference, input);
   }
 
-  const icon = iconId ? document.getElementById(iconId) : null;
   let currentPreference: ThemePreference = readPreferenceFromLocalStorage();
-
-  const getLabels = (): ThemeToggleLabels => {
-    const labels = options?.getLabels?.();
-    return labels ? { ...DEFAULT_LABELS, ...labels } : DEFAULT_LABELS;
-  };
 
   const paint = (preference: ThemePreference): void => {
     currentPreference = preference;
-    const resolved = resolveTheme(preference);
-    document.documentElement.setAttribute("data-theme", resolved);
+    document.documentElement.setAttribute("data-theme", resolveTheme(preference));
     document.documentElement.setAttribute("data-theme-preference", preference);
-
-    if (icon) {
-      // Icon host is an <i> (or span); set Phosphor classes for desktop/sun/moon.
-      icon.className = THEME_ICONS[preference];
-      if (icon instanceof HTMLElement) {
-        icon.setAttribute("aria-hidden", "true");
-      }
+    for (const [option, input] of inputs) {
+      input.checked = option === preference;
     }
-
-    const labels = getLabels();
-    const label =
-      preference === "light" ? labels.light : preference === "dark" ? labels.dark : labels.system;
-    const title =
-      preference === "system"
-        ? applyTemplate(labels.titleSystem, label)
-        : applyTemplate(labels.titleFixed, label);
-    btn.setAttribute("aria-label", applyTemplate(labels.aria, label));
-    btn.title = title;
   };
 
   const apply = async (preference: ThemePreference): Promise<void> => {
@@ -168,11 +117,13 @@ export function attachThemeToggle(
     void apply(preference);
   });
 
-  btn.addEventListener("click", () => {
-    const index = THEME_CYCLE.indexOf(currentPreference);
-    const next = THEME_CYCLE[(index + 1) % THEME_CYCLE.length];
-    void apply(next);
-  });
+  for (const [preference, input] of inputs) {
+    input.addEventListener("change", () => {
+      if (input.checked) {
+        void apply(preference);
+      }
+    });
+  }
 
   // When preference is System, follow OS light/dark changes live.
   const media = window.matchMedia?.("(prefers-color-scheme: light)");
@@ -210,7 +161,7 @@ export function attachThemeToggle(
   }
 
   return {
-    refreshLabels: () => {
+    refresh: () => {
       paint(currentPreference);
     },
     getPreference: () => currentPreference,

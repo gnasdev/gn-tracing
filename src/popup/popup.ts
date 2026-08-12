@@ -39,7 +39,7 @@ import {
   type SettingsFormController,
 } from "../shared/settings-form-ui";
 import { buildCloudRemoteOpenUrl, resolveHistoryProvider } from "../shared/storage-provider";
-import { attachThemeToggle, type ThemeToggleController } from "../shared/theme";
+import { attachThemePreferenceInputs, type ThemePreferenceController } from "../shared/theme";
 import { attachLanguageSwitch } from "../shared/ui-language";
 import {
   escapeHtml,
@@ -74,7 +74,7 @@ const TRANSLATIONS: Record<PopupLanguage, Record<string, string>> = {
 };
 
 let currentLanguage: PopupLanguage = "en";
-let themeToggleUi: ThemeToggleController | null = null;
+let themePreferenceUi: ThemePreferenceController | null = null;
 let settingsForm: SettingsFormController | null = null;
 
 function t(key: string, replacements: Record<string, string> = {}): string {
@@ -121,7 +121,7 @@ function applyStaticTranslations(): void {
   settingsPageBtn.setAttribute("title", t("actions.openSettings"));
   settingsForm?.refreshFieldInfoLabels();
   refreshSectionInfoButtons();
-  themeToggleUi?.refreshLabels();
+  themePreferenceUi?.refresh();
   const feedbackToggle = document.getElementById("feedback-toggle-btn");
   if (feedbackToggle) {
     feedbackToggle.setAttribute("aria-label", t("footer.feedback"));
@@ -3592,15 +3592,10 @@ feedbackSubmitBtn.addEventListener("click", async () => {
   }
 });
 
-themeToggleUi = attachThemeToggle("theme-toggle-btn", "theme-toggle-icon", {
-  getLabels: () => ({
-    system: t("theme.system"),
-    light: t("theme.light"),
-    dark: t("theme.dark"),
-    aria: t("theme.aria"),
-    titleSystem: t("theme.titleSystem"),
-    titleFixed: t("theme.titleFixed"),
-  }),
+themePreferenceUi = attachThemePreferenceInputs({
+  system: "theme-system-input",
+  light: "theme-light-input",
+  dark: "theme-dark-input",
 });
 
 registerPopupDialogs();
