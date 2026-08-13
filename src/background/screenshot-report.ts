@@ -80,9 +80,6 @@ export type PendingCapture =
       frozenInstantReplay: FrozenInstantReplay;
     });
 
-/** @deprecated Prefer PendingCapture; kept as alias for call sites mid-migration. */
-export type PendingScreenshot = PendingCapture;
-
 export interface CaptureDeps {
   captureVisibleTab: (windowId: number) => Promise<string>;
   getTab: (tabId: number) => Promise<{ windowId?: number; url?: string; title?: string }>;

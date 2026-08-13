@@ -17,11 +17,6 @@ import { normalizeRect } from "../../packages/replay-core/src/schema/annotation"
 
 export type EditorTool = AnnotationType | "select";
 
-export interface EditorState {
-  annotations: Annotation[];
-  selectedId: string | null;
-}
-
 /** How close a click must land to a shape to select it, in normalised units. */
 const HIT_TOLERANCE = 0.02;
 

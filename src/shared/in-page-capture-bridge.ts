@@ -117,5 +117,3 @@ export function buildInPageControlMessage(input: {
 
 /** Service-worker action for forwarded entries (must match MessageAction). */
 export const IN_PAGE_CAPTURE_ENTRY_ACTION = "IN_PAGE_CAPTURE_ENTRY" as const;
-
-export type InPageCaptureMessageAction = typeof IN_PAGE_CAPTURE_ENTRY_ACTION;

@@ -17,8 +17,6 @@ import type {
 } from "../../types/recording";
 import type { MediaHostKind } from "../types";
 
-export type EvidenceKind = "console" | "network" | "websocket" | "storage";
-
 export type EvidenceEntry = ConsoleEntry | NetworkEntry | WebSocketEntry | StorageSnapshot;
 
 export interface RecordingStartInput {

@@ -24,7 +24,7 @@ import {
   type CaptureDeps,
   captureScreenshotForAnnotation,
   mergeAnnotatedScreenshot,
-  type PendingScreenshot,
+  type PendingCapture,
 } from "../background/screenshot-report";
 import {
   buildScreenshotPackage,
@@ -41,9 +41,9 @@ const CAPTION = "What is wrong here?";
 const RED = "#ff3b30";
 
 function createCaptureDeps(): CaptureDeps & {
-  pending: PendingScreenshot | null;
+  pending: PendingCapture | null;
 } {
-  const state = { pending: null as PendingScreenshot | null };
+  const state = { pending: null as PendingCapture | null };
   return {
     captureVisibleTab: vi.fn(async () => PNG_DATA_URL),
     getTab: vi.fn(async () => ({
@@ -52,7 +52,7 @@ function createCaptureDeps(): CaptureDeps & {
       title: "Checkout",
     })),
     getViewport: vi.fn(async () => ({ width: 1440, height: 900, devicePixelRatio: 2 })),
-    setPending: vi.fn(async (pending: PendingScreenshot) => {
+    setPending: vi.fn(async (pending: PendingCapture) => {
       state.pending = pending;
     }),
     openEditor: vi.fn(async () => undefined),
@@ -120,7 +120,7 @@ describe("annotate → save & package (full reporter flow)", () => {
     const capture = await captureScreenshotForAnnotation(42, deps);
     expect(capture).toMatchObject({ ok: true });
     expect(deps.pending).not.toBeNull();
-    const pending = deps.pending as PendingScreenshot;
+    const pending = deps.pending as PendingCapture;
     expect(pending.tabId).toBe(42);
     expect(pending.url).toBe("https://shop.test/checkout");
 

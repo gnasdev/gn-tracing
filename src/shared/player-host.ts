@@ -35,11 +35,6 @@ const PLAYER_HOST_URL = resolvePlayerHostUrl(
   PLAYER_LOCAL_PORT,
 );
 
-/** Exported for tests and diagnostics. */
-export function getPlayerHostUrl(): string {
-  return PLAYER_HOST_URL;
-}
-
 /** Known production player origins (custom domain + Pages default). */
 export const PRODUCTION_PLAYER_ORIGINS = [
   "https://tracing.gnas.dev",

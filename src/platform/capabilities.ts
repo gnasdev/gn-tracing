@@ -9,7 +9,6 @@ import type { RecordingCapability } from "../../packages/replay-core/src/schema/
 import {
   EXTENSION_CAPABILITIES,
   FIREFOX_EXTENSION_CAPABILITIES,
-  SDK_CAPABILITIES,
 } from "../../packages/replay-core/src/schema/package";
 import { getBrowserTarget } from "./detect";
 import type { BrowserTarget } from "./types";
@@ -27,4 +26,4 @@ export function getProducerCapabilities(
   return [...CHROMIUM_EXTENSION_CAPABILITIES];
 }
 
-export { EXTENSION_CAPABILITIES, FIREFOX_EXTENSION_CAPABILITIES, SDK_CAPABILITIES };
+export { FIREFOX_EXTENSION_CAPABILITIES };

@@ -11,9 +11,6 @@
 
 export type BrowserTarget = "chrome" | "edge" | "opera" | "firefox";
 
-/** Official Chromium-based store/dev packages (not Firefox). */
-export type ChromiumBrowserTarget = Exclude<BrowserTarget, "firefox">;
-
 export type CaptureMode = "cdp" | "in-page";
 
 export type MediaHostKind = "offscreen" | "extension-page";

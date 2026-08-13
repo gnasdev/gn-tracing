@@ -217,11 +217,6 @@ const ACTIVE_STORAGE_PROVIDERS = [
   "dropbox",
 ] as const satisfies readonly StorageProviderId[];
 
-/** @deprecated Prefer clampActiveStorageProvider — kept as alias for older imports/tests. */
-export function clampActiveStorageProviderP0(value: unknown): StorageProviderId {
-  return clampActiveStorageProvider(value);
-}
-
 export function clampActiveStorageProvider(value: unknown): StorageProviderId {
   const normalized = normalizeStorageProviderId(value, "google-drive");
   return (ACTIVE_STORAGE_PROVIDERS as readonly string[]).includes(normalized)

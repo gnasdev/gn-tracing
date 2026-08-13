@@ -5,9 +5,6 @@
 export {
   isProductRouteVersion,
   joinVersionedPath,
-  pickWorkerOrigin,
   resolveVersionedWorkerEndpoints,
-  type StrippedRouteVersion,
   stripRouteVersionPrefix,
-  type WorkerEndpoints,
 } from "../../packages/replay-core/src/route-version";

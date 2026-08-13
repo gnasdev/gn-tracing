@@ -240,14 +240,6 @@ export function buildCloudRemoteOpenUrl(args: {
   return buildGoogleDriveRemoteFolderUrl(folderRef);
 }
 
-/** @deprecated Prefer buildCloudRemoteOpenUrl — kept for callers that only have a folder ref. */
-export function buildCloudFolderOpenUrl(
-  provider: StorageProviderId | string | null | undefined,
-  folderRef: string | null | undefined,
-): string | null {
-  return buildCloudRemoteOpenUrl({ provider, folderRef });
-}
-
 function buildGoogleDriveRemoteFileUrl(fileId: string): string | null {
   if (!fileId || fileId.includes("/") || fileId.includes("?") || /^https?:\/\//i.test(fileId)) {
     return null;

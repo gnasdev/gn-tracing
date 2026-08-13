@@ -277,20 +277,3 @@ export type ActiveMediaSession = {
   playbackSourceNode: MediaStreamAudioSourceNode | null;
 };
 
-export async function stopActiveMediaTracks(session: ActiveMediaSession | null): Promise<void> {
-  if (!session) {
-    return;
-  }
-  if (session.playbackSourceNode) {
-    session.playbackSourceNode.disconnect();
-    session.playbackSourceNode = null;
-  }
-  session.stream.getTracks().forEach((track) => {
-    track.stop();
-  });
-  if (session.playbackAudioContext) {
-    const context = session.playbackAudioContext;
-    session.playbackAudioContext = null;
-    await context.close().catch(() => {});
-  }
-}

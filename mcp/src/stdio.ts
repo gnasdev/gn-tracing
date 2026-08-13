@@ -8,7 +8,6 @@
  * boundaries, since one read can carry a partial or several whole messages.
  */
 
-import { createReadStream } from "node:fs";
 import { open, stat } from "node:fs/promises";
 import { isAbsolute, resolve, sep } from "node:path";
 import {
@@ -177,7 +176,3 @@ export async function runStdioServer(store: RecordingStore, streams: StdioStream
   }
 }
 
-/** Kept for symmetry with `createFileSource`; used by the bin entrypoint. */
-export function openStdin(): NodeJS.ReadableStream {
-  return process.stdin.isTTY ? createReadStream("/dev/null") : process.stdin;
-}

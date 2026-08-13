@@ -17,19 +17,10 @@ import {
 import { hasInstantReplayFrames } from "../shared/instant-replay-policy";
 
 export {
-  evidenceBundleHasData,
-  evidenceBundleHasLogData,
-  mergeEvidenceBundles,
-  parseMainWorldEvidenceJson,
-} from "../shared/instant-replay-evidence-bridge";
-export {
   COLLECT_INSTANT_REPLAY_ACTION,
   COMMIT_INSTANT_REPLAY_ACTION,
   hasInstantReplayFrames,
 } from "../shared/instant-replay-policy";
-
-/** Built MAIN-world companion script path (esbuild out). */
-export const INSTANT_REPLAY_EVIDENCE_CONTENT_SCRIPT = "content/instant-replay-evidence.js";
 
 export type CollectInstantReplayResult =
   | {

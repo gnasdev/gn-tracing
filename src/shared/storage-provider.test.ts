@@ -3,7 +3,6 @@
  */
 import { describe, expect, it } from "vitest";
 import {
-  buildCloudFolderOpenUrl,
   buildCloudRemoteOpenUrl,
   buildStorageRecordingPath,
   isStorageProviderId,
@@ -220,13 +219,6 @@ describe("buildCloudRemoteOpenUrl", () => {
         folderRef: "/",
       }),
     ).toBe("https://www.dropbox.com/home");
-  });
-
-  it("buildCloudFolderOpenUrl remains as folder-only helper alias", () => {
-    expect(buildCloudFolderOpenUrl("dropbox", "/a/b")).toBe("https://www.dropbox.com/home/a/b");
-    expect(buildCloudFolderOpenUrl("google-drive", "1FolderIdXXXX")).toBe(
-      "https://drive.google.com/drive/folders/1FolderIdXXXX",
-    );
   });
 });
 

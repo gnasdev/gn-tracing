@@ -167,16 +167,6 @@ export function evidenceBundleHasData(
   );
 }
 
-/** Console / network / websocket only — storage alone must not mask a missing console ring. */
-export function evidenceBundleHasLogData(
-  bundle: InstantReplayEvidenceBundle | null | undefined,
-): boolean {
-  if (!bundle) {
-    return false;
-  }
-  return bundle.console.length > 0 || bundle.network.length > 0 || bundle.websocket.length > 0;
-}
-
 /**
  * Per-kind merge: keep the longer ring for each surface so a storage-only
  * bridge result cannot hide MAIN-world console rows (and vice versa).
