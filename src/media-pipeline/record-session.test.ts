@@ -11,6 +11,7 @@ import {
   describeDisplayCaptureError,
   pickRecorderMimeType,
   stopRecorderAndWaitForFlush,
+  waitForFirstFrame,
 } from "./record-session";
 
 describe("describeDisplayCaptureError", () => {
@@ -177,5 +178,21 @@ describe("stopRecorderAndWaitForFlush", () => {
     } finally {
       warn.mockRestore();
     }
+  });
+});
+
+describe("waitForFirstFrame", () => {
+  it("returns immediately for a live unmuted video track", async () => {
+    const track = { muted: false, readyState: "live", onunmute: null };
+    const stream = { getVideoTracks: () => [track] } as unknown as MediaStream;
+    const before = Date.now();
+    const stamped = await waitForFirstFrame(stream);
+    expect(stamped).toBeGreaterThanOrEqual(before);
+    expect(stamped).toBeLessThanOrEqual(Date.now());
+  });
+
+  it("returns null when the stream has no video track", async () => {
+    const stream = { getVideoTracks: () => [] } as unknown as MediaStream;
+    expect(await waitForFirstFrame(stream)).toBeNull();
   });
 });

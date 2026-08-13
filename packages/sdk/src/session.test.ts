@@ -80,7 +80,7 @@ function createFakeWindow(): FakeWindow {
     fetch: originalFetch,
     localStorage: undefined,
     sessionStorage: undefined,
-    performance: { now: () => 0 },
+    performance: { now: () => performance.now() },
     document: fakeDocument(),
     location: { href: "https://shop.test/checkout" },
     history: undefined,

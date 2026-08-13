@@ -201,8 +201,7 @@
 
   function syncLanguageToggleButton(button) {
     if (!button) return;
-    const next = currentLanguage === "en" ? "vi" : "en";
-    button.textContent = next.toUpperCase();
+    button.textContent = currentLanguage === "en" ? "🇺🇸" : "🇻🇳";
     button.dataset.language = currentLanguage;
     const label = currentLanguage === "en" ? t("lang.switchToVi") : t("lang.switchToEn");
     button.setAttribute("aria-label", label);
@@ -672,6 +671,15 @@
       if (typeof updateFullscreenButton === "function" && elements.videoFullscreenBtn) {
         updateFullscreenButton();
       }
+      if (elements.video && elements.playPauseBtn) {
+        elements.playPauseBtn.setAttribute(
+          "aria-label",
+          t(elements.video.paused || elements.video.ended ? "controls.play" : "controls.pause"),
+        );
+      }
+      if (typeof updateVolumeDisplay === "function" && elements.video && elements.muteBtn) {
+        updateVolumeDisplay();
+      }
 
       if (typeof renderReportPanel === "function" && (report || privacySummary || screenshotUrl)) {
         renderReportPanel();
@@ -1045,6 +1053,7 @@
       elements.videoFullscreenBtn.title = isVideoFullscreen
         ? t("controls.exitExpandedVideo")
         : t("controls.expandVideo");
+      elements.videoFullscreenBtn.setAttribute("aria-label", elements.videoFullscreenBtn.title);
       elements.videoFullscreenBtn.setAttribute("aria-pressed", String(isVideoFullscreen));
     }
     if (elements.stillFullscreenBtn) {
@@ -1054,6 +1063,7 @@
       elements.stillFullscreenBtn.title = isVideoFullscreen
         ? t("controls.exitExpandedStill")
         : t("controls.expandStill");
+      elements.stillFullscreenBtn.setAttribute("aria-label", elements.stillFullscreenBtn.title);
       elements.stillFullscreenBtn.setAttribute("aria-pressed", String(isVideoFullscreen));
     }
   }
@@ -8055,6 +8065,7 @@
     elements.video.addEventListener("play", () => {
       elements.playIcon.classList.add("hidden");
       elements.pauseIcon.classList.remove("hidden");
+      elements.playPauseBtn.setAttribute("aria-label", t("controls.pause"));
       startEffectsScheduler();
       startDrawingScheduler();
     });
@@ -8062,6 +8073,7 @@
     elements.video.addEventListener("pause", () => {
       elements.playIcon.classList.remove("hidden");
       elements.pauseIcon.classList.add("hidden");
+      elements.playPauseBtn.setAttribute("aria-label", t("controls.play"));
       stopEffectsScheduler();
       stopDrawingScheduler();
     });
@@ -8069,6 +8081,7 @@
     elements.video.addEventListener("ended", () => {
       elements.playIcon.classList.remove("hidden");
       elements.pauseIcon.classList.add("hidden");
+      elements.playPauseBtn.setAttribute("aria-label", t("controls.play"));
       stopEffectsScheduler();
       stopDrawingScheduler();
       pendingSeekTimeMs = null;
@@ -8454,6 +8467,12 @@
   }
 
   function updateVolumeDisplay() {
+    elements.muteBtn.setAttribute(
+      "aria-label",
+      elements.video.muted || elements.video.volume === 0
+        ? t("controls.unmute")
+        : t("controls.mute"),
+    );
     if (elements.video.muted || elements.video.volume === 0) {
       elements.volumeOn.classList.add("hidden");
       elements.volumeOff.classList.remove("hidden");

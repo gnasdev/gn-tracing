@@ -139,50 +139,50 @@ export const SETTINGS_FORM_TRANSLATIONS: Record<UiLanguage, Record<string, strin
       "Choose what each recording captures before you start a session. Save each section when you finish editing it.",
   },
   vi: {
-    "actions.saveSection": "Lưu section",
+    "actions.saveSection": "Lưu mục này",
     "actions.savingSection": "Đang lưu…",
-    "sections.privacyRedaction": "Privacy & Redaction",
+    "sections.privacyRedaction": "Quyền riêng tư và che dữ liệu",
     "sections.privacyData": "Che dữ liệu",
     "sections.visualMasking": "Che giao diện",
-    "sections.capture": "Capture",
+    "sections.capture": "Thu thập dữ liệu",
     "sections.audio": "Âm thanh",
     "sections.console": "Console",
-    "sections.network": "Network",
+    "sections.network": "Mạng",
     "sections.websocket": "WebSocket",
-    "sections.inspector": "Thu thập inspector",
-    "fields.redactSensitiveHeaders.label": "Che header nhạy cảm",
-    "fields.redactSensitiveQueryParams.label": "Che query param nhạy cảm",
-    "fields.redactRequestBodyFields.label": "Che field request body",
-    "fields.redactResponseBodyFields.label": "Che field response body",
-    "fields.redactConsoleValues.label": "Che giá trị console",
-    "fields.redactEventMetadata.label": "Che metadata event/report",
-    "fields.redactWebSocketPayloads.label": "Che payload WebSocket",
+    "sections.inspector": "Thu thập dữ liệu kiểm tra",
+    "fields.redactSensitiveHeaders.label": "Che các tiêu đề nhạy cảm",
+    "fields.redactSensitiveQueryParams.label": "Che tham số truy vấn nhạy cảm",
+    "fields.redactRequestBodyFields.label": "Che trường dữ liệu gửi đi",
+    "fields.redactResponseBodyFields.label": "Che trường dữ liệu phản hồi",
+    "fields.redactConsoleValues.label": "Che giá trị Console",
+    "fields.redactEventMetadata.label": "Che siêu dữ liệu sự kiện/báo cáo",
+    "fields.redactWebSocketPayloads.label": "Che dữ liệu WebSocket",
     "fields.maskDomSelectors.label": "DOM selector cần che",
-    "fields.microphoneDeviceId.label": "Microphone",
-    "fields.speakerDeviceId.label": "Nguồn audio hệ thống (loopback)",
-    "fields.captureConsole.label": "Capture artifact console",
-    "fields.captureConsoleArgs.label": "Lưu tham số và preview console",
-    "fields.consolePreviewDepth.label": "Độ sâu preview",
-    "fields.captureConsoleStacks.label": "Stack",
-    "fields.captureConsoleSourceSnippets.label": "Đoạn source",
-    "fields.maxConsoleEntryBytes.label": "Byte tối đa mỗi entry",
-    "fields.captureNetwork.label": "Capture artifact network",
-    "fields.captureRequestHeaders.label": "Request headers",
-    "fields.captureResponseHeaders.label": "Response headers",
-    "fields.captureRequestBodies.label": "Capture request bodies",
-    "fields.captureResponseBodyMode.label": "Response bodies",
-    "fields.maxResponseBodyBytes.label": "Byte tối đa mỗi response body",
-    "fields.captureRedirectHeaders.label": "Redirect headers",
-    "fields.captureInitiator.label": "Nguồn tạo request",
-    "fields.suppressRecorderInternalRequests.label": "Ẩn request nội bộ của recorder",
-    "fields.captureWebSockets.label": "Capture artifact WebSocket",
-    "fields.captureWebSocketFrames.label": "Lưu payload frame WebSocket",
-    "fields.maxWebSocketFrameBytes.label": "Byte tối đa mỗi frame",
+    "fields.microphoneDeviceId.label": "Micrô",
+    "fields.speakerDeviceId.label": "Nguồn âm thanh hệ thống (loopback)",
+    "fields.captureConsole.label": "Thu thập nhật ký Console",
+    "fields.captureConsoleArgs.label": "Lưu tham số và bản xem trước của Console",
+    "fields.consolePreviewDepth.label": "Độ sâu xem trước",
+    "fields.captureConsoleStacks.label": "Ngăn xếp",
+    "fields.captureConsoleSourceSnippets.label": "Đoạn mã nguồn",
+    "fields.maxConsoleEntryBytes.label": "Số byte tối đa mỗi mục Console",
+    "fields.captureNetwork.label": "Thu thập hoạt động mạng",
+    "fields.captureRequestHeaders.label": "Tiêu đề yêu cầu",
+    "fields.captureResponseHeaders.label": "Tiêu đề phản hồi",
+    "fields.captureRequestBodies.label": "Thu thập nội dung yêu cầu",
+    "fields.captureResponseBodyMode.label": "Nội dung phản hồi",
+    "fields.maxResponseBodyBytes.label": "Số byte tối đa mỗi nội dung phản hồi",
+    "fields.captureRedirectHeaders.label": "Tiêu đề chuyển hướng",
+    "fields.captureInitiator.label": "Nguồn tạo yêu cầu",
+    "fields.suppressRecorderInternalRequests.label": "Ẩn yêu cầu nội bộ của trình ghi",
+    "fields.captureWebSockets.label": "Thu thập dữ liệu WebSocket",
+    "fields.captureWebSocketFrames.label": "Lưu dữ liệu khung WebSocket",
+    "fields.maxWebSocketFrameBytes.label": "Số byte tối đa mỗi khung",
     "fields.captureWebSocketInitiator.label": "Lưu nguồn tạo WebSocket",
-    "fields.captureStorage.label": "Capture snapshot storage",
-    "fields.redactStorageValues.label": "Che giá trị storage",
-    "fields.captureDomSnapshots.label": "Capture snapshot DOM",
-    "fields.redactDomTextContent.label": "Che nội dung text DOM",
+    "fields.captureStorage.label": "Thu thập ảnh chụp bộ nhớ lưu trữ",
+    "fields.redactStorageValues.label": "Che giá trị bộ nhớ lưu trữ",
+    "fields.captureDomSnapshots.label": "Thu thập ảnh chụp DOM",
+    "fields.redactDomTextContent.label": "Che nội dung văn bản DOM",
     "options.browserDefault": "Mặc định của trình duyệt",
     "options.unavailable": "không khả dụng",
     "options.none": "Không lưu",
@@ -191,38 +191,38 @@ export const SETTINGS_FORM_TRANSLATIONS: Record<UiLanguage, Record<string, strin
     "options.off": "Tắt",
     "options.errorsOnly": "Chỉ lỗi",
     "options.warningsErrors": "Cảnh báo và lỗi",
-    "options.allEntries": "Tất cả entry",
-    "options.allResolvedEntries": "Tất cả entry resolve được",
+    "options.allEntries": "Tất cả mục",
+    "options.allResolvedEntries": "Tất cả mục phân giải được",
     "options.minimal": "Tối thiểu",
     "options.fullRedacted": "Đầy đủ đã che dữ liệu nhạy cảm",
-    "options.sensitiveFields": "Field nhạy cảm",
-    "options.allPayloads": "Toàn bộ payload",
-    "options.textOnly": "Chỉ text",
-    "options.textJson": "Text và JSON",
-    "options.eligibleText": "Tất cả loại text phù hợp",
-    "options.locationOnly": "Chỉ Location",
+    "options.sensitiveFields": "Trường nhạy cảm",
+    "options.allPayloads": "Toàn bộ dữ liệu",
+    "options.textOnly": "Chỉ văn bản",
+    "options.textJson": "Văn bản và JSON",
+    "options.eligibleText": "Mọi loại văn bản phù hợp",
+    "options.locationOnly": "Chỉ vị trí",
     "options.summaryLocation": "Tóm tắt vị trí",
-    "options.shortStack": "Stack ngắn",
-    "options.fullStack": "Stack đầy đủ",
+    "options.shortStack": "Ngăn xếp ngắn",
+    "options.fullStack": "Ngăn xếp đầy đủ",
     "placeholders.noLimit": "Không giới hạn",
     "placeholders.maskDomSelectors": "[data-private]\n.customer-email",
     "hints.visualMasking":
-      "Selector được áp dụng trước khi capture nếu có thể. Không che canvas, video hoặc closed shadow DOM.",
+      "Bộ chọn được áp dụng trước khi thu thập nếu có thể. Không che canvas, video hoặc shadow DOM đóng.",
     "hints.audioCapture":
-      "Audio speaker là audio từ tab hoặc màn hình được chia sẻ, không phải chọn thiết bị output.",
+      "Âm thanh hệ thống là âm thanh từ tab hoặc màn hình được chia sẻ, không phải thiết bị đầu ra đã chọn.",
     "hints.inspectorCapture":
-      "Capture storage và DOM tự động bật và khoá theo khi network/request capture đang bật. Chúng capture thêm dữ liệu nhạy cảm (storage, cookie, text DOM) và làm tăng kích thước package. Tắt network capture để tắt chúng, và giữ redaction bật để che các giá trị khớp pattern nhạy cảm.",
+      "Thu thập bộ nhớ lưu trữ và DOM tự động bật, đồng thời bị khóa khi thu thập mạng/yêu cầu đang bật. Chúng có thể chứa dữ liệu nhạy cảm (bộ nhớ lưu trữ, cookie, văn bản DOM) và làm tăng kích thước gói. Tắt thu thập mạng để tắt chúng; giữ che dữ liệu để che các giá trị khớp mẫu nhạy cảm.",
     "hints.inspectorCaptureCoupling":
-      "Khi Network capture đang bật, storage và DOM snapshot luôn được bật theo.",
+      "Khi thu thập mạng đang bật, ảnh chụp bộ nhớ lưu trữ và DOM luôn được bật theo.",
     "messages.settingsSaved": "Đã lưu cài đặt.",
-    "messages.sectionSaved": "Đã lưu section.",
+    "messages.sectionSaved": "Đã lưu mục này.",
     "messages.loadFailed": "Không tải được cài đặt",
     "messages.saveFailed": "Không lưu được cài đặt",
-    "info.buttonLabel": "Giải thích field này",
+    "info.buttonLabel": "Giải thích trường này",
     "info.dialogTitleFallback": "Giải thích cài đặt",
     "settings.dialogTitle": "Cài đặt",
     "settings.dialogLead":
-      "Chọn dữ liệu cần capture trước khi bắt đầu phiên ghi. Lưu từng section sau khi chỉnh.",
+      "Chọn dữ liệu cần thu thập trước khi bắt đầu phiên ghi. Lưu từng mục sau khi chỉnh sửa.",
   },
 };
 
@@ -233,8 +233,8 @@ const FIELD_HELP: Record<string, Record<UiLanguage, { title: string; body: strin
       body: "Stores browser console logs in the replay. QC should keep this on when checking JavaScript errors, failed assertions, or warnings that explain a broken flow.",
     },
     vi: {
-      title: "Capture console artifact",
-      body: "Lưu log console của trình duyệt vào replay. QC nên bật khi cần kiểm tra lỗi JavaScript, assertion fail hoặc warning giải thích flow bị lỗi.",
+      title: "Thu thập nhật ký Console",
+      body: "Lưu nhật ký Console của trình duyệt vào bản phát lại. Nên bật khi kiểm tra lỗi JavaScript, xác nhận thất bại hoặc cảnh báo giải thích luồng bị lỗi.",
     },
   },
   "capture-console-args-input": {
@@ -243,8 +243,8 @@ const FIELD_HELP: Record<string, Record<UiLanguage, { title: string; body: strin
       body: "Keeps structured values logged with console calls, not just the text message. This helps inspect objects but can increase package size if the app logs large data.",
     },
     vi: {
-      title: "Lưu tham số và preview console",
-      body: "Giữ các giá trị có cấu trúc được log qua console, không chỉ message text. Hữu ích để xem object nhưng có thể làm package lớn nếu app log dữ liệu lớn.",
+      title: "Lưu tham số và bản xem trước của Console",
+      body: "Giữ các giá trị có cấu trúc được ghi qua Console, không chỉ nội dung chữ. Hữu ích để xem đối tượng nhưng có thể làm gói lớn nếu ứng dụng ghi nhiều dữ liệu.",
     },
   },
   "console-preview-depth-input": {
@@ -253,8 +253,8 @@ const FIELD_HELP: Record<string, Record<UiLanguage, { title: string; body: strin
       body: "Controls how much nested object detail is kept for console values. Shallow is usually enough for QC; full helps when a bug depends on nested response or state objects.",
     },
     vi: {
-      title: "Độ sâu preview",
-      body: "Quyết định mức chi tiết object lồng nhau được giữ trong console. Nông thường đủ cho QC; đầy đủ hữu ích khi bug phụ thuộc vào response hoặc state object bên trong.",
+      title: "Độ sâu xem trước",
+      body: "Quyết định mức chi tiết của đối tượng lồng nhau được giữ trong Console. Mức nông thường đủ; mức đầy đủ hữu ích khi lỗi phụ thuộc vào phản hồi hoặc trạng thái bên trong.",
     },
   },
   "capture-console-stacks-input": {
@@ -263,8 +263,8 @@ const FIELD_HELP: Record<string, Record<UiLanguage, { title: string; body: strin
       body: "Stores stack traces for console entries. This helps developers jump from an error or warning to the code path that produced it.",
     },
     vi: {
-      title: "Stack console",
-      body: "Lưu stack trace cho console entry. Điều này giúp developer đi từ lỗi hoặc warning tới đoạn code tạo ra nó.",
+      title: "Ngăn xếp Console",
+      body: "Lưu dấu vết ngăn xếp cho từng mục Console. Điều này giúp lần từ lỗi hoặc cảnh báo tới đoạn mã đã tạo ra nó.",
     },
   },
   "capture-console-source-snippets-input": {
@@ -273,8 +273,8 @@ const FIELD_HELP: Record<string, Record<UiLanguage, { title: string; body: strin
       body: "Stores a small source-code excerpt when sourcemaps contain source content. This helps review errors without opening the original app repository.",
     },
     vi: {
-      title: "Đoạn source",
-      body: "Lưu một đoạn source nhỏ khi sourcemap có source content. Hữu ích để xem lỗi mà không cần mở repository của app gốc.",
+      title: "Đoạn mã nguồn",
+      body: "Lưu một đoạn mã nhỏ khi source map có nội dung nguồn. Hữu ích để xem lỗi mà không cần mở kho mã của ứng dụng gốc.",
     },
   },
   "max-console-entry-bytes-input": {
@@ -283,8 +283,8 @@ const FIELD_HELP: Record<string, Record<UiLanguage, { title: string; body: strin
       body: "Limits how large each console entry can be. Leave blank for no limit; set a value when noisy logs make console.json too large.",
     },
     vi: {
-      title: "Byte tối đa mỗi console entry",
-      body: "Giới hạn kích thước từng console entry. Để trống là không giới hạn; nhập giá trị khi log quá ồn làm console.json quá lớn.",
+      title: "Số byte tối đa mỗi mục Console",
+      body: "Giới hạn kích thước mỗi mục Console. Để trống để không giới hạn; nhập giá trị khi nhật ký quá nhiều làm console.json quá lớn.",
     },
   },
   "capture-network-input": {
@@ -293,8 +293,8 @@ const FIELD_HELP: Record<string, Record<UiLanguage, { title: string; body: strin
       body: "Stores network requests in the replay. QC should keep this on for API failures, slow requests, wrong status codes, CORS issues, or missing assets.",
     },
     vi: {
-      title: "Capture network artifact",
-      body: "Lưu network requests vào replay. QC nên bật cho lỗi API, request chậm, sai status code, lỗi CORS hoặc thiếu asset.",
+      title: "Thu thập hoạt động mạng",
+      body: "Lưu các yêu cầu mạng vào bản phát lại. Nên bật khi kiểm tra lỗi API, yêu cầu chậm, mã trạng thái sai, lỗi CORS hoặc thiếu tài nguyên.",
     },
   },
   "capture-request-headers-input": {
@@ -303,8 +303,8 @@ const FIELD_HELP: Record<string, Record<UiLanguage, { title: string; body: strin
       body: "Controls how much request header detail is kept. Full redacted is useful for auth, locale, content type, and CORS debugging while sensitive header values are masked.",
     },
     vi: {
-      title: "Request headers",
-      body: "Quyết định mức chi tiết request header được giữ. Đầy đủ đã che dữ liệu nhạy cảm hữu ích khi debug auth, locale, content type và CORS.",
+      title: "Tiêu đề yêu cầu",
+      body: "Quyết định mức chi tiết tiêu đề yêu cầu được giữ. Chế độ đầy đủ đã che dữ liệu nhạy cảm hữu ích khi gỡ lỗi xác thực, ngôn ngữ, loại nội dung và CORS.",
     },
   },
   "capture-response-headers-input": {
@@ -313,8 +313,8 @@ const FIELD_HELP: Record<string, Record<UiLanguage, { title: string; body: strin
       body: "Controls response header detail. Keep this on when testing cache, content type, redirects, downloads, or server-side behavior.",
     },
     vi: {
-      title: "Response headers",
-      body: "Quyết định mức chi tiết response header. Nên bật khi test cache, content type, redirect, download hoặc hành vi phía server.",
+      title: "Tiêu đề phản hồi",
+      body: "Quyết định mức chi tiết tiêu đề phản hồi. Nên bật khi kiểm tra bộ nhớ đệm, loại nội dung, chuyển hướng, tải xuống hoặc hành vi phía máy chủ.",
     },
   },
   "capture-request-bodies-input": {
@@ -323,8 +323,8 @@ const FIELD_HELP: Record<string, Record<UiLanguage, { title: string; body: strin
       body: "Stores submitted payloads such as JSON, forms, or GraphQL variables. This is valuable for reproducing API bugs but may include sensitive user-entered data.",
     },
     vi: {
-      title: "Capture request bodies",
-      body: "Lưu payload gửi đi như JSON, form hoặc biến GraphQL. Rất hữu ích để tái hiện lỗi API nhưng có thể chứa dữ liệu người dùng nhập.",
+      title: "Thu thập nội dung yêu cầu",
+      body: "Lưu dữ liệu gửi đi như JSON, biểu mẫu hoặc biến GraphQL. Rất hữu ích để tái hiện lỗi API nhưng có thể chứa dữ liệu người dùng nhập.",
     },
   },
   "capture-response-body-mode-input": {
@@ -333,8 +333,8 @@ const FIELD_HELP: Record<string, Record<UiLanguage, { title: string; body: strin
       body: "Controls which response bodies are stored. Text and JSON are useful for API validation; all eligible text types can include HTML, scripts, or other text assets.",
     },
     vi: {
-      title: "Response bodies",
-      body: "Quyết định loại response body được lưu. Text và JSON hữu ích để validate API; tất cả loại text phù hợp có thể bao gồm HTML, script hoặc asset dạng text.",
+      title: "Nội dung phản hồi",
+      body: "Quyết định loại nội dung phản hồi được lưu. Văn bản và JSON hữu ích để kiểm tra API; mọi loại văn bản phù hợp có thể gồm HTML, mã lệnh hoặc tài nguyên dạng văn bản.",
     },
   },
   "max-response-body-bytes-input": {
@@ -343,8 +343,8 @@ const FIELD_HELP: Record<string, Record<UiLanguage, { title: string; body: strin
       body: "Limits stored response body size per request. Leave blank for no limit; use a value when API responses or HTML documents make network.json too large.",
     },
     vi: {
-      title: "Byte tối đa mỗi response body",
-      body: "Giới hạn kích thước response body được lưu cho mỗi request. Để trống là không giới hạn; nhập giá trị khi API response hoặc HTML làm network.json quá lớn.",
+      title: "Số byte tối đa mỗi nội dung phản hồi",
+      body: "Giới hạn kích thước nội dung phản hồi được lưu cho mỗi yêu cầu. Để trống để không giới hạn; nhập giá trị khi phản hồi API hoặc tài liệu HTML làm network.json quá lớn.",
     },
   },
   "capture-redirect-headers-input": {
@@ -353,8 +353,8 @@ const FIELD_HELP: Record<string, Record<UiLanguage, { title: string; body: strin
       body: "Stores redirect evidence. Location only is enough for most tester reports; full redacted helps when redirect behavior depends on cache or server headers.",
     },
     vi: {
-      title: "Redirect headers",
-      body: "Lưu bằng chứng redirect. Chỉ Location là đủ cho đa số report; đầy đủ đã che dữ liệu nhạy cảm hữu ích khi redirect phụ thuộc cache hoặc header server.",
+      title: "Tiêu đề chuyển hướng",
+      body: "Lưu thông tin chuyển hướng. Chỉ trường Location là đủ cho đa số báo cáo; chế độ đầy đủ đã che dữ liệu nhạy cảm hữu ích khi chuyển hướng phụ thuộc bộ nhớ đệm hoặc tiêu đề máy chủ.",
     },
   },
   "capture-initiator-input": {
@@ -363,8 +363,8 @@ const FIELD_HELP: Record<string, Record<UiLanguage, { title: string; body: strin
       body: "Shows what code or browser action started a request. This helps developers trace a bad API call back to a screen, component, or script.",
     },
     vi: {
-      title: "Nguồn tạo request",
-      body: "Cho biết code hoặc hành động nào tạo request. Điều này giúp developer truy request lỗi về màn hình, component hoặc script liên quan.",
+      title: "Nguồn tạo yêu cầu",
+      body: "Cho biết đoạn mã hoặc hành động nào đã tạo yêu cầu. Điều này giúp lần từ yêu cầu lỗi về màn hình, thành phần hoặc mã lệnh liên quan.",
     },
   },
   "suppress-recorder-internal-requests-input": {
@@ -373,8 +373,8 @@ const FIELD_HELP: Record<string, Record<UiLanguage, { title: string; body: strin
       body: "GN Tracing now resolves only inline sourcemaps by default, so it does not create external sourcemap requests during recording. Keep this on for compatibility with capture modes that may hide recorder-created requests.",
     },
     vi: {
-      title: "Ẩn request nội bộ của recorder",
-      body: "GN Tracing hiện chỉ resolve sourcemap inline theo mặc định, nên không tạo request sourcemap ngoài trong lúc quay. Nên bật để tương thích với các chế độ capture có thể ẩn request do recorder tạo ra.",
+      title: "Ẩn yêu cầu nội bộ của trình ghi",
+      body: "GN Tracing hiện chỉ phân giải source map nội tuyến theo mặc định, nên không tạo yêu cầu source map bên ngoài khi ghi. Nên bật để tương thích với các chế độ thu thập có thể ẩn yêu cầu do trình ghi tạo ra.",
     },
   },
   "capture-websockets-input": {
@@ -383,8 +383,8 @@ const FIELD_HELP: Record<string, Record<UiLanguage, { title: string; body: strin
       body: "Stores WebSocket connection and message evidence. QC should enable this for chat, realtime dashboards, notifications, games, or live collaboration bugs.",
     },
     vi: {
-      title: "Capture WebSocket artifact",
-      body: "Lưu bằng chứng kết nối và message WebSocket. QC nên bật cho lỗi chat, dashboard realtime, notification, game hoặc cộng tác live.",
+      title: "Thu thập dữ liệu WebSocket",
+      body: "Lưu thông tin kết nối và thông điệp WebSocket. Nên bật khi kiểm tra lỗi chat, bảng điều khiển thời gian thực, thông báo, trò chơi hoặc cộng tác trực tiếp.",
     },
   },
   "capture-websocket-frames-input": {
@@ -393,8 +393,8 @@ const FIELD_HELP: Record<string, Record<UiLanguage, { title: string; body: strin
       body: "Stores the actual message payloads sent over WebSocket. This is crucial for realtime bug reproduction but can contain sensitive or high-volume data.",
     },
     vi: {
-      title: "Lưu payload frame WebSocket",
-      body: "Lưu payload message thực tế gửi qua WebSocket. Rất quan trọng để tái hiện bug realtime nhưng có thể chứa dữ liệu nhạy cảm hoặc khối lượng lớn.",
+      title: "Lưu dữ liệu khung WebSocket",
+      body: "Lưu dữ liệu thực tế của thông điệp gửi qua WebSocket. Rất quan trọng để tái hiện lỗi thời gian thực nhưng có thể chứa dữ liệu nhạy cảm hoặc khối lượng lớn.",
     },
   },
   "max-websocket-frame-bytes-input": {
@@ -403,8 +403,8 @@ const FIELD_HELP: Record<string, Record<UiLanguage, { title: string; body: strin
       body: "Limits each stored WebSocket frame payload. Leave blank for no limit; set a value when realtime traffic makes websocket.json too large.",
     },
     vi: {
-      title: "Byte tối đa mỗi frame",
-      body: "Giới hạn payload từng frame WebSocket được lưu. Để trống là không giới hạn; nhập giá trị khi traffic realtime làm websocket.json quá lớn.",
+      title: "Số byte tối đa mỗi khung",
+      body: "Giới hạn dữ liệu của mỗi khung WebSocket được lưu. Để trống để không giới hạn; nhập giá trị khi lưu lượng thời gian thực làm websocket.json quá lớn.",
     },
   },
   "capture-websocket-initiator-input": {
@@ -414,7 +414,7 @@ const FIELD_HELP: Record<string, Record<UiLanguage, { title: string; body: strin
     },
     vi: {
       title: "Lưu nguồn tạo WebSocket",
-      body: "Lưu nơi WebSocket connection được mở. Điều này giúp developer tìm màn hình hoặc module tạo connection realtime có vấn đề.",
+      body: "Lưu nơi kết nối WebSocket được mở. Điều này giúp tìm màn hình hoặc mô-đun tạo kết nối thời gian thực có vấn đề.",
     },
   },
   "capture-storage-input": {
@@ -423,8 +423,8 @@ const FIELD_HELP: Record<string, Record<UiLanguage, { title: string; body: strin
       body: "Captures localStorage, sessionStorage, and cookies at recording start and stop so you can inspect how stored state changed. Off by default because storage often contains personal data, tokens, or session identifiers, and it adds a storage.json artifact to the package.",
     },
     vi: {
-      title: "Capture snapshot storage",
-      body: "Chụp localStorage, sessionStorage và cookie tại lúc bắt đầu và kết thúc recording để xem state lưu trữ thay đổi thế nào. Mặc định tắt vì storage thường chứa dữ liệu cá nhân, token hoặc session id, và sẽ thêm artifact storage.json vào package.",
+      title: "Thu thập ảnh chụp bộ nhớ lưu trữ",
+      body: "Chụp localStorage, sessionStorage và cookie khi bắt đầu và kết thúc ghi để xem trạng thái lưu trữ thay đổi thế nào. Mặc định tắt vì bộ nhớ lưu trữ thường chứa dữ liệu cá nhân, mã thông báo hoặc mã phiên, và sẽ thêm storage.json vào gói.",
     },
   },
   "redact-storage-values-input": {
@@ -433,8 +433,8 @@ const FIELD_HELP: Record<string, Record<UiLanguage, { title: string; body: strin
       body: "Masks storage and cookie values whose keys match sensitive patterns (password, token, secret, ...). Keep this on so shared replays do not leak credentials.",
     },
     vi: {
-      title: "Che giá trị storage",
-      body: "Che giá trị storage và cookie khi key khớp pattern nhạy cảm (password, token, secret, ...). Nên bật để bản replay chia sẻ không lộ credential.",
+      title: "Che giá trị bộ nhớ lưu trữ",
+      body: "Che giá trị bộ nhớ lưu trữ và cookie khi khóa khớp mẫu nhạy cảm (mật khẩu, mã thông báo, bí mật, ...). Nên bật để bản phát lại chia sẻ không lộ thông tin xác thực.",
     },
   },
   "capture-dom-snapshots-input": {
@@ -443,8 +443,8 @@ const FIELD_HELP: Record<string, Record<UiLanguage, { title: string; body: strin
       body: "Captures a static DOM snapshot at start, stop, and key markers so you can inspect element structure at those moments. Off by default because DOM text can contain personal data and snapshots can grow large.",
     },
     vi: {
-      title: "Capture snapshot DOM",
-      body: "Chụp snapshot DOM tĩnh tại start, stop và các marker quan trọng để soi cấu trúc element tại các thời điểm đó. Mặc định tắt vì text DOM có thể chứa dữ liệu cá nhân và snapshot có thể rất lớn.",
+      title: "Thu thập ảnh chụp DOM",
+      body: "Chụp DOM tĩnh khi bắt đầu, kết thúc và tại các mốc quan trọng để xem cấu trúc phần tử ở những thời điểm đó. Mặc định tắt vì văn bản DOM có thể chứa dữ liệu cá nhân và ảnh chụp có thể rất lớn.",
     },
   },
   "redact-dom-text-content-input": {
@@ -453,8 +453,8 @@ const FIELD_HELP: Record<string, Record<UiLanguage, { title: string; body: strin
       body: "Masks text and attribute values for DOM nodes that match your masking selectors before they enter the snapshot. Keep this on to avoid leaking sensitive on-screen content.",
     },
     vi: {
-      title: "Che nội dung text DOM",
-      body: "Che text và attribute của các node DOM khớp selector che trước khi đưa vào snapshot. Nên bật để tránh lộ nội dung nhạy cảm hiển thị trên màn hình.",
+      title: "Che nội dung văn bản DOM",
+      body: "Che văn bản và thuộc tính của các nút DOM khớp bộ chọn che trước khi đưa vào ảnh chụp. Nên bật để tránh lộ nội dung nhạy cảm trên màn hình.",
     },
   },
 };

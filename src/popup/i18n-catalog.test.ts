@@ -14,4 +14,12 @@ describe("POPUP_TRANSLATIONS catalog", () => {
     expect(POPUP_TRANSLATIONS.vi["actions.startRecording"]).toBeTruthy();
     expect(POPUP_TRANSLATIONS.en["actions.stopUpload"]).toBeTruthy();
   });
+
+  it("localizes toast dismissal and the Instant Replay duration for assistive tech", () => {
+    expect(POPUP_TRANSLATIONS.en["toast.dismiss"]).toBe("Dismiss notification");
+    expect(POPUP_TRANSLATIONS.vi["toast.dismiss"]).toBe("Đóng thông báo");
+    expect(POPUP_TRANSLATIONS.vi["instantReplay.windowValue"]).toBe("{seconds} giây");
+    expect(POPUP_TRANSLATIONS.en["stats.network"]).toBe("Network");
+    expect(POPUP_TRANSLATIONS.vi["stats.network"]).toBe("Mạng");
+  });
 });

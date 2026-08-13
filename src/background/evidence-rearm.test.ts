@@ -138,6 +138,21 @@ describe("evidence capture re-arm after navigation", () => {
     expect(inPageCollector.slice(beginMethod, beginMethod + 1200)).toContain("#injectAndVerify");
   });
 
+  it("Chromium starts media before CDP attach so evidence cannot precede video t=0", () => {
+    const startMethod = chromiumRuntime.indexOf("async start(input: RecordingStartInput)");
+    const nextMethod = chromiumRuntime.indexOf("\n  stopMedia", startMethod);
+    const startBody = chromiumRuntime.slice(
+      startMethod,
+      nextMethod === -1 ? undefined : nextMethod,
+    );
+
+    const mediaAt = startBody.indexOf("this.#media.startCapture(");
+    const attachAt = startBody.indexOf("this.#evidence.attach(");
+    expect(mediaAt).toBeGreaterThan(-1);
+    expect(attachAt).toBeGreaterThan(mediaAt);
+    expect(startBody).not.toMatch(/Promise\.all\(\s*\[/);
+  });
+
   it("full-record START disables page-script network capture", () => {
     expect(inPageCollector).toContain("captureNetwork: false");
     expect(inPageCollector).not.toMatch(/responseBodyMode:\s*input/);

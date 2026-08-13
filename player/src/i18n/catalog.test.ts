@@ -8,4 +8,13 @@ describe("i18n catalog", () => {
     expect(en).toEqual(vi);
     expect(en.length).toBeGreaterThan(50);
   });
+
+  it("labels each mutable media control by its current action", () => {
+    expect(TRANSLATIONS.en["controls.play"]).toBe("Play");
+    expect(TRANSLATIONS.en["controls.pause"]).toBe("Pause");
+    expect(TRANSLATIONS.vi["controls.unmute"]).toBe("Bật tiếng");
+    expect(TRANSLATIONS.vi["controls.volume"]).toBe("Âm lượng");
+    expect(TRANSLATIONS.en["tabs.network"]).toBe("Network");
+    expect(TRANSLATIONS.vi["tabs.network"]).toBe("Mạng");
+  });
 });

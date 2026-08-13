@@ -3,6 +3,7 @@
  */
 
 import type { Screenshot } from "../../packages/replay-core/src/schema/annotation";
+import { elapsedFromRecordingStart } from "./recording-clock";
 import type { DomSnapshot } from "../../packages/replay-core/src/schema/capture";
 import { getMediaMessageTarget } from "../platform/media/message-target";
 import { createRecordingRuntime } from "../platform/recording-runtime/create-recording-runtime";
@@ -224,12 +225,6 @@ const activeRecording: ActiveRecordingState = {
 /** Pen color for the active drawing overlay; survives popup close within the worker. */
 let drawingColor = DEFAULT_DRAW_COLOR;
 
-/**
- * Monotonic clock anchor for the active recording. Not persisted across service
- * worker restarts; recovery uses the wall-clock startTime instead.
- */
-let activeRecordingStartMonotonicMs: number | null = null;
-
 let sessions: RecordingSessionSummary[] = [];
 let sessionArtifacts: Record<string, SessionArtifacts> = {};
 const activeUploadTasks = new Map<string, Promise<void>>();
@@ -257,10 +252,7 @@ function cloneProgressItems(items: ProgressItemSnapshot[]): ProgressItemSnapshot
 }
 
 function getElapsedMs(now = Date.now()): number {
-  if (!activeRecording.startTime) {
-    return 0;
-  }
-  return Math.max(0, now - activeRecording.startTime);
+  return elapsedFromRecordingStart(activeRecording.startTime, now);
 }
 
 function resetActiveRecordingState(): void {
@@ -280,7 +272,6 @@ function resetActiveRecordingState(): void {
   activeRecording.privacyLimitations = [];
   activeRecording.privacySettings = DEFAULT_PRIVACY_REDACTION_SETTINGS;
   activeRecording.recordingSettings = null;
-  activeRecordingStartMonotonicMs = null;
   recordingRuntime.clearActiveSession();
 }
 
@@ -1476,9 +1467,9 @@ async function startRecording(
     });
 
     // Anchor the timeline at the first produced video frame when available;
-    // fall back to the startCapture acknowledgement time.
+    // fall back to the startCapture acknowledgement time. Duration uses this
+    // same wall origin (`getElapsedMs(stopTime)`), not a later SW clock.
     activeRecording.startTime = firstFrameAt ?? Date.now();
-    activeRecordingStartMonotonicMs = performance.now();
     activeRecording.isRecording = true;
     recordingRuntime.hydrateActiveSession(sessionId);
     void startRecordingEventCapture(tabId, sessionId, activeRecording.privacySettings);
@@ -1562,13 +1553,7 @@ async function stopRecording(): Promise<MessageResponse> {
       screenshotDataUrl,
     );
 
-    const durationMs =
-      typeof activeRecordingStartMonotonicMs === "number" &&
-      Number.isFinite(activeRecordingStartMonotonicMs)
-        ? Math.max(0, performance.now() - activeRecordingStartMonotonicMs)
-        : typeof startTime === "number" && Number.isFinite(startTime)
-          ? Math.max(0, stopTime - startTime)
-          : 0;
+    const durationMs = getElapsedMs(stopTime);
 
     sessionArtifacts[sessionId] = {
       consoleLogs: finalizedArtifacts.consoleLogs,

@@ -59,7 +59,7 @@
           </div>
         </div>
       </div>
-      <button id="lang-toggle-btn-global" class="control-btn player-lang-toggle" type="button" aria-label="Switch language">VI</button>
+      <button id="lang-toggle-btn-global" class="control-btn player-lang-toggle" type="button" aria-label="Switch language">🇺🇸</button>
     </div>
     <!-- Loading state (default visible; JS switches to intro/error/player) -->
     <div id="loading-state" class="state-container">
@@ -191,7 +191,7 @@
           >
             <i class="ph ph-robot" aria-hidden="true"></i>
           </button>
-          <button id="lang-toggle-btn" class="control-btn player-lang-toggle" type="button" aria-label="Switch language">VI</button>
+          <button id="lang-toggle-btn" class="control-btn player-lang-toggle" type="button" aria-label="Switch language">🇺🇸</button>
           <button id="theme-toggle-btn" class="control-btn" type="button" aria-label="Theme: System" title="Theme: System (follows OS). Click to cycle System → Light → Dark.">
             <i id="theme-toggle-icon" class="ph ph-desktop" aria-hidden="true"></i>
           </button>
@@ -290,6 +290,8 @@
                   class="control-btn layout-btn active"
                   title="Horizontal layout"
                   data-i18n-title="controls.layoutHorizontal"
+                  aria-label="Horizontal layout"
+                  data-i18n-aria="controls.layoutHorizontal"
                   aria-pressed="true"
                 >
                   <i class="ph ph-columns" aria-hidden="true"></i>
@@ -300,6 +302,8 @@
                   class="control-btn layout-btn"
                   title="Vertical layout"
                   data-i18n-title="controls.layoutVertical"
+                  aria-label="Vertical layout"
+                  data-i18n-aria="controls.layoutVertical"
                   aria-pressed="false"
                 >
                   <i class="ph ph-rows" aria-hidden="true"></i>
@@ -309,7 +313,9 @@
                   id="still-fullscreen-btn"
                   class="control-btn"
                   title="Expand still in tab"
-                  data-i18n-title="controls.expandVideo"
+                  data-i18n-title="controls.expandStill"
+                  aria-label="Expand still in tab"
+                  data-i18n-aria="controls.expandStill"
                   aria-pressed="false"
                 >
                   <i id="still-fullscreen-enter-icon" class="ph ph-arrows-out-simple" aria-hidden="true"></i>
@@ -326,7 +332,7 @@
           <!-- Video controls -->
           <div class="video-controls">
             <!-- Play/Pause -->
-            <button type="button" id="play-pause-btn" class="control-btn" title="Play/Pause (Space)" data-i18n-title="controls.playPause">
+            <button type="button" id="play-pause-btn" class="control-btn" title="Play/Pause (Space)" data-i18n-title="controls.playPause" aria-label="Play" data-i18n-aria="controls.play">
               <i id="play-icon" class="ph ph-play-circle"></i>
               <i id="pause-icon" class="ph ph-pause-circle hidden"></i>
             </button>
@@ -350,7 +356,7 @@
 
             <!-- Speed control -->
             <div class="speed-control">
-              <button type="button" id="speed-btn" class="speed-btn">1x</button>
+              <button type="button" id="speed-btn" class="speed-btn" aria-label="Playback speed" data-i18n-aria="controls.playbackSpeed">1x</button>
               <div id="speed-menu" class="speed-menu hidden">
                 <button type="button" class="speed-option" data-speed="0.5">0.5x</button>
                 <button type="button" class="speed-option" data-speed="0.75">0.75x</button>
@@ -363,21 +369,21 @@
 
             <!-- Volume -->
             <div class="volume-control">
-              <button type="button" id="mute-btn" class="control-btn" title="Mute" data-i18n-title="controls.mute">
+              <button type="button" id="mute-btn" class="control-btn" title="Mute" data-i18n-title="controls.mute" aria-label="Mute" data-i18n-aria="controls.mute">
                 <i id="volume-on" class="ph ph-speaker-simple-high"></i>
                 <i id="volume-off" class="ph ph-speaker-simple-x hidden"></i>
               </button>
-              <input type="range" id="volume-slider" class="volume-slider" min="0" max="1" step="0.05" value="1">
+              <input type="range" id="volume-slider" class="volume-slider" min="0" max="1" step="0.05" value="1" aria-label="Volume" data-i18n-aria="controls.volume">
             </div>
 
             <div class="layout-control-group" aria-label="Player layout controls" data-i18n-aria="controls.layoutGroup">
-              <button type="button" id="layout-horizontal-btn" class="control-btn layout-btn active" title="Horizontal layout" data-i18n-title="controls.layoutHorizontal">
+              <button type="button" id="layout-horizontal-btn" class="control-btn layout-btn active" title="Horizontal layout" data-i18n-title="controls.layoutHorizontal" aria-label="Horizontal layout" data-i18n-aria="controls.layoutHorizontal">
                 <i class="ph ph-columns"></i>
               </button>
-              <button type="button" id="layout-vertical-btn" class="control-btn layout-btn" title="Vertical layout" data-i18n-title="controls.layoutVertical">
+              <button type="button" id="layout-vertical-btn" class="control-btn layout-btn" title="Vertical layout" data-i18n-title="controls.layoutVertical" aria-label="Vertical layout" data-i18n-aria="controls.layoutVertical">
                 <i class="ph ph-rows"></i>
               </button>
-              <button type="button" id="video-fullscreen-btn" class="control-btn" title="Expand video in tab" data-i18n-title="controls.expandVideo">
+              <button type="button" id="video-fullscreen-btn" class="control-btn" title="Expand video in tab" data-i18n-title="controls.expandVideo" aria-label="Expand video in tab" data-i18n-aria="controls.expandVideo">
                 <i id="fullscreen-enter-icon" class="ph ph-arrows-out-simple"></i>
                 <i id="fullscreen-exit-icon" class="ph ph-arrows-in-simple hidden"></i>
               </button>

@@ -1089,11 +1089,12 @@ async function startCaptureWithStream(
 
   // Timeslice keeps chunks flowing so the blob does not depend on one final flush.
   recorder.start(RECORDER_TIMESLICE_MS);
+  const startedAt = Date.now();
 
-  // Capture the wall-clock time of the first produced video frame. This is the
-  // closest approximation we have to "video t=0", so it becomes the recording's
-  // logical startTime in the service worker.
-  return waitForFirstFrame(stream);
+  // Prefer the first produced video frame as video t=0. If that wait times out,
+  // MediaRecorder.start() is still the media origin — do not fall back to a
+  // later Date.now() after start() work in the service worker.
+  return (await waitForFirstFrame(stream)) ?? startedAt;
 }
 
 /** Compact description of the capture's tracks — the useful bit when stop misbehaves. */

@@ -130,17 +130,13 @@ export interface StopResult {
 }
 
 /**
- * Read a monotonic clock value when available, falling back to wall-clock ms
- * for environments (including some test doubles) where `performance.now()` is
- * present but returns 0.
+ * Read a monotonic clock value when available. `performance.now()` may be 0 at
+ * session start; that value is still the origin and must be used at both ends.
  */
 function readMonotonicNow(scope: Window): number {
   const perf = scope.performance;
   if (perf && typeof perf.now === "function") {
-    const value = perf.now();
-    if (value > 0) {
-      return value;
-    }
+    return perf.now();
   }
   return Date.now();
 }
@@ -341,7 +337,7 @@ export class RecordingSession {
     const metadataPreview = {
       timestamp: packagedAt,
       // Duration is stored in milliseconds, matching the extension player contract.
-      duration: Math.max(0, monotonicStopMs - this.#startMonotonicMs),
+      duration: Math.round(Math.max(0, monotonicStopMs - this.#startMonotonicMs)),
       url: this.#window.location?.href,
       startTime: this.startTime,
       producer: "sdk" as const,
