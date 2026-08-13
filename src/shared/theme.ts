@@ -19,6 +19,7 @@ export type ThemeMode = "light" | "dark";
 export interface ThemePreferenceController {
   refresh: () => void;
   getPreference: () => ThemePreference;
+  setPreference: (preference: ThemePreference) => Promise<void>;
 }
 
 function normalizePreference(value: unknown): ThemePreference | null {
@@ -161,5 +162,6 @@ export function attachThemePreferenceInputs(
       paint(currentPreference);
     },
     getPreference: () => currentPreference,
+    setPreference: apply,
   };
 }

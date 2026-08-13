@@ -4,6 +4,8 @@
  */
 
 import { buttonSpinnerHtml } from "../shared/button-loading";
+import { attachLanguageSwitch, type UiLanguage } from "../shared/ui-language";
+import { attachThemePreferenceInputs, type ThemePreference } from "../shared/theme";
 import { escapeHtml } from "../shared/upload-history-ui";
 import type { MessageResponse } from "../types/messages";
 import {
@@ -15,7 +17,7 @@ import {
   storageProviderMessage,
 } from "./page-model";
 
-type Lang = "en" | "vi";
+type Lang = UiLanguage;
 
 const COPY: Record<Lang, Record<string, string>> = {
   en: {
@@ -46,16 +48,7 @@ const COPY: Record<Lang, Record<string, string>> = {
   },
 };
 
-function readLang(): Lang {
-  try {
-    const raw = localStorage.getItem("gn-tracing-lang");
-    return raw === "vi" ? "vi" : "en";
-  } catch {
-    return "en";
-  }
-}
-
-let lang: Lang = readLang();
+let lang: Lang = "en";
 
 function t(key: string, vars?: Record<string, string>): string {
   let text = COPY[lang][key] ?? COPY.en[key] ?? key;
@@ -75,10 +68,6 @@ function applyI18n(): void {
       el.textContent = t(key);
     }
   });
-  const langBtn = document.getElementById("lang-toggle-btn");
-  if (langBtn) {
-    langBtn.textContent = lang === "en" ? "VI" : "EN";
-  }
 }
 
 const providerList = document.getElementById("provider-list");
@@ -225,18 +214,67 @@ async function disconnectProvider(provider: CloudProviderId): Promise<void> {
   }
 }
 
-function wireChrome(): void {
-  document.getElementById("lang-toggle-btn")?.addEventListener("click", () => {
-    lang = lang === "en" ? "vi" : "en";
-    try {
-      localStorage.setItem("gn-tracing-lang", lang);
-    } catch {
-      // ignore
-    }
-    applyI18n();
-    renderProviderList();
+function wireLanguage(): void {
+  lang = attachLanguageSwitch({
+    onChange: (next) => {
+      lang = next;
+      applyI18n();
+      renderProviderList();
+    },
+  });
+}
+
+const THEME_CYCLE: ThemePreference[] = ["system", "light", "dark"];
+const THEME_ICONS: Record<ThemePreference, string> = {
+  system: "ph-desktop",
+  light: "ph-sun",
+  dark: "ph-moon",
+};
+const THEME_LABELS: Record<ThemePreference, string> = {
+  system: "System",
+  light: "Light",
+  dark: "Dark",
+};
+
+function syncThemeToggleUi(): void {
+  const btn = document.getElementById("theme-toggle-btn");
+  const icon = document.getElementById("theme-toggle-icon");
+  if (!btn || !icon) {
+    return;
+  }
+  const preference = document.documentElement.getAttribute("data-theme-preference");
+  const normalized: ThemePreference =
+    preference === "light" || preference === "dark" ? preference : "system";
+  icon.className = `ph ${THEME_ICONS[normalized]}`;
+  const label = `Theme: ${THEME_LABELS[normalized]}`;
+  btn.setAttribute("aria-label", label);
+  btn.title = label;
+}
+
+function wireTheme(): void {
+  const controller = attachThemePreferenceInputs({
+    system: "theme-system-input",
+    light: "theme-light-input",
+    dark: "theme-dark-input",
+  });
+  if (!controller) {
+    return;
+  }
+
+  document.getElementById("theme-toggle-btn")?.addEventListener("click", () => {
+    const current = controller.getPreference();
+    const next = THEME_CYCLE[(THEME_CYCLE.indexOf(current) + 1) % THEME_CYCLE.length];
+    void controller.setPreference(next);
   });
 
+  new MutationObserver(syncThemeToggleUi).observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ["data-theme-preference"],
+  });
+  syncThemeToggleUi();
+}
+
+function wireChrome(): void {
   // Re-read connection state after OAuth returns focus to this tab.
   window.addEventListener("focus", () => {
     void refreshAllStatuses();
@@ -248,7 +286,9 @@ function wireChrome(): void {
   });
 }
 
+wireLanguage();
 applyI18n();
+wireTheme();
 wireChrome();
 renderProviderList();
 void refreshAllStatuses();

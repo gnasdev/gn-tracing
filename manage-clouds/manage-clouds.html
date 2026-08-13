@@ -12,21 +12,29 @@
 <body>
   <div id="app">
     <header class="mc-topbar gn-topbar">
-      <div class="gn-topbar-brand" aria-label="GN Tracing">
-        <img class="gn-topbar-logo" src="../icons/icon.svg" alt="">
-        <span class="gn-topbar-name" data-i18n="storage.manageCloudsTitle">Manage clouds</span>
-      </div>
-      <div class="gn-topbar-actions">
-        <button id="lang-toggle-btn" class="icon-btn gn-lang-toggle" type="button" aria-label="Switch language">VI</button>
-        <button
-          id="theme-toggle-btn"
-          class="icon-btn"
-          type="button"
-          aria-label="Theme: System"
-          title="Theme: System"
-        >
-          <i id="theme-toggle-icon" class="ph ph-desktop" aria-hidden="true"></i>
-        </button>
+      <div class="gn-topbar-inner">
+        <div class="gn-topbar-brand" aria-label="GN Tracing">
+          <img class="gn-topbar-logo" src="../icons/icon.svg" alt="">
+          <span class="gn-topbar-name" data-i18n="storage.manageCloudsTitle">Manage clouds</span>
+        </div>
+        <div class="gn-topbar-actions">
+          <button id="lang-toggle-btn" class="icon-btn gn-lang-toggle" type="button" aria-label="Switch language">🇺🇸</button>
+          <fieldset class="sr-only">
+            <legend>Theme</legend>
+            <input id="theme-system-input" name="theme-preference" type="radio" value="system" checked>
+            <input id="theme-light-input" name="theme-preference" type="radio" value="light">
+            <input id="theme-dark-input" name="theme-preference" type="radio" value="dark">
+          </fieldset>
+          <button
+            id="theme-toggle-btn"
+            class="icon-btn"
+            type="button"
+            aria-label="Theme: System"
+            title="Theme: System"
+          >
+            <i id="theme-toggle-icon" class="ph ph-desktop" aria-hidden="true"></i>
+          </button>
+        </div>
       </div>
     </header>
 
