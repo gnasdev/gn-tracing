@@ -25,6 +25,7 @@ import type { MessageResponse } from "../types/messages";
 declare const __GOOGLE_CLIENT_ID__: string;
 declare const __GOOGLE_WEB_CLIENT_ID__: string;
 declare const __GOOGLE_TOKEN_PROXY_URL__: string;
+declare const __APP_ENV__: string;
 
 /** Chrome Extension client — manifest oauth2 + getAuthToken. */
 const GOOGLE_CLIENT_ID = __GOOGLE_CLIENT_ID__;
@@ -625,6 +626,19 @@ export class GoogleDriveAuth {
     if (this.strategyPromise) return this.strategyPromise;
 
     const pending = (async (): Promise<AuthStrategy> => {
+      // Dev/watch builds mint a distinct extension id (esbuild.config.mjs,
+      // CHROME_EXTENSION_PUBLIC_KEY_DEV) so unpacked dev doesn't collide with an
+      // installed production extension. The "Chrome extension" OAuth client
+      // (GOOGLE_CLIENT_ID) is bound to the production id only, so
+      // chrome.identity.getAuthToken() always fails there — force PKCE.
+      // Checked against "development" specifically (not `!== "production"`) so
+      // the vitest sentinel value "test" (see vitest.config.ts) still exercises
+      // the normal persisted/detected strategy branches below.
+      if (__APP_ENV__ === "development") {
+        this.strategy = "web";
+        return "web";
+      }
+
       try {
         const stored = await chrome.storage.local.get(AUTH_STRATEGY_KEY);
         const persisted = stored[AUTH_STRATEGY_KEY];

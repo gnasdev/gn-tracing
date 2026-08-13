@@ -6,7 +6,6 @@
  * (`PLAYER_HOST_URL` / dev localhost Vite).
  */
 
-import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -16,6 +15,7 @@ import {
   pickWorkerOrigin,
   resolveVersionedWorkerEndpoints,
 } from "./packages/replay-core/src/route-version.ts";
+import { getChromeExtensionId } from "./scripts/chrome-extension-id.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const envVars = loadEnvFile(path.resolve(__dirname, ".env"));
@@ -57,6 +57,11 @@ const chromeExtensionId = getConfigValue(
   "CHROME_EXTENSION_ID",
   chromeExtensionPublicKey ? getChromeExtensionId(chromeExtensionPublicKey) : "",
 );
+// Dev-only key pair so unpacked dev builds mint a different extension id than
+// production, and stop overriding an installed production extension when
+// both are loaded in the same Chrome profile. Falls back to the production
+// key above when unset (unchanged behavior for setups that haven't opted in).
+const chromeExtensionPublicKeyDev = getConfigValue("CHROME_EXTENSION_PUBLIC_KEY_DEV");
 // Edge / Opera may ship a distinct store key; default to Chrome key for local unpack.
 const edgeExtensionPublicKey = getConfigValue(
   "EDGE_EXTENSION_PUBLIC_KEY",
@@ -135,6 +140,12 @@ function normalizeBrowserTarget(value) {
 
 /** Manifest `key` for Chromium-family packages (stable unpacked id). */
 function resolveChromiumPublicKey() {
+  // One dev key covers chrome/edge/opera (no per-browser *_DEV variants):
+  // local dev only needs distinct ids from *production*, not from each other,
+  // so all three chromium dev builds intentionally share this id.
+  if (!isProductionBuild && chromeExtensionPublicKeyDev) {
+    return chromeExtensionPublicKeyDev;
+  }
   if (browserTarget === "edge") {
     return edgeExtensionPublicKey || chromeExtensionPublicKey;
   }
@@ -243,19 +254,6 @@ function hasConfigValue(name) {
   return Boolean(envVars[name] || process.env[name]);
 }
 
-function getChromeExtensionId(publicKey) {
-  const keyBytes = Buffer.from(publicKey, "base64");
-  const hash = crypto.createHash("sha256").update(keyBytes).digest();
-  return Array.from(hash.subarray(0, 16), (byte) =>
-    byte
-      .toString(16)
-      .padStart(2, "0")
-      .replace(/[0-9a-f]/g, (char) =>
-        String.fromCharCode("a".charCodeAt(0) + Number.parseInt(char, 16)),
-      ),
-  ).join("");
-}
-
 function validateChromeExtensionIdentity() {
   if (!googleClientId) {
     throw new Error("GOOGLE_CLIENT_ID is required. Set it in .env or the environment.");
@@ -286,7 +284,10 @@ function validateChromeExtensionIdentity() {
     console.warn("CHROME_EXTENSION_PRIVATE_KEY is set but does not look like a PEM private key.");
   }
 
-  if (browserTarget === "chrome") {
+  // CHROME_EXTENSION_ID pins the production identity (Web Store item). Dev
+  // builds intentionally resolve a different key (CHROME_EXTENSION_PUBLIC_KEY_DEV)
+  // when configured, so this cross-check only applies to production builds.
+  if (browserTarget === "chrome" && isProductionBuild) {
     const derivedExtensionId = getChromeExtensionId(publicKey);
     if (chromeExtensionId && chromeExtensionId !== derivedExtensionId) {
       throw new Error(
@@ -393,12 +394,33 @@ function generateManifest(outputPath) {
     .replace(/{{CHROME_EXTENSION_PUBLIC_KEY}}/g, publicKey || "");
   const manifest = JSON.parse(template);
   manifest.version = packageVersion || manifest.version;
+  if (!isProductionBuild) {
+    // Visually distinguish the dev build in chrome://extensions / the toolbar
+    // from an installed production extension.
+    manifest.name = `${manifest.name} (Dev)`;
+  }
   applyBrowserManifestPatches(manifest);
   addTokenProxyHostPermission(manifest);
 
   fs.mkdirSync(path.dirname(manifestPath), { recursive: true });
   fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf-8");
   console.log(`✓ manifest.json generated (${browserTarget})`);
+
+  if (!isProductionBuild && browserTarget !== "firefox") {
+    if (chromeExtensionPublicKeyDev) {
+      const devId = getChromeExtensionId(publicKey);
+      console.log(
+        `✓ Dev extension id: ${devId} — add https://${devId}.chromiumapp.org/ as an OAuth ` +
+          "redirect URI on your Google/Dropbox Web application clients to enable Drive/Dropbox connect in dev.",
+      );
+    } else {
+      console.log(
+        "ℹ️  CHROME_EXTENSION_PUBLIC_KEY_DEV is not set — this dev build shares the production " +
+          "extension id. Set it (see .env.example) so unpacked dev stops overriding an installed " +
+          "production extension.",
+      );
+    }
+  }
 }
 
 /**

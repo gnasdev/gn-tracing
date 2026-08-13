@@ -130,6 +130,25 @@ import { StorageManager } from "./storage-manager";
 import type { UploadSuccessResult } from "./upload-orchestrator";
 import { getUploadArtifactChunk } from "./upload-orchestrator";
 
+declare const __APP_ENV__: string;
+
+// Dev/watch builds mint a distinct extension id (esbuild.config.mjs,
+// CHROME_EXTENSION_PUBLIC_KEY_DEV) so the toolbar icon also needs a visible
+// "DEV" badge — otherwise a dev build sitting next to the installed
+// production extension is indistinguishable at a glance.
+const IDLE_BADGE_TEXT = __APP_ENV__ === "production" ? "" : "DEV";
+const IDLE_BADGE_COLOR = "#64748b";
+
+/** Idle-state badge: empty in production, "DEV" otherwise. Recording (setBadgeText("REC")) overrides this while active. */
+function setIdleBadge(): void {
+  chrome.action.setBadgeText({ text: IDLE_BADGE_TEXT });
+  // Skipped in production: empty badge text already hides the badge
+  // regardless of color, so there is nothing to set.
+  if (IDLE_BADGE_TEXT) {
+    chrome.action.setBadgeBackgroundColor({ color: IDLE_BADGE_COLOR });
+  }
+}
+
 /**
  * Service-worker coordinator for the MV3 extension.
  *
@@ -674,7 +693,17 @@ async function syncInstantReplayRegistrationOnBoot(): Promise<void> {
   }
 }
 
-void syncRuntimeState();
+void syncRuntimeState()
+  .then(() => {
+    // Runs on every service-worker load (fresh boot or MV3 restart). Guard on
+    // isRecording so a restart mid-recording doesn't stomp the "REC" badge.
+    if (!activeRecording.isRecording) {
+      setIdleBadge();
+    }
+  })
+  .catch((error) => {
+    console.warn("[GN Tracing] syncRuntimeState failed on boot:", error);
+  });
 void syncInstantReplayRegistrationOnBoot();
 
 chrome.runtime.onStartup.addListener(() => {
@@ -1595,7 +1624,7 @@ async function stopRecording(): Promise<MessageResponse> {
     };
     setSession(sessionSummary);
 
-    chrome.action.setBadgeText({ text: "" });
+    setIdleBadge();
     chrome.alarms.clear("gn-tracing-keepalive");
 
     resetActiveRecordingState();
@@ -1641,7 +1670,7 @@ async function removeRecording(): Promise<MessageResponse> {
     activeRecording.drawingOverlayActive = false;
     delete sessionArtifacts[sessionId];
 
-    chrome.action.setBadgeText({ text: "" });
+    setIdleBadge();
     chrome.alarms.clear("gn-tracing-keepalive");
 
     resetActiveRecordingState();
