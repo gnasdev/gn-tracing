@@ -105,6 +105,56 @@ describe("CdpManager network capture (shipped collector)", () => {
     ).toBe(true);
   });
 
+  it("uses the exception object description instead of CDP's generic text", () => {
+    emit("Runtime.exceptionThrown", {
+      timestamp: 1_700_000_000_000,
+      exceptionDetails: {
+        text: "Uncaught",
+        exception: {
+          type: "object",
+          subtype: "error",
+          className: "TypeError",
+          description:
+            "TypeError: Cannot read properties of undefined (reading 'total')\n    at checkEndModel (https://shop.test/checkout.js:42:17)",
+        },
+      },
+    });
+
+    const artifacts = storage.finalizeCurrentSession();
+    const entries = JSON.parse(artifacts.consoleLogs || "[]") as Array<Record<string, unknown>>;
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      source: "exception",
+      level: "error",
+      message: "TypeError: Cannot read properties of undefined (reading 'total')",
+    });
+    expect(entries[0]?.args).toMatchObject([
+      {
+        subtype: "error",
+        description:
+          "TypeError: Cannot read properties of undefined (reading 'total')\n    at checkEndModel (https://shop.test/checkout.js:42:17)",
+      },
+    ]);
+  });
+
+  it("falls back to the CDP text when no exception value is available", () => {
+    emit("Runtime.exceptionThrown", {
+      timestamp: 1_700_000_000_000,
+      exceptionDetails: { text: "Uncaught" },
+    });
+
+    const artifacts = storage.finalizeCurrentSession();
+    const entries = JSON.parse(artifacts.consoleLogs || "[]") as Array<Record<string, unknown>>;
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      source: "exception",
+      level: "error",
+      message: "Uncaught",
+    });
+  });
+
   it("fetches body when mimeType is empty but Content-Type header is JSON", async () => {
     const requestId = "req-header-mime";
     emit("Network.requestWillBeSent", makeCdpRequestWillBeSent({ requestId }));

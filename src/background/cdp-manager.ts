@@ -1274,7 +1274,7 @@ export class CdpManager {
       source: "exception",
       level: "error",
       timestamp: this.#toEpochMs(params.timestamp),
-      message: details.text || "Uncaught exception",
+      message: this.#describeExceptionMessage(details),
       args: details.exception ? [this.#serializeRemoteObject(details.exception)] : [],
       stackTrace: this.#serializeStackTrace(details.stackTrace),
       url: details.url,
@@ -1283,6 +1283,24 @@ export class CdpManager {
     };
 
     this.#storage.addConsoleEntry(entry);
+  }
+
+  #describeExceptionMessage(
+    details: NonNullable<CdpExceptionThrownParams["exceptionDetails"]>,
+  ): string {
+    const exception = details.exception;
+    const description = exception?.description?.trim();
+    if (description) {
+      // Error descriptions commonly include a V8 stack; the structured stack is stored separately.
+      const firstStackLine = description.search(/\n\s*at\s/);
+      return firstStackLine >= 0 ? description.slice(0, firstStackLine) : description;
+    }
+
+    if (exception?.value !== undefined && exception.value !== null) {
+      return String(exception.value);
+    }
+
+    return details.text || "Uncaught exception";
   }
 
   #onLogEntryAdded(params: CdpLogEntryAddedParams): void {
