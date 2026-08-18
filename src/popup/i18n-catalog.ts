@@ -278,7 +278,8 @@ export const POPUP_TRANSLATIONS: Record<PopupLanguage, Record<string, string>> =
     "storage.folderHintRoot": "Đang dùng thư mục gốc trên dịch vụ lưu trữ đám mây.",
     "storage.folderHintPath": "Đang dùng thư mục: {value}.",
     "storage.folderHintId": "Mã thư mục đã phân giải: {value}",
-    "storage.folderHintDropbox": "Đường dẫn Dropbox (ví dụ: /gn-tracing). Sẽ tạo khi tải lên nếu chưa có.",
+    "storage.folderHintDropbox":
+      "Đường dẫn Dropbox (ví dụ: /gn-tracing). Sẽ tạo khi tải lên nếu chưa có.",
     "storage.folderSaveFailed": "Không lưu được thư mục tải lên.",
     "storage.folderSaved": "Đã lưu thư mục tải lên.",
     "storage.edit": "Sửa",

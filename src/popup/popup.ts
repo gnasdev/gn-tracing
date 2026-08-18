@@ -889,7 +889,10 @@ function setInstantReplayWindowDisplay(seconds: number): void {
   if (instantReplayWindowInput) {
     instantReplayWindowInput.value = String(value);
     instantReplayWindowInput.setAttribute("aria-valuenow", String(value));
-    instantReplayWindowInput.setAttribute("aria-valuetext", t("instantReplay.windowValue", { seconds: String(value) }));
+    instantReplayWindowInput.setAttribute(
+      "aria-valuetext",
+      t("instantReplay.windowValue", { seconds: String(value) }),
+    );
     const min = Number(instantReplayWindowInput.min) || INSTANT_REPLAY_WINDOW_SECONDS_MIN;
     const max = Number(instantReplayWindowInput.max) || INSTANT_REPLAY_WINDOW_SECONDS_MAX;
     const span = Math.max(1, max - min);

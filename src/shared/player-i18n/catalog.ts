@@ -448,7 +448,8 @@ export const TRANSLATIONS: Record<UiLanguage, Record<string, string>> = {
     "intro.cloud3": "Gói nằm trong tài khoản của bạn; không hỗ trợ SharePoint/site drive.",
     "intro.cloud4":
       "File replay đọc được qua link để URL chia sẻ hoạt động; mật khẩu zip tùy chọn bảo vệ nội dung.",
-    "intro.footnote": "Chỉ ghi khi bạn chủ động bấm ghi. Gói nằm trong kho lưu trữ đám mây của bạn.",
+    "intro.footnote":
+      "Chỉ ghi khi bạn chủ động bấm ghi. Gói nằm trong kho lưu trữ đám mây của bạn.",
     "introStandalone.eyebrow": "Trình phát lại phiên",
     "introStandalone.lead":
       "Phát lại phiên trình duyệt đã ghi với video, console, network và WebSocket đồng bộ.",
@@ -565,10 +566,8 @@ export const TRANSLATIONS: Record<UiLanguage, Record<string, string>> = {
     "sourceMap.unsupported-map": "Định dạng source map không được hỗ trợ",
     "sourceMap.no-map-for-generated-url": "Không có source map cho URL đã tạo này",
     "sourceMap.no-generated-line": "Đã tải source map nhưng dòng đã tạo này không được ánh xạ",
-    "sourceMap.no-segment-for-column":
-      "Đã tải source map nhưng không có đoạn khớp cột đã tạo",
-    "sourceMap.no-original-segment":
-      "Đã tải source map nhưng đoạn khớp không có vị trí gốc",
+    "sourceMap.no-segment-for-column": "Đã tải source map nhưng không có đoạn khớp cột đã tạo",
+    "sourceMap.no-original-segment": "Đã tải source map nhưng đoạn khớp không có vị trí gốc",
     "sourceMap.loadedNoMatch": "Đã tải source map nhưng khung này không khớp đoạn đã ánh xạ.",
     "sourceMap.unavailable": "Không có source map: {reason}",
   },

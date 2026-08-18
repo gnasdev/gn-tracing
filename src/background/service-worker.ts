@@ -3,7 +3,6 @@
  */
 
 import type { Screenshot } from "../../packages/replay-core/src/schema/annotation";
-import { elapsedFromRecordingStart } from "./recording-clock";
 import type { DomSnapshot } from "../../packages/replay-core/src/schema/capture";
 import { getMediaMessageTarget } from "../platform/media/message-target";
 import { createRecordingRuntime } from "../platform/recording-runtime/create-recording-runtime";
@@ -85,6 +84,7 @@ import {
   parseCollectInstantReplayResponse,
 } from "./instant-replay-session";
 import { registerMessageListeners } from "./message-router";
+import { elapsedFromRecordingStart } from "./recording-clock";
 import {
   clearScreenshotPackageStaging,
   putScreenshotPackageStaging,

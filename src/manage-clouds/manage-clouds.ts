@@ -4,8 +4,8 @@
  */
 
 import { buttonSpinnerHtml } from "../shared/button-loading";
-import { attachLanguageSwitch, type UiLanguage } from "../shared/ui-language";
 import { attachThemePreferenceInputs, type ThemePreference } from "../shared/theme";
+import { attachLanguageSwitch, type UiLanguage } from "../shared/ui-language";
 import { escapeHtml } from "../shared/upload-history-ui";
 import type { MessageResponse } from "../types/messages";
 import {

@@ -276,4 +276,3 @@ export type ActiveMediaSession = {
   playbackAudioContext: AudioContext | null;
   playbackSourceNode: MediaStreamAudioSourceNode | null;
 };
-

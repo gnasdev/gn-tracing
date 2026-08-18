@@ -175,4 +175,3 @@ export async function runStdioServer(store: RecordingStore, streams: StdioStream
     }
   }
 }
-
