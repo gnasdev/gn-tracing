@@ -206,6 +206,15 @@ describe("production player shell contract", () => {
 }`);
   });
 
+  it("preserves media resources when pagehide enters the BFCache", () => {
+    expect(playerJs).not.toMatch(/addEventListener\(["']unload["']/);
+    expect(playerJs).toContain("function releasePlayerResourcesOnPageHide(event) {");
+    expect(playerJs).toContain("if (event.persisted) {");
+    expect(playerJs).toContain(
+      'window.addEventListener("pagehide", releasePlayerResourcesOnPageHide);',
+    );
+  });
+
   it("shared domain functions are the real implementations (smoke)", () => {
     expect(diffStorageGroups([{ key: "a", value: "1" }], []).map((r) => r.status)).toEqual([
       "removed",

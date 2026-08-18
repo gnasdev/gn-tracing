@@ -853,6 +853,14 @@
     }
   }
 
+  function releasePlayerResourcesOnPageHide(event) {
+    if (event.persisted) {
+      return;
+    }
+    releaseVideoResources();
+    releaseScreenshotResources();
+  }
+
   // Auto-scroll refs
   const STICKY_SCROLL_THRESHOLD_PX = 8;
 
@@ -8946,8 +8954,7 @@
     applyLayoutState();
     updateVolumeDisplay();
     document.title = DEFAULT_PLAYER_TITLE;
-    window.addEventListener("unload", releaseVideoResources);
-    window.addEventListener("unload", releaseScreenshotResources);
+    window.addEventListener("pagehide", releasePlayerResourcesOnPageHide);
     setupLayoutListeners();
     setupVideoListeners();
     bindDomStageControls();
