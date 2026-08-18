@@ -1,6 +1,6 @@
-# Quality gate for push/PR. Builds production packages for Chrome, Edge, Opera,
-# and Firefox so multi-browser packaging stays green without cutting a release.
-name: Test
+# CI-only validation for push/PR. Local hooks own format and unit-test gates;
+# this workflow verifies type safety and production packages across supported browsers.
+name: Package validation
 
 on:
   push:
@@ -47,20 +47,6 @@ jobs:
 
       - name: Typecheck all contexts
         run: task typecheck:all
-
-      - name: Check (biome + docs + version + mcp)
-        run: npm run check
-
-      - name: Test root
-        run: npm test
-
-      - name: Test player
-        run: npm test
-        working-directory: player
-
-      - name: Test worker
-        run: npm test
-        working-directory: worker
 
       - name: Production build Chrome, Edge, Opera, and Firefox
         env:
