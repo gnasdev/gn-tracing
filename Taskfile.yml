@@ -232,7 +232,7 @@ tasks:
   worker:dev:
     desc: >-
       Run the multi-issuer Worker locally (OAuth Google/Dropbox + POST /feedback,
-      hot reload, port 8787). Also started by `task dev`. Reuses an instance
+      hot reload, port 63972). Also started by `task dev`. Reuses an instance
       already serving that port instead of failing to bind, so several `task dev`
       stacks (one per browser target) can coexist.
     deps:
@@ -240,9 +240,13 @@ tasks:
     dir: worker
     cmds:
       - cmd: |
-          if node ../scripts/port-listening.mjs 8787; then
-            echo "[worker:dev] http://localhost:8787 is already serving — reusing it."
+          if node ../scripts/worker-dev-health.mjs; then
+            echo "[worker:dev] GN Tracing OAuth Worker is already serving http://localhost:63972 — reusing it."
             exit 0
+          fi
+          if node ../scripts/port-listening.mjs 63972; then
+            echo "[worker:dev] Port 63972 is occupied by a service other than GN Tracing OAuth Worker. Stop that service, then rerun task worker:dev." >&2
+            exit 1
           fi
           exec npm exec -- wrangler dev
 
@@ -434,7 +438,7 @@ tasks:
     desc: >-
       Local full stack — extension watch (esbuild → dist/<browser>/ with local
       Worker proxies), standalone player (Vite :5176), multi-issuer Worker
-      (wrangler :8787). BROWSER=chrome|edge|opera|firefox (default chrome), or
+      (wrangler :63972). BROWSER=chrome|edge|opera|firefox (default chrome), or
       BROWSER=all / `task dev:all` for every target at once. CLI var or env BROWSER.
     vars:
       BROWSER: '{{.BROWSER | default (env "BROWSER") | default "chrome"}}'

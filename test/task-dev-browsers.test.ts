@@ -50,6 +50,16 @@ describe("task dev multi-browser support", () => {
     expect(devBlock).toContain("task worker:dev");
   });
 
+  it("reuses the OAuth Worker only after verifying its health identity", () => {
+    const workerDevAt = TASKFILE.indexOf("\n  worker:dev:");
+    expect(workerDevAt).toBeGreaterThan(-1);
+    const workerDevBlock = TASKFILE.slice(workerDevAt, TASKFILE.indexOf("\n  worker:typecheck:"));
+    expect(workerDevBlock).toContain("node ../scripts/worker-dev-health.mjs");
+    expect(workerDevBlock).toContain("http://localhost:63972");
+    expect(workerDevBlock).toContain("port-listening.mjs 63972");
+    expect(workerDevBlock).toContain("service other than GN Tracing OAuth Worker");
+  });
+
   it("exposes per-browser and all aliases", () => {
     for (const browser of BROWSERS) {
       expect(TASKFILE).toContain(`\n  dev:${browser}:`);

@@ -11,7 +11,7 @@ workers_dev = true
 
 [dev]
 ip = "localhost"
-port = 8787
+port = 63972
 local_protocol = "http"
 
 # Public vars. Secrets are set via `wrangler secret put` (or .dev.vars locally).

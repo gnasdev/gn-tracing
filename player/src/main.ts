@@ -15,7 +15,7 @@ window.GN_TRACING_CONFIG = {
   mode: "standalone",
   driveApiKey: import.meta.env.VITE_DRIVE_API_KEY || undefined,
   // Prefer explicit VITE_FEEDBACK_PROXY_URL; local Vite falls back inside player.js
-  // to http://localhost:8787/feedback when the host is localhost.
+  // to http://localhost:63972/feedback when the host is localhost.
   feedbackProxyUrl: import.meta.env.VITE_FEEDBACK_PROXY_URL || undefined,
 };
 

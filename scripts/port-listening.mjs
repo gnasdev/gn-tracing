@@ -4,7 +4,7 @@
  * Used by `task player:dev` / `task worker:dev` so the shared dev services can be
  * reused instead of colliding. Without it, running `task dev BROWSER=chrome` and
  * `task dev BROWSER=firefox` side by side kills the second stack: both try to
- * bind the player (:5176) and the Worker (:8787), which are per-repo, not
+ * bind the player (:5176) and the Worker (:63972), which are per-repo, not
  * per-browser-target.
  *
  * Both loopback families are probed, because dev servers differ on which one they

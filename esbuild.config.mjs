@@ -39,12 +39,12 @@ const googleClientId = getConfigValue("GOOGLE_CLIENT_ID");
 const googleWebClientId = getConfigValue("GOOGLE_WEB_CLIENT_ID", googleClientId);
 const dropboxClientId = getConfigValue("DROPBOX_CLIENT_ID");
 // Dev/watch builds default to the multi-issuer Worker started by `task worker:dev`
-// / `task dev` on port 8787 so Google and Dropbox hit localhost without editing
+// / `task dev` on port 63972 so Google and Dropbox hit localhost without editing
 // .env. Override with *_TOKEN_PROXY_URL_DEV if needed.
 // Production builds always use *_TOKEN_PROXY_URL (deployed Worker origin or URL).
 // Endpoints are joined as /{packageVersion}/token via resolveVersionedWorkerEndpoints
 // (same pure helper as Worker/player).
-const DEFAULT_DEV_WORKER_ORIGIN = "http://localhost:8787";
+const DEFAULT_DEV_WORKER_ORIGIN = "http://localhost:63972";
 const googleTokenProxyUrl = resolveGoogleTokenProxyUrl();
 const dropboxTokenProxyUrl = resolveDropboxTokenProxyUrl();
 // Feedback submit reuses the multi-issuer Worker at POST /{version}/feedback.

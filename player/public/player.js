@@ -357,12 +357,12 @@
     if (fromConfig) {
       return fromConfig;
     }
-    // Local standalone / vite defaults when the multi-issuer Worker is on 8787.
+    // Local standalone / vite defaults when the multi-issuer Worker is on 63972.
     if (
       typeof location !== "undefined" &&
       (location.hostname === "localhost" || location.hostname === "127.0.0.1")
     ) {
-      return "http://localhost:8787/feedback";
+      return "http://localhost:63972/feedback";
     }
     return "";
   }

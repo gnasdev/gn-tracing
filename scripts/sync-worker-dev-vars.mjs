@@ -1,7 +1,7 @@
 /**
  * Syncs worker/.dev.vars from the repo root .env for local `wrangler dev`.
  *
- * `task dev` runs the multi-issuer Worker on http://localhost:8787 (OAuth +
+ * `task dev` runs the multi-issuer Worker on http://localhost:63972 (OAuth +
  * optional POST /feedback). wrangler only loads secrets from worker/.dev.vars
  * (not the root .env), so this script keeps Google / Dropbox / feedback vars
  * in sync without committing them.
