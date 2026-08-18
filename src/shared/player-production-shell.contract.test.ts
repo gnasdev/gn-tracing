@@ -13,6 +13,7 @@ import { resolvePresentationMode } from "./player-presentation";
 import { diffStorageGroups } from "./storage-diff";
 
 const playerJs = readFileSync(resolve(__dirname, "../../player/public/player.js"), "utf8");
+const playerCss = readFileSync(resolve(__dirname, "../../player/public/player.css"), "utf8");
 const coreIife = readFileSync(
   resolve(__dirname, "../../player/public/vendor/gn-core/gn-core.iife.js"),
   "utf8",
@@ -107,6 +108,102 @@ describe("production player shell contract", () => {
     ]) {
       expect(coreIife).toContain(token);
     }
+  });
+
+  it("renders console stack traces with network-style gray-frame filtering", () => {
+    expect(playerJs).toContain("const consoleStackVendorFilters = new Map();");
+    expect(playerJs).toMatch(
+      /function shouldHideConsoleVendorFrames\(index\) \{\s*return consoleStackVendorFilters\.get\(index\) !== false;/,
+    );
+    expect(playerJs).toContain('class="console-stack-filter-toggle');
+    expect(playerJs).toMatch(
+      /class="console-stack \$\{hideVendorFrames \? "hide-vendor-frames" : ""\}"/,
+    );
+    expect(playerJs).toContain("isVendorFrame: isNetworkVendorFrame,");
+    expect(playerJs).toMatch(
+      /const consoleStackToggle = e\.target\.closest\(["']\.console-stack-filter-toggle["']\);/,
+    );
+  });
+
+  it("uses one stack trace renderer across console, network, and remote-object details", () => {
+    expect(playerJs).toContain("function renderStackTrace(frames, options = {})");
+    expect(playerJs).toContain(
+      "renderStackTrace(buildInitiatorStackTraceFrames(initiator.stack), {",
+    );
+    expect(playerJs).toContain(
+      "renderStackTrace(frames, { sourceMapNote: getSourceMapDiagnosticMessage })",
+    );
+    expect(playerJs).toContain("renderStackTrace(entry.stackTrace, {");
+    expect(playerJs).toContain("isVendorFrame: isNetworkVendorFrame,");
+    expect(playerJs).not.toContain("function renderInitiatorStackFrames(stack)");
+  });
+
+  it("visually separates stack function names and source paths across player panels", () => {
+    expect(playerCss).toContain(`
+.console-detail .stack-frame .fn-name {
+  color: var(--warning);
+  font-weight: 650;
+  -webkit-text-stroke: 0.25px color-mix(in srgb, currentColor 78%, var(--text-inverse));
+  background: var(--bg-warning-soft);
+  border-radius: 3px;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  padding: 0 2px;
+}`);
+    expect(playerCss).toContain(`
+.console-detail .stack-frame .location {
+  color: var(--info);
+  font-family: "SF Mono", "Fira Code", monospace;
+  font-weight: 500;
+  -webkit-text-stroke: 0.25px color-mix(in srgb, currentColor 78%, var(--text-inverse));
+  background: color-mix(in srgb, var(--info) 16%, transparent);
+  border-radius: 3px;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  padding: 0 2px;
+}`);
+    expect(playerCss).toContain(`
+.network-detail .stack-frame .fn-name,
+.ws-detail .stack-frame .fn-name {
+  color: var(--warning);
+  font-weight: 650;
+  -webkit-text-stroke: 0.25px color-mix(in srgb, currentColor 78%, var(--text-inverse));
+  background: var(--bg-warning-soft);
+  border-radius: 3px;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  padding: 0 2px;
+}`);
+    expect(playerCss).toContain(`
+.network-detail .stack-frame .location,
+.ws-detail .stack-frame .location {
+  color: var(--info);
+  font-family: "SF Mono", "Fira Code", monospace;
+  font-weight: 500;
+  -webkit-text-stroke: 0.25px color-mix(in srgb, currentColor 78%, var(--text-inverse));
+  background: color-mix(in srgb, var(--info) 16%, transparent);
+  border-radius: 3px;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  padding: 0 2px;
+}`);
+    expect(playerCss).toContain(`
+.console-stack .vendor-frame,
+.console-stack .vendor-frame .fn-name,
+.console-stack .vendor-frame .location {
+  color: var(--text-muted);
+  -webkit-text-stroke: 0;
+  background: transparent;
+}`);
+    expect(playerCss).toContain(`
+.network-detail .stack-frame.vendor-frame .fn-name,
+.network-detail .stack-frame.vendor-frame .location,
+.ws-detail .stack-frame.vendor-frame .fn-name,
+.ws-detail .stack-frame.vendor-frame .location {
+  color: var(--text-muted);
+  -webkit-text-stroke: 0;
+  background: transparent;
+}`);
   });
 
   it("shared domain functions are the real implementations (smoke)", () => {

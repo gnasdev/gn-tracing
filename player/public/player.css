@@ -2309,11 +2309,26 @@ body:has(#player-state:not(.hidden)) .player-lang-toggle--global {
 }
 
 .console-detail .stack-frame .fn-name {
-  color: var(--accent);
+  color: var(--warning);
+  font-weight: 650;
+  -webkit-text-stroke: 0.25px color-mix(in srgb, currentColor 78%, var(--text-inverse));
+  background: var(--bg-warning-soft);
+  border-radius: 3px;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  padding: 0 2px;
 }
 
 .console-detail .stack-frame .location {
-  color: var(--text-dim);
+  color: var(--info);
+  font-family: "SF Mono", "Fira Code", monospace;
+  font-weight: 500;
+  -webkit-text-stroke: 0.25px color-mix(in srgb, currentColor 78%, var(--text-inverse));
+  background: color-mix(in srgb, var(--info) 16%, transparent);
+  border-radius: 3px;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  padding: 0 2px;
 }
 
 .console-detail .async-boundary,
@@ -2326,9 +2341,30 @@ body:has(#player-state:not(.hidden)) .player-lang-toggle--global {
   font-style: italic;
 }
 
+.console-detail .console-stack-filter-toggle {
+  margin-top: 6px;
+  padding: 3px 8px;
+  border: 1px solid var(--border-default);
+  border-radius: 999px;
+  color: var(--text-muted);
+  background: transparent;
+  font-size: 11px;
+  cursor: pointer;
+  transition:
+    border-color 150ms ease,
+    color 150ms ease,
+    background 150ms ease;
+}
+
+.console-detail .console-stack-filter-toggle.active {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--bg-accent-soft);
+}
+
 .console-stack {
   padding-left: 12px;
-  color: var(--text-dim);
+  margin-top: 4px;
 }
 
 .console-stack .async-boundary {
@@ -2336,8 +2372,16 @@ body:has(#player-state:not(.hidden)) .player-lang-toggle--global {
   font-style: italic;
 }
 
-.console-stack .vendor-frame {
+.console-stack .vendor-frame,
+.console-stack .vendor-frame .fn-name,
+.console-stack .vendor-frame .location {
   color: var(--text-muted);
+  -webkit-text-stroke: 0;
+  background: transparent;
+}
+
+.console-stack.hide-vendor-frames .vendor-frame {
+  display: none;
 }
 
 /* Network entries */
@@ -2761,12 +2805,27 @@ body:has(#player-state:not(.hidden)) .player-lang-toggle--global {
 
 .network-detail .stack-frame .fn-name,
 .ws-detail .stack-frame .fn-name {
-  color: var(--accent);
+  color: var(--warning);
+  font-weight: 650;
+  -webkit-text-stroke: 0.25px color-mix(in srgb, currentColor 78%, var(--text-inverse));
+  background: var(--bg-warning-soft);
+  border-radius: 3px;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  padding: 0 2px;
 }
 
 .network-detail .stack-frame .location,
 .ws-detail .stack-frame .location {
-  color: var(--text-dim);
+  color: var(--info);
+  font-family: "SF Mono", "Fira Code", monospace;
+  font-weight: 500;
+  -webkit-text-stroke: 0.25px color-mix(in srgb, currentColor 78%, var(--text-inverse));
+  background: color-mix(in srgb, var(--info) 16%, transparent);
+  border-radius: 3px;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  padding: 0 2px;
 }
 
 .network-detail .stack-frame.vendor-frame,
@@ -2779,6 +2838,8 @@ body:has(#player-state:not(.hidden)) .player-lang-toggle--global {
 .ws-detail .stack-frame.vendor-frame .fn-name,
 .ws-detail .stack-frame.vendor-frame .location {
   color: var(--text-muted);
+  -webkit-text-stroke: 0;
+  background: transparent;
 }
 
 .network-detail .async-boundary,

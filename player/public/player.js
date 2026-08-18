@@ -801,6 +801,7 @@
   let expandedConsoleIndex = null;
   let expandedNetworkIndex = null;
   let expandedWsIndex = null;
+  const consoleStackVendorFilters = new Map();
   const networkDetailTabs = new Map();
   const networkInitiatorVendorFilters = new Map();
   const networkJsonPreviewToggles = new Map();
@@ -3427,20 +3428,32 @@
     return collectInitiatorStackFrames(stack.parent, frames);
   }
 
-  function renderInitiatorStackFrames(stack) {
-    let html = (stack.callFrames || [])
+  function buildInitiatorStackTraceFrames(stack, frames = []) {
+    if (!stack) return frames;
+    frames.push(...(stack.callFrames || []));
+    if (stack.parent) {
+      frames.push({ asyncBoundary: stack.parent.description || "async" });
+      buildInitiatorStackTraceFrames(stack.parent, frames);
+    }
+    return frames;
+  }
+
+  function renderStackTrace(frames, options = {}) {
+    if (!Array.isArray(frames) || frames.length === 0) {
+      return "";
+    }
+    return frames
       .map((frame) => {
+        if (frame.asyncBoundary) {
+          return `<div class="async-boundary">--- ${escapeHtml(frame.asyncBoundary)} ---</div>`;
+        }
         const fnName = frame.originalName || frame.functionName || t("detail.anonymous");
         const location = formatSourceLocation(frame);
-        const isVendor = isNetworkVendorFrame(frame);
-        return `<div class="stack-frame ${isVendor ? "vendor-frame" : ""}">at <span class="fn-name">${escapeHtml(fnName)}</span>${location ? ` <span class="location">(${escapeHtml(location)})</span>` : ""}</div>`;
+        const isVendor = Boolean(options.isVendorFrame?.(frame));
+        const sourceMapNote = options.sourceMapNote?.(frame);
+        return `<div class="stack-frame${isVendor ? " vendor-frame" : ""}">at <span class="fn-name">${escapeHtml(fnName)}</span>${location ? ` <span class="location">(${escapeHtml(location)})</span>` : ""}${sourceMapNote ? `<div class="source-map-note">${escapeHtml(sourceMapNote)}</div>` : ""}</div>`;
       })
       .join("");
-    if (stack.parent) {
-      html += `<div class="async-boundary">--- ${escapeHtml(stack.parent.description || "async")} ---</div>`;
-      html += renderInitiatorStackFrames(stack.parent);
-    }
-    return html;
   }
 
   // Shared initiator section for network and WebSocket details. The vendor
@@ -3483,7 +3496,9 @@
         }
       }
       html += `<div class="initiator-stack ${hideVendorFrames ? "hide-vendor-frames" : ""}">`;
-      html += renderInitiatorStackFrames(initiator.stack);
+      html += renderStackTrace(buildInitiatorStackTraceFrames(initiator.stack), {
+        isVendorFrame: isNetworkVendorFrame,
+      });
       html += "</div>";
     }
     html += "</div>";
@@ -3812,26 +3827,7 @@
   }
 
   function renderRemoteObjectStackTrace(frames) {
-    if (!Array.isArray(frames) || frames.length === 0) {
-      return "";
-    }
-    const rows = frames
-      .map((frame) => {
-        if (frame.asyncBoundary) {
-          return `<div class="async-boundary">--- ${escapeHtml(frame.asyncBoundary)} ---</div>`;
-        }
-        const fnName = frame.originalName || frame.functionName || t("detail.anonymous");
-        const location = formatSourceLocation(frame);
-        const sourceMapStatus = getSourceMapDiagnosticMessage(frame);
-        return `
-          <div class="stack-frame">
-            at <span class="fn-name">${escapeHtml(fnName)}</span>${location ? ` <span class="location">(${escapeHtml(location)})</span>` : ""}
-            ${sourceMapStatus ? `<div class="source-map-note">${escapeHtml(sourceMapStatus)}</div>` : ""}
-          </div>
-        `;
-      })
-      .join("");
-    return `<div class="stack-trace remote-object-stack">${rows}</div>`;
+    return `<div class="stack-trace remote-object-stack">${renderStackTrace(frames, { sourceMapNote: getSourceMapDiagnosticMessage })}</div>`;
   }
 
   // Render remote object to HTML
@@ -4669,6 +4665,10 @@
     if (hasPreview) return "preview";
     if (hasBody) return "body";
     return null;
+  }
+
+  function shouldHideConsoleVendorFrames(index) {
+    return consoleStackVendorFilters.get(index) !== false;
   }
 
   function shouldHideNetworkVendorFrames(entry) {
@@ -6783,7 +6783,7 @@
           <span>${renderArgs(entry)}</span>
           ${sourceLocationHtml}
         </span>
-        ${isExpanded ? renderConsoleDetail(entry) : ""}
+        ${isExpanded ? renderConsoleDetail(entry, index) : ""}
       </div>
     `;
   }
@@ -6791,6 +6791,7 @@
   function syncConsoleEntryState(row, pe, closestIdx) {
     const index = pe.index;
     const isExpanded = expandedConsoleIndex === index;
+    const hideVendorFrames = shouldHideConsoleVendorFrames(index) ? "1" : "0";
     row.classList.toggle("active-entry", index === closestIdx);
     row.classList.toggle("expanded", isExpanded);
 
@@ -6802,9 +6803,14 @@
 
     const detail = row.querySelector(":scope > .console-detail");
     if (isExpanded && !detail) {
-      row.insertAdjacentHTML("beforeend", renderConsoleDetail(pe.entry));
+      row.insertAdjacentHTML("beforeend", renderConsoleDetail(pe.entry, index));
+      row.dataset.hideVendorFrames = hideVendorFrames;
+    } else if (isExpanded && detail && row.dataset.hideVendorFrames !== hideVendorFrames) {
+      detail.outerHTML = renderConsoleDetail(pe.entry, index);
+      row.dataset.hideVendorFrames = hideVendorFrames;
     } else if (!isExpanded && detail) {
       detail.remove();
+      delete row.dataset.hideVendorFrames;
     }
   }
 
@@ -6989,7 +6995,7 @@
     }
   }
 
-  function renderConsoleDetail(entry) {
+  function renderConsoleDetail(entry, index) {
     const levelLabel = getConsoleLevelLabel(entry);
     const sourceLabel = entry.source ? ` (${entry.source})` : "";
     const timeStr = formatTimeMs(entry.relativeMs);
@@ -7070,21 +7076,34 @@
 
     // Stack trace
     if (entry.stackTrace && entry.stackTrace.length > 0) {
+      const hideVendorFrames = shouldHideConsoleVendorFrames(index);
+      const vendorFrameCount = entry.stackTrace.filter(
+        (frame) => !frame.asyncBoundary && isNetworkVendorFrame(frame),
+      ).length;
       detailHtml += `
         <div class="detail-section">
           <h4>${escapeHtml(t("detail.stackTrace"))}</h4>
-          <div class="stack-trace">
+          ${
+            vendorFrameCount > 0
+              ? `
+                <button
+                  class="console-stack-filter-toggle ${hideVendorFrames ? "active" : ""}"
+                  type="button"
+                  aria-pressed="${hideVendorFrames}"
+                >
+                  ${escapeHtml(
+                    t(hideVendorFrames ? "detail.showGrayFrames" : "detail.hideGrayFrames", {
+                      count: String(vendorFrameCount),
+                    }),
+                  )}
+                </button>
+              `
+              : ""
+          }
+          <div class="console-stack ${hideVendorFrames ? "hide-vendor-frames" : ""}">
       `;
-      entry.stackTrace.forEach((frame, i) => {
-        if (frame.asyncBoundary) {
-          detailHtml += `<div class="async-boundary">--- ${escapeHtml(frame.asyncBoundary)} ---</div>`;
-        } else {
-          const fnName = frame.originalName || frame.functionName || t("detail.anonymous");
-          const location = formatSourceLocation(frame);
-          const src = frame.originalSource || frame.url || "";
-          const isVendor = src && src.includes("node_modules");
-          detailHtml += `<div class="stack-frame ${isVendor ? "vendor-frame" : ""}">at <span class="fn-name">${escapeHtml(fnName)}</span>${location ? ` <span class="location">(${escapeHtml(location)})</span>` : ""}</div>`;
-        }
+      detailHtml += renderStackTrace(entry.stackTrace, {
+        isVendorFrame: isNetworkVendorFrame,
       });
       detailHtml += `</div></div>`;
     }
@@ -8552,6 +8571,21 @@
   // any other row's active/expanded state changes as a result.
   function setupLogRowListeners() {
     elements.consoleEntries.addEventListener("click", (e) => {
+      const consoleStackToggle = e.target.closest(".console-stack-filter-toggle");
+      if (consoleStackToggle) {
+        const row = consoleStackToggle.closest(".console-entry");
+        if (!row) return;
+
+        e.stopPropagation();
+        const index = Number.parseInt(row.dataset.index, 10);
+        const pe = getPreparedConsoleEntries()[index];
+        if (!pe) return;
+
+        consoleStackVendorFilters.set(index, !shouldHideConsoleVendorFrames(index));
+        syncConsoleEntryState(row, pe, closestConsoleIndex);
+        return;
+      }
+
       const toggle = e.target.closest(".toggle-expand");
       if (!toggle) return;
 
