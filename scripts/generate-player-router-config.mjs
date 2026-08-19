@@ -9,7 +9,8 @@ import {
 } from "../packages/release-registry/src/index.ts";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const output = path.resolve(root, process.argv[2] || "edge/player-router/wrangler.generated.toml");
+const outputArgument = process.argv.slice(2).find((argument) => !argument.startsWith("--"));
+const output = path.resolve(root, outputArgument || "edge/player-router/wrangler.generated.toml");
 const registryPath = path.join(root, "releases/registry.json");
 const registry = parseReleaseRegistry(fs.readFileSync(registryPath, "utf8"));
 const requireLatest = process.argv.includes("--require-latest");
