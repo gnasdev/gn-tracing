@@ -42,6 +42,20 @@
         "bindingName": "WORKER_1_7_13",
         "sourceCommit": "62289ff1d3f558b90d707546f8f8a67ca965148f"
       }
+    },
+    {
+      "version": "1.7.14",
+      "sourceCommit": "2f7d0763aebc50d16c525326d97387328cfc277a",
+      "player": {
+        "r2Prefix": "player/1.7.14/",
+        "sha256": "sha256:24d606b931874ca7932a938d283fc34c22431898e4b6622536b3d5e1462270c6",
+        "builtAt": "2026-08-19T18:49:47.125Z"
+      },
+      "worker": {
+        "serviceName": "gn-tracing-oauth-proxy-v1-7-14",
+        "bindingName": "WORKER_1_7_14",
+        "sourceCommit": "2f7d0763aebc50d16c525326d97387328cfc277a"
+      }
     }
   ]
 }
