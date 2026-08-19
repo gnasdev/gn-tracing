@@ -137,14 +137,15 @@ function shouldServeSpaIndex(path: string, accept: string | null): boolean {
   if (path.startsWith("api/")) {
     return false;
   }
+  // Provider replay ids can embed package filenames such as .zip; they are
+  // navigation routes, never immutable static-asset keys.
+  if (path.startsWith("gdrive/") || path.startsWith("dropbox/")) {
+    return true;
+  }
   if (path.split("/").at(-1)?.includes(".")) {
     return false;
   }
-  return (
-    Boolean(accept?.includes("text/html")) ||
-    path.startsWith("gdrive/") ||
-    path.startsWith("dropbox/")
-  );
+  return Boolean(accept?.includes("text/html"));
 }
 
 function withReleaseHeaders(

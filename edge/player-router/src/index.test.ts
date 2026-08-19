@@ -67,6 +67,19 @@ describe("Player version router", () => {
     expect(await response.text()).toBe("release-111-index");
   });
 
+  it("uses the matching release index for a Dropbox replay id with a filename", async () => {
+    const router = makeRouter({ "player/1.7.11/index.html": "release-111-index" });
+    const response = await router.fetch(
+      new Request(
+        "https://tracing.gnas.dev/1.7.11/dropbox/scl%2Ffi%2Ffolder%2Frecording.zip%3Frlkey%3Dkey",
+        { headers: { accept: "text/html" } },
+      ),
+    );
+    expect(response.status).toBe(200);
+    expect(response.headers.get("x-gn-player-release")).toBe("1.7.11");
+    expect(await response.text()).toBe("release-111-index");
+  });
+
   it("does not convert a missing immutable asset into HTML", async () => {
     const router = makeRouter({ "player/1.7.11/index.html": "index" });
     const response = await router.fetch(
