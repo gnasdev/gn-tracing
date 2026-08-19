@@ -97,7 +97,7 @@ try {
   existingRelease = true;
 } catch (error) {
   const detail = [error?.stdout, error?.stderr].filter(Boolean).join("\n");
-  if (!/(404|NoSuchKey|not found)/i.test(detail)) {
+  if (!/(404|NoSuchKey|not found|does not exist)/i.test(detail)) {
     throw new Error(
       `Could not verify whether Player release ${version} already exists in R2: ${detail}`,
     );

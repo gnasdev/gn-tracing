@@ -1,4 +1,47 @@
 {
   "schemaVersion": 1,
-  "releases": []
+  "releases": [
+    {
+      "version": "1.7.11",
+      "sourceCommit": "db583b8bdedc86dff79955843391fadee84e4260",
+      "player": {
+        "r2Prefix": "player/1.7.11/",
+        "sha256": "sha256:ff90566d75e56a65838e0bfb533aaf23efd9ec18bb72757cf366c90673cad8f7",
+        "builtAt": "2026-08-19T16:57:00.000Z"
+      },
+      "worker": {
+        "serviceName": "gn-tracing-oauth-proxy-v1-7-11",
+        "bindingName": "WORKER_1_7_11",
+        "sourceCommit": "db583b8bdedc86dff79955843391fadee84e4260"
+      }
+    },
+    {
+      "version": "1.7.12",
+      "sourceCommit": "12baa1b333075bfea0646580ef174e39561eb169",
+      "player": {
+        "r2Prefix": "player/1.7.12/",
+        "sha256": "sha256:7bba06e6c2d59f2d225beb15418303d2713ad4ca01417e74dac82527f596303c",
+        "builtAt": "2026-08-19T16:57:00.000Z"
+      },
+      "worker": {
+        "serviceName": "gn-tracing-oauth-proxy-v1-7-12",
+        "bindingName": "WORKER_1_7_12",
+        "sourceCommit": "12baa1b333075bfea0646580ef174e39561eb169"
+      }
+    },
+    {
+      "version": "1.7.13",
+      "sourceCommit": "62289ff1d3f558b90d707546f8f8a67ca965148f",
+      "player": {
+        "r2Prefix": "player/1.7.13/",
+        "sha256": "sha256:e372ce3da36ae9efe8cf81759633f21d8529b0fc4d10edff17cb1ad7217b536e",
+        "builtAt": "2026-08-19T16:57:44.101Z"
+      },
+      "worker": {
+        "serviceName": "gn-tracing-oauth-proxy-v1-7-13",
+        "bindingName": "WORKER_1_7_13",
+        "sourceCommit": "62289ff1d3f558b90d707546f8f8a67ca965148f"
+      }
+    }
+  ]
 }
