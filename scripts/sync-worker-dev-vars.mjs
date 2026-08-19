@@ -10,9 +10,9 @@
  * Exit 0 even when .env is missing (prints a short skip message).
  */
 
-import fs from "fs";
-import path from "path";
-import { fileURLToPath } from "url";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { getChromeExtensionId } from "./chrome-extension-id.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
