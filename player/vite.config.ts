@@ -13,6 +13,7 @@ import { defineConfig } from "vite";
 import solid from "vite-plugin-solid";
 import { handleDriveProxyRequest } from "./shared/proxy/drive-download.js";
 import { handleDropboxProxyRequest } from "./shared/proxy/dropbox-download.js";
+import { isStorageProxyPath, isUnsupportedLocalPlayerVersionPath } from "./shared/proxy/path";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootPackageJson = JSON.parse(
@@ -29,11 +30,12 @@ const basePath = process.env.VITE_BASE_PATH || "/";
  * Adapt a Fetch-API proxy handler to Connect middleware (Vite dev/preview).
  */
 function createFetchProxyMiddleware(
-  pathPrefix: string,
+  endpoint: "drive" | "dropbox",
   handle: (request: Request) => Promise<Response>,
 ): Connect.NextHandleFunction {
   return async (req, res, next) => {
-    if (!req.url?.startsWith(pathPrefix)) {
+    const requestPath = req.url?.split("?")[0] || "";
+    if (!isStorageProxyPath(requestPath, endpoint, rootAppVersion)) {
       next();
       return;
     }
@@ -87,11 +89,8 @@ function createFetchProxyMiddleware(
   };
 }
 
-const driveProxyMiddleware = createFetchProxyMiddleware("/api/drive", handleDriveProxyRequest);
-const dropboxProxyMiddleware = createFetchProxyMiddleware(
-  "/api/dropbox",
-  handleDropboxProxyRequest,
-);
+const driveProxyMiddleware = createFetchProxyMiddleware("drive", handleDriveProxyRequest);
+const dropboxProxyMiddleware = createFetchProxyMiddleware("dropbox", handleDropboxProxyRequest);
 
 function shouldRewriteToPlayer(urlPath: string): boolean {
   if (!urlPath || urlPath === "/") return false;
@@ -120,6 +119,25 @@ function shouldRewriteToPlayer(urlPath: string): boolean {
   return true;
 }
 
+function unsupportedLocalVersionMiddleware(): Connect.NextHandleFunction {
+  return (req, res, next) => {
+    const requestPath = req.url?.split("?")[0] || "";
+    if (!isUnsupportedLocalPlayerVersionPath(requestPath, rootAppVersion)) {
+      next();
+      return;
+    }
+
+    res.statusCode = 404;
+    res.setHeader("content-type", "application/json; charset=utf-8");
+    res.end(
+      JSON.stringify({
+        error: "local_release_not_available",
+        error_description: `Local Player only serves the current version ${rootAppVersion}.`,
+      }),
+    );
+  };
+}
+
 function playerSpaFallbackMiddleware(): Connect.NextHandleFunction {
   return (req, _res, next) => {
     if (!req.url || req.method !== "GET") {
@@ -138,11 +156,13 @@ function driveProxyPlugin() {
   return {
     name: "gn-tracing-storage-proxy",
     configureServer(server: { middlewares: Connect.Server }) {
+      server.middlewares.use(unsupportedLocalVersionMiddleware());
       server.middlewares.use(driveProxyMiddleware);
       server.middlewares.use(dropboxProxyMiddleware);
       server.middlewares.use(playerSpaFallbackMiddleware());
     },
     configurePreviewServer(server: { middlewares: Connect.Server }) {
+      server.middlewares.use(unsupportedLocalVersionMiddleware());
       server.middlewares.use(driveProxyMiddleware);
       server.middlewares.use(dropboxProxyMiddleware);
       server.middlewares.use(playerSpaFallbackMiddleware());
