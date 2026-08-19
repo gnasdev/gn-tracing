@@ -6,6 +6,7 @@
  */
 
 export const FEEDBACK_MESSAGE_MAX_LENGTH = 4000;
+export const FEEDBACK_CONTACT_MAX_LENGTH = 320;
 export const FEEDBACK_TITLE_PREFIX = "Feedback: ";
 export const FEEDBACK_TITLE_BODY_MAX = 60;
 
@@ -35,6 +36,31 @@ export function validateFeedbackMessage(raw: unknown): FeedbackValidationResult 
     };
   }
   return { ok: true, message };
+}
+
+export type FeedbackContactValidationResult =
+  | { ok: true; contact: string | undefined }
+  | { ok: false; error: string };
+
+/** Normalize and validate optional contact information before public submission. */
+export function validateFeedbackContact(raw: unknown): FeedbackContactValidationResult {
+  if (raw == null) {
+    return { ok: true, contact: undefined };
+  }
+  if (typeof raw !== "string") {
+    return { ok: false, error: "Contact information must be text." };
+  }
+  const contact = raw.trim();
+  if (!contact) {
+    return { ok: true, contact: undefined };
+  }
+  if (contact.length > FEEDBACK_CONTACT_MAX_LENGTH) {
+    return {
+      ok: false,
+      error: `Contact information must be at most ${FEEDBACK_CONTACT_MAX_LENGTH} characters.`,
+    };
+  }
+  return { ok: true, contact };
 }
 
 /** Allow-list diagnostics fields from untrusted client payloads. */
@@ -74,8 +100,13 @@ export function buildFeedbackIssueTitle(message: string): string {
  * Format GitHub issue body. Message is wrapped in a fenced code block so
  * markdown injection from the user body stays contained as plain text.
  */
-export function formatFeedbackIssueBody(message: string, diagnostics: FeedbackDiagnostics): string {
+export function formatFeedbackIssueBody(
+  message: string,
+  diagnostics: FeedbackDiagnostics,
+  contact?: string,
+): string {
   const safeMessage = message.replace(/```/g, "'''");
+  const safeContact = contact?.trim().replace(/```/g, "'''");
   const browser =
     [diagnostics.browserName, diagnostics.browserVersion].filter(Boolean).join(" ") || "unknown";
   return [
@@ -85,6 +116,7 @@ export function formatFeedbackIssueBody(message: string, diagnostics: FeedbackDi
     safeMessage,
     "```",
     "",
+    ...(safeContact ? ["## Contact (public)", "", "```", safeContact, "```", ""] : []),
     "## Diagnostics",
     "",
     `- Extension: ${diagnostics.extensionVersion || "unknown"}`,

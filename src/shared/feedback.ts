@@ -9,10 +9,12 @@
 
 export {
   buildFeedbackIssueTitle,
+  FEEDBACK_CONTACT_MAX_LENGTH,
   FEEDBACK_MESSAGE_MAX_LENGTH,
   type FeedbackDiagnostics,
   formatFeedbackIssueBody,
   normalizeFeedbackDiagnostics,
+  validateFeedbackContact,
   validateFeedbackMessage,
 } from "./feedback-format";
 

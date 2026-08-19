@@ -5,11 +5,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   buildFeedbackDiagnostics,
   buildFeedbackIssueTitle,
+  FEEDBACK_CONTACT_MAX_LENGTH,
   FEEDBACK_MESSAGE_MAX_LENGTH,
   formatFeedbackIssueBody,
   normalizeFeedbackDiagnostics,
   parseBrowserFromUserAgent,
   parseOsFromUserAgent,
+  validateFeedbackContact,
   validateFeedbackMessage,
 } from "./feedback";
 
@@ -61,6 +63,19 @@ describe("validateFeedbackMessage", () => {
   });
 });
 
+describe("validateFeedbackContact", () => {
+  it("accepts a missing or blank optional contact and rejects invalid values", () => {
+    expect(validateFeedbackContact(undefined)).toEqual({ ok: true, contact: undefined });
+    expect(validateFeedbackContact("  ")).toEqual({ ok: true, contact: undefined });
+    expect(validateFeedbackContact("  reporter@example.com  ")).toEqual({
+      ok: true,
+      contact: "reporter@example.com",
+    });
+    expect(validateFeedbackContact(42).ok).toBe(false);
+    expect(validateFeedbackContact("x".repeat(FEEDBACK_CONTACT_MAX_LENGTH + 1)).ok).toBe(false);
+  });
+});
+
 describe("normalizeFeedbackDiagnostics", () => {
   it("allow-lists fields and drops unknown keys", () => {
     const result = normalizeFeedbackDiagnostics({
@@ -94,14 +109,20 @@ describe("buildFeedbackIssueTitle / formatFeedbackIssueBody", () => {
     expect(title.startsWith("Feedback: ")).toBe(true);
     expect(title.length).toBeLessThanOrEqual("Feedback: ".length + 61);
 
-    const body = formatFeedbackIssueBody("please fix ``` injection", {
-      extensionVersion: "1.0.0",
-      browserName: "Chrome",
-      browserVersion: "131",
-      os: "macOS",
-      locale: "en-US",
-    });
+    const body = formatFeedbackIssueBody(
+      "please fix ``` injection",
+      {
+        extensionVersion: "1.0.0",
+        browserName: "Chrome",
+        browserVersion: "131",
+        os: "macOS",
+        locale: "en-US",
+      },
+      "reporter@example.com",
+    );
     expect(body).toContain("## Feedback");
+    expect(body).toContain("## Contact (public)");
+    expect(body).toContain("reporter@example.com");
     expect(body).toContain("## Diagnostics");
     expect(body).toContain("please fix ''' injection");
     expect(body).toContain("Extension: 1.0.0");

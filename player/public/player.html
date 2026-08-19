@@ -17,8 +17,20 @@
 </head>
 <body>
   <div id="app">
-    <div class="player-global-actions">
-      <div class="gn-feedback player-feedback" id="player-feedback-wrap">
+    <div class="gn-feedback player-feedback" id="player-feedback-wrap">
+      <div class="player-feedback-controls">
+        <button
+          type="button"
+          id="player-feedback-dock"
+          class="control-btn player-feedback-dock"
+          aria-pressed="false"
+          data-i18n-aria="feedback.dock"
+          data-i18n-title="feedback.dock"
+          aria-label="Hide feedback to screen edge"
+          title="Hide feedback to screen edge"
+        >
+          <i class="ph ph-caret-right" aria-hidden="true"></i>
+        </button>
         <button
           type="button"
           id="player-feedback-btn"
@@ -32,33 +44,46 @@
           title="Feedback"
         >
           <i class="ph ph-chat-circle-dots" aria-hidden="true"></i>
+          <span class="player-feedback-btn-label" data-i18n="feedback.button">Feedback</span>
         </button>
-        <div
-          id="player-feedback-panel"
-          class="gn-feedback-popover player-feedback-popover hidden"
-          role="dialog"
-          data-i18n-aria="feedback.sectionAria"
-          aria-label="Send feedback"
+      </div>
+      <div
+        id="player-feedback-panel"
+        class="gn-feedback-popover player-feedback-popover hidden"
+        role="dialog"
+        data-i18n-aria="feedback.sectionAria"
+        aria-label="Send feedback"
+      >
+        <label class="gn-feedback-label" for="player-feedback-message" data-i18n="feedback.label">Feedback</label>
+        <textarea
+          id="player-feedback-message"
+          class="gn-feedback-message"
+          rows="4"
+          maxlength="4000"
+          data-i18n-placeholder="feedback.placeholder"
+          placeholder="Describe a bug, idea, or question…"
+        ></textarea>
+        <label class="gn-feedback-label" for="player-feedback-contact" data-i18n="feedback.contactLabel">Contact information (optional)</label>
+        <input
+          id="player-feedback-contact"
+          class="gn-feedback-contact player-feedback-contact"
+          type="text"
+          maxlength="320"
+          autocomplete="off"
+          data-i18n-placeholder="feedback.contactPlaceholder"
+          placeholder="Email, GitHub username, or another way to reply"
         >
-          <label class="gn-feedback-label" for="player-feedback-message" data-i18n="feedback.label">Feedback</label>
-          <textarea
-            id="player-feedback-message"
-            class="gn-feedback-message"
-            rows="4"
-            maxlength="4000"
-            data-i18n-placeholder="feedback.placeholder"
-            placeholder="Describe a bug, idea, or question…"
-          ></textarea>
-          <p class="gn-feedback-hint" data-i18n="feedback.hint">
-            Creates a public GitHub issue. Includes extension version, browser, OS, and locale only. Do not include secrets or passwords.
-          </p>
-          <div class="gn-feedback-status hidden" id="player-feedback-status" role="status" aria-live="polite"></div>
-          <div class="gn-feedback-actions">
-            <button type="button" id="player-feedback-submit" class="btn btn-start btn-small" data-i18n="feedback.submit">Submit</button>
-            <button type="button" id="player-feedback-cancel" class="btn btn-secondary btn-small" data-i18n="feedback.cancel">Cancel</button>
-          </div>
+        <p class="gn-feedback-hint" data-i18n="feedback.hint">
+          Creates a public GitHub issue. Any contact information you add will be public. Includes extension version, browser, OS, and locale only. Do not include secrets or passwords.
+        </p>
+        <div class="gn-feedback-status hidden" id="player-feedback-status" role="status" aria-live="polite"></div>
+        <div class="gn-feedback-actions">
+          <button type="button" id="player-feedback-submit" class="btn btn-start btn-small" data-i18n="feedback.submit">Submit</button>
+          <button type="button" id="player-feedback-cancel" class="btn btn-secondary btn-small" data-i18n="feedback.cancel">Cancel</button>
         </div>
       </div>
+    </div>
+    <div class="player-global-actions">
       <button id="lang-toggle-btn-global" class="control-btn player-lang-toggle" type="button" aria-label="Switch language">🇺🇸</button>
     </div>
     <!-- Loading state (default visible; JS switches to intro/error/player) -->
@@ -218,20 +243,6 @@
               </div>
             </div>
           </div>
-          <button
-            type="button"
-            id="player-feedback-btn-header"
-            class="control-btn player-feedback-btn"
-            aria-expanded="false"
-            aria-haspopup="dialog"
-            aria-controls="player-feedback-panel"
-            data-i18n-aria="feedback.button"
-            data-i18n-title="feedback.button"
-            aria-label="Feedback"
-            title="Feedback"
-          >
-            <i class="ph ph-chat-circle-dots" aria-hidden="true"></i>
-          </button>
           <button
             type="button"
             id="copy-for-ai-btn"

@@ -333,6 +333,8 @@ describe("Feedback proxy", () => {
       expect(payload.title.startsWith("Feedback: ")).toBe(true);
       expect(payload.body).toContain("please improve");
       expect(payload.body).toContain("Extension: 1.2.3");
+      expect(payload.body).toContain("## Contact (public)");
+      expect(payload.body).toContain("reporter@example.com");
       expect(payload.labels).toEqual(["feedback"]);
       return new Response(
         JSON.stringify({
@@ -347,6 +349,7 @@ describe("Feedback proxy", () => {
     const res = await worker.fetch(
       makeFeedbackRequest({
         message: "please improve",
+        contact: "reporter@example.com",
         diagnostics: {
           extensionVersion: "1.2.3",
           browserName: "Chrome",

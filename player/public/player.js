@@ -24,6 +24,7 @@
   const DEFAULT_PLAYER_TITLE = "GN Tracing";
   const DEFAULT_LAYOUT_MODE = "horizontal";
   const FEEDBACK_MESSAGE_MAX_LENGTH = 4000;
+  const FEEDBACK_CONTACT_MAX_LENGTH = 320;
   const DEFAULT_SPLIT_PERCENT = {
     horizontal: 50,
     vertical: 55,
@@ -367,14 +368,14 @@
     return "";
   }
 
-  async function submitPlayerFeedback(message) {
+  async function submitPlayerFeedback(message, contact) {
     const diagnostics = buildPlayerFeedbackDiagnostics();
 
     if (canSubmitFeedbackViaExtension()) {
       return (
         (await chrome.runtime.sendMessage({
           action: "SUBMIT_FEEDBACK",
-          data: { message, diagnostics },
+          data: { message, contact, diagnostics },
         })) || { ok: false, error: t("feedback.failed") }
       );
     }
@@ -389,7 +390,7 @@
       response = await fetch(proxyUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message, diagnostics }),
+        body: JSON.stringify({ message, contact, diagnostics }),
       });
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
@@ -510,20 +511,29 @@
     const wrap = document.getElementById("player-feedback-wrap");
     const panel = document.getElementById("player-feedback-panel");
     const messageInput = document.getElementById("player-feedback-message");
+    const contactInput = document.getElementById("player-feedback-contact");
     const submitBtn = document.getElementById("player-feedback-submit");
     const cancelBtn = document.getElementById("player-feedback-cancel");
     const statusEl = document.getElementById("player-feedback-status");
-    const triggers = [
-      document.getElementById("player-feedback-btn"),
-      document.getElementById("player-feedback-btn-header"),
-    ].filter(Boolean);
+    const dockBtn = document.getElementById("player-feedback-dock");
+    const feedbackBtn = document.getElementById("player-feedback-btn");
 
-    if (!wrap || !panel || !messageInput || !submitBtn || !cancelBtn || triggers.length === 0) {
+    if (
+      !wrap ||
+      !panel ||
+      !messageInput ||
+      !contactInput ||
+      !submitBtn ||
+      !cancelBtn ||
+      !dockBtn ||
+      !feedbackBtn
+    ) {
       return;
     }
 
     let open = false;
     let submitting = false;
+    let docked = false;
 
     const setStatus = (text, kind = "info") => {
       if (!statusEl) return;
@@ -543,23 +553,46 @@
       open = next;
       panel.classList.toggle("hidden", !next);
       wrap.classList.toggle("is-open", next);
-      for (const trigger of triggers) {
-        trigger.setAttribute("aria-expanded", next ? "true" : "false");
-      }
+      feedbackBtn.setAttribute("aria-expanded", next ? "true" : "false");
       if (next) {
         setStatus("");
         messageInput.focus();
       }
     };
 
-    const toggleOpen = (event) => {
-      event.stopPropagation();
-      setOpen(!open);
+    const setDocked = (next) => {
+      docked = next;
+      if (next) {
+        setOpen(false);
+      }
+      wrap.classList.toggle("is-docked", next);
+      feedbackBtn.disabled = next;
+      feedbackBtn.tabIndex = next ? -1 : 0;
+      feedbackBtn.setAttribute("aria-hidden", String(next));
+      dockBtn.setAttribute("aria-pressed", String(next));
+      dockBtn.dataset.i18nAria = next ? "feedback.undock" : "feedback.dock";
+      dockBtn.dataset.i18nTitle = next ? "feedback.undock" : "feedback.dock";
+      dockBtn.setAttribute("aria-label", t(next ? "feedback.undock" : "feedback.dock"));
+      dockBtn.setAttribute("title", t(next ? "feedback.undock" : "feedback.dock"));
+      const icon = dockBtn.querySelector(".ph");
+      if (icon) {
+        icon.classList.toggle("ph-caret-right", !next);
+        icon.classList.toggle("ph-caret-left", next);
+      }
     };
 
-    for (const trigger of triggers) {
-      trigger.addEventListener("click", toggleOpen);
-    }
+    const toggleOpen = (event) => {
+      event.stopPropagation();
+      if (!docked) {
+        setOpen(!open);
+      }
+    };
+
+    feedbackBtn.addEventListener("click", toggleOpen);
+    dockBtn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      setDocked(!docked);
+    });
 
     cancelBtn.addEventListener("click", () => setOpen(false));
 
@@ -568,8 +601,7 @@
       const target = event.target;
       if (
         target instanceof Node &&
-        (wrap.contains(target) ||
-          triggers.some((trigger) => trigger.contains(target) || trigger === target))
+        wrap.contains(target)
       ) {
         return;
       }
@@ -579,7 +611,7 @@
     document.addEventListener("keydown", (event) => {
       if (event.key === "Escape" && open) {
         setOpen(false);
-        triggers[0]?.focus();
+        feedbackBtn.focus();
       }
     });
 
@@ -596,15 +628,22 @@
         setStatus(t("feedback.failed"), "error");
         return;
       }
+      const contact = String(contactInput.value || "").trim();
+      if (contact.length > FEEDBACK_CONTACT_MAX_LENGTH) {
+        flashButtonLabel(submitBtn, t("feedback.failed"), { error: true });
+        setStatus(t("feedback.failed"), "error");
+        return;
+      }
 
       submitting = true;
       messageInput.disabled = true;
+      contactInput.disabled = true;
       cancelBtn.disabled = true;
       const clearBusy = setButtonBusyLabel(submitBtn, t("feedback.sending"));
       setStatus("");
 
       try {
-        const result = await submitPlayerFeedback(message);
+        const result = await submitPlayerFeedback(message, contact || undefined);
 
         if (!result?.ok) {
           const errorMessage = result?.error || t("feedback.failed");
@@ -615,6 +654,7 @@
         }
 
         messageInput.value = "";
+        contactInput.value = "";
         clearBusy();
         // Keep popover open so success stays visible on the Submit button.
         flashButtonLabel(submitBtn, result.message || t("feedback.success"));
@@ -635,6 +675,7 @@
       } finally {
         submitting = false;
         messageInput.disabled = false;
+        contactInput.disabled = false;
         cancelBtn.disabled = false;
         submitBtn.disabled = false;
         submitBtn.removeAttribute("aria-busy");

@@ -7,6 +7,7 @@
 import {
   type FeedbackDiagnostics,
   normalizeFeedbackDiagnostics,
+  validateFeedbackContact,
   validateFeedbackMessage,
 } from "../shared/feedback";
 import type { MessageResponse } from "../types/messages";
@@ -38,6 +39,11 @@ export async function submitFeedback(
     return { ok: false, error: validated.error };
   }
 
+  const contact = validateFeedbackContact(data?.contact);
+  if (!contact.ok) {
+    return { ok: false, error: contact.error };
+  }
+
   const diagnostics: FeedbackDiagnostics = normalizeFeedbackDiagnostics(data?.diagnostics);
   const proxyUrl = getFeedbackProxyUrl();
   if (!proxyUrl) {
@@ -55,6 +61,7 @@ export async function submitFeedback(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         message: validated.message,
+        contact: contact.contact,
         diagnostics,
       }),
     });

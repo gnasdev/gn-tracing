@@ -737,34 +737,127 @@ body {
   z-index: 80;
   display: flex;
   align-items: center;
-  gap: 8px;
 }
 
-.player-global-actions .control-btn {
+.player-global-actions .control-btn,
+.player-feedback .control-btn {
   background: var(--bg-card);
   border: 1px solid var(--border-default);
   box-shadow: var(--shadow-sm);
 }
 
-.player-feedback-btn {
+.player-feedback {
+  --feedback-edge-inset: 16px;
+  --feedback-dock-peek: 40px;
+  position: fixed;
+  right: var(--feedback-edge-inset);
+  bottom: 16px;
+  z-index: 80;
+  transition: transform var(--dur-med) var(--ease-standard);
+  will-change: transform;
+}
+
+.player-feedback.is-docked {
+  transform: translateX(calc(100% - var(--feedback-dock-peek) + var(--feedback-edge-inset)));
+}
+
+.player-feedback-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.player-feedback-btn,
+.player-feedback-dock {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  min-width: 32px;
+  min-height: 40px;
+  border-radius: var(--radius-md);
+  transition:
+    background var(--dur-fast) var(--ease-standard),
+    border-color var(--dur-fast) var(--ease-standard),
+    box-shadow var(--dur-fast) var(--ease-standard),
+    opacity var(--dur-fast) var(--ease-standard),
+    transform 80ms var(--ease-standard);
+}
+
+.player-feedback-btn {
+  min-width: 104px;
+  padding: 0 14px;
+  gap: 8px;
+}
+
+.player-feedback-dock {
+  width: 40px;
+  min-width: 40px;
   padding: 0;
 }
 
-.player-feedback-btn .ph {
-  font-size: 16px;
+.player-feedback-btn .ph,
+.player-feedback-dock .ph {
+  font-size: 18px;
   line-height: 1;
+}
+
+.player-feedback-btn-label {
+  font-size: var(--fs-sm);
+  font-weight: 650;
+  line-height: 1;
+}
+
+.player-feedback-btn:active,
+.player-feedback-dock:active {
+  transform: scale(0.96);
+}
+
+.player-feedback-btn:focus-visible,
+.player-feedback-dock:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+}
+
+.player-feedback.is-docked .player-feedback-btn {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.player-feedback-contact {
+  width: 100%;
+  min-height: 36px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--fs-sm);
+}
+
+.player-feedback-contact:focus {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 1px;
+  border-color: var(--border-hover);
+}
+
+.player-feedback-contact:disabled {
+  opacity: 0.7;
 }
 
 .player-feedback-popover {
   right: 0;
-  top: calc(100% + 8px);
+  top: auto;
+  bottom: calc(100% + 10px);
   width: min(320px, calc(100vw - 24px));
   max-width: calc(100vw - 24px);
+}
+
+@media (max-width: 560px) {
+  .player-feedback {
+    --feedback-edge-inset: 12px;
+    right: var(--feedback-edge-inset);
+    bottom: 12px;
+  }
 }
 
 /* Copied/success awareness: text + color only (no layout shift). */
@@ -795,22 +888,9 @@ body {
   animation: gn-spin 0.7s linear infinite;
 }
 
-/* While replaying, header owns lang/theme/feedback; hide floating controls
-   but keep the shared popover mount fixed so header can open it. */
-body.player-active .player-global-actions > .player-lang-toggle,
-body.player-active .player-global-actions > .player-feedback > .player-feedback-btn {
+/* The replay header keeps its own language control; feedback remains available as a fixed action. */
+body.player-active .player-global-actions > .player-lang-toggle {
   display: none;
-}
-
-body.player-active .player-global-actions {
-  pointer-events: none;
-}
-
-body.player-active .player-global-actions .player-feedback-popover:not(.hidden) {
-  pointer-events: auto;
-  position: fixed;
-  top: 56px;
-  right: 12px;
 }
 
 /* Hide the floating toggle while the main player chrome is visible (header has its own). */

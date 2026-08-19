@@ -6,6 +6,7 @@ import {
   buildFeedbackIssueTitle,
   formatFeedbackIssueBody,
   normalizeFeedbackDiagnostics,
+  validateFeedbackContact,
   validateFeedbackMessage,
 } from "../../../../src/shared/feedback-format";
 import type { Env } from "../../env";
@@ -87,9 +88,14 @@ export async function handleFeedback(
     return reply({ error: "invalid_request", error_description: validated.error }, 400);
   }
 
+  const contact = validateFeedbackContact(payload.contact);
+  if (!contact.ok) {
+    return reply({ error: "invalid_request", error_description: contact.error }, 400);
+  }
+
   const diagnostics = normalizeFeedbackDiagnostics(payload.diagnostics);
   const title = buildFeedbackIssueTitle(validated.message);
-  const body = formatFeedbackIssueBody(validated.message, diagnostics);
+  const body = formatFeedbackIssueBody(validated.message, diagnostics, contact.contact);
   const owner = (env.GITHUB_REPO_OWNER ?? "gnasdev").trim() || "gnasdev";
   const repo = (env.GITHUB_REPO_NAME ?? "gn-tracing").trim() || "gn-tracing";
   const labels = parseFeedbackLabels(env);

@@ -133,11 +133,15 @@ export const TRANSLATIONS: Record<UiLanguage, Record<string, string>> = {
     "intro.purposeBody2":
       "GN Tracing does not run continuous background surveillance. Recording starts only when you click record in the extension popup and stops when you stop recording or close the tab.",
     "feedback.button": "Feedback",
+    "feedback.dock": "Hide feedback to screen edge",
+    "feedback.undock": "Show feedback",
     "feedback.sectionAria": "Send feedback",
     "feedback.label": "Feedback",
     "feedback.placeholder": "Describe a bug, idea, or question…",
+    "feedback.contactLabel": "Contact information (optional)",
+    "feedback.contactPlaceholder": "Email, GitHub username, or another way to reply",
     "feedback.hint":
-      "Creates a public GitHub issue. Includes extension version, browser, OS, and locale only. Do not include secrets or passwords.",
+      "Creates a public GitHub issue. Any contact information you add will be public. Includes extension version, browser, OS, and locale only. Do not include secrets or passwords.",
     "feedback.submit": "Submit",
     "feedback.cancel": "Cancel",
     "feedback.sending": "Sending…",
@@ -419,11 +423,15 @@ export const TRANSLATIONS: Record<UiLanguage, Record<string, string>> = {
     "intro.purposeBody2":
       "GN Tracing không giám sát nền liên tục. Chỉ ghi khi bạn bấm record trong popup extension và dừng khi bạn stop hoặc đóng tab.",
     "feedback.button": "Góp ý",
+    "feedback.dock": "Ẩn góp ý vào cạnh màn hình",
+    "feedback.undock": "Hiện góp ý",
     "feedback.sectionAria": "Gửi góp ý",
     "feedback.label": "Góp ý",
     "feedback.placeholder": "Mô tả lỗi, ý tưởng hoặc câu hỏi…",
+    "feedback.contactLabel": "Thông tin liên hệ (không bắt buộc)",
+    "feedback.contactPlaceholder": "Email, tài khoản GitHub hoặc cách phản hồi khác",
     "feedback.hint":
-      "Tạo issue GitHub công khai. Chỉ kèm version extension, browser, OS và locale. Không gửi mật khẩu hay secret.",
+      "Tạo issue GitHub công khai. Mọi thông tin liên hệ bạn thêm sẽ công khai. Chỉ kèm version extension, browser, OS và locale. Không gửi mật khẩu hay secret.",
     "feedback.submit": "Gửi",
     "feedback.cancel": "Hủy",
     "feedback.sending": "Đang gửi…",

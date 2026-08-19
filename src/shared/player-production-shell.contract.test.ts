@@ -47,7 +47,6 @@ describe("production player shell contract", () => {
       const reportViewerIndex = html.indexOf('id="report-viewer"');
       const reportMenuIndex = html.indexOf('id="report-menu"');
       const headerInfoIndex = html.indexOf('class="header-info"');
-      const feedbackButtonIndex = html.indexOf('id="player-feedback-btn-header"');
 
       expect(html).toContain('id="report-menu"');
       expect(html).toContain('id="report-button"');
@@ -56,7 +55,6 @@ describe("production player shell contract", () => {
       expect(reportViewerIndex).toBeGreaterThan(-1);
       expect(reportViewerIndex).toBeLessThan(logsPanelIndex);
       expect(headerInfoIndex).toBeLessThan(reportMenuIndex);
-      expect(reportMenuIndex).toBeLessThan(feedbackButtonIndex);
     }
     expect(playerJs).toContain("function setReportPopoverOpen(open)");
     expect(playerJs).toContain('event.key === "Escape"');
@@ -66,6 +64,34 @@ describe("production player shell contract", () => {
       /\.report-button \{[\s\S]*?width: 32px;[\s\S]*?min-width: 32px;[\s\S]*?padding: 0;/,
     );
     expect(playerCss).toContain(".report-button .ph");
+  });
+
+  it("keeps Feedback floating at the bottom-right with an accessible edge dock", () => {
+    for (const html of [playerHtml, staticPlayerHtml]) {
+      expect(html).toContain('id="player-feedback-wrap"');
+      expect(html).toContain('id="player-feedback-btn"');
+      expect(html).toContain('id="player-feedback-dock"');
+      expect(html).toContain('class="player-feedback-btn-label" data-i18n="feedback.button"');
+      expect(html).toContain('id="player-feedback-contact"');
+      expect(html).toContain('data-i18n="feedback.contactLabel"');
+      expect(html).not.toContain('id="player-feedback-btn-header"');
+      expect(html.indexOf('id="player-feedback-wrap"')).toBeLessThan(
+        html.indexOf('id="player-state"'),
+      );
+    }
+    expect(playerJs).toContain("const setDocked = (next) => {");
+    expect(playerJs).toContain('wrap.classList.toggle("is-docked", next)');
+    expect(playerJs).toContain('dockBtn.setAttribute("aria-pressed", String(next))');
+    expect(playerJs).toContain("async function submitPlayerFeedback(message, contact)");
+    expect(playerJs).toContain("contact || undefined");
+    expect(playerCss).toMatch(
+      /\.player-feedback \{[\s\S]*?--feedback-edge-inset: 16px;[\s\S]*?position: fixed;[\s\S]*?right: var\(--feedback-edge-inset\);[\s\S]*?bottom: 16px;/,
+    );
+    expect(playerCss).toContain(".player-feedback-btn-label {");
+    expect(playerCss).toContain(
+      "calc(100% - var(--feedback-dock-peek) + var(--feedback-edge-inset))",
+    );
+    expect(playerCss).toContain(".player-feedback.is-docked {");
   });
 
   it("wires storage-diff, clock-index, loading-progress, zip, and i18n through gnCore", () => {
