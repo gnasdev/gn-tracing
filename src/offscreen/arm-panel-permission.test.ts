@@ -51,6 +51,17 @@ describe("arm panel host-permission grant step", () => {
     expect(source).toContain("RECORDING_HOST_ORIGINS");
   });
 
+  it("does not declare packaged-app-only audioCapture", () => {
+    const manifest = readFileSync(resolve(__dirname, "../../manifest.template.json"), "utf8");
+    const parsed = JSON.parse(manifest) as {
+      optional_permissions?: string[];
+      permissions?: string[];
+    };
+
+    expect(parsed.permissions ?? []).not.toContain("audioCapture");
+    expect(parsed.optional_permissions ?? []).not.toContain("audioCapture");
+  });
+
   it("requests the permission in the grant click, never in the share click", () => {
     expect(functionBody("async function onGrantButtonClick(")).toContain(
       "requestRecordingHostPermission()",

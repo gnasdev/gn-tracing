@@ -361,23 +361,23 @@ html[data-theme] {
   color: var(--accent-contrast);
 }
 
-/* Stop & Upload (record state) — primary/safe accent, not danger red.
+/* Done (record state) — a completed action uses the success accent.
    Red is reserved for discard/destructive actions (.btn-danger). */
-.btn-stop {
-  background: var(--accent);
+.btn-success {
+  background: var(--success);
   border-color: transparent;
   color: var(--accent-contrast);
   box-shadow: var(--shadow-accent);
 }
 
-.btn-stop:hover:not(:disabled) {
-  background: var(--accent-hover);
+.btn-success:hover:not(:disabled) {
+  background: var(--success-hover);
   border-color: transparent;
   box-shadow: var(--shadow-accent);
   color: var(--accent-contrast);
 }
 
-.btn-stop.is-loading,
+.btn-success.is-loading,
 .btn.is-loading {
   opacity: 0.85;
   cursor: progress;

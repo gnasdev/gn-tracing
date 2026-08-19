@@ -12,7 +12,33 @@ describe("POPUP_TRANSLATIONS catalog", () => {
   it("includes core recording action strings", () => {
     expect(POPUP_TRANSLATIONS.en["actions.startRecording"]).toMatch(/Start/i);
     expect(POPUP_TRANSLATIONS.vi["actions.startRecording"]).toBeTruthy();
-    expect(POPUP_TRANSLATIONS.en["actions.stopUpload"]).toBeTruthy();
+    expect(POPUP_TRANSLATIONS.en["actions.done"]).toBe("Done");
+    expect(POPUP_TRANSLATIONS.vi["actions.done"]).toBe("Xong");
+  });
+
+  it("includes actionable microphone access failures", () => {
+    expect(POPUP_TRANSLATIONS.en["audioSettings.microphonePermissionDenied"]).toBeTruthy();
+    expect(POPUP_TRANSLATIONS.en["audioSettings.microphoneUnavailable"]).toBeTruthy();
+    expect(POPUP_TRANSLATIONS.en["audioSettings.microphoneBusy"]).toBeTruthy();
+    expect(POPUP_TRANSLATIONS.en["audioSettings.deviceDiscoveryFailed"]).toBeTruthy();
+    expect(POPUP_TRANSLATIONS.en["audioSettings.enableMicrophone"]).toBeTruthy();
+    expect(POPUP_TRANSLATIONS.en["audioSettings.microphonePermissionRequired"]).toMatch(/browser/i);
+    expect(POPUP_TRANSLATIONS.en["audioSettings.microphonePermissionGranted"]).toBeTruthy();
+    expect(POPUP_TRANSLATIONS.en["audioSettings.inputs"]).toBeTruthy();
+    expect(POPUP_TRANSLATIONS.en["audioSettings.microphoneHint"]).toBeTruthy();
+    expect(POPUP_TRANSLATIONS.en["audioSettings.systemAudioOptional"]).toBeTruthy();
+    expect(POPUP_TRANSLATIONS.en["audioSettings.saving"]).toBeTruthy();
+    expect(POPUP_TRANSLATIONS.vi["audioSettings.microphonePermissionDenied"]).toBeTruthy();
+    expect(POPUP_TRANSLATIONS.vi["audioSettings.microphoneUnavailable"]).toBeTruthy();
+    expect(POPUP_TRANSLATIONS.vi["audioSettings.microphoneBusy"]).toBeTruthy();
+    expect(POPUP_TRANSLATIONS.vi["audioSettings.deviceDiscoveryFailed"]).toBeTruthy();
+    expect(POPUP_TRANSLATIONS.vi["audioSettings.enableMicrophone"]).toBeTruthy();
+    expect(POPUP_TRANSLATIONS.vi["audioSettings.microphonePermissionRequired"]).toBeTruthy();
+    expect(POPUP_TRANSLATIONS.vi["audioSettings.microphonePermissionGranted"]).toBeTruthy();
+    expect(POPUP_TRANSLATIONS.vi["audioSettings.inputs"]).toBeTruthy();
+    expect(POPUP_TRANSLATIONS.vi["audioSettings.microphoneHint"]).toBeTruthy();
+    expect(POPUP_TRANSLATIONS.vi["audioSettings.systemAudioOptional"]).toBeTruthy();
+    expect(POPUP_TRANSLATIONS.vi["audioSettings.saving"]).toBeTruthy();
   });
 
   it("localizes toast dismissal and the Instant Replay duration for assistive tech", () => {

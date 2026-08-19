@@ -41,19 +41,6 @@ export function buildMicrophoneOptions(
   return options;
 }
 
-export async function requestAudioInputPermission(
-  getUserMedia: (constraints: MediaStreamConstraints) => Promise<Pick<MediaStream, "getTracks">>,
-): Promise<void> {
-  try {
-    const stream = await getUserMedia({ audio: true });
-    stream.getTracks().forEach((track) => {
-      track.stop();
-    });
-  } catch {
-    // Device enumeration still gives the browser's available public devices when permission is denied.
-  }
-}
-
 export function buildAudioSettingsUpdate(
   microphoneDeviceId: string,
   speakerDeviceId: string,

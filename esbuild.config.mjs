@@ -16,6 +16,7 @@ import {
   resolveVersionedWorkerEndpoints,
 } from "./packages/replay-core/src/route-version.ts";
 import { getChromeExtensionId } from "./scripts/chrome-extension-id.mjs";
+import { createDevExtensionReloadGate } from "./scripts/dev-extension-reload-gate.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const envVars = loadEnvFile(path.resolve(__dirname, ".env"));
@@ -73,6 +74,9 @@ const operaExtensionPublicKey = getConfigValue(
 );
 const firefoxExtensionId = getConfigValue("FIREFOX_EXTENSION_ID", "gn-tracing@gnas.dev");
 const playerLocalPort = getConfigValue("PLAYER_LOCAL_PORT", "5176");
+const devExtensionReloadPort = getConfigValue("DEV_EXTENSION_RELOAD_PORT", "63973");
+const devExtensionReloadUrl =
+  watch && !isProductionBuild ? `http://127.0.0.1:${devExtensionReloadPort}` : "";
 // Replay host baked into the extension (Instant Replay / screenshot / Record upload links).
 // Dev never falls back to PLAYER_HOST_URL (often production in .env) so local
 // builds always open the Vite player unless PLAYER_HOST_URL_DEV is set.
@@ -94,12 +98,23 @@ const STATIC_ASSET_ENTRIES = [
     dest: "manage-clouds/manage-clouds.html",
   },
   { type: "file", src: "manage-clouds/manage-clouds.css", dest: "manage-clouds/manage-clouds.css" },
+  {
+    type: "text",
+    src: "microphone-permission/microphone-permission.html",
+    dest: "microphone-permission/microphone-permission.html",
+  },
+  {
+    type: "file",
+    src: "microphone-permission/microphone-permission.css",
+    dest: "microphone-permission/microphone-permission.css",
+  },
   { type: "text", src: "offscreen/offscreen.html", dest: "offscreen/offscreen.html" },
   { type: "dir", src: "icons", dest: "icons" },
   { type: "file", src: "shared/theme.css", dest: "shared/theme.css" },
   { type: "file", src: "shared/theme-init.js", dest: "shared/theme-init.js" },
 ];
 const staticAssetWatchers = [];
+const devExtensionReloadGate = createDevExtensionReloadGate(scheduleDevExtensionReload);
 
 // The root build emits the unpacked MV3 extension only. Hosted player packaging
 // is owned entirely by `player/` (Vite).
@@ -108,6 +123,7 @@ const commonOptions = {
   target: browserTarget === "firefox" ? "firefox115" : "chrome120",
   sourcemap: !isProductionBuild,
   minify: false,
+  plugins: watch ? [createDevExtensionReloadPlugin()] : [],
   define: {
     __APP_ENV__: JSON.stringify(appEnv),
     __APP_VERSION__: JSON.stringify(packageVersion),
@@ -120,6 +136,7 @@ const commonOptions = {
     __FEEDBACK_PROXY_URL__: JSON.stringify(feedbackProxyUrl),
     __PLAYER_LOCAL_PORT__: JSON.stringify(playerLocalPort),
     __PLAYER_HOST_URL__: JSON.stringify(playerHostUrl),
+    __DEV_EXTENSION_RELOAD_URL__: JSON.stringify(devExtensionReloadUrl),
   },
 };
 
@@ -524,6 +541,7 @@ function addTokenProxyHostPermission(manifest) {
     ["GOOGLE_TOKEN_PROXY_URL", googleTokenProxyUrl],
     ["DROPBOX_TOKEN_PROXY_URL", dropboxTokenProxyUrl],
     ["FEEDBACK_PROXY_URL", feedbackProxyUrl],
+    ["DEV_EXTENSION_RELOAD_URL", devExtensionReloadUrl],
   ]) {
     if (!proxyUrl) {
       continue;
@@ -538,6 +556,49 @@ function addTokenProxyHostPermission(manifest) {
       manifest.host_permissions.push(proxyOrigin);
     }
   }
+}
+
+let devExtensionReloadTimer = null;
+
+function scheduleDevExtensionReload() {
+  if (!devExtensionReloadUrl) {
+    return;
+  }
+  clearTimeout(devExtensionReloadTimer);
+  devExtensionReloadTimer = setTimeout(async () => {
+    try {
+      const response = await fetch(`${devExtensionReloadUrl}/notify`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ target: browserTarget }),
+      });
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+    } catch (error) {
+      console.warn(
+        `[dev:reload] Could not notify ${browserTarget}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }, 100);
+}
+
+function createDevExtensionReloadPlugin() {
+  return {
+    name: "dev-extension-reload",
+    setup(buildContext) {
+      const buildKey = JSON.stringify(buildContext.initialOptions.entryPoints);
+      devExtensionReloadGate.register(buildKey);
+      buildContext.onStart(() => {
+        devExtensionReloadGate.begin(buildKey);
+      });
+      buildContext.onEnd((result) => {
+        devExtensionReloadGate.report(buildKey, result.errors.length > 0);
+      });
+    },
+  };
 }
 
 async function build() {
@@ -563,6 +624,10 @@ async function build() {
       { in: "src/offscreen/offscreen.ts", out: "offscreen/offscreen" },
       { in: "src/annotate/annotate.ts", out: "annotate/annotate" },
       { in: "src/manage-clouds/manage-clouds.ts", out: "manage-clouds/manage-clouds" },
+      {
+        in: "src/microphone-permission/microphone-permission.ts",
+        out: "microphone-permission/microphone-permission",
+      },
     ],
     outdir: distRoot,
     format: "iife",
@@ -617,6 +682,7 @@ function copyStaticAssets() {
 function syncExtensionAssets() {
   generateManifest(path.join(distRoot, "manifest.json"));
   copyStaticAssets();
+  devExtensionReloadGate.notifyStaticAssets();
 }
 
 function watchExtensionAssets() {

@@ -14,6 +14,7 @@ import {
   computeAccessTokenExpiresAt,
   createPkcePair,
   fetchOAuthTokenResponse,
+  formatOAuthTokenExchangeNetworkError,
   generateOAuthState,
   isOAuthRefreshAuthDeath,
   OAUTH_TOKEN_EXPIRY_BUFFER_MS,
@@ -130,7 +131,7 @@ async function exchangeAuthorizationCode(params: {
     const detail = e instanceof Error ? e.message : String(e);
     return {
       ok: false,
-      error: `Token exchange network error: ${detail}. Check host_permissions for the token endpoint.`,
+      error: formatOAuthTokenExchangeNetworkError(detail, TOKEN_EXCHANGE_ENDPOINT),
     };
   }
   if (!response.ok) {

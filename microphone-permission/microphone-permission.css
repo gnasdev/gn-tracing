@@ -1,0 +1,84 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  min-height: 100vh;
+  margin: 0;
+  color: var(--text-primary);
+  background: var(--bg-base);
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif,
+    "Apple Color Emoji", "Segoe UI Emoji";
+}
+
+.microphone-permission-page {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 32px 20px;
+}
+
+.microphone-permission-card {
+  display: grid;
+  width: min(100%, 460px);
+  gap: 16px;
+  padding: 28px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 16px;
+  background: var(--bg-surface);
+  box-shadow: 0 12px 36px color-mix(in srgb, var(--text-primary) 8%, transparent);
+}
+
+.microphone-permission-icon {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg-elevated));
+  color: var(--accent);
+  font-size: 22px;
+}
+
+.microphone-permission-card h1,
+.microphone-permission-card p {
+  margin: 0;
+}
+
+.microphone-permission-card h1 {
+  font-size: 1.3rem;
+}
+
+.microphone-permission-lead,
+.microphone-permission-note,
+.microphone-permission-status {
+  line-height: 1.5;
+}
+
+.microphone-permission-lead,
+.microphone-permission-note {
+  color: var(--text-secondary);
+}
+
+.microphone-permission-action {
+  justify-content: center;
+  min-height: 42px;
+}
+
+.microphone-permission-status {
+  min-height: 1.5em;
+  font-weight: 600;
+}
+
+.microphone-permission-status[data-state="success"] {
+  color: var(--success);
+}
+
+.microphone-permission-status[data-state="error"] {
+  color: var(--danger);
+}
+
+.microphone-permission-close {
+  justify-self: start;
+}

@@ -903,6 +903,10 @@
     elements.mainLayout = document.querySelector(".main-layout");
     elements.playerTitle = document.getElementById("player-title");
     elements.playerWebTitle = document.getElementById("player-web-title");
+    elements.reportMenu = document.getElementById("report-menu");
+    elements.reportButton = document.getElementById("report-button");
+    elements.reportPopover = document.getElementById("report-popover");
+    elements.reportPopoverClose = document.getElementById("report-popover-close");
     elements.reportPanel = document.getElementById("report-panel");
     elements.reportTitle = document.getElementById("report-title");
     elements.reportPageLink = document.getElementById("report-page-link");
@@ -947,11 +951,9 @@
     elements.errorMessage = document.getElementById("error-message");
 
     // Tabs
-    elements.reportTab = document.getElementById("report-tab");
     elements.activityTab = document.getElementById("activity-tab");
     elements.consoleTab = document.getElementById("console-tab");
     elements.networkTab = document.getElementById("network-tab");
-    elements.reportViewer = document.getElementById("report-viewer");
     elements.activityViewer = document.getElementById("activity-viewer");
     elements.consoleViewer = document.getElementById("console-viewer");
     elements.networkViewer = document.getElementById("network-viewer");
@@ -1614,23 +1616,43 @@
     return rows;
   }
 
-  function showLogsTab(tabName) {
-    const isReport = tabName === "report";
-    const isActivity = tabName === "activity";
-    const isConsole = tabName === "console";
-    const isNetwork = tabName === "network";
-    const isStorage = tabName === "storage";
-    const isElements = tabName === "elements";
-    const isScreenshots = tabName === "screenshots";
+  function setReportPopoverOpen(open) {
+    const shouldOpen = Boolean(open && hasReportArtifactContent());
+    elements.reportPopover?.classList.toggle("hidden", !shouldOpen);
+    elements.reportButton?.setAttribute("aria-expanded", shouldOpen ? "true" : "false");
+  }
 
-    elements.reportTab?.classList.toggle("active", isReport);
+  function getReportFallbackTab() {
+    if (hasActivityContent() && !elements.activityTab?.classList.contains("hidden")) {
+      return "activity";
+    }
+    if (!elements.consoleTab?.classList.contains("hidden")) {
+      return "console";
+    }
+    if (!elements.networkTab?.classList.contains("hidden")) {
+      return "network";
+    }
+    if (!elements.screenshotsTab?.classList.contains("hidden")) {
+      return "screenshots";
+    }
+    return "console";
+  }
+
+  function showLogsTab(tabName) {
+    const resolvedTab = tabName === "report" ? getReportFallbackTab() : tabName;
+    const isActivity = resolvedTab === "activity";
+    const isConsole = resolvedTab === "console";
+    const isNetwork = resolvedTab === "network";
+    const isStorage = resolvedTab === "storage";
+    const isElements = resolvedTab === "elements";
+    const isScreenshots = resolvedTab === "screenshots";
+
     elements.activityTab?.classList.toggle("active", isActivity);
     elements.consoleTab.classList.toggle("active", isConsole);
     elements.networkTab.classList.toggle("active", isNetwork);
     elements.storageTab?.classList.toggle("active", isStorage);
     elements.elementsTab?.classList.toggle("active", isElements);
     elements.screenshotsTab?.classList.toggle("active", isScreenshots);
-    elements.reportViewer?.classList.toggle("hidden", !isReport);
     elements.activityViewer?.classList.toggle("hidden", !isActivity);
     elements.consoleViewer.classList.toggle("hidden", !isConsole);
     elements.networkViewer.classList.toggle("hidden", !isNetwork);
@@ -1638,7 +1660,7 @@
     elements.elementsViewer?.classList.toggle("hidden", !isElements);
     elements.screenshotsViewer?.classList.toggle("hidden", !isScreenshots);
 
-    activeLogsTab = tabName;
+    activeLogsTab = resolvedTab;
     if (isConsole && consolePanelDirty) {
       consolePanelDirty = false;
       renderConsoleEntries();
@@ -2991,23 +3013,15 @@
   }
 
   function fallbackOptionalTab(preferred) {
-    if (preferred === "report" && hasReportArtifactContent()) {
-      showLogsTab("report");
-      return;
-    }
     if (preferred === "activity" && hasActivityContent()) {
       showLogsTab("activity");
       return;
     }
-    if (hasReportArtifactContent()) {
-      showLogsTab("report");
-      return;
-    }
-    if (hasActivityContent()) {
+    if (hasActivityContent() && !elements.activityTab?.classList.contains("hidden")) {
       showLogsTab("activity");
       return;
     }
-    showLogsTab("console");
+    showLogsTab(getReportFallbackTab());
   }
 
   function renderReportPanel() {
@@ -3035,15 +3049,12 @@
       (typeof activeShot?.title === "string" ? activeShot.title : "") ||
       getRecordingTitleLabel(metadata);
     const hasReportContent = hasReportArtifactContent();
-    const wasReportHidden = elements.reportTab?.classList.contains("hidden");
 
-    elements.reportTab?.classList.toggle("hidden", !hasReportContent);
+    elements.reportMenu?.classList.toggle("hidden", !hasReportContent);
     elements.reportPanel.classList.toggle("hidden", !hasReportContent);
     renderPrivacySummary();
     if (!hasReportContent) {
-      if (elements.reportTab?.classList.contains("active")) {
-        fallbackOptionalTab("activity");
-      }
+      setReportPopoverOpen(false);
       return;
     }
 
@@ -3113,11 +3124,6 @@
       }
     } else if (annotationsBlock) {
       annotationsBlock.remove();
-    }
-
-    // Prefer Report on first reveal when report artifacts exist.
-    if (wasReportHidden) {
-      showLogsTab("report");
     }
   }
 
@@ -5254,7 +5260,7 @@
     elements.consoleTab?.classList.toggle("hidden", !plan.showConsoleTab);
     elements.networkTab?.classList.toggle("hidden", !plan.showNetworkTab);
     elements.screenshotsTab?.classList.toggle("hidden", !plan.showScreenshotsTab);
-    elements.reportTab?.classList.toggle("hidden", !plan.showReportTab);
+    elements.reportMenu?.classList.toggle("hidden", !plan.showReportTab || !hasReportArtifactContent());
     elements.activityTab?.classList.toggle("hidden", !plan.showActivityTab);
     elements.storageTab?.classList.toggle("hidden", !plan.showStorageTab);
     elements.elementsTab?.classList.toggle("hidden", !plan.showElementsTab);
@@ -5264,7 +5270,6 @@
     const hasSiblingTabs =
       plan.showConsoleTab ||
       plan.showNetworkTab ||
-      plan.showReportTab ||
       plan.showActivityTab ||
       plan.showStorageTab ||
       plan.showElementsTab;
@@ -5280,7 +5285,6 @@
         elements.consoleViewer?.classList.add("hidden");
         elements.networkViewer?.classList.add("hidden");
         elements.screenshotsViewer?.classList.add("hidden");
-        elements.reportViewer?.classList.add("hidden");
         elements.activityViewer?.classList.add("hidden");
         elements.storageViewer?.classList.add("hidden");
         elements.elementsViewer?.classList.add("hidden");
@@ -8647,9 +8651,26 @@
 
   // Tab handlers
   function setupTabListeners() {
-    elements.reportTab?.addEventListener("click", () => {
-      if (!elements.reportTab.classList.contains("hidden")) {
-        showLogsTab("report");
+    elements.reportButton?.addEventListener("click", () => {
+      const isOpen = elements.reportPopover?.classList.contains("hidden") === false;
+      setReportPopoverOpen(!isOpen);
+    });
+
+    elements.reportPopoverClose?.addEventListener("click", () => {
+      setReportPopoverOpen(false);
+      elements.reportButton?.focus();
+    });
+
+    document.addEventListener("click", (event) => {
+      if (!elements.reportMenu?.contains(event.target)) {
+        setReportPopoverOpen(false);
+      }
+    });
+
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && elements.reportPopover?.classList.contains("hidden") === false) {
+        setReportPopoverOpen(false);
+        elements.reportButton?.focus();
       }
     });
 

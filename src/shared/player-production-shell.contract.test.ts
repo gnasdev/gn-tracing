@@ -14,6 +14,11 @@ import { diffStorageGroups } from "./storage-diff";
 
 const playerJs = readFileSync(resolve(__dirname, "../../player/public/player.js"), "utf8");
 const playerCss = readFileSync(resolve(__dirname, "../../player/public/player.css"), "utf8");
+const playerHtml = readFileSync(resolve(__dirname, "../../player/index.html"), "utf8");
+const staticPlayerHtml = readFileSync(
+  resolve(__dirname, "../../player/public/player.html"),
+  "utf8",
+);
 const coreIife = readFileSync(
   resolve(__dirname, "../../player/public/vendor/gn-core/gn-core.iife.js"),
   "utf8",
@@ -34,6 +39,33 @@ describe("production player shell contract", () => {
     expect(playerJs).toMatch(
       /const presentationPlan = buildPresentationPlan\(\{[\s\S]*?\}\);\s*[\s\S]*?applyPresentationMode\(presentationPlan/,
     );
+  });
+
+  it("renders Report as an accessible topbar popover instead of a logs tab", () => {
+    for (const html of [playerHtml, staticPlayerHtml]) {
+      const logsPanelIndex = html.indexOf('id="logs-panel"');
+      const reportViewerIndex = html.indexOf('id="report-viewer"');
+      const reportMenuIndex = html.indexOf('id="report-menu"');
+      const headerInfoIndex = html.indexOf('class="header-info"');
+      const feedbackButtonIndex = html.indexOf('id="player-feedback-btn-header"');
+
+      expect(html).toContain('id="report-menu"');
+      expect(html).toContain('id="report-button"');
+      expect(html).toContain('id="report-popover"');
+      expect(html).not.toContain('id="report-tab"');
+      expect(reportViewerIndex).toBeGreaterThan(-1);
+      expect(reportViewerIndex).toBeLessThan(logsPanelIndex);
+      expect(headerInfoIndex).toBeLessThan(reportMenuIndex);
+      expect(reportMenuIndex).toBeLessThan(feedbackButtonIndex);
+    }
+    expect(playerJs).toContain("function setReportPopoverOpen(open)");
+    expect(playerJs).toContain('event.key === "Escape"');
+    expect(playerJs).not.toContain("elements.reportTab");
+    expect(playerCss).toContain(".report-popover {");
+    expect(playerCss).toMatch(
+      /\.report-button \{[\s\S]*?width: 32px;[\s\S]*?min-width: 32px;[\s\S]*?padding: 0;/,
+    );
+    expect(playerCss).toContain(".report-button .ph");
   });
 
   it("wires storage-diff, clock-index, loading-progress, zip, and i18n through gnCore", () => {

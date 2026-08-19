@@ -3,6 +3,7 @@ import { isDropboxRefreshAuthDeath } from "../background/dropbox-auth";
 import {
   computeAccessTokenExpiresAt,
   fetchOAuthTokenResponse,
+  formatOAuthTokenExchangeNetworkError,
   isOAuthRefreshAuthDeath,
   OAUTH_TOKEN_EXPIRY_BUFFER_MS,
 } from "./oauth-pkce";
@@ -24,6 +25,29 @@ describe("computeAccessTokenExpiresAt", () => {
     expect(computeAccessTokenExpiresAt(3600, now)).toBe(
       now + 3600 * 1000 - OAUTH_TOKEN_EXPIRY_BUFFER_MS,
     );
+  });
+});
+
+describe("formatOAuthTokenExchangeNetworkError", () => {
+  it("gives local Worker guidance for loopback endpoints", () => {
+    for (const endpoint of [
+      "http://localhost:63972/1.7.11/token",
+      "https://127.0.0.1:63972/token",
+      "http://[::1]:63972/token",
+    ]) {
+      const error = formatOAuthTokenExchangeNetworkError("Failed to fetch", endpoint);
+      expect(error).toContain("could not be reached");
+      expect(error).toContain("task worker:dev");
+    }
+  });
+
+  it("keeps generic host permission guidance for remote endpoints", () => {
+    const error = formatOAuthTokenExchangeNetworkError(
+      "Failed to fetch",
+      "https://oauth.example.test/token",
+    );
+    expect(error).toContain("host_permissions");
+    expect(error).not.toContain("task worker:dev");
   });
 });
 

@@ -16,6 +16,7 @@ export const Icons = {
   gear: () => phIcon("gear"),
   record: () => phIcon("record"),
   stop: () => phIcon("stop"),
+  check: () => phIcon("check"),
   camera: () => phIcon("camera"),
   trash: () => phIcon("trash"),
   clockCounterClockwise: () => phIcon("clock-counter-clockwise"),

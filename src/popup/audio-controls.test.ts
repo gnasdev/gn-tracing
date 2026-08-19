@@ -1,9 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import {
-  buildAudioSettingsUpdate,
-  buildMicrophoneOptions,
-  requestAudioInputPermission,
-} from "./audio-controls";
+import { buildAudioSettingsUpdate, buildMicrophoneOptions } from "./audio-controls";
 
 describe("buildMicrophoneOptions", () => {
   it("lists audio inputs after the browser default option", () => {
@@ -57,19 +53,5 @@ describe("buildAudioSettingsUpdate", () => {
       microphoneDeviceId: "mic-2",
       speakerDeviceId: "loopback-1",
     });
-  });
-});
-
-describe("requestAudioInputPermission", () => {
-  it("releases the permission probe stream after requesting audio input access", async () => {
-    const stop = vi.fn();
-    const getUserMedia = vi.fn().mockResolvedValue({
-      getTracks: () => [{ stop }],
-    });
-
-    await requestAudioInputPermission(getUserMedia);
-
-    expect(getUserMedia).toHaveBeenCalledExactlyOnceWith({ audio: true });
-    expect(stop).toHaveBeenCalledOnce();
   });
 });

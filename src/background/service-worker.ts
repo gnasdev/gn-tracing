@@ -66,6 +66,7 @@ import {
   normalizeRecordingUserEvent,
   truncateEventString,
 } from "./capture-environment";
+import { createDevReloadClientStarter, isDevReloadSafe, startDevReloadClient } from "./dev-reload";
 import {
   buildDrawingArtifact,
   enforceDrawingBudgets,
@@ -131,6 +132,8 @@ import type { UploadSuccessResult } from "./upload-orchestrator";
 import { getUploadArtifactChunk } from "./upload-orchestrator";
 
 declare const __APP_ENV__: string;
+declare const __BROWSER_TARGET__: string;
+declare const __DEV_EXTENSION_RELOAD_URL__: string;
 
 // Dev/watch builds mint a distinct extension id (esbuild.config.mjs,
 // CHROME_EXTENSION_PUBLIC_KEY_DEV) so the toolbar icon also needs a visible
@@ -240,6 +243,15 @@ const activeRecording: ActiveRecordingState = {
   privacySettings: DEFAULT_PRIVACY_REDACTION_SETTINGS,
   recordingSettings: null,
 };
+
+const startDevReloadClientOnce = createDevReloadClientStarter(() => {
+  startDevReloadClient({
+    appEnv: __APP_ENV__,
+    browserTarget: __BROWSER_TARGET__,
+    canReload: () => isDevReloadSafe(activeRecording),
+    reloadUrl: __DEV_EXTENSION_RELOAD_URL__,
+  });
+});
 
 /** Pen color for the active drawing overlay; survives popup close within the worker. */
 let drawingColor = DEFAULT_DRAW_COLOR;
@@ -699,6 +711,9 @@ void syncRuntimeState()
     // isRecording so a restart mid-recording doesn't stomp the "REC" badge.
     if (!activeRecording.isRecording) {
       setIdleBadge();
+    }
+    if (__APP_ENV__ === "development") {
+      startDevReloadClientOnce();
     }
   })
   .catch((error) => {

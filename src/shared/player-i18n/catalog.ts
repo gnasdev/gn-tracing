@@ -182,6 +182,7 @@ export const TRANSLATIONS: Record<UiLanguage, Record<string, string>> = {
     "introStandalone.footnote":
       "Contributions are welcome if you want to help improve replay quality, debugging ergonomics, or sharing flow.",
     "report.recordedSession": "Recorded session",
+    "report.close": "Close report",
     "report.privacyTitle": "Privacy summary",
     "report.chip.duration": "Duration {value}",
     "report.chip.created": "Created {value}",
@@ -465,6 +466,7 @@ export const TRANSLATIONS: Record<UiLanguage, Record<string, string>> = {
     "introStandalone.footnote":
       "Hoan nghênh đóng góp để cải thiện chất lượng replay, trải nghiệm debug hoặc luồng chia sẻ.",
     "report.recordedSession": "Phiên đã ghi",
+    "report.close": "Đóng báo cáo",
     "report.privacyTitle": "Tóm tắt quyền riêng tư",
     "report.chip.duration": "Thời lượng {value}",
     "report.chip.created": "Tạo lúc {value}",

@@ -138,6 +138,58 @@
           <span id="player-web-title" class="player-web-title hidden"></span>
         </div>
         <div class="header-info">
+          <div id="report-menu" class="report-menu hidden">
+            <button
+              type="button"
+              id="report-button"
+              class="control-btn report-button"
+              aria-expanded="false"
+              aria-haspopup="dialog"
+              aria-controls="report-popover"
+              data-i18n-aria="tabs.report"
+              data-i18n-title="tabs.report"
+              aria-label="Report"
+              title="Report"
+            >
+              <i class="ph ph-file-text" aria-hidden="true"></i>
+            </button>
+            <div
+              id="report-popover"
+              class="report-popover hidden"
+              role="dialog"
+              aria-labelledby="report-popover-title"
+              data-i18n-aria="tabs.report"
+            >
+              <div class="report-popover-header">
+                <span id="report-popover-title" class="report-popover-title" data-i18n="tabs.report">Report</span>
+                <button
+                  type="button"
+                  id="report-popover-close"
+                  class="report-popover-close"
+                  data-i18n-aria="report.close"
+                  data-i18n-title="report.close"
+                  aria-label="Close report"
+                  title="Close report"
+                >
+                  <i class="ph ph-x" aria-hidden="true"></i>
+                </button>
+              </div>
+              <div id="report-viewer" class="report-viewer">
+                <div id="report-panel" class="report-panel hidden">
+                  <div class="report-main">
+                    <div class="report-heading">
+                      <span class="report-eyebrow" data-i18n="tabs.report">Report</span>
+                      <h2 id="report-title"></h2>
+                    </div>
+                    <a id="report-page-link" class="report-page-link" href="#" target="_blank" rel="noreferrer" aria-label="Open recorded page" data-i18n-aria="report.openPage"></a>
+                  </div>
+                  <div id="report-meta" class="report-meta"></div>
+                  <div id="privacy-summary" class="privacy-summary hidden"></div>
+                  <img id="report-screenshot" class="report-screenshot hidden" alt="Recording screenshot" data-i18n-alt="report.screenshotAlt">
+                </div>
+              </div>
+            </div>
+          </div>
           <button
             type="button"
             id="player-feedback-btn-header"
@@ -365,27 +417,11 @@
         <div id="logs-panel" class="logs-panel">
           <div class="tab-bar">
             <button type="button" id="screenshots-tab" class="tab-btn hidden" data-i18n="tabs.screenshots">Screenshot</button>
-            <button type="button" id="report-tab" class="tab-btn hidden" data-i18n="tabs.report">Report</button>
             <button type="button" id="activity-tab" class="tab-btn hidden" data-i18n="tabs.activity">Activity</button>
             <button type="button" id="elements-tab" class="tab-btn hidden" data-i18n="tabs.elements">Elements</button>
             <button type="button" id="console-tab" class="tab-btn active" data-i18n="tabs.console">Console</button>
             <button type="button" id="network-tab" class="tab-btn" data-i18n="tabs.network">Network</button>
             <button type="button" id="storage-tab" class="tab-btn hidden" data-i18n="tabs.storage">Storage</button>
-          </div>
-
-          <div id="report-viewer" class="viewer-container report-viewer hidden">
-            <div id="report-panel" class="report-panel hidden">
-              <div class="report-main">
-                <div class="report-heading">
-                  <span class="report-eyebrow" data-i18n="tabs.report">Report</span>
-                  <h2 id="report-title"></h2>
-                </div>
-                <a id="report-page-link" class="report-page-link" href="#" target="_blank" rel="noreferrer" aria-label="Open recorded page" data-i18n-aria="report.openPage"></a>
-              </div>
-              <div id="report-meta" class="report-meta"></div>
-              <div id="privacy-summary" class="privacy-summary hidden"></div>
-              <img id="report-screenshot" class="report-screenshot hidden" alt="Recording screenshot" data-i18n-alt="report.screenshotAlt">
-            </div>
           </div>
 
           <div id="activity-viewer" class="viewer-container activity-viewer hidden">

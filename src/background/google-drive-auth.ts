@@ -12,6 +12,7 @@ import {
   computeAccessTokenExpiresAt,
   createPkcePair,
   fetchOAuthTokenResponse,
+  formatOAuthTokenExchangeNetworkError,
   generateOAuthState,
   grantedScopesInclude,
   parseOAuthAuthorizationRedirect,
@@ -166,7 +167,7 @@ async function exchangeAuthorizationCode(params: {
     console.error("[GoogleDriveAuth] Authorization code exchange network error:", detail);
     return {
       ok: false,
-      error: `Token exchange network error: ${detail}. Check that host_permissions include the token endpoint (${new URL(TOKEN_EXCHANGE_ENDPOINT).origin}/).`,
+      error: formatOAuthTokenExchangeNetworkError(detail, TOKEN_EXCHANGE_ENDPOINT),
     };
   }
   if (!response.ok) {

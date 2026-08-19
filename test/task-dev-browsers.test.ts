@@ -35,19 +35,24 @@ describe("task dev multi-browser support", () => {
     expect(watchBlock).toContain('env "BROWSER"');
   });
 
-  it("task dev accepts each browser and all", () => {
+  it("task dev hot-reloads Chrome and Firefox by default", () => {
     const devAt = TASKFILE.indexOf("\n  dev:");
     expect(devAt).toBeGreaterThan(-1);
     // Slice until dev:chrome (or next top-level task after dev block start).
     const devBlock = TASKFILE.slice(devAt, TASKFILE.indexOf("\n  dev:chrome:"));
-    expect(devBlock).toMatch(/chrome\|edge\|opera\|firefox\|all/);
-    expect(devBlock).toContain('env "BROWSER"');
+    expect(devBlock).toMatch(/chrome\|edge\|opera\|firefox\|both\|all/);
+    expect(devBlock).toContain('default "both"');
     expect(devBlock).toContain("BROWSER=all");
+    expect(devBlock).toContain("node scripts/dev-extension-reload.mjs --port $reload_port");
+    expect(devBlock).toContain("-n reload,ext:chrome,ext:firefox,player,worker");
+    expect(devBlock).toContain("--kill-others-on-fail --kill-signal SIGKILL");
+    expect(devBlock).toContain("task player:dev");
+    expect(devBlock).toContain("task worker:dev");
+    expect(devBlock).toContain("task watch BROWSER=chrome");
+    expect(devBlock).toContain("task watch BROWSER=firefox");
     for (const browser of BROWSERS) {
       expect(devBlock).toContain(`task watch BROWSER=${browser}`);
     }
-    expect(devBlock).toContain("task player:dev");
-    expect(devBlock).toContain("task worker:dev");
   });
 
   it("reuses the OAuth Worker only after verifying its health identity", () => {

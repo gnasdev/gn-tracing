@@ -15,6 +15,10 @@ export const POPUP_TRANSLATIONS: Record<PopupLanguage, Record<string, string>> =
     "audioSummary.label": "Audio",
     "audioSummary.microphone": "Mic",
     "audioSummary.systemAudio": "System",
+    "audioSettings.inputs": "Inputs",
+    "audioSettings.microphoneHint": "Voice and local sound",
+    "audioSettings.systemAudioOptional": "Optional",
+    "audioSettings.saving": "Saving…",
     "audioSummary.tabAudio": "Tab/screen audio",
     "audioSummary.noTabAudio": "No tab/screen audio",
     "options.noSystemAudio": "No system audio",
@@ -27,7 +31,7 @@ export const POPUP_TRANSLATIONS: Record<PopupLanguage, Record<string, string>> =
     "actions.enableInstantReplayOn": "On",
     "actions.enableInstantReplayTitle": "Turn always-on Instant Replay on or off",
     "actions.instantReplaySettings": "Settings",
-    "actions.stopUpload": "Stop & Upload",
+    "actions.done": "Done",
     "actions.stopping": "Stopping...",
     "actions.stoppingTitle": "Stopping recording and preparing upload",
     "actions.discard": "Discard",
@@ -103,6 +107,20 @@ export const POPUP_TRANSLATIONS: Record<PopupLanguage, Record<string, string>> =
     "audioSettings.dialogTitle": "Audio devices",
     "audioSettings.dialogLead":
       "Choose the microphone and system audio input to use for the next recording.",
+    "audioSettings.microphoneAccess": "Microphone access",
+    "audioSettings.enableMicrophone": "Enable microphone",
+    "audioSettings.microphonePermissionRequired":
+      "Enable microphone access to discover inputs. Your browser or macOS may ask for access next.",
+    "audioSettings.microphonePermissionGranted":
+      "Microphone access is enabled. Device names are now available to GN Tracing.",
+    "audioSettings.microphonePermissionDenied":
+      "Allow microphone access for GN Tracing in your browser or system settings, then reopen Devices.",
+    "audioSettings.microphoneUnavailable":
+      "No microphone input is available. Connect or enable one, then reopen Devices.",
+    "audioSettings.microphoneBusy":
+      "Your microphone is unavailable because another app or the system is using it. Close the other app, then reopen Devices.",
+    "audioSettings.deviceDiscoveryFailed":
+      "Could not list audio devices. Reopen Devices and try again.",
     "history.entryEmpty": "No uploads yet.",
     "history.entrySummary": "{count} upload{plural} · latest {page}",
     "history.summaryEmpty": "Browse your recent uploads here once recordings are uploaded.",
@@ -206,6 +224,10 @@ export const POPUP_TRANSLATIONS: Record<PopupLanguage, Record<string, string>> =
     "audioSummary.label": "Âm thanh",
     "audioSummary.microphone": "Micrô",
     "audioSummary.systemAudio": "Hệ thống",
+    "audioSettings.inputs": "Đầu vào",
+    "audioSettings.microphoneHint": "Giọng nói và âm thanh cục bộ",
+    "audioSettings.systemAudioOptional": "Không bắt buộc",
+    "audioSettings.saving": "Đang lưu…",
     "audioSummary.tabAudio": "Audio tab/màn hình",
     "audioSummary.noTabAudio": "Không ghi audio tab/màn hình",
     "options.noSystemAudio": "Không ghi audio hệ thống",
@@ -218,7 +240,7 @@ export const POPUP_TRANSLATIONS: Record<PopupLanguage, Record<string, string>> =
     "actions.enableInstantReplayOn": "Đang bật",
     "actions.enableInstantReplayTitle": "Bật/tắt Instant Replay luôn chạy",
     "actions.instantReplaySettings": "Cài đặt",
-    "actions.stopUpload": "Dừng và tải lên",
+    "actions.done": "Xong",
     "actions.stopping": "Đang dừng...",
     "actions.stoppingTitle": "Đang dừng ghi và chuẩn bị upload",
     "actions.discard": "Hủy",
@@ -294,6 +316,20 @@ export const POPUP_TRANSLATIONS: Record<PopupLanguage, Record<string, string>> =
     "toast.dismiss": "Đóng thông báo",
     "audioSettings.dialogTitle": "Thiết bị âm thanh",
     "audioSettings.dialogLead": "Chọn micrô và đầu vào âm thanh hệ thống cho lần ghi tiếp theo.",
+    "audioSettings.microphoneAccess": "Quyền truy cập micrô",
+    "audioSettings.enableMicrophone": "Bật micrô",
+    "audioSettings.microphonePermissionRequired":
+      "Bật quyền truy cập micrô để tìm thiết bị đầu vào. Trình duyệt hoặc macOS có thể hỏi quyền tiếp theo.",
+    "audioSettings.microphonePermissionGranted":
+      "Quyền truy cập micrô đã bật. GN Tracing hiện có thể đọc tên thiết bị.",
+    "audioSettings.microphonePermissionDenied":
+      "Hãy cho phép GN Tracing dùng micrô trong trình duyệt hoặc cài đặt hệ thống, rồi mở lại Thiết bị.",
+    "audioSettings.microphoneUnavailable":
+      "Không có đầu vào micrô khả dụng. Hãy kết nối hoặc bật micrô, rồi mở lại Thiết bị.",
+    "audioSettings.microphoneBusy":
+      "Micrô không khả dụng vì ứng dụng khác hoặc hệ thống đang dùng. Hãy đóng ứng dụng đó rồi mở lại Thiết bị.",
+    "audioSettings.deviceDiscoveryFailed":
+      "Không thể liệt kê thiết bị âm thanh. Hãy mở lại Thiết bị và thử lại.",
     "history.entryEmpty": "Chưa có lần tải lên.",
     "history.entrySummary": "{count} lần tải lên · gần nhất {page}",
     "history.summaryEmpty": "Các bản ghi sau khi tải lên sẽ hiện tại đây.",

@@ -631,6 +631,96 @@ body {
   color: var(--text-muted);
 }
 
+.report-menu {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.report-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  min-width: 32px;
+  padding: 0;
+}
+
+.report-button .ph {
+  font-size: 16px;
+  line-height: 1;
+}
+
+.report-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 70;
+  width: min(420px, calc(100vw - 24px));
+  max-width: calc(100vw - 24px);
+  max-height: min(70vh, 560px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-lg);
+  -webkit-overflow-scrolling: touch;
+}
+
+.report-popover.hidden {
+  display: none !important;
+}
+
+.report-popover-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-default);
+}
+
+.report-popover-title {
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.report-popover-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  color: var(--text-muted);
+  background: transparent;
+  cursor: pointer;
+  transition:
+    color 150ms ease,
+    background 150ms ease,
+    transform 80ms ease;
+}
+
+.report-popover-close:hover {
+  color: var(--text-primary);
+  background: var(--bg-card);
+}
+
+.report-popover-close:active {
+  transform: scale(0.96);
+}
+
+.report-popover-close .ph {
+  font-size: 16px;
+  line-height: 1;
+}
+
 .player-lang-toggle {
   font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
   font-size: 16px;
@@ -767,23 +857,21 @@ body:has(#player-state:not(.hidden)) .player-lang-toggle--global {
   border-bottom: 1px solid var(--border-default);
 }
 
+.report-viewer {
+  background: var(--bg-elevated);
+}
+
 .report-panel {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 12px;
+  padding: 12px 14px 14px;
   color: var(--text-secondary);
-  background: var(--bg-base);
-  /* Content sizes naturally; the parent .report-viewer scrolls. */
+  background: transparent;
   min-height: min-content;
 }
 
-/*
- * Report and Activity tabs must scroll vertically inside the logs panel.
- * .viewer-container sets overflow:hidden later in this file — override it here
- * with higher specificity so long report/activity content is not clipped.
- */
-.viewer-container.report-viewer,
+/* Activity content still scrolls inside the logs panel. */
 .viewer-container.activity-viewer {
   overflow-x: hidden;
   overflow-y: auto;
@@ -792,23 +880,23 @@ body:has(#player-state:not(.hidden)) .player-lang-toggle--global {
   -webkit-overflow-scrolling: touch;
 }
 
-.viewer-container.report-viewer::-webkit-scrollbar,
+.report-popover::-webkit-scrollbar,
 .viewer-container.activity-viewer::-webkit-scrollbar {
   width: 6px;
 }
 
-.viewer-container.report-viewer::-webkit-scrollbar-track,
+.report-popover::-webkit-scrollbar-track,
 .viewer-container.activity-viewer::-webkit-scrollbar-track {
-  background: var(--bg-base);
+  background: transparent;
 }
 
-.viewer-container.report-viewer::-webkit-scrollbar-thumb,
+.report-popover::-webkit-scrollbar-thumb,
 .viewer-container.activity-viewer::-webkit-scrollbar-thumb {
   background: var(--border-input);
   border-radius: 3px;
 }
 
-.viewer-container.report-viewer::-webkit-scrollbar-thumb:hover,
+.report-popover::-webkit-scrollbar-thumb:hover,
 .viewer-container.activity-viewer::-webkit-scrollbar-thumb:hover {
   background: var(--text-dim);
 }
@@ -1559,7 +1647,10 @@ body:has(#player-state:not(.hidden)) .player-lang-toggle--global {
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.15s;
+  transition:
+    color 150ms ease,
+    border-color 150ms ease,
+    background 150ms ease;
 }
 
 .tab-btn:hover {

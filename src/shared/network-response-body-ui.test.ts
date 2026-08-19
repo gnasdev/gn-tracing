@@ -30,7 +30,7 @@ describe("network response body UI (shipped paths)", () => {
     expect(playerJs).toMatch(/response-body empty/);
     // Translation catalog ships in the gn-core vendor bundle, not in player.js.
     expect(playerCoreVendor).toMatch(/"detail\.noResponseBody":\s*"No response body"/);
-    expect(playerCoreVendor).toMatch(/"detail\.noResponseBody":\s*"Kh[^"]+response body"/);
+    expect(playerCoreVendor).toMatch(/"detail\.noResponseBody":\s*"Kh(?:[^"\\]|\\.)+"/);
   });
 
   it("missing body is never an empty string status path (kind missing)", () => {

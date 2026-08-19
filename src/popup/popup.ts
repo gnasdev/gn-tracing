@@ -3,6 +3,7 @@
  */
 
 import { resolveManageCloudsPageUrl } from "../manage-clouds/page-model";
+import { resolveMicrophonePermissionPageUrl } from "../microphone-permission/page-model";
 import { isFirefoxTarget } from "../platform/detect";
 import { runRecordingStartPreflight } from "../platform/preflight/recording-start-preflight";
 import { buttonSpinnerHtml } from "../shared/button-loading";
@@ -22,6 +23,11 @@ import {
   INSTANT_REPLAY_WINDOW_SECONDS_MIN,
   normalizeInstantReplayWindowSeconds,
 } from "../shared/instant-replay-window";
+import {
+  type AudioInputPermissionFailure,
+  MICROPHONE_PERMISSION_RESULT_KEY,
+  parseMicrophonePermissionResult,
+} from "../shared/microphone-permission";
 import { resolveReplayOpenUrl } from "../shared/player-host";
 import {
   beginDisplayMediaFromGesture,
@@ -63,7 +69,6 @@ import {
   buildAudioSettingsUpdate,
   buildMicrophoneOptions,
   type MicrophoneDeviceLike,
-  requestAudioInputPermission,
 } from "./audio-controls";
 import { PopupDialogHost } from "./dialog-host";
 import { POPUP_TRANSLATIONS, type PopupLanguage } from "./i18n-catalog";
@@ -326,6 +331,23 @@ const microphoneDeviceIdInput = document.getElementById(
 const speakerDeviceIdInput = document.getElementById(
   "speaker-device-id-input",
 ) as HTMLSelectElement;
+const audioCapturePermissionBtn = document.getElementById(
+  "audio-capture-permission-btn",
+) as HTMLButtonElement;
+const audioCapturePermissionStatus = document.getElementById(
+  "audio-capture-permission-status",
+) as HTMLElement;
+const audioCapturePermission = document.getElementById("audio-capture-permission") as HTMLElement;
+const audioSettingsMicrophoneSource = document.getElementById(
+  "audio-settings-microphone-source",
+) as HTMLElement;
+const audioSettingsSpeakerSource = document.getElementById(
+  "audio-settings-speaker-source",
+) as HTMLElement;
+const audioSettingsSaveStatus = document.getElementById(
+  "audio-settings-save-status",
+) as HTMLElement;
+const audioControls = document.getElementById("audio-controls") as HTMLElement;
 const toggleBtn = document.getElementById("toggle-btn") as HTMLButtonElement;
 const removeRecordingBtn = document.getElementById("remove-recording-btn") as HTMLButtonElement;
 const screenshotBtn = document.getElementById("screenshot-btn") as HTMLButtonElement;
@@ -481,6 +503,8 @@ let activeTabRecordingCheckInFlight = false;
 let selectedDrawColor = DEFAULT_DRAW_COLOR;
 let drawColorUpdateInFlight = false;
 let audioSettingsSaveInFlight = false;
+let audioInputPermissionGranted = false;
+let audioInputPermissionRequestInFlight = false;
 let microphoneDevices: MicrophoneDeviceLike[] = [];
 
 type ToastVariant = "success" | "info" | "error";
@@ -982,6 +1006,17 @@ function setSettingsDialogOpen(open: boolean): void {
   setPopupDialogOpen("settings", open);
 }
 
+function renderAudioInputPermissionState(): void {
+  const recordingActive = Boolean(latestPopupState?.recording?.isRecording);
+  audioControls.hidden = !audioInputPermissionGranted;
+  audioCapturePermissionBtn.hidden = audioInputPermissionGranted;
+  audioCapturePermissionBtn.disabled = recordingActive || audioInputPermissionRequestInFlight;
+  audioCapturePermissionStatus.textContent = audioInputPermissionGranted
+    ? t("audioSettings.microphonePermissionGranted")
+    : t("audioSettings.microphonePermissionRequired");
+  audioCapturePermission.classList.toggle("is-ready", audioInputPermissionGranted);
+}
+
 function renderAudioControls(
   settings: PopupState["settings"] | undefined = latestPopupState?.settings,
 ): void {
@@ -1021,6 +1056,10 @@ function renderAudioControls(
     microphoneDeviceIdInput.selectedOptions[0]?.textContent || t("options.browserDefault");
   audioSettingsSpeakerSummary.textContent =
     speakerDeviceIdInput.selectedOptions[0]?.textContent || t("options.noSystemAudio");
+  audioSettingsMicrophoneSource.classList.toggle("is-ready", audioInputPermissionGranted);
+  audioSettingsSpeakerSource.classList.toggle("is-included", Boolean(selectedSpeakerDeviceId));
+  audioSettingsSaveStatus.hidden = !audioSettingsSaveInFlight;
+  audioSettingsSaveStatus.textContent = audioSettingsSaveInFlight ? t("audioSettings.saving") : "";
 
   const recordingActive = Boolean(latestPopupState?.recording?.isRecording);
   if (recordingActive && isPopupDialogOpen("audio")) {
@@ -1030,9 +1069,30 @@ function renderAudioControls(
   audioSettingsBtn.disabled = disabled;
   microphoneDeviceIdInput.disabled = disabled;
   speakerDeviceIdInput.disabled = disabled;
+  renderAudioInputPermissionState();
 }
 
-async function refreshMicrophoneDevices(): Promise<void> {
+function showAudioInputPermissionFailure(failure: AudioInputPermissionFailure): void {
+  switch (failure) {
+    case "denied":
+      showToast(t("audioSettings.microphonePermissionDenied"), 5200, { variant: "error" });
+      return;
+    case "unavailable":
+      showToast(t("audioSettings.microphoneUnavailable"), 5200, { variant: "error" });
+      return;
+    case "busy":
+      showToast(t("audioSettings.microphoneBusy"), 5200, { variant: "error" });
+      return;
+    default:
+      showToast(t("audioSettings.deviceDiscoveryFailed"), 5200, { variant: "error" });
+  }
+}
+
+async function refreshMicrophoneDevices({
+  showDiscoveryFailure = false,
+}: {
+  showDiscoveryFailure?: boolean;
+} = {}): Promise<void> {
   const selectedDeviceId =
     latestPopupState?.settings?.microphoneDeviceId ?? microphoneDeviceIdInput.value;
   if (!navigator.mediaDevices?.enumerateDevices) {
@@ -1047,12 +1107,6 @@ async function refreshMicrophoneDevices(): Promise<void> {
     return;
   }
 
-  if (navigator.mediaDevices.getUserMedia) {
-    await requestAudioInputPermission((constraints) =>
-      navigator.mediaDevices.getUserMedia(constraints),
-    );
-  }
-
   try {
     const devices = await navigator.mediaDevices.enumerateDevices();
     microphoneDevices = devices.map((device) => ({
@@ -1062,6 +1116,9 @@ async function refreshMicrophoneDevices(): Promise<void> {
     }));
   } catch {
     microphoneDevices = [];
+    if (showDiscoveryFailure) {
+      showToast(t("audioSettings.deviceDiscoveryFailed"), 5200, { variant: "error" });
+    }
   }
 
   renderAudioControls(
@@ -1079,12 +1136,16 @@ async function saveAudioSettings(): Promise<void> {
     return;
   }
 
+  const audioSettingsUpdate = buildAudioSettingsUpdate(
+    microphoneDeviceIdInput.value,
+    speakerDeviceIdInput.value,
+  );
   audioSettingsSaveInFlight = true;
   renderAudioControls();
   try {
     const result = (await chrome.runtime.sendMessage({
       action: "UPDATE_SETTINGS",
-      data: buildAudioSettingsUpdate(microphoneDeviceIdInput.value, speakerDeviceIdInput.value),
+      data: audioSettingsUpdate,
     })) as MessageResponse & { settings?: PopupState["settings"] };
 
     if (!result.ok || !result.settings) {
@@ -1147,7 +1208,8 @@ function registerPopupDialogs(): void {
     trigger: audioSettingsBtn,
     focusOnOpen: microphoneDeviceIdInput,
     onOpen: () => {
-      void refreshMicrophoneDevices();
+      renderAudioInputPermissionState();
+      void refreshMicrophoneDevices({ showDiscoveryFailure: true });
     },
   });
   popupDialogEntries.set("settings", {
@@ -2436,8 +2498,8 @@ function getStartRecordingIcon(): string {
   return Icons.record();
 }
 
-function getStopRecordingIcon(): string {
-  return Icons.stop();
+function getDoneRecordingIcon(): string {
+  return Icons.check();
 }
 
 function getLoadingIcon(): string {
@@ -2450,7 +2512,7 @@ function setButtonLabel(button: HTMLButtonElement, icon: string, label: string):
 
 function renderStopAndUploadLoading(recording: RecordingStatus | null): void {
   setButtonLabel(toggleBtn, getLoadingIcon(), t("actions.stopping"));
-  toggleBtn.className = "btn btn-stop is-loading";
+  toggleBtn.className = "btn btn-success is-loading";
   toggleBtn.disabled = true;
   toggleBtn.setAttribute("aria-busy", "true");
   toggleBtn.setAttribute("title", t("actions.stoppingTitle"));
@@ -2533,8 +2595,8 @@ function updateRecordingUI(recording: RecordingStatus | null): void {
       return;
     }
 
-    setButtonLabel(toggleBtn, getStopRecordingIcon(), t("actions.stopUpload"));
-    toggleBtn.className = "btn btn-stop";
+    setButtonLabel(toggleBtn, getDoneRecordingIcon(), t("actions.done"));
+    toggleBtn.className = "btn btn-success";
     toggleBtn.removeAttribute("aria-busy");
     recordingActions.classList.add("is-recording");
     recordingActions.classList.remove("has-unavailable-reason");
@@ -2831,6 +2893,31 @@ audioSettingsBtn.addEventListener("click", () => {
 
 audioSettingsCloseBtn?.addEventListener("click", () => {
   setAudioSettingsOpen(false);
+});
+
+async function grantMicrophoneAccess(): Promise<void> {
+  if (audioInputPermissionRequestInFlight) {
+    return;
+  }
+
+  audioInputPermissionRequestInFlight = true;
+  renderAudioInputPermissionState();
+  try {
+    await chrome.tabs.create({
+      url: resolveMicrophonePermissionPageUrl((path) => chrome.runtime.getURL(path)),
+      active: true,
+    });
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    showToast(detail || t("audioSettings.deviceDiscoveryFailed"), 5200, { variant: "error" });
+  } finally {
+    audioInputPermissionRequestInFlight = false;
+    renderAudioInputPermissionState();
+  }
+}
+
+audioCapturePermissionBtn.addEventListener("click", () => {
+  void grantMicrophoneAccess();
 });
 
 microphoneDeviceIdInput.addEventListener("change", () => {
@@ -3450,7 +3537,26 @@ chrome.runtime.onMessage.addListener((message: { action?: string; state?: PopupS
   return false;
 });
 
+async function hydrateMicrophonePermissionResult(): Promise<void> {
+  try {
+    const stored = await chrome.storage.session.get(MICROPHONE_PERMISSION_RESULT_KEY);
+    const result = parseMicrophonePermissionResult(stored[MICROPHONE_PERMISSION_RESULT_KEY]);
+    if (!result) {
+      return;
+    }
+    if (result.ok) {
+      audioInputPermissionGranted = true;
+      microphoneDevices = result.audioDevices;
+      return;
+    }
+  } catch {
+    // Session storage is an optional convenience; permission can be requested again from Devices.
+  }
+}
+
 async function initPopup(): Promise<void> {
+  await hydrateMicrophonePermissionResult();
+
   // Paint the auth UI from the active-provider local-storage mirror first so the
   // popup does not flash wrong Connected/Not connected for Dropbox vs Drive
   // before the service worker re-hydrates session state.

@@ -3,6 +3,7 @@
  * Seeds chrome.storage.local token caches and mocks fetch at the token endpoint.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { formatOAuthTokenExchangeNetworkError } from "../shared/oauth-pkce";
 import { DropboxAuth } from "./dropbox-auth";
 
 const DROPBOX_TOKENS_KEY = "gn_tracing_tokens_dropbox";
@@ -64,6 +65,29 @@ describe("DropboxAuth.getAuthToken refresh paths", () => {
     });
     const auth = new DropboxAuth();
     await expect(auth.getAuthToken()).resolves.toBeNull();
+  });
+});
+
+describe("OAuth token exchange network errors", () => {
+  it("identifies an unreachable local Worker and gives the dev command", () => {
+    const error = formatOAuthTokenExchangeNetworkError(
+      "Failed to fetch",
+      "http://localhost:63972/1.7.11/token",
+    );
+
+    expect(error).toContain("local OAuth Worker at http://localhost:63972 could not be reached");
+    expect(error).toContain("task worker:dev");
+    expect(error).toContain("host_permissions");
+  });
+
+  it("keeps the host permission guidance for non-local endpoints", () => {
+    const error = formatOAuthTokenExchangeNetworkError(
+      "Failed to fetch",
+      "https://oauth.example.test/token",
+    );
+
+    expect(error).toContain("host_permissions");
+    expect(error).not.toContain("task worker:dev");
   });
 });
 

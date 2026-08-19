@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Allow microphone — GN Tracing</title>
+  <link rel="stylesheet" href="../shared/theme.css">
+  <link rel="stylesheet" href="../icons/phosphor-icons.css">
+  <link rel="stylesheet" href="microphone-permission.css">
+  <script src="../shared/theme-init.js"></script>
+</head>
+<body>
+  <main class="microphone-permission-page" aria-labelledby="microphone-permission-title">
+    <section class="microphone-permission-card">
+      <div class="microphone-permission-icon" aria-hidden="true">
+        <i class="ph ph-microphone"></i>
+      </div>
+      <h1 id="microphone-permission-title" data-i18n="title">Allow microphone access</h1>
+      <p class="microphone-permission-lead" data-i18n="lead">
+        GN Tracing needs microphone access to list your audio inputs and include your voice in a recording.
+      </p>
+      <button id="allow-microphone-btn" class="btn btn-start microphone-permission-action" type="button">
+        <i class="ph ph-microphone" aria-hidden="true"></i>
+        <span data-i18n="allow">Allow microphone</span>
+      </button>
+      <p id="permission-status" class="microphone-permission-status" role="status" aria-live="polite"></p>
+      <p class="microphone-permission-note" data-i18n="note">
+        Chrome may show a permission prompt after you select Allow microphone.
+      </p>
+      <button id="close-page-btn" class="btn btn-secondary microphone-permission-close" type="button" data-i18n="close">Close this page</button>
+    </section>
+  </main>
+  <script src="microphone-permission.js"></script>
+</body>
+</html>

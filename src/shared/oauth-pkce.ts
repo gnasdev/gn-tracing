@@ -309,3 +309,40 @@ export async function fetchOAuthTokenResponse(input: {
     clearTimeout(timeoutId);
   }
 }
+
+function isLocalWorkerEndpoint(endpoint: string): boolean {
+  try {
+    const url = new URL(endpoint);
+    const hostname = url.hostname.toLowerCase();
+    const isLoopbackHost =
+      hostname === "localhost" ||
+      hostname === "[::1]" ||
+      hostname === "::1" ||
+      hostname === "0.0.0.0" ||
+      hostname.startsWith("127.");
+    return (url.protocol === "http:" || url.protocol === "https:") && isLoopbackHost;
+  } catch {
+    return false;
+  }
+}
+
+/** Format network failures without assuming a local endpoint is missing permissions. */
+export function formatOAuthTokenExchangeNetworkError(detail: string, endpoint: string): string {
+  const origin = (() => {
+    try {
+      return new URL(endpoint).origin;
+    } catch {
+      return endpoint;
+    }
+  })();
+
+  if (isLocalWorkerEndpoint(endpoint)) {
+    return (
+      `Token exchange network error: ${detail}. The local OAuth Worker at ${origin} could not be ` +
+      `reached; it may not be running or the extension may not have that origin in host_permissions. ` +
+      `Start it with "task worker:dev" (or "task dev"), then reload the development extension.`
+    );
+  }
+
+  return `Token exchange network error: ${detail}. Check that host_permissions include the token endpoint (${origin}/).`;
+}
