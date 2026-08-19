@@ -356,6 +356,7 @@ const drawingSection = document.getElementById("drawing-section")!;
 const drawColorSwatches = document.getElementById("draw-color-swatches")!;
 const drawColorInput = document.getElementById("draw-color-input") as HTMLInputElement;
 const recordingUnavailableMsg = document.getElementById("recording-unavailable-msg")!;
+const cdpBannerWarning = document.getElementById("cdp-banner-warning") as HTMLElement;
 const settingsPageBtn = document.getElementById("settings-page-btn") as HTMLButtonElement;
 const mainGoogleDriveSlot = document.getElementById("main-google-drive-slot")!;
 const connectedGoogleDriveSlot = document.getElementById("connected-google-drive-slot")!;
@@ -2522,6 +2523,7 @@ function renderStopAndUploadLoading(recording: RecordingStatus | null): void {
   removeRecordingBtn.disabled = true;
   drawingSection.classList.add("hidden");
   setDrawButtonActive(false);
+  cdpBannerWarning.classList.add("hidden");
   recordingUnavailableMsg.classList.add("hidden");
   recordingUnavailableMsg.textContent = "";
   statusBar.classList.remove("hidden");
@@ -2605,6 +2607,7 @@ function updateRecordingUI(recording: RecordingStatus | null): void {
     drawingSection.classList.remove("hidden");
     drawToggleBtn.disabled = false;
     void syncDrawButtonState();
+    cdpBannerWarning.classList.toggle("hidden", !("debugger" in chrome));
     recordingUnavailableMsg.classList.add("hidden");
     recordingUnavailableMsg.textContent = "";
     toggleBtn.disabled = toggleActionInFlight;
@@ -2638,6 +2641,7 @@ function updateRecordingUI(recording: RecordingStatus | null): void {
   removeRecordingBtn.disabled = false;
   drawingSection.classList.add("hidden");
   setDrawButtonActive(false);
+  cdpBannerWarning.classList.add("hidden");
   statusBar.classList.add("hidden");
   stats.classList.add("hidden");
   const unavailableReason = checkingTab ? null : activeTabRecordingError;

@@ -14,6 +14,8 @@ describe("POPUP_TRANSLATIONS catalog", () => {
     expect(POPUP_TRANSLATIONS.vi["actions.startRecording"]).toBeTruthy();
     expect(POPUP_TRANSLATIONS.en["actions.done"]).toBe("Done");
     expect(POPUP_TRANSLATIONS.vi["actions.done"]).toBe("Xong");
+    expect(POPUP_TRANSLATIONS.en["recording.cdpBannerWarning"]).toContain("debugging this tab");
+    expect(POPUP_TRANSLATIONS.vi["recording.cdpBannerWarning"]).toContain("Chrome");
   });
 
   it("includes actionable microphone access failures", () => {

@@ -32,6 +32,8 @@ export const POPUP_TRANSLATIONS: Record<PopupLanguage, Record<string, string>> =
     "actions.enableInstantReplayTitle": "Turn always-on Instant Replay on or off",
     "actions.instantReplaySettings": "Settings",
     "actions.done": "Done",
+    "recording.cdpBannerWarning":
+      "Keep Chrome’s “debugging this tab” banner on. Closing it stops console, network, and storage capture.",
     "actions.stopping": "Stopping...",
     "actions.stoppingTitle": "Stopping recording and preparing upload",
     "actions.discard": "Discard",
@@ -241,6 +243,8 @@ export const POPUP_TRANSLATIONS: Record<PopupLanguage, Record<string, string>> =
     "actions.enableInstantReplayTitle": "Bật/tắt Instant Replay luôn chạy",
     "actions.instantReplaySettings": "Cài đặt",
     "actions.done": "Xong",
+    "recording.cdpBannerWarning":
+      "Giữ banner “đang gỡ lỗi tab này” của Chrome. Tắt banner sẽ dừng thu thập Console, Network và Storage.",
     "actions.stopping": "Đang dừng...",
     "actions.stoppingTitle": "Đang dừng ghi và chuẩn bị upload",
     "actions.discard": "Hủy",

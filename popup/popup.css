@@ -1321,6 +1321,24 @@ body.popup-dialog-open #app {
   white-space: pre-line;
 }
 
+.recording-cdp-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 9px 10px;
+  border: 1px solid color-mix(in srgb, var(--warning) 42%, transparent);
+  border-radius: var(--radius-sm);
+  background: var(--bg-warning-soft);
+  color: var(--warning-soft);
+  font-size: var(--fs-sm, 12px);
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.recording-cdp-warning.hidden {
+  display: none;
+}
+
 #recording-unavailable-msg {
   padding: 10px 12px;
   border: 1px solid color-mix(in srgb, var(--warning) 42%, transparent);
