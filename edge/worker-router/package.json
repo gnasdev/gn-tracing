@@ -1,0 +1,5 @@
+{
+  "name": "gn-tracing-worker-router",
+  "private": true,
+  "type": "module"
+}

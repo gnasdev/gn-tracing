@@ -264,6 +264,102 @@ tasks:
     cmds:
       - ./deploy.sh
 
+  release:registry:check:
+    desc: Validate the append-only immutable release registry.
+    cmds:
+      - node --experimental-strip-types scripts/validate-release-registry.mjs
+
+  release:registry:typecheck:
+    desc: Type-check immutable release registry sources.
+    cmds:
+      - npx tsc --noEmit -p packages/release-registry/tsconfig.json
+
+  edge:player:typecheck:
+    desc: Type-check the immutable Player release router.
+    cmds:
+      - npx tsc --noEmit -p edge/player-router/tsconfig.json
+
+  edge:worker:typecheck:
+    desc: Type-check the immutable Worker version dispatcher.
+    cmds:
+      - npx tsc --noEmit -p edge/worker-router/tsconfig.json
+
+  edge:typecheck:
+    desc: Type-check immutable release routers and their registry.
+    cmds:
+      - task: release:registry:typecheck
+      - task: edge:player:typecheck
+      - task: edge:worker:typecheck
+
+  edge:player:bucket:create:
+    desc: Create the immutable Player R2 bucket (explicit production action).
+    cmds:
+      - npx wrangler r2 bucket create gn-tracing-player-releases
+
+  edge:player:deploy:
+    desc: >-
+      Deploy the Player version router without attaching the production custom domain.
+      Requires LATEST_RELEASE_VERSION=<registered-version> to preserve legacy URLs explicitly.
+    vars:
+      LATEST_RELEASE_VERSION: '{{.LATEST_RELEASE_VERSION | default (env "LATEST_RELEASE_VERSION")}}'
+    env:
+      LATEST_RELEASE_VERSION: "{{.LATEST_RELEASE_VERSION}}"
+    cmds:
+      - node --experimental-strip-types scripts/generate-player-router-config.mjs --require-latest
+      - npx wrangler deploy --config edge/player-router/wrangler.generated.toml
+
+  edge:worker:deploy:
+    desc: >-
+      Deploy the Worker version dispatcher after generating Service Bindings. Requires
+      LATEST_RELEASE_VERSION=<registered-version> to preserve legacy URLs explicitly.
+    vars:
+      LATEST_RELEASE_VERSION: '{{.LATEST_RELEASE_VERSION | default (env "LATEST_RELEASE_VERSION")}}'
+    env:
+      LATEST_RELEASE_VERSION: "{{.LATEST_RELEASE_VERSION}}"
+    cmds:
+      - node --experimental-strip-types scripts/generate-worker-router-config.mjs --require-latest
+      - npx wrangler deploy --config edge/worker-router/wrangler.generated.toml
+
+  player:router:config:
+    desc: Generate Player router deployment configuration from the immutable release registry.
+    cmds:
+      - node --experimental-strip-types scripts/generate-player-router-config.mjs
+
+  worker:router:config:
+    desc: Generate Worker dispatcher Service Bindings from the immutable release registry.
+    cmds:
+      - node --experimental-strip-types scripts/generate-worker-router-config.mjs
+
+  player:release:entry:
+    desc: Build the current Player and print its immutable release registry candidate without writing it.
+    cmds:
+      - node --experimental-strip-types scripts/prepare-player-release-entry.mjs
+
+  player:release:register:
+    desc: Append the reviewed current Player release entry to the immutable registry.
+    cmds:
+      - node --experimental-strip-types scripts/prepare-player-release-entry.mjs --write
+
+  player:release:prepare:
+    desc: Build and validate the current immutable Player release without uploading it.
+    cmds:
+      - node --experimental-strip-types scripts/release-player-version.mjs
+
+  player:release:upload:
+    desc: Upload the current immutable Player release to R2 (explicit production action).
+    cmds:
+      - node --experimental-strip-types scripts/release-player-version.mjs --upload
+
+  worker:release:prepare:
+    desc: Validate the current immutable Worker release and generate its dispatcher bindings without deployment.
+    cmds:
+      - node --experimental-strip-types scripts/release-worker-version.mjs
+
+  worker:release:deploy:
+    desc: Deploy the current immutable Worker service (explicit production action).
+    cmds:
+      - node --experimental-strip-types scripts/release-worker-version.mjs --deploy
+
   core:typecheck:
     desc: Type-check the shared replay-core package.
     dir: packages/replay-core
@@ -314,7 +410,7 @@ tasks:
       - npm pack --dry-run
 
   typecheck:all:
-    desc: Type-check every context (root, replay-core, SDK, MCP, player, worker).
+    desc: Type-check every context, including immutable release routers and registry.
     cmds:
       - task: typecheck
       - task: core:typecheck
@@ -322,6 +418,7 @@ tasks:
       - task: mcp:typecheck
       - task: player:typecheck
       - task: worker:typecheck
+      - task: edge:typecheck
 
   release:zip:
     desc: >-

@@ -1,0 +1,5 @@
+{
+  "name": "gn-tracing-release-registry",
+  "private": true,
+  "type": "module"
+}

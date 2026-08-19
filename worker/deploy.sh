@@ -72,6 +72,12 @@ fi
 
 cd "$SCRIPT_DIR"
 
+WORKER_SERVICE_NAME="${WORKER_SERVICE_NAME:-gn-tracing-oauth-proxy}"
+WORKER_CONFIG="wrangler.toml"
+if [ "$WORKER_SERVICE_NAME" != "gn-tracing-oauth-proxy" ]; then
+  WORKER_CONFIG="wrangler.immutable.toml"
+fi
+
 put_secret() {
   local name="$1"
   local value="$2"
@@ -79,7 +85,7 @@ put_secret() {
     return 0
   fi
   echo "Setting secret $name on the Worker..."
-  printf '%s' "$value" | npx wrangler secret put "$name"
+  printf '%s' "$value" | npx wrangler secret put "$name" --config "$WORKER_CONFIG" --name "$WORKER_SERVICE_NAME"
 }
 
 put_secret "GOOGLE_CLIENT_SECRET" "${GOOGLE_CLIENT_SECRET:-}"
@@ -96,14 +102,14 @@ VAR_FLAGS=(
   --var "GITHUB_FEEDBACK_LABELS:${GITHUB_FEEDBACK_LABELS:-feedback}"
 )
 
-echo "Deploying gn-tracing-oauth-proxy Worker (google=$HAS_GOOGLE dropbox=$HAS_DROPBOX)..."
-DEPLOY_OUT="$(npx wrangler deploy "${VAR_FLAGS[@]}" 2>&1)"
+echo "Deploying ${WORKER_SERVICE_NAME} Worker (google=$HAS_GOOGLE dropbox=$HAS_DROPBOX)..."
+DEPLOY_OUT="$(npx wrangler deploy --config "$WORKER_CONFIG" --name "$WORKER_SERVICE_NAME" "${VAR_FLAGS[@]}" 2>&1)"
 echo "$DEPLOY_OUT"
 
 # Best-effort extract workers.dev URL from deploy output.
 WORKER_URL="$(printf '%s\n' "$DEPLOY_OUT" | grep -Eo 'https://[a-zA-Z0-9._-]+\.workers\.dev' | head -1 || true)"
 if [ -z "$WORKER_URL" ]; then
-  WORKER_URL="https://gn-tracing-oauth-proxy.<your-subdomain>.workers.dev"
+  WORKER_URL="https://${WORKER_SERVICE_NAME}.<your-subdomain>.workers.dev"
 fi
 
 echo ""

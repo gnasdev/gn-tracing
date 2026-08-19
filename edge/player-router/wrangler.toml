@@ -1,0 +1,11 @@
+name = "gn-tracing-player-router"
+main = "src/worker.ts"
+compatibility_date = "2024-11-01"
+
+[[r2_buckets]]
+binding = "PLAYER_RELEASES"
+bucket_name = "gn-tracing-player-releases"
+
+[vars]
+# Set only after an immutable registry entry has been published.
+LATEST_RELEASE_VERSION = ""

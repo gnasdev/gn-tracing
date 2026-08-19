@@ -94,6 +94,13 @@ describe("production player shell contract", () => {
     expect(playerCss).toContain(".player-feedback.is-docked {");
   });
 
+  it("keeps standalone storage proxy requests within the current release prefix", () => {
+    expect(playerJs).toContain("function getVersionScopedPlayerApiUrl(endpoint, fileId)");
+    expect(playerJs).toContain(
+      "`${versionPrefix}/api/${endpoint}?id=${encodeURIComponent(fileId)}`",
+    );
+  });
+
   it("wires storage-diff, clock-index, loading-progress, zip, and i18n through gnCore", () => {
     expect(playerJs).toContain("gnCore.storageDiff.diffStorageGroups");
     expect(playerJs).toContain("gnCore.clockIndex.findActiveEventIndexByRelativeMs");

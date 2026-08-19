@@ -4828,18 +4828,26 @@
     return url.toString();
   }
 
+  function getVersionScopedPlayerApiUrl(endpoint, fileId) {
+    const firstPathSegment = window.location.pathname.split("/").filter(Boolean)[0] || "";
+    const versionPrefix = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(firstPathSegment)
+      ? `/${firstPathSegment}`
+      : "";
+    return `${versionPrefix}/api/${endpoint}?id=${encodeURIComponent(fileId)}`;
+  }
+
   function getDownloadUrl(fileId, provider) {
     const storageProvider = provider || "google-drive";
     if (storageProvider === "dropbox") {
       if (IS_STANDALONE && DRIVE_ADAPTER) {
-        return `/api/dropbox?id=${encodeURIComponent(fileId)}`;
+        return getVersionScopedPlayerApiUrl("dropbox", fileId);
       }
       // Extension public fallback: direct shared-link download (dl=1).
       return buildDropboxPublicDownloadUrl(fileId);
     }
 
     if (IS_STANDALONE && DRIVE_ADAPTER) {
-      return `/api/drive?id=${encodeURIComponent(fileId)}`;
+      return getVersionScopedPlayerApiUrl("drive", fileId);
     }
 
     return `https://drive.usercontent.google.com/download?id=${fileId}&export=download`;

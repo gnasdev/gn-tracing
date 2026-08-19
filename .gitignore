@@ -63,3 +63,7 @@ ehthumbs.db
 # Playwright / local test artifacts
 test-results/
 playwright-report/
+
+# Generated release-router deployment configuration
+edge/player-router/wrangler.generated.toml
+edge/worker-router/wrangler.generated.toml

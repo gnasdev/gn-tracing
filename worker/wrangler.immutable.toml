@@ -1,0 +1,19 @@
+#:schema node_modules/wrangler/config-schema.json
+# Immutable release Workers are reached only through the public version dispatcher.
+# Deploy via ../scripts/release-worker-version.mjs; do not attach routes here.
+
+name = "gn-tracing-oauth-proxy"
+main = "src/index.ts"
+compatibility_date = "2024-11-01"
+workers_dev = false
+
+[vars]
+GOOGLE_CLIENT_ID = ""
+DROPBOX_CLIENT_ID = ""
+ALLOWED_EXTENSION_ORIGINS = ""
+STRICT_ORIGIN = ""
+GITHUB_REPO_OWNER = "gnasdev"
+GITHUB_REPO_NAME = "gn-tracing"
+GITHUB_FEEDBACK_LABELS = "feedback"
+MCP_ENABLED = "true"
+PLAYER_ORIGIN = "https://tracing.gnas.dev"

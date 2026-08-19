@@ -1,0 +1,11 @@
+name = "gn-tracing-oauth-proxy"
+main = "src/worker.ts"
+compatibility_date = "2024-11-01"
+workers_dev = true
+
+[vars]
+# Set by the release workflow only after the target version is in the registry.
+LATEST_RELEASE_VERSION = ""
+
+# Service bindings are generated from releases/registry.json by
+# scripts/generate-worker-router-config.mjs. Do not hand-edit them here.

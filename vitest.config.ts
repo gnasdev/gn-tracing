@@ -59,6 +59,7 @@ export default defineConfig({
     include: [
       "src/**/*.{test,spec}.ts",
       "packages/**/*.{test,spec}.ts",
+      "edge/**/*.{test,spec}.ts",
       "test/**/*.{test,spec}.ts",
     ],
     environment: "node",

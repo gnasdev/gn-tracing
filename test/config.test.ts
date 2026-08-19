@@ -86,6 +86,7 @@ describe("Vitest config inheritance", () => {
       expect(rootTest?.include).toEqual([
         "src/**/*.{test,spec}.ts",
         "packages/**/*.{test,spec}.ts",
+        "edge/**/*.{test,spec}.ts",
         "test/**/*.{test,spec}.ts",
       ]);
       expect(rootTest?.exclude).toEqual(["**/node_modules/**", "**/dist/**", "**/.wrangler/**"]);
@@ -99,6 +100,7 @@ describe("Vitest config inheritance", () => {
       expect(rootTest?.include).toEqual([
         "src/**/*.{test,spec}.ts",
         "packages/**/*.{test,spec}.ts",
+        "edge/**/*.{test,spec}.ts",
         "test/**/*.{test,spec}.ts",
       ]);
     });
