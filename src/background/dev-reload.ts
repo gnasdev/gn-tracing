@@ -117,9 +117,13 @@ export function startDevReloadClient(options: DevReloadClientOptions): () => voi
         if (body.target !== options.browserTarget || !isRevision(body.revision)) {
           throw new Error("Reload coordinator returned an invalid revision.");
         }
-        if (!canReload() && (await store.get()) !== body.revision) {
+        // A long-poll response is the only proof of this revision; retain it until
+        // recording allows reload rather than discarding it and waiting for another response.
+        while (!stopped && !canReload() && (await store.get()) !== body.revision) {
           await wait(RETRY_DELAY_MS);
-          continue;
+        }
+        if (stopped) {
+          return;
         }
         await applyDevReloadRevision(body.revision, { canReload, store, reload });
       } catch {
