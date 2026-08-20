@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { SessionArtifacts } from "./service-worker";
+import type { SessionArtifacts } from "./runtime-state";
 import {
   getUploadArtifactChunk,
   isUploadArtifactKey,

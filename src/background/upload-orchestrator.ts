@@ -5,7 +5,7 @@
  * (`screenshot-package-staging-idb`) instead of this chunk protocol.
  */
 import type { MessageResponse } from "../types/messages";
-import type { SessionArtifacts } from "./service-worker";
+import type { SessionArtifacts } from "./runtime-state";
 
 export interface UploadSuccessResult {
   ok: true;

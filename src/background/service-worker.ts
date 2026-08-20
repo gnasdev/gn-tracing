@@ -8,7 +8,7 @@ import { getMediaMessageTarget } from "../platform/media/message-target";
 import { createRecordingRuntime } from "../platform/recording-runtime/create-recording-runtime";
 import type { EvidenceEntry } from "../platform/recording-runtime/types";
 import { CAPTURE_PAGE_DOM_SNAPSHOT_ACTION } from "../shared/capture-page-dom";
-import { DEFAULT_DRAW_COLOR, normalizeDrawColor } from "../shared/drawing";
+import { normalizeDrawColor } from "../shared/drawing";
 import {
   redactInPageNetworkEntry as applyInPageNetworkRedaction,
   redactInPageStorageSnapshot as applyInPageStorageRedaction,
@@ -47,9 +47,7 @@ import type {
   UploadSettings,
 } from "../types/messages";
 import type {
-  CaptureEnvironment,
   NetworkEntry,
-  RecordingDrawStroke,
   RecordingPrivacySummary,
   RecordingReport,
   RecordingUserEvent,
@@ -85,7 +83,29 @@ import {
   parseCollectInstantReplayResponse,
 } from "./instant-replay-session";
 import { registerMessageListeners } from "./message-router";
-import { elapsedFromRecordingStart } from "./recording-clock";
+import {
+  activeRecording,
+  activeUploadTasks,
+  addActivePrivacyLimitation,
+  cloneProgressItems,
+  createSessionId,
+  dropboxState,
+  getDrawingColor,
+  getElapsedMs,
+  getSession,
+  getSessionArtifacts,
+  getSessions,
+  googleDriveState,
+  loadPersistedArtifacts,
+  patchSession,
+  recordActiveRedactionHits,
+  saveArtifactsToStorage,
+  setDrawingColor as setActiveDrawingColor,
+  setSession,
+  setSessionArtifacts,
+  setSessions,
+  sortSessions,
+} from "./runtime-state";
 import {
   clearScreenshotPackageStaging,
   putScreenshotPackageStaging,
@@ -174,43 +194,6 @@ const dropboxAuth = dropboxProvider.getAuth();
 
 void googleAuth.initialize();
 
-interface ActiveRecordingState {
-  sessionId: string | null;
-  isRecording: boolean;
-  tabId: number | null;
-  startTime: number | null;
-  stopTime: number | null;
-  tabUrl: string | null;
-  tabTitle: string | null;
-  environment: CaptureEnvironment | null;
-  userEvents: RecordingUserEvent[];
-  drawingStrokes: RecordingDrawStroke[];
-  drawingClears: number[];
-  drawingOverlayActive: boolean;
-  redactionHits: RedactionHit[];
-  privacyLimitations: string[];
-  privacySettings: PrivacyRedactionSettings;
-  recordingSettings: UploadSettingsStore | null;
-}
-
-export interface SessionArtifacts {
-  consoleLogs?: string;
-  networkRequests?: string;
-  webSocketLogs?: string;
-  report?: string;
-  userEvents?: string;
-  drawing?: string;
-  privacy?: string;
-  diagnostics?: string;
-  storage?: string;
-  dom?: string;
-  screenshotDataUrl?: string;
-  duration: number;
-  url: string;
-  startTime: number | null;
-  stopTime: number | null;
-}
-
 interface OffscreenCaptureState {
   ok: boolean;
   isRecording?: boolean;
@@ -218,31 +201,11 @@ interface OffscreenCaptureState {
   snapshotSessionIds?: string[];
 }
 
-const STORAGE_KEY_ARTIFACTS = "gn_tracing_session_artifacts";
 const STORAGE_KEY_DRAWING_COLOR = "gn_tracing_drawing_color";
 const MAX_RECORDED_USER_EVENTS = 2000;
 const MAX_SCREENSHOT_DATA_URL_CHARS = 1536 * 1024;
 const RECORDING_EVENTS_SCRIPT = "content/recording-events.js";
 const DRAWING_OVERLAY_SCRIPT = "content/drawing-overlay.js";
-
-const activeRecording: ActiveRecordingState = {
-  sessionId: null,
-  isRecording: false,
-  tabId: null,
-  startTime: null,
-  stopTime: null,
-  tabUrl: null,
-  tabTitle: null,
-  environment: null,
-  userEvents: [],
-  drawingStrokes: [],
-  drawingClears: [],
-  drawingOverlayActive: false,
-  redactionHits: [],
-  privacyLimitations: [],
-  privacySettings: DEFAULT_PRIVACY_REDACTION_SETTINGS,
-  recordingSettings: null,
-};
 
 const startDevReloadClientOnce = createDevReloadClientStarter(() => {
   startDevReloadClient({
@@ -252,39 +215,6 @@ const startDevReloadClientOnce = createDevReloadClientStarter(() => {
     reloadUrl: __DEV_EXTENSION_RELOAD_URL__,
   });
 });
-
-/** Pen color for the active drawing overlay; survives popup close within the worker. */
-let drawingColor = DEFAULT_DRAW_COLOR;
-
-let sessions: RecordingSessionSummary[] = [];
-let sessionArtifacts: Record<string, SessionArtifacts> = {};
-const activeUploadTasks = new Map<string, Promise<void>>();
-
-// Provider connectivity is cached separately from popup state so UI reloads
-// can show a stable snapshot while a background verification refreshes it.
-const googleDriveState = {
-  isConnected: false,
-  checkedAt: 0,
-};
-const dropboxState = {
-  isConnected: false,
-  checkedAt: 0,
-};
-
-function createSessionId(): string {
-  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-    return crypto.randomUUID();
-  }
-  return `session-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-}
-
-function cloneProgressItems(items: ProgressItemSnapshot[]): ProgressItemSnapshot[] {
-  return items.map((item) => ({ ...item }));
-}
-
-function getElapsedMs(now = Date.now()): number {
-  return elapsedFromRecordingStart(activeRecording.startTime, now);
-}
 
 function resetActiveRecordingState(): void {
   activeRecording.sessionId = null;
@@ -304,62 +234,6 @@ function resetActiveRecordingState(): void {
   activeRecording.privacySettings = DEFAULT_PRIVACY_REDACTION_SETTINGS;
   activeRecording.recordingSettings = null;
   recordingRuntime.clearActiveSession();
-}
-
-function recordActiveRedactionHits(hits: RedactionHit[] | undefined): void {
-  if (!hits?.length || !activeRecording.sessionId) {
-    return;
-  }
-  activeRecording.redactionHits.push(...hits);
-  if (activeRecording.redactionHits.length > 10000) {
-    activeRecording.redactionHits.splice(0, activeRecording.redactionHits.length - 10000);
-  }
-}
-
-function addActivePrivacyLimitation(message: string): void {
-  if (!message || activeRecording.privacyLimitations.includes(message)) {
-    return;
-  }
-  activeRecording.privacyLimitations.push(message);
-}
-
-function sortSessions(items: RecordingSessionSummary[]): RecordingSessionSummary[] {
-  return [...items].sort((left, right) => {
-    const rightTs = right.stopTime || right.startTime || 0;
-    const leftTs = left.stopTime || left.startTime || 0;
-    return rightTs - leftTs;
-  });
-}
-
-function getSession(sessionId: string): RecordingSessionSummary | undefined {
-  return sessions.find((session) => session.id === sessionId);
-}
-
-function setSession(session: RecordingSessionSummary): void {
-  const existingIndex = sessions.findIndex((item) => item.id === session.id);
-  if (existingIndex >= 0) {
-    sessions[existingIndex] = session;
-  } else {
-    sessions.push(session);
-  }
-  sessions = sortSessions(sessions);
-}
-
-function patchSession(
-  sessionId: string,
-  patch: Partial<RecordingSessionSummary>,
-): RecordingSessionSummary | null {
-  const existing = getSession(sessionId);
-  if (!existing) {
-    return null;
-  }
-  const updated: RecordingSessionSummary = {
-    ...existing,
-    ...patch,
-    items: patch.items ? cloneProgressItems(patch.items) : cloneProgressItems(existing.items),
-  };
-  setSession(updated);
-  return updated;
 }
 
 function getRecordingStatus(): RecordingStatus | null {
@@ -382,29 +256,6 @@ function getRecordingStatus(): RecordingStatus | null {
     consoleLogCount: storage.getConsoleLogCount(),
     networkRequestCount: storage.getNetworkEntryCount(),
   };
-}
-
-async function loadPersistedArtifacts(): Promise<Record<string, SessionArtifacts>> {
-  try {
-    const result = await chrome.storage.session.get(STORAGE_KEY_ARTIFACTS);
-    const stored = result[STORAGE_KEY_ARTIFACTS];
-    if (!stored || typeof stored !== "object") {
-      return {};
-    }
-    return stored as Record<string, SessionArtifacts>;
-  } catch {
-    return {};
-  }
-}
-
-async function saveArtifactsToStorage(): Promise<void> {
-  try {
-    await chrome.storage.session.set({
-      [STORAGE_KEY_ARTIFACTS]: sessionArtifacts,
-    });
-  } catch {
-    // Ignore storage errors.
-  }
 }
 
 async function refreshGoogleDriveState(): Promise<void> {
@@ -476,7 +327,7 @@ async function buildPopupState(): Promise<PopupState> {
   const storageConnected = getCachedStorageConnected(activeProvider);
   return {
     recording: getRecordingStatus(),
-    sessions: sortSessions(sessions),
+    sessions: sortSessions(getSessions()),
     storage: {
       provider: activeProvider,
       isConnected: storageConnected,
@@ -585,14 +436,16 @@ async function closeMediaHostIfIdle(): Promise<void> {
 
 async function syncRuntimeState(): Promise<void> {
   const persistedState = await loadPersistedPopupState();
-  sessionArtifacts = await loadPersistedArtifacts();
+  setSessionArtifacts(await loadPersistedArtifacts());
 
-  sessions = Array.isArray(persistedState?.sessions)
-    ? persistedState.sessions.map((session) => ({
-        ...session,
-        items: cloneProgressItems(session.items || []),
-      }))
-    : [];
+  setSessions(
+    Array.isArray(persistedState?.sessions)
+      ? persistedState.sessions.map((session) => ({
+          ...session,
+          items: cloneProgressItems(session.items || []),
+        }))
+      : [],
+  );
 
   if (persistedState?.recording) {
     activeRecording.sessionId = persistedState.recording.sessionId ?? null;
@@ -629,35 +482,37 @@ async function syncRuntimeState(): Promise<void> {
     }
   }
 
-  sessions = sortSessions(
-    sessions.map((session) => {
-      const hasLocalSnapshot = snapshotIds.has(session.id);
-      if (session.phase === "uploading") {
+  setSessions(
+    sortSessions(
+      getSessions().map((session) => {
+        const hasLocalSnapshot = snapshotIds.has(session.id);
+        if (session.phase === "uploading") {
+          return {
+            ...session,
+            phase: "failed",
+            hasLocalSnapshot,
+            error: "Upload was interrupted when the extension runtime restarted.",
+          };
+        }
+        if ((session.phase === "recorded" || session.phase === "failed") && !hasLocalSnapshot) {
+          return {
+            ...session,
+            hasLocalSnapshot: false,
+            error: session.error || "Recording snapshot is no longer available for upload.",
+          };
+        }
+        if (session.phase === "uploaded") {
+          return {
+            ...session,
+            hasLocalSnapshot: false,
+          };
+        }
         return {
           ...session,
-          phase: "failed",
           hasLocalSnapshot,
-          error: "Upload was interrupted when the extension runtime restarted.",
         };
-      }
-      if ((session.phase === "recorded" || session.phase === "failed") && !hasLocalSnapshot) {
-        return {
-          ...session,
-          hasLocalSnapshot: false,
-          error: session.error || "Recording snapshot is no longer available for upload.",
-        };
-      }
-      if (session.phase === "uploaded") {
-        return {
-          ...session,
-          hasLocalSnapshot: false,
-        };
-      }
-      return {
-        ...session,
-        hasLocalSnapshot,
-      };
-    }),
+      }),
+    ),
   );
 
   // Seed connection caches from local mirrors before network refresh so popup
@@ -785,7 +640,7 @@ registerMessageListeners({
   getDrawingOverlayState,
   setDrawingColor,
   uploadSessionToGoogleDrive,
-  getUploadState: () => sortSessions(sessions),
+  getUploadState: () => sortSessions(getSessions()),
   storageConnect: async (data) => {
     const resolved = await resolveStorageProviderFromMessage(data);
     if (!resolved.ok) {
@@ -841,7 +696,7 @@ registerMessageListeners({
   onRecordingComplete: (sessionId) => {
     recordingRuntime.onRecordingComplete(sessionId);
   },
-  getUploadArtifactChunk: (data) => getUploadArtifactChunk(sessionArtifacts, data),
+  getUploadArtifactChunk: (data) => getUploadArtifactChunk(getSessionArtifacts(), data),
   patchUploadProgress,
   submitFeedback,
   captureScreenshot: handleCaptureScreenshot,
@@ -1026,7 +881,7 @@ async function loadDrawingColorPreference(): Promise<void> {
     const stored = await chrome.storage.local.get(STORAGE_KEY_DRAWING_COLOR);
     const color = normalizeDrawColor(stored[STORAGE_KEY_DRAWING_COLOR]);
     if (color) {
-      drawingColor = color;
+      setActiveDrawingColor(color);
     }
   } catch {
     // Keep default when storage is unavailable.
@@ -1092,9 +947,9 @@ async function startDrawingOverlay(tabId: number, sessionId: string): Promise<vo
       target: "drawing-overlay",
       type: "START",
       sessionId,
-      color: drawingColor,
+      color: getDrawingColor(),
     });
-    await applyDrawingColorToOverlay(tabId, drawingColor);
+    await applyDrawingColorToOverlay(tabId, getDrawingColor());
     activeRecording.drawingOverlayActive = false;
   } catch (error) {
     console.warn("[GN Tracing] Drawing overlay injection unavailable:", error);
@@ -1138,7 +993,7 @@ async function getDrawingOverlayState(): Promise<
 > {
   await drawingColorReady;
   if (!activeRecording.isRecording || activeRecording.tabId == null) {
-    return { ok: true, active: false, color: drawingColor };
+    return { ok: true, active: false, color: getDrawingColor() };
   }
 
   try {
@@ -1150,10 +1005,10 @@ async function getDrawingOverlayState(): Promise<
     return {
       ok: true,
       active: activeRecording.drawingOverlayActive,
-      color: drawingColor,
+      color: getDrawingColor(),
     };
   } catch (error) {
-    return { ok: false, error: (error as Error).message, color: drawingColor };
+    return { ok: false, error: (error as Error).message, color: getDrawingColor() };
   }
 }
 
@@ -1169,7 +1024,7 @@ async function setDrawingColor(
     };
   }
 
-  drawingColor = color;
+  setActiveDrawingColor(color);
   void persistDrawingColorPreference(color);
 
   if (activeRecording.isRecording && activeRecording.tabId != null) {
@@ -1599,7 +1454,7 @@ async function stopRecording(): Promise<MessageResponse> {
 
     const durationMs = getElapsedMs(stopTime);
 
-    sessionArtifacts[sessionId] = {
+    getSessionArtifacts()[sessionId] = {
       consoleLogs: finalizedArtifacts.consoleLogs,
       networkRequests: finalizedArtifacts.networkRequests,
       webSocketLogs: finalizedArtifacts.webSocketLogs,
@@ -1683,7 +1538,7 @@ async function removeRecording(): Promise<MessageResponse> {
     recordingRuntime.releaseSourceMaps();
     activeRecording.drawingStrokes = [];
     activeRecording.drawingOverlayActive = false;
-    delete sessionArtifacts[sessionId];
+    delete getSessionArtifacts()[sessionId];
 
     setIdleBadge();
     chrome.alarms.clear("gn-tracing-keepalive");
@@ -1795,8 +1650,8 @@ async function deleteSession(data: Record<string, unknown> | undefined): Promise
     return { ok: false, error: "Session not found." };
   }
 
-  sessions = sessions.filter((session) => session.id !== sessionId);
-  delete sessionArtifacts[sessionId];
+  setSessions(getSessions().filter((session) => session.id !== sessionId));
+  delete getSessionArtifacts()[sessionId];
 
   await saveArtifactsToStorage();
   await saveStateToStorage();
@@ -2144,7 +1999,7 @@ async function uploadSessionToGoogleDrive(
   const requestedSessionId =
     typeof data?.sessionId === "string"
       ? data.sessionId
-      : sessions.find(
+      : getSessions().find(
           (session) =>
             (session.phase === "recorded" || session.phase === "failed") &&
             session.hasLocalSnapshot,
@@ -2191,7 +2046,7 @@ function startSessionUploadTask(sessionId: string, authToken: string): Promise<v
 
 async function runSessionUpload(sessionId: string, authToken: string): Promise<void> {
   const session = getSession(sessionId);
-  const artifacts = sessionArtifacts[sessionId];
+  const artifacts = getSessionArtifacts()[sessionId];
 
   if (!session || !artifacts || !session.hasLocalSnapshot) {
     // Three distinct causes; naming the right one is the difference between a
@@ -2282,7 +2137,7 @@ async function runSessionUpload(sessionId: string, authToken: string): Promise<v
       hasLocalSnapshot: false,
     });
 
-    delete sessionArtifacts[sessionId];
+    delete getSessionArtifacts()[sessionId];
     await saveArtifactsToStorage();
 
     await chrome.runtime
