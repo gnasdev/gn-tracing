@@ -313,8 +313,24 @@ export function decryptZipCryptoPayload(
   return { ok: true, bytes: plain.subarray(ZIP_CRYPTO_HEADER_BYTES) };
 }
 
-/** Expands a raw DEFLATE payload. Throws only if the payload is not valid DEFLATE. */
-export async function inflateRawBytes(bytes: Uint8Array): Promise<Uint8Array> {
+/**
+ * Expands a raw DEFLATE payload. Throws if the payload is not valid DEFLATE,
+ * or — when `maxOutputBytes` is given — if the expanded output would exceed
+ * it.
+ *
+ * The cap is enforced while streaming, not by checking the final size: DEFLATE
+ * can expand a small compressed payload by three orders of magnitude, so a
+ * malicious entry can declare a modest `compressedSize` (and any
+ * `uncompressedSize` it likes — nothing here verifies that field against the
+ * real output) and still exhaust memory during `arrayBuffer()`-style
+ * materialization. Reading the stream chunk by chunk and aborting as soon as
+ * the running total crosses the cap bounds the *actual* memory this call can
+ * consume, independent of what the archive claims about itself.
+ */
+export async function inflateRawBytes(
+  bytes: Uint8Array,
+  maxOutputBytes?: number,
+): Promise<Uint8Array> {
   const DecompressionStreamCtor = globalThis.DecompressionStream;
   if (typeof DecompressionStreamCtor !== "function") {
     throw new Error("This runtime has no DecompressionStream; cannot read compressed entries.");
@@ -324,7 +340,36 @@ export async function inflateRawBytes(bytes: Uint8Array): Promise<Uint8Array> {
     throw new Error("Cannot stream compressed entry payload.");
   }
   const inflated = source.pipeThrough(new DecompressionStreamCtor("deflate-raw"));
-  return new Uint8Array(await new Response(inflated).arrayBuffer());
+  const reader = inflated.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+      total += value.byteLength;
+      if (maxOutputBytes !== undefined && total > maxOutputBytes) {
+        await reader.cancel();
+        throw new ZipEntryError(
+          "ENTRY_TOO_LARGE",
+          `Inflated entry exceeds the ${Math.round(maxOutputBytes / (1024 * 1024))} MB read limit.`,
+        );
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  const output = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    output.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return output;
 }
 
 /**
@@ -335,6 +380,7 @@ export async function decodeZipEntryPayload(
   entry: ZipEntryRecord,
   payload: Uint8Array,
   password = "",
+  maxOutputBytes?: number,
 ): Promise<Uint8Array> {
   let bytes = payload;
 
@@ -347,7 +393,7 @@ export async function decodeZipEntryPayload(
   }
 
   if (entry.compressionMethod === ZIP_METHOD_DEFLATE) {
-    bytes = await inflateRawBytes(bytes);
+    bytes = await inflateRawBytes(bytes, maxOutputBytes);
   } else if (entry.compressionMethod !== ZIP_METHOD_STORE) {
     throw new ZipEntryError(
       "UNSUPPORTED_COMPRESSION",
@@ -367,7 +413,8 @@ export type ZipEntryErrorCode =
   | "WRONG_PASSWORD"
   | "TRUNCATED"
   | "UNSUPPORTED_COMPRESSION"
-  | "CRC_MISMATCH";
+  | "CRC_MISMATCH"
+  | "ENTRY_TOO_LARGE";
 
 export class ZipEntryError extends Error {
   readonly code: ZipEntryErrorCode;

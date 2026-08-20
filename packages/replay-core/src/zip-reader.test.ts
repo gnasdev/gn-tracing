@@ -173,6 +173,36 @@ describe("entry payloads", () => {
       code: "CRC_MISMATCH",
     });
   });
+
+  it("caps inflated output independent of the entry's declared uncompressedSize", async () => {
+    // Highly repetitive content compresses to a tiny payload but expands back to
+    // its full size, which is exactly what makes an under-declared
+    // uncompressedSize dangerous: the central directory's own size field is not
+    // a bound on what decompression can produce.
+    const realSize = 2 * 1024 * 1024;
+    const bytes = await buildFixturePackage([
+      { name: "console.json", content: "a".repeat(realSize), method: 8 },
+    ]);
+    const parsed = parseZipCentralDirectory(bytes);
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) {
+      return;
+    }
+    const entry = parsed.entries[0];
+    expect(entry.uncompressedSize).toBe(realSize);
+    const span = requireSpan(entry, bytes);
+    const payload = bytes.subarray(span.start, span.end);
+
+    // A lying central directory: same compressed bytes, a small declared size.
+    const lyingEntry: ZipEntryRecord = { ...entry, uncompressedSize: 1024 };
+
+    const decoded = await decodeZipEntryPayload(lyingEntry, payload);
+    expect(decoded.byteLength).toBe(realSize);
+
+    await expect(decodeZipEntryPayload(lyingEntry, payload, "", 1024 * 1024)).rejects.toMatchObject(
+      { code: "ENTRY_TOO_LARGE" },
+    );
+  });
 });
 
 describe("decryptZipCryptoPayload", () => {

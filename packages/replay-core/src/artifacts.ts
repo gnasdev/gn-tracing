@@ -142,7 +142,12 @@ export async function openRecordingPackage(
 
     const payload = await source.read(span.start, span.end);
     try {
-      const bytes = await decodeZipEntryPayload(entry, payload, password);
+      // `maxEntryBytes` is enforced again here, independent of the
+      // `uncompressedSize` check above: that field is declared by whoever wrote
+      // the central directory and is never verified against the real inflated
+      // output, so a crafted entry can under-declare it and still expand far
+      // past the limit during decompression.
+      const bytes = await decodeZipEntryPayload(entry, payload, password, maxEntryBytes);
       cache.set(name, bytes);
       return bytes;
     } catch (cause) {
@@ -234,6 +239,13 @@ function toEntryReadError(cause: unknown, name: string): ReplayError {
     }
     if (cause.code === "WRONG_PASSWORD") {
       return new ReplayError("WRONG_PASSWORD", "The package password is incorrect.");
+    }
+    if (cause.code === "ENTRY_TOO_LARGE") {
+      return new ReplayError(
+        "ENTRY_TOO_LARGE",
+        cause.message,
+        "Use a narrower query, or open the package locally.",
+      );
     }
     return new ReplayError("PACKAGE_MALFORMED", cause.message);
   }
