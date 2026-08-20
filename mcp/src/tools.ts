@@ -19,11 +19,13 @@ import { describeScreenshot } from "../../packages/replay-core/src/annotate";
 import {
   getConsoleEntry,
   getNetworkRequest,
+  hasCapability,
   listConsole,
   listNetwork,
   listUserEvents,
   listWebSockets,
   MAX_PAGE_LIMIT,
+  type RecordingCapability,
   type RecordingSession,
   ReplayError,
   renderBugReportMarkdown,
@@ -390,7 +392,7 @@ async function listConsoleTool(
   args: Record<string, unknown>,
 ): Promise<ToolOutcome> {
   if (!opened.session.pkg.hasArtifact("console")) {
-    return notCaptured(opened.session, "console");
+    return notCaptured(opened.session, "console", "console");
   }
   const page = await listConsole(opened.session, {
     level: optionalString(args, "level"),
@@ -415,7 +417,7 @@ async function listNetworkTool(
   args: Record<string, unknown>,
 ): Promise<ToolOutcome> {
   if (!opened.session.pkg.hasArtifact("network")) {
-    return notCaptured(opened.session, "network");
+    return notCaptured(opened.session, "network", "network");
   }
   const page = await listNetwork(opened.session, {
     failedOnly: optionalBoolean(args, "failedOnly"),
@@ -467,7 +469,7 @@ async function websocketTool(
   args: Record<string, unknown>,
 ): Promise<ToolOutcome> {
   if (!opened.session.pkg.hasArtifact("websocket")) {
-    return notCaptured(opened.session, "websocket");
+    return notCaptured(opened.session, "websocket", "websocket");
   }
   return {
     data: await listWebSockets(opened.session, {
@@ -482,7 +484,7 @@ async function timelineTool(
   args: Record<string, unknown>,
 ): Promise<ToolOutcome> {
   if (!opened.session.pkg.hasArtifact("events")) {
-    return notCaptured(opened.session, "events");
+    return notCaptured(opened.session, "events", "user-events");
   }
   return {
     data: await listUserEvents(opened.session, {
@@ -540,7 +542,7 @@ async function screenshotsTool(opened: OpenedRecording): Promise<ToolOutcome> {
   const screenshots = artifact?.screenshots ?? [];
 
   if (screenshots.length === 0) {
-    return notCaptured(opened.session, "screenshot");
+    return notCaptured(opened.session, "screenshot", "annotation");
   }
 
   return {
@@ -573,7 +575,7 @@ async function instantReplayTool(
 ): Promise<ToolOutcome> {
   const artifact = await opened.session.pkg.readArtifact<InstantReplayArtifact>("instantReplay");
   if (!artifact) {
-    return notCaptured(opened.session, "instant replay");
+    return notCaptured(opened.session, "instant replay", "instant-replay");
   }
 
   const includeFrames = optionalBoolean(args, "includeFrames") === true;
@@ -615,14 +617,32 @@ async function bugReportTool(
   };
 }
 
-/** Explains an absent artifact using the recording's own privacy summary. */
-async function notCaptured(session: RecordingSession, artifact: string): Promise<ToolOutcome> {
+/**
+ * Explains an absent artifact using the recording's own privacy summary.
+ *
+ * `capability`, when given, is checked against the producer's declared
+ * `metadata.capabilities` first. A capability the producer never claimed (e.g.
+ * "network" on an SDK recording, "screenshot" is more nuanced — see the
+ * `annotation` capability doc) means the artifact is missing because the tool
+ * that made this recording cannot capture it, not because the session was
+ * silent — those read as different facts to an agent deciding whether to keep
+ * looking.
+ */
+async function notCaptured(
+  session: RecordingSession,
+  artifact: string,
+  capability?: RecordingCapability,
+): Promise<ToolOutcome> {
   const privacy = (await session.privacy()) as { profile?: string; limitations?: string[] } | null;
+  const unsupported = capability !== undefined && !hasCapability(session.pkg.metadata, capability);
   return {
     data: {
       captured: false,
       artifact,
-      reason: `This recording contains no ${artifact} data, so there is nothing to search — this is not evidence that nothing happened.`,
+      reason: unsupported
+        ? `The tool that produced this recording cannot capture ${artifact} data, so there is nothing to search — this is not a broken recording.`
+        : `This recording contains no ${artifact} data, so there is nothing to search — this is not evidence that nothing happened.`,
+      supportedByProducer: capability === undefined ? null : !unsupported,
       privacyProfile: privacy?.profile ?? null,
       limitations: privacy?.limitations ?? [],
       availableArtifacts: session.pkg.availableArtifacts,

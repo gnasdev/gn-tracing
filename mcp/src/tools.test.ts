@@ -8,13 +8,22 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { type ByteRangeSource, createBytesSource } from "../../packages/replay-core/src/index";
+import {
+  type ByteRangeSource,
+  createBytesSource,
+  EXTENSION_CAPABILITIES,
+} from "../../packages/replay-core/src/index";
 import { buildSamplePackage } from "../../packages/replay-core/src/testing/fixture";
 import { handleMessage } from "./protocol";
 import { createRecordingStore, type RecordingStore } from "./resolver";
 import { callTool, createToolRegistry, SERVER_INSTRUCTIONS, TOOL_DEFINITIONS } from "./tools";
 
 const SAMPLE_URL = "https://tracing.gnas.dev/gdrive/1AbCdEfGhIjKlMnOp";
+
+/** A producer that never claims it can capture network data, e.g. the SDK on a page that blocks it. */
+const SDK_CAPABILITIES_WITHOUT_NETWORK = EXTENSION_CAPABILITIES.filter(
+  (capability) => capability !== "network",
+);
 
 async function createStore(
   options: Parameters<typeof buildSamplePackage>[0] = {},
@@ -121,8 +130,28 @@ describe("list tools", () => {
     const recordingId = await open(store);
     const outcome = await callTool(store, "list_network", { recordingId });
 
-    expect(outcome.data).toMatchObject({ captured: false, artifact: "network" });
+    expect(outcome.data).toMatchObject({
+      captured: false,
+      artifact: "network",
+      supportedByProducer: true,
+    });
     expect(String((outcome.data as { reason: string }).reason)).toContain("not evidence");
+  });
+
+  it("says the producer cannot capture network data, not that the session was silent", async () => {
+    const store = await createStore({
+      withNetwork: false,
+      capabilities: SDK_CAPABILITIES_WITHOUT_NETWORK,
+    });
+    const recordingId = await open(store);
+    const outcome = await callTool(store, "list_network", { recordingId });
+
+    expect(outcome.data).toMatchObject({
+      captured: false,
+      artifact: "network",
+      supportedByProducer: false,
+    });
+    expect(String((outcome.data as { reason: string }).reason)).toContain("cannot capture");
   });
 });
 
