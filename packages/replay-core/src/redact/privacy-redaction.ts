@@ -743,9 +743,11 @@ function redactSourceSnippet(
 ): RedactionResult<SourceCodeSnippet> {
   const cloned = cloneJson(snippet);
   const applied: RedactionHit[] = [];
-  if (settings.privacyProfile !== "strict") {
-    return { value: cloned, applied };
-  }
+  // No profile gate here: `redactPlainText` already consults each rule's own
+  // `profiles` list (see `isRuleEnabled`), the same as every other "console"
+  // target field in this file. A hardcoded secret quoted from source is exactly
+  // as sensitive as one logged at runtime, so it must not get a free pass at
+  // standard/custom just because it arrived via a source map.
   cloned.lines = cloned.lines.map((line, index) => {
     const result = redactPlainText(line, settings, "console", `${field}.lines.${index}`, "console");
     applied.push(...result.applied);

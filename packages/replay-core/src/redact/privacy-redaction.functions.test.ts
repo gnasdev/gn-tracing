@@ -205,6 +205,29 @@ describe("redactConsoleEntry", () => {
     expect(value.url).toContain(encodeURIComponent(REDACTED_VALUE));
     expect(applied.length).toBeGreaterThan(0);
   });
+
+  // Source-map-enriched snippets carry a line of the *original* source, which
+  // can quote a hardcoded secret. Standard/custom must not give that a free
+  // pass just because it arrived via a snippet instead of a runtime value.
+  it.each([
+    "standard",
+    "custom",
+  ] as const)("redacts a bearer token quoted in a source snippet at the %s profile", (profile) => {
+    const settings = makePrivacySettings(profile);
+    const entry: ConsoleEntry = {
+      ...baseEntry(),
+      sourceSnippet: {
+        source: "app.js",
+        startLine: 10,
+        line: 12,
+        lines: ["fetch(url, {", '  headers: { Authorization: "Bearer abcdef0123456789" }', "});"],
+      },
+    };
+    const { value, applied } = redactConsoleEntry(entry, settings);
+    expect(value.sourceSnippet?.lines[1]).toContain(REDACTED_VALUE);
+    expect(value.sourceSnippet?.lines[1]).not.toContain("abcdef0123456789");
+    expect(applied.some((hit) => hit.field?.includes("sourceSnippet"))).toBe(true);
+  });
 });
 
 describe("redactUserEvent", () => {
