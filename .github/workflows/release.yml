@@ -2,7 +2,7 @@
 # Firefox are zipped into gn-tracing-extension-<tag>.zip and uploaded to the GitHub Release.
 #
 # Trigger: git tag vX.Y.Z && git push origin vX.Y.Z
-# Does not deploy Worker/Player (manual: task worker:deploy / player:deploy).
+# Does not publish immutable Player/Worker services; release publication remains manual.
 name: Release extension
 
 on:

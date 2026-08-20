@@ -49,6 +49,7 @@ function walkTs(relativeDir: string): string[] {
 const REQUIRED_ENTRY_SCRIPTS = [
   "src/content/recording-events.ts",
   "src/content/drawing-overlay.ts",
+  "src/content/page-dom-snapshot.ts",
 ] as const;
 
 const REMOVED_AUTH_PAGE_PATHS = [

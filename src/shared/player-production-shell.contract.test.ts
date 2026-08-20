@@ -5,7 +5,6 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { parseZipCentralDirectory } from "../../packages/replay-core/src/zip-reader";
 import { findActiveEventIndexByRelativeMs } from "./player-clock-index";
 import { formatMessage, TRANSLATIONS } from "./player-i18n";
 import { aggregateLoadingProgress } from "./player-loading-progress";
@@ -23,7 +22,6 @@ const coreIife = readFileSync(
   resolve(__dirname, "../../player/public/vendor/gn-core/gn-core.iife.js"),
   "utf8",
 );
-const zipParser = readFileSync(resolve(__dirname, "../../player/src/zip-parser.ts"), "utf8");
 
 describe("production player shell contract", () => {
   it("requires gnCore at boot and never invents presentation chrome in the shell", () => {
@@ -152,14 +150,6 @@ describe("production player shell contract", () => {
     // gnCore clock helpers required at boot for the cached times path.
     expect(playerJs).toContain('["clockIndex", "eventRelativeTimesMs"]');
     expect(playerJs).toContain('["clockIndex", "indexAtOrBefore"]');
-  });
-
-  it("player zip-parser re-exports the canonical replay-core reader", () => {
-    expect(zipParser).toContain('from "../../packages/replay-core/src/zip-reader"');
-    expect(zipParser).toContain("parseZipCentralDirectory");
-    // Shipped function still works on a minimal invalid buffer.
-    const result = parseZipCentralDirectory(new Uint8Array([0, 1, 2]));
-    expect(result.ok).toBe(false);
   });
 
   it("gn-core IIFE embeds the shared domain symbols used by production", () => {

@@ -266,13 +266,3 @@ export function pickRecorderMimeType(
   // Empty string lets the browser choose its own default container.
   return "";
 }
-
-export type ActiveMediaSession = {
-  recorder: MediaRecorder;
-  stream: MediaStream;
-  sessionId: string;
-  chunks: Blob[];
-  shouldDiscard: boolean;
-  playbackAudioContext: AudioContext | null;
-  playbackSourceNode: MediaStreamAudioSourceNode | null;
-};

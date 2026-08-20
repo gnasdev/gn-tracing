@@ -1,17 +1,16 @@
 /**
- * Vitest configuration for the standalone SolidJS replay player (jsdom).
+ * Vitest configuration for the standalone replay player (jsdom).
  *
  * Derives from the shared base (`../vitest.shared`) so coverage settings,
  * reporters, the globals flag, and the include/exclude globs stay aligned with
  * every other context. Declares `environment: "jsdom"` and re-scopes only
  * `coverage.exclude` (per-context lever) so this Context can measure its own
- * source. Solid plugin enables TSX under the player package.
+ * source.
  */
 
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import solid from "vite-plugin-solid";
 import { defineConfig, mergeConfig } from "vitest/config";
 import { sharedTestConfig } from "../vitest.shared";
 
@@ -22,7 +21,6 @@ const rootAppVersion = JSON.parse(
 
 export default mergeConfig(
   defineConfig({
-    plugins: [solid()],
     define: {
       "import.meta.env.VITE_APP_VERSION": JSON.stringify(rootAppVersion),
     },

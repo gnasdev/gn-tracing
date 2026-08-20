@@ -2,7 +2,7 @@ version: "3"
 
 # Load root .env for deploy/build tasks so CHROME_EXTENSION_ID, Cloudflare
 # tokens, and GOOGLE_* credentials reach scripts that intentionally do not
-# read the file themselves (worker/deploy.sh, player/deploy.sh).
+# read the file themselves (worker/deploy.sh).
 # Missing .env is ignored; CI can still inject process env.
 dotenv: [".env"]
 
@@ -192,13 +192,12 @@ tasks:
       - npm exec -- tsc --noEmit -p tsconfig.json
       - npm exec -- vite build --mode production
 
-  player:build:cloudflare:
-    desc: Build the standalone player for Cloudflare Pages.
+  player:build:release:
+    desc: Build the standalone Player artifact for an immutable R2 release.
     env:
       VITE_BASE_PATH: '{{.VITE_BASE_PATH | default "/"}}'
-      # VITE_FEEDBACK_PROXY_URL is intentionally NOT forced here — deploy.sh
-      # resolves and exports it so nested vite builds inherit the real Worker URL.
-      # Blanking it in this map would ship feedback as "not configured" in prod.
+      # Release scripts resolve and pass VITE_FEEDBACK_PROXY_URL so the Player
+      # artifact keeps the deployed Worker origin without a Pages deploy wrapper.
     cmds:
       - task: player:dist
 
@@ -213,14 +212,6 @@ tasks:
     dir: player
     cmds:
       - npm exec -- tsc --noEmit
-
-  player:deploy:
-    desc: >-
-      Manually deploy the standalone player to Cloudflare Pages.
-      Not run by git hooks — invoke only when shipping edge.
-    dir: player
-    cmds:
-      - ./deploy.sh
 
   worker:sync-dev-vars:
     desc: >-
@@ -441,8 +432,8 @@ tasks:
   release:ci:
     desc: >-
       Build production Chrome + Edge + Opera + Firefox packages and zip them.
-      Does not deploy Worker/Player — run task worker:deploy / player:deploy
-      manually before shipping if edge changed.
+      Does not publish immutable Player or Worker artifacts; release services
+      are published through the versioned R2/router release tasks.
     cmds:
       - npm run version:check
       - task: dist:all
@@ -617,7 +608,7 @@ tasks:
   dev:all:
     desc: >-
       Local full stack watching Chrome, Edge, Opera, and Firefox builds together,
-      plus the player, local Worker, and shared reload coordinator. Six foreground
+      plus the player, local Worker, and shared reload coordinator. Seven foreground
       long-running processes — heavier than single-target `task dev`; use when a change
       must be verified on every target. Alias for `task dev BROWSER=all`.
     cmds:

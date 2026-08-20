@@ -17,8 +17,6 @@
     "allowSyntheticDefaultImports": true,
     "forceConsistentCasingInFileNames": true,
     "allowJs": true,
-    "jsx": "preserve",
-    "jsxImportSource": "solid-js",
     "types": ["vite/client", "node"]
   },
   "include": ["src/**/*"]

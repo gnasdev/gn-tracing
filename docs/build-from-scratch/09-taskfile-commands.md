@@ -78,9 +78,9 @@ It runs every context, accumulates failures, and exits 1 if any context failed.
 | `task dist:all` | Chrome + Edge + Opera + Firefox production packages |
 | `task dev` | Full stack for one browser (default Chrome): watch + player + Worker |
 | `task dev:chrome` / `dev:edge` / `dev:opera` / `dev:firefox` | Same stack for that browser |
-| `task dev BROWSER=all` / `task dev:all` | All four extension watchers + player + Worker (6 processes) |
+| `task dev BROWSER=all` / `task dev:all` | All four extension watchers + reload + Player + Worker (7 processes) |
 
-`task dev` is the local development workhorse: it keeps the extension, player, and Worker hot-reloading simultaneously under prefixed output streams. The extension watcher is the only per-browser process — the player (`:5176`) and Worker (`:8787`) serve every target — so pick one with `task dev BROWSER=chrome|edge|opera|firefox` (default `chrome`), or use `BROWSER=all` / `task dev:all` to watch every target. CLI var and env `BROWSER` both work. `task watch` takes the same variable (single target only; no `all`), and an unsupported value fails on a precondition before anything starts.
+`task dev` is the local development workhorse: it starts the development reload coordinator, Chrome and Firefox extension watchers by default, the player (`:5176`), and the Worker (`:63972`). Set `BROWSER=chrome|edge|opera|firefox` for one target, `BROWSER=both` for the default Chrome + Firefox pair, or `BROWSER=all` / `task dev:all` for every target. `task watch` accepts one browser only; `task dev` also accepts `both` and `all`. CLI var and env `BROWSER` both work.
 
 Because the player and Worker are per-repo rather than per-target, `player:dev` and `worker:dev` probe their port with `scripts/port-listening.mjs` and reuse a running instance instead of failing to bind. Two `task dev` stacks for different browsers can therefore run side by side.
 

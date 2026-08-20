@@ -82,8 +82,10 @@ task build:all      # Chrome + Edge + Opera + Firefox (development)
 task dist:all       # Chrome + Edge + Opera + Firefox (production)
 task player:build   # Standalone player (dev)
 task player:dist    # Standalone player (production)
-task dev            # Full local stack (Chrome default): extension watch + player (Vite) + Worker (:8787)
-task dev BROWSER=firefox   # Same stack for Firefox (also: edge|opera, or task dev:edge / :opera / :firefox / :chrome)
+task dev            # Full local stack (Chrome + Firefox default): extension watch + player (Vite) + Worker (:63972)
+task dev BROWSER=both      # Explicit Chrome + Firefox default
+
+task dev BROWSER=chrome    # One target (also: edge|opera|firefox, or task dev:<browser>)
 task dev BROWSER=all       # All four browser watchers + player + Worker (alias: task dev:all)
 task dev:all        # Same as BROWSER=all
 task worker:dev     # Local Worker only (also included in `task dev`)
@@ -268,7 +270,7 @@ Use the Store extension id for production, or the unpacked id printed in `chrome
 | Console | Google Cloud → OAuth client (Chrome extension and/or Web application) |
 | Env | `GOOGLE_CLIENT_ID` |
 | Optional secret proxy | `GOOGLE_TOKEN_PROXY_URL` → existing Google-shaped Worker in `worker/` |
-| Dev proxy default | `GOOGLE_TOKEN_PROXY_URL_DEV` → `http://localhost:8787` when unset (`task dev` / watch) |
+| Dev proxy default | `GOOGLE_TOKEN_PROXY_URL_DEV` → `http://localhost:63972` when unset (`task dev` / watch) |
 | Scopes | Drive `drive.file` (create/access files the app creates or the user opens with it) |
 | Extension auth | Chrome: `getAuthToken`; other Chromium: web auth PKCE + refresh cache |
 | Host permissions | `https://oauth2.googleapis.com/`, `https://www.googleapis.com/`, optional Worker origin |
@@ -286,7 +288,7 @@ See [docs/modules/oauth-token-proxy.md](./docs/modules/oauth-token-proxy.md).
 | Console | [Dropbox App Console](https://www.dropbox.com/developers/apps) → Scoped access |
 | Env | `DROPBOX_CLIENT_ID` (app key) |
 | Optional secret proxy | `DROPBOX_TOKEN_PROXY_URL` → multi-issuer Worker path `/token/dropbox` |
-| Dev proxy default | `DROPBOX_TOKEN_PROXY_URL_DEV` → `http://localhost:8787/token/dropbox` when unset |
+| Dev proxy default | `DROPBOX_TOKEN_PROXY_URL_DEV` → `http://localhost:63972/token/dropbox` when unset |
 | Scopes | `files.content.write`, `files.content.read`, `sharing.write`, `sharing.read`, `account_info.read` (or Full Dropbox) |
 | Extension auth | `launchWebAuthFlow` + PKCE preferred |
 | Replay | `/dropbox/<canonical-shared-link-id>`; standalone `/api/dropbox?id=...` |
@@ -298,41 +300,41 @@ The Dropbox proxy only accepts relative shared-link ids (`s/`, `scl/`, `sh/`, `s
 
 ### Local full stack (`task dev`)
 
-`task dev` runs **three** processes together (extension + player + **local Worker**):
+`task dev` starts a development reload coordinator, extension watchers, the standalone Player, and the local Worker. `BROWSER=both` is the default, so it watches Chrome and Firefox. The shared services are Player at `:5176` and Worker at `:63972`.
 
 | Process | Port / path | Role |
 |---------|-------------|------|
-| Extension watch | esbuild → `dist/<browser>/` | Injects **local** Worker proxies (not production Worker URLs) |
-| Standalone player | Vite `:5176` | Replay UI + `/api/drive`, `/api/dropbox` download proxies |
-| Multi-issuer Worker | wrangler `:8787` | OAuth token exchange (Google `/`, Dropbox `/token/dropbox`) + optional `POST /feedback` |
+| Development reload | `:63973` | Tells development extension builds to reload after a safe rebuild |
+| Extension watch | esbuild → `dist/<browser>/` | Injects local Worker proxies instead of production Worker URLs |
+| Standalone Player | Vite `:5176` | Replay UI plus `/api/drive` and `/api/dropbox` download proxies |
+| Multi-issuer Worker | Wrangler `:63972` | OAuth token exchange and optional `POST /feedback` |
 
-Only the extension watcher is per-browser; the player and Worker are shared by every target. Pick the target with `BROWSER` (CLI flag or env):
+Choose a browser set with `BROWSER`:
 
 ```bash
-task dev                    # chrome (default)
-task dev BROWSER=edge       # same as task dev:edge
-task dev BROWSER=opera      # same as task dev:opera
-task dev BROWSER=firefox    # same as task dev:firefox
-task dev:chrome             # explicit chrome alias
+task dev                    # Chrome + Firefox (default)
+task dev BROWSER=both       # explicit default
+task dev BROWSER=chrome
+task dev BROWSER=edge
+task dev BROWSER=opera
+task dev BROWSER=firefox
 BROWSER=firefox task dev    # env form also works
-task dev BROWSER=all        # all four watchers + player + worker (6 processes)
+task dev BROWSER=all        # all four watchers + reload + Player + Worker
 task dev:all                # alias for BROWSER=all
 ```
 
-An unsupported value fails fast on a precondition, before any long-running process starts. `task watch` takes the same `BROWSER` variable (`chrome|edge|opera|firefox` only — use `dev`/`dev:all` for the full stack).
+`task watch` accepts one browser only: `chrome`, `edge`, `opera`, or `firefox`. `task dev` also accepts `both` and `all`; an unsupported value fails before a long-running process starts.
 
-The player (`:5176`) and Worker (`:8787`) are per-repo, not per-target, so `player:dev` and `worker:dev` **reuse an instance already serving their port** instead of failing to bind. Two stacks can therefore coexist — `task dev` in one terminal and `task dev BROWSER=firefox` in another — with the second reusing the first's shared services:
+The Player and Worker are per-repository rather than per-browser. `player:dev` and `worker:dev` reuse a process already serving their port, so a second `task dev` stack can share them.
 
 ```
 [player:dev] http://localhost:5176 is already serving — reusing it.
-[worker:dev] http://localhost:8787 is already serving — reusing it.
+[worker:dev] GN Tracing OAuth Worker is already serving http://localhost:63972 — reusing it.
 ```
 
-The probe is `scripts/port-listening.mjs`, which checks both loopback families (Vite binds `[::1]` only, workerd binds both).
+Before Wrangler starts, `task worker:sync-dev-vars` copies client ids, secrets, and optional `GITHUB_FEEDBACK_TOKEN` from root `.env` into git-ignored `worker/.dev.vars`. Leave `*_TOKEN_PROXY_URL_DEV` and `FEEDBACK_PROXY_URL_DEV` empty to use the localhost defaults: `http://localhost:63972`, `/token/dropbox`, and `/feedback`.
 
-Before wrangler starts, `task worker:sync-dev-vars` copies client ids/secrets and optional `GITHUB_FEEDBACK_TOKEN` from root `.env` into `worker/.dev.vars` (git-ignored). Keep `*_TOKEN_PROXY_URL_DEV` / `FEEDBACK_PROXY_URL_DEV` empty to use the localhost defaults (`http://localhost:8787`, `/token/dropbox`, `/feedback`); set them only to override.
-
-The Worker is **required** for local confidential OAuth clients and for in-extension Feedback submit. Run `task worker:dev` alone if you only need the Worker.
+The Worker is required for local confidential OAuth clients and in-extension Feedback submit. Run `task worker:dev` alone if only the Worker is needed.
 
 ### Env var summary
 
@@ -363,33 +365,11 @@ CHROME_EXTENSION_PUBLIC_KEY=
 
 ## Release
 
-Release is **local or tag-driven**. Commit hooks only run quality checks — they never deploy edge.
+Player and OAuth Worker production releases are versioned and immutable. Player artifacts are stored in R2 and served by `gn-tracing-player-router`; versioned Worker services are reached through `gn-tracing-oauth-proxy`. Do not use `task player:deploy` for `tracing.gnas.dev`: that command targets obsolete Cloudflare Pages hosting.
 
-**Deploy Worker / Player (manual only):**
+Follow [Versioned Player and Worker Deployment](./docs/modules/versioned-player-worker-deployment.md) for local URLs, environment prerequisites, the required source-commit/registry ordering, immutable deployment commands, smoke checks, Chrome Web Store submission, and tag-driven GitHub Release verification.
 
-```bash
-task worker:deploy   # Cloudflare Worker (OAuth + feedback + /mcp)
-task player:deploy   # Cloudflare Pages (tracing.gnas.dev)
-```
-
-Run these yourself when you intend to ship edge changes. Prefer Worker then Player before a new extension zip so clients do not hit undeployed routes. Requires `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, and provider secrets in `.env`.
-
-**Extension package + version:**
-
-1. Ensure `npm run quality:gate` (or a normal `git push` pre-push hook) is green.
-2. Bump root `package.json` version and keep `player/` + `worker/` package versions aligned (`npm run version:check`).
-3. After manual edge deploy (if needed): `GITHUB_REF_NAME=vX.Y.Z task release:ci` → zip with `chrome/`, `edge/`, `opera/`, and `firefox/`.
-4. Tag/push when ready: `git tag vX.Y.Z && git push origin vX.Y.Z`.
-   - GitHub Actions (`.github/workflows/release.yml`) builds all four browsers and uploads `gn-tracing-extension-vX.Y.Z.zip`.
-   - CI (`.github/workflows/test.yml`) also runs `task dist:all` on `main`/`dev` PRs so multi-browser packaging stays green.
-5. MCP npm publish stays manual: bump `mcp/package.json` + `mcp/server.json`, then `npm publish` from `mcp/` after `npm run mcp:check`.
-
-Production build env (from `.env`):
-
-- `GOOGLE_CLIENT_ID`, `GOOGLE_TOKEN_PROXY_URL`
-- `CHROME_EXTENSION_ID`, `CHROME_EXTENSION_PUBLIC_KEY`, optional private key
-- Cloudflare: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`
-- plus Dropbox client/proxy when shipping multi-cloud
+Commit hooks run quality checks only. They never deploy edge services.
 
 ## Store Package Check
 

@@ -51,7 +51,7 @@ The extension is a public client and must never bundle OAuth `client_secret` val
 
 Public PKCE clients can leave a proxy URL empty and call the provider token endpoint directly. See [DEVELOPER.md](../../DEVELOPER.md).
 
-For local development, `task dev` starts the Worker together with extension watch and the standalone player. `task worker:dev` runs the Worker alone. Both use `wrangler dev` on `http://localhost:8787` after `task worker:sync-dev-vars` writes `worker/.dev.vars` from root `.env` (OAuth secrets + optional `GITHUB_FEEDBACK_TOKEN`). Manual template: `worker/.dev.vars.example`. Dev defaults: Google `http://localhost:8787`, Dropbox `http://localhost:8787/token/dropbox`, feedback `http://localhost:8787/feedback`.
+For local development, `task dev` starts the Worker together with extension watch and the standalone player. `task worker:dev` runs the Worker alone. Both use `wrangler dev` on `http://localhost:63972` after `task worker:sync-dev-vars` writes `worker/.dev.vars` from root `.env` (OAuth secrets + optional `GITHUB_FEEDBACK_TOKEN`). Manual template: `worker/.dev.vars.example`. Dev defaults: Google `http://localhost:63972`, Dropbox `http://localhost:63972/token/dropbox`, feedback `http://localhost:63972/feedback`.
 
 ## 2. Functional & Non-Functional Requirements
 

@@ -1,7 +1,7 @@
 /**
  * Google Drive public download + large-file virus-scan confirmation handling.
  *
- * Single source of truth for Cloudflare Pages Functions and Vite dev middleware.
+ * Single source of truth for the Player router and Vite dev middleware.
  */
 
 import { parseDriveFileId } from "./file-id.js";

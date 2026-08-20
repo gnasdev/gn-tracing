@@ -43,7 +43,7 @@ const RESERVED_FIRST_SEGMENTS = new Set([
 /** Default origin of the hosted replay player. */
 export const DEFAULT_PLAYER_ORIGIN = "https://tracing.gnas.dev";
 
-/** Same-origin download proxy path per provider (see `player/functions/api`). */
+/** Same-origin download proxy path per provider (served by the Player router). */
 const PROVIDER_PROXY_PATHS: Record<StorageProviderId, string> = {
   "google-drive": "/api/drive",
   dropbox: "/api/dropbox",

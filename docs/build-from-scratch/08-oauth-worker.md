@@ -51,7 +51,7 @@ compatibility_date = "2024-09-23"
 compatibility_flags = ["nodejs_compat"]
 
 [dev]
-port = 8787
+port = 63972
 
 [vars]
 # Used at deploy time. Locally, .dev.vars overrides these.
@@ -135,7 +135,7 @@ The exact implementation in this repo also handles the `grant_type=refresh_token
 chrome-extension://${CHROME_EXTENSION_ID}
 ```
 
-When `GOOGLE_CLIENT_ID` is from a Google identity that needs `http://localhost` redirects (e.g. for the drive-auth page in development), add `http://localhost:8787` to the list.
+When `GOOGLE_CLIENT_ID` is from a Google identity that needs `http://localhost` redirects (e.g. for the drive-auth page in development), add `http://localhost:63972` to the list.
 
 ## 8.6 `deploy.sh`
 
@@ -152,16 +152,16 @@ This file is the one the `task worker:deploy` alias invokes (chapter `09`).
 ```bash
 cd worker
 cp .dev.vars.example .dev.vars      # GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, ALLOWED_EXTENSION_ORIGINS
-task worker:dev                     # -> wrangler dev --port 8787
+task worker:dev                     # -> wrangler dev --port 63972
 ```
 
 Then in the root `.env` (chapter `10`):
 
 ```
-GOOGLE_TOKEN_PROXY_URL=http://localhost:8787
+GOOGLE_TOKEN_PROXY_URL=http://localhost:63972
 ```
 
-Rebuild the extension so the manifest gains `http://localhost:8787/` in `host_permissions` (handled automatically by `addTokenProxyHostPermission()` from chapter `04`).
+Rebuild the extension so the manifest gains `http://localhost:63972/` in `host_permissions` (handled automatically by `addTokenProxyHostPermission()` from chapter `04`).
 
 ## 8.8 Testing
 
@@ -196,7 +196,7 @@ describe("oauth proxy", () => {
 ## You Should Now Have
 
 - A Cloudflare Worker project at `worker/` that builds and deploys via `task worker:deploy`.
-- A reachable dev URL at `http://localhost:8787` that proxies Google token exchanges.
+- A reachable dev URL at `http://localhost:63972` that proxies Google token exchanges.
 - A `GOOGLE_TOKEN_PROXY_URL` value that the rebuilt extension picks up.
 
 Move on to [09 - Taskfile Commands](./09-taskfile-commands.md).

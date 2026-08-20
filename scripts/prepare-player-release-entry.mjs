@@ -32,7 +32,7 @@ const feedbackUrl = execFileSync(
   ["--experimental-strip-types", "scripts/resolve-feedback-proxy-url.mjs"],
   { cwd: root, env: process.env, encoding: "utf8" },
 ).trim();
-execFileSync("task", ["player:build:cloudflare"], {
+execFileSync("task", ["player:build:release"], {
   cwd: root,
   env: { ...process.env, VITE_BASE_PATH: `/${version}/`, VITE_FEEDBACK_PROXY_URL: feedbackUrl },
   stdio: "inherit",

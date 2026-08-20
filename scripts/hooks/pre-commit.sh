@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Fast quality gate for every commit (Biome staged, docs, version, related tests).
-# Does NOT deploy Worker/Player — deploy is always manual (task worker:deploy / player:deploy).
+# Does NOT publish immutable Player/Worker artifacts; release publication is always manual.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"

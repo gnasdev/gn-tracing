@@ -1,6 +1,5 @@
 {
   "entry": [
-    "src/background/service-worker.ts",
     "src/popup/popup.ts",
     "src/offscreen/offscreen.ts",
     "src/annotate/annotate.ts",
@@ -10,18 +9,20 @@
     "src/content/drawing-overlay.ts",
     "src/content/instant-replay.ts",
     "src/content/instant-replay-evidence.ts",
+    "src/content/page-dom-snapshot.ts",
     "src/shared/agent-report.ts",
     "scripts/*.mjs"
   ],
   "project": ["src/**/*.ts", "scripts/**/*.mjs"],
-  "ignore": ["dist/**", "graphify-out/**", "player/**", "shared/**", "store-assets/**"],
   "ignoreBinaries": [
     "vite",
     "task",
-    "watch",
-    "knip",
-    "blue,green,magenta",
-    "blue,cyan,yellow,red,green,magenta"
+    "white,blue,green,magenta",
+    "white,blue,red,green,magenta",
+    "white,blue,cyan,yellow,red,green,magenta"
   ],
-  "ignoreExportsUsedInFile": true
+  "ignoreExportsUsedInFile": true,
+  "ignoreIssues": {
+    "src/shared/player-i18n/index.ts": ["exports"]
+  }
 }

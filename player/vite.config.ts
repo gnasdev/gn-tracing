@@ -2,7 +2,7 @@
  * Vite configuration for the hosted standalone replay player.
  *
  * Development mode also provides Drive/Dropbox download proxies so local
- * replay testing exercises the same same-origin path used by Cloudflare Pages.
+ * replay testing exercises the same same-origin path served by the Player router.
  */
 
 import fs from "node:fs";
@@ -10,7 +10,6 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Connect } from "vite";
 import { defineConfig } from "vite";
-import solid from "vite-plugin-solid";
 import { handleDriveProxyRequest } from "./shared/proxy/drive-download.js";
 import { handleDropboxProxyRequest } from "./shared/proxy/dropbox-download.js";
 import { isStorageProxyPath, isUnsupportedLocalPlayerVersionPath } from "./shared/proxy/path";
@@ -172,7 +171,7 @@ function driveProxyPlugin() {
 
 export default defineConfig(({ mode }) => ({
   base: mode === "production" ? basePath : "/",
-  plugins: [solid(), driveProxyPlugin()],
+  plugins: [driveProxyPlugin()],
   // Same product version as extension/worker (root package.json).
   define: {
     "import.meta.env.VITE_APP_VERSION": JSON.stringify(rootAppVersion),

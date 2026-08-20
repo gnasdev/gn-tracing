@@ -1,9 +1,8 @@
 /**
  * ZIP reader for recording packages, usable outside a browser page.
  *
- * The structural central-directory parse mirrors
- * `player/src/zip-parser.ts` (and the writer in
- * `src/offscreen/offscreen.ts`): total over any byte buffer, never throws,
+ * The structural central-directory parse is paired with the writer in
+ * `src/offscreen/offscreen.ts`: total over any byte buffer, never throws,
  * returns a typed result union instead.
  *
  * On top of that it adds what a non-UI consumer needs:

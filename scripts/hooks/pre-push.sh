@@ -1,9 +1,7 @@
 #!/usr/bin/env bash
 # Full local quality gate only (typecheck / check / tests).
 #
-# Does NOT deploy Worker or Player — those are always manual:
-#   task worker:deploy
-#   task player:deploy
+# Does NOT publish immutable Player or Worker artifacts; release publication is manual.
 #
 # Skip this gate: SKIP_HOOKS=1 git push
 # Optional e2e:  RUN_E2E=1 git push  (requires Playwright browsers)
@@ -56,4 +54,4 @@ if [ "${RUN_E2E:-}" = "1" ] || [ "${RUN_E2E:-}" = "true" ]; then
   npm run test:e2e:player
 fi
 
-echo "✓ pre-push quality gate passed (no deploy — run task worker:deploy / player:deploy manually when shipping edge)"
+echo "✓ pre-push quality gate passed (no deploy — publish immutable releases manually when shipping edge)"

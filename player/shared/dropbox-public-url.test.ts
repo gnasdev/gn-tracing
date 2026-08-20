@@ -1,6 +1,6 @@
 /**
  * Proxy-side URL builder tests (SSRF / path allowlist).
- * Source of truth for Cloudflare Pages + Vite middleware.
+ * Source of truth for the Player router + Vite middleware.
  */
 import { describe, expect, it } from "vitest";
 import {

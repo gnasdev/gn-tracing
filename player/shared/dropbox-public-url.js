@@ -1,5 +1,5 @@
 /**
- * Pure Dropbox public shared-link URL helpers for Cloudflare Pages + Vite proxy.
+ * Pure Dropbox public shared-link URL helpers for the Player router + Vite proxy.
  *
  * Keep behavior in lockstep with `src/shared/dropbox-api.ts` (unit tests there).
  * Proxies must never fetch arbitrary absolute URLs (open proxy / SSRF).

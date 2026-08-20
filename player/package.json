@@ -1,7 +1,7 @@
 {
   "name": "gn-tracing-player",
   "version": "1.7.14",
-  "description": "Standalone GN Tracing replay player (production: public/player.js + gn-core; Solid under src/ is archived experimental)",
+  "description": "Standalone GN Tracing replay player (production: public/player.js + gn-core)",
   "license": "GPL-3.0-or-later",
   "type": "module",
   "scripts": {
@@ -12,16 +12,12 @@
     "test": "vitest run",
     "test:coverage": "vitest run --coverage"
   },
-  "dependencies": {
-    "solid-js": "^1.9.14"
-  },
   "devDependencies": {
     "@types/node": "^22.20.0",
     "@vitest/coverage-v8": "4.1.9",
     "jsdom": "29.1.1",
     "typescript": "7.0.2",
     "vite": "^7.3.6",
-    "vite-plugin-solid": "^2.11.14",
     "vitest": "4.1.9"
   },
   "overrides": {
