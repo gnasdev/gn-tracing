@@ -11,7 +11,7 @@ This guide is for contributors working on GN Tracing. The main [README](./README
 - `src/annotate/`: screenshot annotation editor page (state model + page wiring; full tab — not a popup dialog)
 - `src/shared/`: settings form UI, storage provider helpers, cloud API helpers, player URL, history helpers
 - `src/types/`: extension message contracts; recording and privacy models re-export from `packages/replay-core/src/schema/`
-- `player/`: hosted replay player (tracing.gnas.dev) — **SolidJS + TypeScript 7** SPA (`src/`), package load/ZIP in TS, cloud download proxies, legacy `public/player.css` styles + vendors
+- `player/`: hosted replay player (tracing.gnas.dev) — production shell is **vanilla JS** (`public/player.js`), with domain logic owned by `src/shared/*` and compiled into `window.gnCore`; cloud download proxies under `functions/`. A Solid/TypeScript rewrite exists under `player/src/` (`main.tsx`, `App.tsx`, `components/`, `panels/`) but is experimental and archived — not production, not feature-parity, do not extend it for product work (see `player/README.md`)
 - `worker/`: optional Google OAuth token-exchange Worker (secret injection) + remote MCP route (`POST /mcp`)
 - `packages/replay-core/`: the recording format itself, shared by every producer and reader
   - `schema/`: artifact taxonomy, capture models, privacy settings — the single source of truth
@@ -358,7 +358,7 @@ CHROME_EXTENSION_PUBLIC_KEY=
 - Treat MV3 service worker restarts as normal. UI state should recover from `chrome.storage.session` and runtime checks.
 - Keep user-facing docs aligned with multi-cloud: record, stop, upload to the active provider, open namespaced replay link.
 - Biome owns formatting, linting, and import organization for its supported source types. Markdown docs are covered by `npm run docs:check`. Quality gates run via **Husky** (no GitHub Actions): `pre-commit` is fast (Biome staged + docs + version:check + vitest related); `pre-push` runs the full gate (`typecheck:all`, `check`, `test:all`). Hooks **never** deploy Worker or Player. Scripts: `npm run hooks:pre-commit`, `npm run quality:gate`. Skip push gate with `SKIP_HOOKS=1 git push`. Optional player e2e: `RUN_E2E=1 git push`.
-- `task player:dev` runs the SolidJS player on port 5176. `task player:build` / `player:dist` typecheck with TypeScript 7 then Vite-build. Theme/icons still sync from root `shared/` via `task player:sync`.
+- `task player:dev` runs the vanilla player shell on port 5176. `task player:build` / `player:dist` typecheck the TypeScript bootstrap and shared core (TypeScript 7) then Vite-build. Theme/icons still sync from root `shared/` via `task player:sync`.
 - If manifest permissions, auth, cloud upload, or player loading changes, manually verify the affected browser × provider matrix.
 - Keep source comments in English and focused on runtime boundaries, browser API constraints, async lifecycle, or non-obvious contracts.
 - **Telemetry-free:** do not log OAuth tokens, refresh tokens, or package file bodies. High-level auth failure messages in `console.warn` / `console.error` are acceptable (network errors, HTTP status, OAuth `error` / `error_description` strings). Auth error logs must never include full token-endpoint response JSON or grant payloads.
