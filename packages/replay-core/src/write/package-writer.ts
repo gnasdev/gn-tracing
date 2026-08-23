@@ -17,6 +17,7 @@ import {
   ARTIFACT_FILENAMES,
   ARTIFACT_INDEX_KEYS,
   type AttachableArtifactId,
+  type EvidenceCoverage,
   type PackageManifest,
   type PackageMetadata,
   type RecordingCapability,
@@ -42,6 +43,8 @@ export interface VideoInput {
 export interface BuildPackageInput {
   producer: RecordingProducer;
   capabilities: RecordingCapability[];
+  /** Selected evidence sources and their per-surface fidelity. */
+  evidenceCoverage?: EvidenceCoverage;
   /** ISO timestamp for `metadata.timestamp`. */
   packagedAt: string;
   /** Filename the package will be stored under, recorded in metadata. */
@@ -132,6 +135,7 @@ export async function buildRecordingPackage(input: BuildPackageInput): Promise<B
     version: String(input.version || "").trim() || "0.0.0",
     producer: input.producer,
     capabilities: input.capabilities,
+    evidenceCoverage: input.evidenceCoverage,
     storage: {
       provider: input.storage?.provider,
       folderId: input.storage?.folderId ?? null,

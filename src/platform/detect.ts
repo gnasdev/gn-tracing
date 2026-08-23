@@ -1,7 +1,7 @@
 /**
  * Resolve the packaged browser target and coarse feature flags.
  *
- * Official targets: chrome | edge | opera | firefox.
+ * Official targets: chrome | edge | opera | firefox | safari | safari-ios.
  */
 
 import type { BrowserFeatureFlags, BrowserTarget, CaptureMode, MediaHostKind } from "./types";
@@ -13,6 +13,8 @@ export const OFFICIAL_BROWSER_TARGETS: readonly BrowserTarget[] = [
   "edge",
   "opera",
   "firefox",
+  "safari",
+  "safari-ios",
 ] as const;
 
 const VALID_TARGETS = new Set<BrowserTarget>(OFFICIAL_BROWSER_TARGETS);
@@ -44,6 +46,14 @@ export function isFirefoxTarget(target: BrowserTarget = getBrowserTarget()): boo
   return target === "firefox";
 }
 
+export function isSafariTarget(target: BrowserTarget = getBrowserTarget()): boolean {
+  return target === "safari";
+}
+
+export function isSafariIosTarget(target: BrowserTarget = getBrowserTarget()): boolean {
+  return target === "safari-ios";
+}
+
 const FIREFOX_FLAGS: BrowserFeatureFlags = {
   cdp: false,
   tabCapture: false,
@@ -51,6 +61,25 @@ const FIREFOX_FLAGS: BrowserFeatureFlags = {
   chromeIdentityGetAuthToken: false,
   displayMediaPicker: true,
   instantReplayCdpAllowlist: false,
+  video: true,
+  inPageNetworkCapture: false,
+};
+
+/** Same evidence/media model as Firefox: no CDP on Safari either. */
+const SAFARI_FLAGS: BrowserFeatureFlags = {
+  ...FIREFOX_FLAGS,
+};
+
+/** No getDisplayMedia/tabCapture equivalent exists on iOS Safari at all. */
+const SAFARI_IOS_FLAGS: BrowserFeatureFlags = {
+  cdp: false,
+  tabCapture: false,
+  offscreen: false,
+  chromeIdentityGetAuthToken: false,
+  displayMediaPicker: false,
+  instantReplayCdpAllowlist: false,
+  video: false,
+  inPageNetworkCapture: true,
 };
 
 /** Shared Chromium capture stack; auth strategy differs by brand package. */
@@ -62,12 +91,20 @@ function chromiumFlags(chromeIdentityGetAuthToken: boolean): BrowserFeatureFlags
     chromeIdentityGetAuthToken,
     displayMediaPicker: false,
     instantReplayCdpAllowlist: true,
+    video: true,
+    inPageNetworkCapture: false,
   };
 }
 
 export function getFeatureFlags(target: BrowserTarget = getBrowserTarget()): BrowserFeatureFlags {
   if (target === "firefox") {
     return { ...FIREFOX_FLAGS };
+  }
+  if (target === "safari") {
+    return { ...SAFARI_FLAGS };
+  }
+  if (target === "safari-ios") {
+    return { ...SAFARI_IOS_FLAGS };
   }
   // Only the Chrome package may attempt chrome.identity.getAuthToken (Chrome
   // extension OAuth client). Edge and Opera force web PKCE.
@@ -79,5 +116,9 @@ export function getCaptureMode(target: BrowserTarget = getBrowserTarget()): Capt
 }
 
 export function getMediaHostKind(target: BrowserTarget = getBrowserTarget()): MediaHostKind {
-  return getFeatureFlags(target).offscreen ? "offscreen" : "extension-page";
+  const flags = getFeatureFlags(target);
+  if (!flags.video) {
+    return "none";
+  }
+  return flags.offscreen ? "offscreen" : "extension-page";
 }

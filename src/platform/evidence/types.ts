@@ -21,15 +21,20 @@
  */
 
 import type { RecordingCapability } from "../../../packages/replay-core/src/schema/package";
+import type { EvidenceOffer } from "./surfaces";
 
 export interface EvidenceAttachInput {
   tabId: number;
   sessionId: string;
+  /** Surfaces this collector owns for this session after fabric selection. */
+  selectedOffers?: readonly EvidenceOffer[];
 }
 
 export interface EvidenceBeginSessionInput {
   tabId: number;
   sessionId: string;
+  /** The same selected surfaces passed to attach, retained for late arming. */
+  selectedOffers?: readonly EvidenceOffer[];
 }
 
 export interface EvidenceAttachResult {
@@ -56,15 +61,18 @@ export interface EvidenceDetachResult {
  * share solely because console re-arm failed is worse than packaging partial evidence.
  */
 export interface EvidenceBeginSessionResult {
+  /** False only when this collector could not arm evidence capture. */
+  active?: boolean;
   limitations: readonly string[];
 }
 
 export interface EvidenceCollector {
   readonly id: string;
+  /** Surfaces this collector can supply, including source and fidelity. */
+  readonly offers: readonly EvidenceOffer[];
   /**
-   * Evidence kinds this collector is authoritative for. Used by `CollectorSet`
-   * to assert no two collectors in the same set claim the same kind — the
-   * invariant that keeps composition safe without a dedupe step.
+   * Legacy artifact-level declaration kept for attach-result compatibility.
+   * Surface selection uses `offers` instead.
    */
   readonly provides: readonly RecordingCapability[];
 
@@ -91,5 +99,5 @@ export interface EvidenceCollector {
    * listeners). Required for in-page capture, whose content-script listeners a
    * navigation always destroys — re-inject and START again.
    */
-  reattach(tabId: number, sessionId: string): Promise<void>;
+  reattach(tabId: number, sessionId: string): Promise<EvidenceBeginSessionResult>;
 }

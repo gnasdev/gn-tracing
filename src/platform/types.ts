@@ -6,14 +6,16 @@
  * identity (`getAuthToken`) path.
  *
  * Chromium family: chrome | edge | opera (CDP + offscreen + tabCapture).
- * Firefox: in-page + webRequest + extension-page media host.
+ * Firefox / safari: in-page + webRequest + extension-page media host.
+ * safari-ios: in-page only, no media host — Safari on iOS exposes no screen
+ * capture API to extension JS at all, so there is no video path to fall back to.
  */
 
-export type BrowserTarget = "chrome" | "edge" | "opera" | "firefox";
+export type BrowserTarget = "chrome" | "edge" | "opera" | "firefox" | "safari" | "safari-ios";
 
 export type CaptureMode = "cdp" | "in-page";
 
-export type MediaHostKind = "offscreen" | "extension-page";
+export type MediaHostKind = "offscreen" | "extension-page" | "none";
 
 export interface BrowserFeatureFlags {
   /** chrome.debugger / CDP network+console+cookies+source maps */
@@ -28,6 +30,10 @@ export interface BrowserFeatureFlags {
   displayMediaPicker: boolean;
   /** Show Instant Replay CDP domain allowlist in settings */
   instantReplayCdpAllowlist: boolean;
+  /** False only for safari-ios: no getDisplayMedia/tabCapture equivalent exists there */
+  video: boolean;
+  /** True only for safari-ios: in-page capture is the sole network source (no webRequest collector) */
+  inPageNetworkCapture: boolean;
 }
 
 declare const __BROWSER_TARGET__: BrowserTarget | undefined;

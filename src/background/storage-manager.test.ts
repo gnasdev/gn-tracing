@@ -266,6 +266,73 @@ describe("StorageManager", () => {
       expect(sockets).toHaveLength(1);
     });
 
+    it("redacts network and initiator URLs before writing artifacts", () => {
+      manager.setPrivacySettings(getPrivacyProfileSettings("standard"));
+      manager.addNetworkEntry(
+        makeNetworkEntry({
+          url: "https://api.example.com/data?token=supersecret",
+          responseHeaders: { location: "https://app.example.com/next?token=response-secret" },
+          redirectChain: [
+            {
+              url: "https://app.example.com/redirect?token=redirect-secret",
+              status: 302,
+              statusText: "Found",
+              headers: { Location: "/next?token=location-secret" },
+            },
+          ],
+          initiator: {
+            type: "script",
+            url: "https://app.example.com/?token=caller-secret",
+            originalSource: "https://source.example.com/app.ts?token=original-secret",
+            sourceMapStatus: {
+              status: "unresolved",
+              reason: "no-map-for-generated-url",
+              sourceMapUrl: "https://source.example.com/app.js.map?token=map-secret",
+            },
+            stack: {
+              callFrames: [
+                {
+                  functionName: "loadData",
+                  url: "https://app.example.com/app.js?token=stack-secret",
+                  originalSource: "https://source.example.com/app.ts?token=frame-source-secret",
+                  sourceMapStatus: {
+                    status: "unresolved",
+                    reason: "no-map-for-generated-url",
+                    sourceMapUrl: "https://source.example.com/app.js.map?token=frame-map-secret",
+                  },
+                  lineNumber: 10,
+                  columnNumber: 2,
+                },
+              ],
+              parent: {
+                callFrames: [
+                  {
+                    functionName: "bootstrap",
+                    url: "https://app.example.com/boot.js?token=parent-secret",
+                    lineNumber: 4,
+                    columnNumber: 1,
+                  },
+                ],
+              },
+            },
+          },
+        }),
+      );
+
+      const finalized = manager.finalizeCurrentSession();
+      expect(finalized.networkRequests).not.toContain("supersecret");
+      expect(finalized.networkRequests).not.toContain("caller-secret");
+      expect(finalized.networkRequests).not.toContain("stack-secret");
+      expect(finalized.networkRequests).not.toContain("parent-secret");
+      expect(finalized.networkRequests).not.toContain("original-secret");
+      expect(finalized.networkRequests).not.toContain("map-secret");
+      expect(finalized.networkRequests).not.toContain("frame-source-secret");
+      expect(finalized.networkRequests).not.toContain("frame-map-secret");
+      expect(finalized.networkRequests).not.toContain("response-secret");
+      expect(finalized.networkRequests).not.toContain("redirect-secret");
+      expect(finalized.networkRequests).not.toContain("location-secret");
+    });
+
     it("resets the session after finalizing", () => {
       manager.addConsoleEntry(makeConsoleEntry());
       manager.finalizeCurrentSession();

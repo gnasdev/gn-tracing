@@ -8,9 +8,9 @@
 GOOGLE_CLIENT_ID=
 DROPBOX_CLIENT_ID=
 
-# Allowed caller origin(s). Prefer the store extension id:
-#   chrome-extension://jbhlmonpecgenhinhffclanbbknjlbeh
-ALLOWED_EXTENSION_ORIGINS=chrome-extension://jbhlmonpecgenhinhffclanbbknjlbeh
+# Allowed caller origin(s). Safari and Firefox extension UUIDs are dynamic, so
+# retain their scheme wildcards alongside the stable Chrome store id.
+ALLOWED_EXTENSION_ORIGINS=chrome-extension://jbhlmonpecgenhinhffclanbbknjlbeh,moz-extension://*,safari-web-extension://*
 
 # OAuth client secrets (local only; never commit).
 GOOGLE_CLIENT_SECRET=

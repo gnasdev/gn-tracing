@@ -77,8 +77,8 @@ export class FirefoxRecordingRuntime implements RecordingRuntime {
       prearmed: Boolean(input.mediaPrearmed),
       firstFrameAt: input.firstFrameAt,
       capturedSurface: input.capturedSurface,
+      microphoneEnabled: input.settings.microphoneEnabled,
       microphoneDeviceId: input.settings.microphoneDeviceId,
-      speakerDeviceId: input.settings.speakerDeviceId,
     });
 
     // Arm webRequest tab scope + in-page START once video is live.
@@ -154,7 +154,11 @@ export class FirefoxRecordingRuntime implements RecordingRuntime {
       limitations.push(surfaceLimitation);
     }
 
-    return { sourceMapDiagnostics: null, privacyLimitations: limitations };
+    return {
+      evidenceCoverage: this.#evidence.evidenceCoverage,
+      sourceMapDiagnostics: null,
+      privacyLimitations: limitations,
+    };
   }
 
   async discard(): Promise<void> {

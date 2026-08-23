@@ -15,8 +15,8 @@ export type MediaStartCaptureOptions = {
   prearmed?: boolean;
   firstFrameAt?: number | null;
   capturedSurface?: import("../../media-pipeline/capture-surface").CapturedSurface;
+  microphoneEnabled?: boolean;
   microphoneDeviceId?: string;
-  speakerDeviceId?: string;
 };
 
 export interface MediaHost {

@@ -2,12 +2,15 @@
  * Adapter: MAIN/ISOLATED-world content-script capture behind the
  * `EvidenceCollector` seam.
  *
- * Owns console, uncaught errors, and WebSocket frames only. Network evidence
- * on Firefox full-record is owned by `WebRequestNetworkCollector`, which sees
- * the whole tab across all frames including browser-issued requests. In-page
- * START therefore disables fetch/XHR patches (`captureNetwork: false`) so
- * page-script network rows are never produced on this path. `CollectorSet`'s
- * no-overlap guard also enforces the capability split at construction.
+ * Owns console, uncaught errors, and WebSocket frames always. Network is
+ * opt-in via the `captureNetwork` constructor option (default false): on
+ * Firefox/macOS Safari full-record, network evidence is owned by
+ * `WebRequestNetworkCollector`, which sees the whole tab across all frames
+ * including browser-issued requests, so in-page START disables fetch/XHR
+ * patches to avoid double-writing. On iOS Safari there is no `webRequest`
+ * network collector in the `CollectorSet` at all, so this collector is the
+ * sole network source and `captureNetwork: true` is required. `CollectorSet`'s
+ * no-overlap guard enforces that only one collector ever declares "network".
  *
  * Lifecycle is two-phase:
  * - `attach` injects both worlds and verifies the MAIN realm (while activeTab
@@ -22,10 +25,12 @@
 
 import type { RecordingCapability } from "../../../packages/replay-core/src/schema/package";
 import { injectScriptFile } from "../../shared/inject-script";
+import type { EvidenceOffer } from "./surfaces";
 import type {
   EvidenceAttachInput,
   EvidenceAttachResult,
   EvidenceBeginSessionInput,
+  EvidenceBeginSessionResult,
   EvidenceCollector,
   EvidenceDetachResult,
 } from "./types";
@@ -34,23 +39,81 @@ const MAIN_SCRIPT = "content/in-page-capture-main.js";
 const BRIDGE_SCRIPT = "content/in-page-capture-bridge.js";
 
 /**
- * What in-page capture delivers on Firefox full-record when inject lands.
- * No "network" / "network-bodies": webRequest owns network metadata; bodies
- * are a later phase. Console + websocket only.
+ * What in-page capture delivers when inject lands with network capture off
+ * (Chromium is unused; Firefox/macOS Safari full-record own network via
+ * webRequest). No "network" / "network-bodies": bodies are a later phase.
  */
 const IN_PAGE_CAPABILITIES: readonly RecordingCapability[] = ["console", "websocket"];
 
+/** Adds "network" when this collector is the sole network source (iOS Safari). */
+const IN_PAGE_CAPABILITIES_WITH_NETWORK: readonly RecordingCapability[] = [
+  ...IN_PAGE_CAPABILITIES,
+  "network",
+];
+
+export interface InPageEvidenceCollectorOptions {
+  /** Sole network source when true (no webRequest collector available, e.g. iOS Safari). */
+  captureNetwork?: boolean;
+}
+
+const IN_PAGE_EVIDENCE_OFFERS: readonly EvidenceOffer[] = [
+  { source: "in-page", surface: "console-api", quality: "full", capability: "console" },
+  { source: "in-page", surface: "runtime-exception", quality: "full", capability: "console" },
+  {
+    source: "in-page",
+    surface: "runtime-object-details",
+    quality: "partial",
+    capability: "console",
+  },
+  { source: "in-page", surface: "websocket-lifecycle", quality: "full", capability: "websocket" },
+  { source: "in-page", surface: "websocket-frames", quality: "full", capability: "websocket" },
+  { source: "in-page", surface: "storage-snapshot", quality: "partial", capability: "storage" },
+];
+
+const IN_PAGE_NETWORK_EVIDENCE_OFFERS: readonly EvidenceOffer[] = [
+  { source: "in-page", surface: "network-lifecycle", quality: "partial", capability: "network" },
+  {
+    source: "in-page",
+    surface: "network-request-headers",
+    quality: "partial",
+    capability: "network",
+  },
+  {
+    source: "in-page",
+    surface: "network-response-headers",
+    quality: "partial",
+    capability: "network",
+  },
+  { source: "in-page", surface: "network-initiator", quality: "partial", capability: "network" },
+  { source: "in-page", surface: "network-timing", quality: "partial", capability: "network" },
+];
+
 export class InPageEvidenceCollector implements EvidenceCollector {
   readonly id = "in-page";
-  readonly provides = IN_PAGE_CAPABILITIES;
+  readonly provides: readonly RecordingCapability[];
+  readonly offers: readonly EvidenceOffer[];
+  readonly #captureNetwork: boolean;
+  #networkSelected = false;
   #tabId: number | null = null;
   #sessionId: string | null = null;
   /** True after attach prepared successfully; beginSession is a no-op otherwise. */
   #prepared = false;
 
+  constructor(options: InPageEvidenceCollectorOptions = {}) {
+    this.#captureNetwork = options.captureNetwork ?? false;
+    this.provides = this.#captureNetwork ? IN_PAGE_CAPABILITIES_WITH_NETWORK : IN_PAGE_CAPABILITIES;
+    this.offers = this.#captureNetwork
+      ? [...IN_PAGE_EVIDENCE_OFFERS, ...IN_PAGE_NETWORK_EVIDENCE_OFFERS]
+      : IN_PAGE_EVIDENCE_OFFERS;
+  }
+
   async attach(input: EvidenceAttachInput): Promise<EvidenceAttachResult> {
     this.#tabId = input.tabId;
     this.#sessionId = input.sessionId;
+    this.#networkSelected =
+      this.#captureNetwork &&
+      (input.selectedOffers == null ||
+        input.selectedOffers.some((offer) => offer.capability === "network"));
     this.#prepared = false;
     const outcome = await this.#injectAndVerify(input.tabId);
     if (!outcome.ok) {
@@ -61,12 +124,12 @@ export class InPageEvidenceCollector implements EvidenceCollector {
     const limitations = frameFailureLimitation(outcome.partialFailures);
     return {
       ok: true,
-      capabilities: [...IN_PAGE_CAPABILITIES],
+      capabilities: [...this.provides],
       limitations,
     };
   }
 
-  async beginSession(input: EvidenceBeginSessionInput): Promise<{ limitations: string[] }> {
+  async beginSession(input: EvidenceBeginSessionInput): Promise<EvidenceBeginSessionResult> {
     this.#tabId = input.tabId;
     this.#sessionId = input.sessionId;
 
@@ -86,7 +149,7 @@ export class InPageEvidenceCollector implements EvidenceCollector {
     const outcome = await this.#injectAndVerify(input.tabId);
     if (!outcome.ok) {
       this.#prepared = false;
-      return { limitations: [outcome.error] };
+      return { active: false, limitations: [outcome.error] };
     }
     this.#prepared = true;
     try {
@@ -95,6 +158,7 @@ export class InPageEvidenceCollector implements EvidenceCollector {
     } catch (error) {
       this.#prepared = false;
       return {
+        active: false,
         limitations: [
           "In-page console capture could not start after screen sharing was accepted " +
             `(${(error as Error)?.message || String(error)}). Video still records; ` +
@@ -133,36 +197,39 @@ export class InPageEvidenceCollector implements EvidenceCollector {
    * Inject + START together: the session is already committed, so there is no
    * share-picker phase to wait for.
    */
-  async reattach(tabId: number, sessionId: string): Promise<void> {
+  async reattach(tabId: number, sessionId: string): Promise<EvidenceBeginSessionResult> {
     this.#tabId = tabId;
     this.#sessionId = sessionId;
     const outcome = await this.#injectAndVerify(tabId);
     if (!outcome.ok) {
       this.#prepared = false;
       console.warn(`[GN Tracing] ${outcome.error}`);
-      return;
+      return { active: false, limitations: [outcome.error] };
     }
     this.#prepared = true;
     try {
       await this.#sendStart(tabId, sessionId);
-      console.info("[GN Tracing] Re-armed in-page capture after navigation.");
+      return { limitations: frameFailureLimitation(outcome.partialFailures) };
     } catch (error) {
-      console.warn("[GN Tracing] Could not restart in-page capture after navigation:", error);
+      return {
+        active: false,
+        limitations: [
+          `In-page capture could not restart after navigation: ${(error as Error)?.message || String(error)}`,
+        ],
+      };
     }
   }
 
   /**
-   * START without network patches and without body mode: full-record network
-   * is owned by webRequest, and Firefox has no body sink yet.
+   * START without body mode regardless of `captureNetwork`: no browser has a
+   * body sink wired up yet on this path.
    */
   async #sendStart(tabId: number, sessionId: string): Promise<void> {
     await chrome.tabs.sendMessage(tabId, {
       target: "in-page-capture",
       type: "START",
       sessionId,
-      // Sole network owner on full-record is webRequest; do not emit page-script
-      // network rows that would either duplicate metadata or need to be dropped.
-      captureNetwork: false,
+      captureNetwork: this.#networkSelected,
     });
   }
 

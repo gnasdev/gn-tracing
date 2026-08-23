@@ -15,6 +15,9 @@ const CHROMIUM_EXTENSION_SCHEME = "chrome-extension://";
 /** Firefox extension origin scheme (`moz-extension://<uuid>`). */
 const FIREFOX_EXTENSION_SCHEME = "moz-extension://";
 
+/** Safari Web Extension origin scheme (`safari-web-extension://<uuid>`), macOS + iOS. */
+const SAFARI_EXTENSION_SCHEME = "safari-web-extension://";
+
 /**
  * Allow-list sentinel that accepts any Firefox extension origin.
  *
@@ -25,9 +28,18 @@ const FIREFOX_EXTENSION_SCHEME = "moz-extension://";
  */
 export const FIREFOX_EXTENSION_ORIGIN_WILDCARD = `${FIREFOX_EXTENSION_SCHEME}*`;
 
+/**
+ * Allow-list sentinel that accepts any Safari extension origin, same rationale
+ * as {@link FIREFOX_EXTENSION_ORIGIN_WILDCARD}: Safari mints a fresh
+ * `safari-web-extension://<uuid>` per OS install, not a stable id to pin.
+ */
+export const SAFARI_EXTENSION_ORIGIN_WILDCARD = `${SAFARI_EXTENSION_SCHEME}*`;
+
 function hasExtensionScheme(origin: string): boolean {
   return (
-    origin.startsWith(CHROMIUM_EXTENSION_SCHEME) || origin.startsWith(FIREFOX_EXTENSION_SCHEME)
+    origin.startsWith(CHROMIUM_EXTENSION_SCHEME) ||
+    origin.startsWith(FIREFOX_EXTENSION_SCHEME) ||
+    origin.startsWith(SAFARI_EXTENSION_SCHEME)
   );
 }
 
@@ -42,9 +54,15 @@ export function isExtensionOriginAllowed(origin: string | null, env: Env): boole
     if (allowList.includes(origin)) {
       return true;
     }
-    return (
+    if (
       allowList.includes(FIREFOX_EXTENSION_ORIGIN_WILDCARD) &&
       origin.startsWith(FIREFOX_EXTENSION_SCHEME)
+    ) {
+      return true;
+    }
+    return (
+      allowList.includes(SAFARI_EXTENSION_ORIGIN_WILDCARD) &&
+      origin.startsWith(SAFARI_EXTENSION_SCHEME)
     );
   }
 
@@ -56,8 +74,9 @@ export function isExtensionOriginAllowed(origin: string | null, env: Env): boole
 }
 
 /**
- * Feedback may come from the extension (chrome-extension:// / moz-extension://)
- * or the hosted standalone player (https://tracing.gnas.dev / local Vite).
+ * Feedback may come from the extension (chrome-extension:// / moz-extension:// /
+ * safari-web-extension://) or the hosted standalone player
+ * (https://tracing.gnas.dev / local Vite).
  */
 export function isFeedbackOriginAllowed(origin: string | null, env: Env): boolean {
   if (!origin) {

@@ -7,20 +7,21 @@
  */
 
 import { ensureRecordingHostPermission } from "../../shared/recording-host-permission";
-import { getBrowserTarget } from "../detect";
+import { getBrowserTarget, getFeatureFlags } from "../detect";
 import type { BrowserTarget } from "../types";
 
 export type RecordingStartPreflight = () => Promise<void>;
 
 /**
  * Chromium (chrome/edge/opera): nothing required (activeTab + CDP cover host access).
- * Firefox: optional host permission prompt so later injections survive
- * focus moves; decline is non-fatal.
+ * Everything else (Firefox, macOS Safari, iOS Safari) relies on in-page content-script
+ * injection for evidence, same as Firefox: optional host permission prompt so later
+ * injections survive focus moves; decline is non-fatal.
  */
 export function createRecordingStartPreflight(
   target: BrowserTarget = getBrowserTarget(),
 ): RecordingStartPreflight {
-  if (target === "firefox") {
+  if (!getFeatureFlags(target).cdp) {
     return async () => {
       await ensureRecordingHostPermission().catch(() => false);
     };

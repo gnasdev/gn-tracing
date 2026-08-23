@@ -24,22 +24,47 @@
 
 import type { RecordingCapability } from "../../../../packages/replay-core/src/schema/package";
 import type { StorageManager } from "../../../background/storage-manager";
+import type { EvidenceOffer } from "../surfaces";
 import type {
   EvidenceAttachInput,
   EvidenceAttachResult,
   EvidenceBeginSessionInput,
+  EvidenceBeginSessionResult,
   EvidenceCollector,
   EvidenceDetachResult,
 } from "../types";
 import { WebRequestTable } from "./request-table";
 
 const NETWORK_CAPABILITIES: readonly RecordingCapability[] = ["network"];
+const WEB_REQUEST_EVIDENCE_OFFERS: readonly EvidenceOffer[] = [
+  { source: "web-request", surface: "network-lifecycle", quality: "full", capability: "network" },
+  {
+    source: "web-request",
+    surface: "network-request-headers",
+    quality: "full",
+    capability: "network",
+  },
+  {
+    source: "web-request",
+    surface: "network-response-headers",
+    quality: "full",
+    capability: "network",
+  },
+  {
+    source: "web-request",
+    surface: "network-initiator",
+    quality: "partial",
+    capability: "network",
+  },
+  { source: "web-request", surface: "network-timing", quality: "partial", capability: "network" },
+];
 
 const REQUEST_FILTER = { urls: ["<all_urls>"] };
 
 export class WebRequestNetworkCollector implements EvidenceCollector {
   readonly id = "web-request";
   readonly provides = NETWORK_CAPABILITIES;
+  readonly offers = WEB_REQUEST_EVIDENCE_OFFERS;
   readonly #storage: StorageManager;
   readonly #table = new WebRequestTable();
   #sessionId: string | null = null;
@@ -103,7 +128,7 @@ export class WebRequestNetworkCollector implements EvidenceCollector {
     return { limitations: [] };
   }
 
-  async reattach(tabId: number, sessionId: string): Promise<void> {
+  async reattach(tabId: number, sessionId: string): Promise<EvidenceBeginSessionResult> {
     // webRequest listeners survive navigation; only retarget the recorded tab.
     if (!this.#prepared && this.#hasWebRequest()) {
       this.#installListenersOnce();
@@ -111,6 +136,7 @@ export class WebRequestNetworkCollector implements EvidenceCollector {
     }
     this.#tabId = tabId;
     this.#sessionId = sessionId;
+    return { limitations: [] };
   }
 
   /** True once for the lifetime of the background script, not per session. */

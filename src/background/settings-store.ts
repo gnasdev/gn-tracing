@@ -58,10 +58,10 @@ export interface UploadSettingsStore extends PrivacyRedactionSettings {
    */
   folderByProvider: Partial<Record<StorageProviderId, ProviderFolderSettings>>;
   zipPassword: string;
+  /** Whether recordings include the selected microphone. */
+  microphoneEnabled: boolean;
   /** Empty means the browser's default microphone. */
   microphoneDeviceId: string;
-  /** Empty means no system/loopback audio input is selected. */
-  speakerDeviceId: string;
   captureConsole: boolean;
   captureConsoleArgs: boolean;
   consolePreviewDepth: ConsolePreviewDepth;
@@ -131,8 +131,8 @@ export const DEFAULT_CAPTURE_PRIVACY_SETTINGS = {
   captureWebSocketFrames: true,
   maxWebSocketFrameBytes: null,
   captureWebSocketInitiator: true,
+  microphoneEnabled: true,
   microphoneDeviceId: "",
-  speakerDeviceId: "",
   // Full recording defaults: inspector surfaces on; redaction companions stay on.
   captureStorage: true,
   redactStorageValues: true,
@@ -346,14 +346,14 @@ function normalizeUploadSettingsStore(
     folderByProvider,
     zipPassword:
       typeof storedUploadSettings?.zipPassword === "string" ? storedUploadSettings.zipPassword : "",
+    microphoneEnabled: normalizeBoolean(
+      storedUploadSettings?.microphoneEnabled,
+      defaults.microphoneEnabled,
+    ),
     microphoneDeviceId:
       typeof storedUploadSettings?.microphoneDeviceId === "string"
         ? storedUploadSettings.microphoneDeviceId
         : defaults.microphoneDeviceId,
-    speakerDeviceId:
-      typeof storedUploadSettings?.speakerDeviceId === "string"
-        ? storedUploadSettings.speakerDeviceId
-        : defaults.speakerDeviceId,
     // Always "custom" for redaction rule membership (standard-class rules when toggles on).
     privacyProfile: "custom",
     redactSensitiveHeaders: normalizeBoolean(
@@ -575,8 +575,8 @@ export function getSettingsSnapshot(settings: UploadSettingsStore): UploadSettin
     folderInput: settings.folderInput,
     folderId: settings.folderId,
     zipPasswordConfigured: settings.zipPassword.length > 0,
+    microphoneEnabled: settings.microphoneEnabled,
     microphoneDeviceId: settings.microphoneDeviceId,
-    speakerDeviceId: settings.speakerDeviceId,
     privacyProfile: settings.privacyProfile,
     redactSensitiveHeaders: settings.redactSensitiveHeaders,
     redactSensitiveQueryParams: settings.redactSensitiveQueryParams,

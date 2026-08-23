@@ -363,3 +363,29 @@ describe("tool definitions", () => {
     expect(result.content[0].text).toContain("UNKNOWN_RECORDING");
   });
 });
+
+describe("get_overview evidence coverage", () => {
+  it("returns session coverage from the package summary", async () => {
+    const store = await createStore({
+      evidenceCoverage: {
+        schemaVersion: 1,
+        surfaces: {
+          "network-lifecycle": { source: "web-request", quality: "full" },
+        },
+      },
+    });
+    const recordingId = await open(store);
+
+    const outcome = await callTool(store, "get_overview", { recordingId });
+
+    expect(outcome.data).toMatchObject({
+      capture: {
+        evidenceCoverage: {
+          surfaces: {
+            "network-lifecycle": { source: "web-request", quality: "full" },
+          },
+        },
+      },
+    });
+  });
+});

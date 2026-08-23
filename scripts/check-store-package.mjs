@@ -3,7 +3,11 @@
  *
  * Usage:
  *   node scripts/check-store-package.mjs
- *   node scripts/check-store-package.mjs --browser chrome|edge|opera|firefox
+ *   node scripts/check-store-package.mjs --browser chrome|edge|opera|firefox|safari|safari-ios
+ *
+ * For safari/safari-ios this only validates the manifest/JS bundle shape —
+ * the actual store artifact is the signed Xcode archive built from this dist
+ * output, not this dist output itself.
  */
 
 import fs from "node:fs";
@@ -25,12 +29,20 @@ function getCliArgValue(flagName) {
   return undefined;
 }
 
+const SUPPORTED_BROWSERS = ["chrome", "edge", "opera", "firefox", "safari", "safari-ios"];
 const browser = String(getCliArgValue("--browser") || "chrome")
   .trim()
   .toLowerCase();
-if (!["chrome", "edge", "opera", "firefox"].includes(browser)) {
-  fail(`unsupported --browser ${browser} (use chrome, edge, opera, or firefox)`);
+if (!SUPPORTED_BROWSERS.includes(browser)) {
+  fail(`unsupported --browser ${browser} (use ${SUPPORTED_BROWSERS.join(", ")})`);
 }
+// Safari shares Firefox's manifest shape (no CDP either): non-persistent
+// background scripts, no Chromium-only permissions, webRequest for network.
+const isFirefoxShaped = browser === "firefox" || browser === "safari" || browser === "safari-ios";
+// Only targets with a real media host need the offscreen page; safari-ios
+// has mediaKind "none" and never opens it, even though it's still copied
+// into dist as a static asset.
+const hasMediaHost = browser !== "safari-ios";
 
 const distDir = path.join(root, "dist", browser);
 const manifestPath = path.join(distDir, "manifest.json");
@@ -70,23 +82,27 @@ if (manifest.manifest_version !== 3) {
   fail("manifest_version must be 3.");
 }
 
-if (browser === "firefox") {
+if (isFirefoxShaped) {
   if (manifest.minimum_chrome_version) {
-    fail("Firefox package must not set minimum_chrome_version.");
-  }
-  if (!manifest.browser_specific_settings?.gecko?.id) {
-    fail("Firefox package requires browser_specific_settings.gecko.id.");
+    fail(`${browser} package must not set minimum_chrome_version.`);
   }
   for (const permission of ["tabCapture", "offscreen", "debugger"]) {
     if (manifest.permissions?.includes(permission)) {
-      fail(`Firefox package must not include Chromium-only permission: ${permission}`);
+      fail(`${browser} package must not include Chromium-only permission: ${permission}`);
     }
   }
   if (manifest.oauth2) {
-    fail("Firefox package must not include oauth2 (use launchWebAuthFlow).");
+    fail(`${browser} package must not include oauth2 (use launchWebAuthFlow).`);
   }
   if (manifest.key) {
-    fail("Firefox package must not include key.");
+    fail(`${browser} package must not include key.`);
+  }
+  if (browser === "firefox") {
+    if (!manifest.browser_specific_settings?.gecko?.id) {
+      fail("Firefox package requires browser_specific_settings.gecko.id.");
+    }
+  } else if (!manifest.browser_specific_settings?.safari) {
+    fail(`${browser} package requires browser_specific_settings.safari.`);
   }
 } else if (!manifest.minimum_chrome_version) {
   fail("minimum_chrome_version is required for Chromium store package clarity.");
@@ -145,8 +161,18 @@ const chromiumPermissions = [
   "alarms",
   "identity",
 ];
-const firefoxPermissions = ["activeTab", "storage", "alarms", "identity", "scripting", "tabs"];
-const requiredPermissions = browser === "firefox" ? firefoxPermissions : chromiumPermissions;
+const firefoxShapedPermissions = ["activeTab", "storage", "alarms", "scripting", "tabs"];
+const requiredPermissions = isFirefoxShaped ? firefoxShapedPermissions : chromiumPermissions;
+// "identity" is chrome.identity.getAuthToken (Chromium-only); Firefox keeps it
+// declared even though unused, but Safari's converter flags it as an
+// unsupported manifest key, so safari/safari-ios must NOT declare it.
+if (browser === "safari" || browser === "safari-ios") {
+  if (manifest.permissions?.includes("identity")) {
+    fail(`${browser} package must not include unsupported permission: identity`);
+  }
+} else if (isFirefoxShaped && !manifest.permissions?.includes("identity")) {
+  fail("required permission identity is missing.");
+}
 
 for (const permission of requiredPermissions) {
   if (!manifest.permissions?.includes(permission)) {
@@ -162,12 +188,12 @@ const backgroundPath = path.join(distDir, backgroundRel);
 if (!backgroundRel || !fs.existsSync(backgroundPath)) {
   fail("background service worker / scripts path does not exist.");
 }
-if (browser === "firefox") {
+if (isFirefoxShaped) {
   if (manifest.background?.service_worker) {
-    fail("Firefox package must use background.scripts (service_worker is disabled on Firefox).");
+    fail(`${browser} package must use background.scripts (service_worker is disabled here).`);
   }
   if (!Array.isArray(manifest.background?.scripts) || manifest.background.scripts.length === 0) {
-    fail("Firefox package requires background.scripts.");
+    fail(`${browser} package requires background.scripts.`);
   }
 }
 
@@ -176,14 +202,14 @@ if (!fs.existsSync(popupPath)) {
   fail("default popup path does not exist.");
 }
 
-if (browser === "firefox") {
-  for (const rel of [
-    "content/in-page-capture-main.js",
-    "content/in-page-capture-bridge.js",
-    "offscreen/offscreen.js",
-  ]) {
+if (isFirefoxShaped) {
+  const requiredAssets = ["content/in-page-capture-main.js", "content/in-page-capture-bridge.js"];
+  if (hasMediaHost) {
+    requiredAssets.push("offscreen/offscreen.js");
+  }
+  for (const rel of requiredAssets) {
     if (!fs.existsSync(path.join(distDir, rel))) {
-      fail(`Firefox package missing required asset: ${rel}`);
+      fail(`${browser} package missing required asset: ${rel}`);
     }
   }
 }

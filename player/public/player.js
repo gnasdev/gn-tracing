@@ -3521,8 +3521,9 @@
         <pre>${escapeHtml(initiator.type || "other")}</pre>
     `;
     const loc = getNetworkInitiatorLocation(initiator);
-    if (loc) {
-      html += `<pre class="initiator-location">${escapeHtml(loc)}</pre>`;
+    const displayLocation = loc || initiator.url;
+    if (displayLocation) {
+      html += `<pre class="initiator-location">${escapeHtml(displayLocation)}</pre>`;
     }
     const sourceMapStatus = getNetworkSourceMapDiagnostic(initiator);
     if (sourceMapStatus) {
@@ -3911,6 +3912,14 @@
     }
   }
 
+  function renderStructuredObjectValue(value) {
+    try {
+      return `<span class="gh-secondary">${escapeHtml(JSON.stringify(value))}</span>`;
+    } catch {
+      return '<span class="gh-secondary">Object</span>';
+    }
+  }
+
   function renderObjectPreview(obj, options = {}) {
     if (obj.subtype === "null") return '<span class="gh-secondary">null</span>';
     if (obj.subtype === "error") {
@@ -3925,6 +3934,7 @@
     if (obj.subtype === "date")
       return `<span class="gh-blue-str">${escapeHtml(obj.description || "")}</span>`;
     if (obj.preview) return renderPreview(obj.preview);
+    if (obj.value !== undefined) return renderStructuredObjectValue(obj.value);
     return `<span class="gh-secondary">${escapeHtml(obj.description || obj.className || "Object")}</span>`;
   }
 
@@ -4122,6 +4132,7 @@
         return obj.description || `\u0192 ${t("detail.anonymous")}`;
       case "object": {
         if (obj.subtype === "null") return null;
+        if (obj.value !== undefined) return obj.value;
         if (d > 5) return obj.description || obj.className || "Object";
         return remoteObjectPreviewToPlain(obj, d);
       }

@@ -47,13 +47,12 @@ fi
 
 ALLOWED_ORIGINS="${WORKER_ALLOWED_EXTENSION_ORIGINS:-}"
 if [ -z "$ALLOWED_ORIGINS" ] && [ -n "${CHROME_EXTENSION_ID:-}" ]; then
-  # Firefox mints a random moz-extension://<uuid> per profile and per install, so
-  # there is no stable origin to pin the way CHROME_EXTENSION_ID is pinned. The
-  # `moz-extension://*` sentinel accepts that scheme; PKCE plus redirect_uri
-  # validation remain the controls for those requests. Set
-  # WORKER_ALLOWED_EXTENSION_ORIGINS to override (omit the sentinel to keep the
-  # Worker Chromium-only).
-  ALLOWED_ORIGINS="chrome-extension://${CHROME_EXTENSION_ID},moz-extension://*"
+  # Firefox and Safari mint a random extension UUID per profile/install, so
+  # neither has a stable origin to pin the way CHROME_EXTENSION_ID is pinned.
+  # Their scheme wildcards retain PKCE plus redirect_uri validation as the
+  # substantive request controls. Set WORKER_ALLOWED_EXTENSION_ORIGINS to
+  # override (omit a sentinel to disable that platform explicitly).
+  ALLOWED_ORIGINS="chrome-extension://${CHROME_EXTENSION_ID},moz-extension://*,safari-web-extension://*"
 fi
 
 case "$ALLOWED_ORIGINS" in

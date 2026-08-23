@@ -23,9 +23,14 @@ export function buildMicrophoneConstraints(microphoneDeviceId: string): MediaStr
 
 export async function acquireMicrophoneStream(
   microphoneDeviceId: string,
+  microphoneEnabled = true,
   getUserMedia: (constraints: MediaStreamConstraints) => Promise<MediaStream> = (constraints) =>
     navigator.mediaDevices.getUserMedia(constraints),
 ): Promise<MediaStream | null> {
+  if (!microphoneEnabled) {
+    return null;
+  }
+
   const selectedConstraints = buildMicrophoneConstraints(microphoneDeviceId);
   try {
     return await getUserMedia(selectedConstraints);
@@ -45,24 +50,6 @@ export async function acquireMicrophoneStream(
       console.warn("[GN Tracing] Default microphone capture unavailable:", fallbackError);
       return null;
     }
-  }
-}
-
-export async function acquireSpeakerStream(
-  speakerDeviceId: string,
-  getUserMedia: (constraints: MediaStreamConstraints) => Promise<MediaStream> = (constraints) =>
-    navigator.mediaDevices.getUserMedia(constraints),
-): Promise<MediaStream | null> {
-  const normalized = speakerDeviceId.trim();
-  if (!normalized) {
-    return null;
-  }
-
-  try {
-    return await getUserMedia(buildMicrophoneConstraints(normalized));
-  } catch (error) {
-    console.warn("[GN Tracing] Selected system audio input unavailable:", error);
-    return null;
   }
 }
 

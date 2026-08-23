@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   acquireMicrophoneStream,
-  acquireSpeakerStream,
   buildMicrophoneConstraints,
   mixCaptureAudio,
 } from "./audio-capture";
@@ -36,6 +35,13 @@ describe("buildMicrophoneConstraints", () => {
 });
 
 describe("acquireMicrophoneStream", () => {
+  it("skips getUserMedia when microphone recording is disabled", async () => {
+    const getUserMedia = vi.fn();
+
+    await expect(acquireMicrophoneStream("mic-2", false, getUserMedia)).resolves.toBeNull();
+    expect(getUserMedia).not.toHaveBeenCalled();
+  });
+
   it("falls back to the browser default when the selected device is unavailable", async () => {
     const microphone = stream([], [{ kind: "audio" } as MediaStreamTrack]);
     const getUserMedia = vi
@@ -43,7 +49,7 @@ describe("acquireMicrophoneStream", () => {
       .mockRejectedValueOnce(new DOMException("gone", "NotFoundError") as never)
       .mockResolvedValueOnce(microphone as unknown as MediaStream);
 
-    const result = await acquireMicrophoneStream("mic-gone", getUserMedia);
+    const result = await acquireMicrophoneStream("mic-gone", true, getUserMedia);
 
     expect(result).toBe(microphone);
     expect(getUserMedia).toHaveBeenNthCalledWith(1, {
@@ -55,27 +61,15 @@ describe("acquireMicrophoneStream", () => {
   it("returns no stream when the browser default microphone is unavailable", async () => {
     const getUserMedia = vi.fn().mockRejectedValue(new Error("denied"));
 
-    await expect(acquireMicrophoneStream("", getUserMedia)).resolves.toBeNull();
+    await expect(acquireMicrophoneStream("", true, getUserMedia)).resolves.toBeNull();
     expect(getUserMedia).toHaveBeenCalledOnce();
   });
 });
 
-describe("acquireSpeakerStream", () => {
-  it("does not fall back to the browser default when the selected loopback input is unavailable", async () => {
-    const getUserMedia = vi
-      .fn()
-      .mockRejectedValue(new DOMException("gone", "NotFoundError") as never);
-
-    await expect(acquireSpeakerStream("loopback-gone", getUserMedia)).resolves.toBeNull();
-    expect(getUserMedia).toHaveBeenCalledExactlyOnceWith({
-      audio: { deviceId: { exact: "loopback-gone" } },
-    });
-  });
-});
 describe("mixCaptureAudio", () => {
-  it("keeps video and combines speaker and microphone audio tracks", async () => {
+  it("keeps video and combines tab and microphone audio tracks", async () => {
     const video = { kind: "video" } as MediaStreamTrack;
-    const speaker = { kind: "audio", label: "Tab audio" } as MediaStreamTrack;
+    const tabAudio = { kind: "audio", label: "Tab audio" } as MediaStreamTrack;
     const microphone = { kind: "audio", label: "Mic" } as MediaStreamTrack;
     const mixed = { kind: "audio", label: "Mixed audio" } as MediaStreamTrack;
     const sources: Array<{
@@ -95,14 +89,11 @@ describe("mixCaptureAudio", () => {
       destination: {},
       close: vi.fn(async () => {}),
     };
-    const outputStream = stream([video], [speaker]);
+    const outputStream = stream([video], [tabAudio]);
 
     const result = mixCaptureAudio(
       outputStream as unknown as MediaStream,
-      [
-        stream([], [speaker]) as unknown as MediaStream,
-        stream([], [microphone]) as unknown as MediaStream,
-      ],
+      [outputStream as unknown as MediaStream, stream([], [microphone]) as unknown as MediaStream],
       {
         createAudioContext: () => context as unknown as AudioContext,
         createMediaStream: (tracks) =>

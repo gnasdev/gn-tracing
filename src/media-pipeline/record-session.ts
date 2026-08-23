@@ -111,8 +111,18 @@ export async function acquireCaptureStream(
     return { stream, loopbackTabAudio: false };
   }
 
+  // chromeMediaSource "tab" is the only path that can actually capture the
+  // recorded tab's own audio; asking for it here is what makes tab audio show
+  // up in the recording at all. Muting the tab while recording (Chrome mutes
+  // a tab once its audio is captured this way) is why `startCaptureWithStream`
+  // pipes this stream back to speakers when `loopbackTabAudio` is true.
   const stream = await navigator.mediaDevices.getUserMedia({
-    audio: false,
+    audio: {
+      mandatory: {
+        chromeMediaSource: "tab",
+        chromeMediaSourceId: streamId,
+      },
+    } as MediaTrackConstraints,
     video: {
       mandatory: {
         chromeMediaSource: "tab",
@@ -123,7 +133,7 @@ export async function acquireCaptureStream(
       },
     } as MediaTrackConstraints,
   });
-  return { stream, loopbackTabAudio: false };
+  return { stream, loopbackTabAudio: true };
 }
 
 /** Minimal recorder surface needed to stop and flush — keeps this unit testable. */

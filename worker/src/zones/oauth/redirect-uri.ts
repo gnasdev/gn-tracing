@@ -7,6 +7,25 @@
 
 const ALLOWED_SUFFIXES = [".chromiumapp.org", ".extensions.allizom.org"] as const;
 const FIREFOX_MOZOAUTH2_PREFIX = "http://127.0.0.1/mozoauth2/";
+/**
+ * Safari (macOS + iOS) has no identity API at all — no `chromiumapp.org`-style
+ * pseudo-domain, no mozoauth2 loopback. It uses a `/oauth-callback` page on the
+ * player host instead (see src/shared/oauth-redirect-policy.ts
+ * SAFARI_OAUTH_CALLBACK_URL and src/background/safari-web-auth-flow.ts).
+ * Exact-match allowlist entries, not a suffix, since these are specific known
+ * pages this project controls, not a per-install platform-issued host.
+ *
+ * Both dev and prod values are allowed unconditionally (same as the Firefox
+ * mozoauth2 loopback above): a dev extension build routes its token exchange
+ * to the local dev Worker, never this deployed one, so accepting the
+ * localhost value here has no practical effect on the deployed Worker's real
+ * traffic — it only matters when this same source runs locally via
+ * `wrangler dev`, which is exactly when a dev Safari build needs it.
+ */
+const SAFARI_OAUTH_CALLBACK_URLS = [
+  "https://tracing.gnas.dev/oauth-callback",
+  "http://localhost:5176/oauth-callback",
+] as const;
 
 export function isAllowedExtensionOAuthRedirectUri(raw: string): {
   ok: boolean;
@@ -32,6 +51,12 @@ export function isAllowedExtensionOAuthRedirectUri(raw: string): {
     .replace(/\/+$/, "")
     .match(/^https:\/\/(.+)\.extensions\.allizom\.org$/i);
   if (allizomMatch?.[1] && !allizomMatch[1].includes("/")) {
+    return { ok: true };
+  }
+
+  // Safari: exact match only, not a suffix — these are specific pages this
+  // project controls, not a per-install platform-issued host.
+  if ((SAFARI_OAUTH_CALLBACK_URLS as readonly string[]).includes(trimmed.replace(/\/+$/, ""))) {
     return { ok: true };
   }
 

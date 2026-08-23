@@ -11,6 +11,7 @@ import {
   FIREFOX_EXTENSION_ORIGIN_WILDCARD,
   isExtensionOriginAllowed,
   isFeedbackOriginAllowed,
+  SAFARI_EXTENSION_ORIGIN_WILDCARD,
 } from "./middleware/origin";
 import {
   buildFeedbackIssueTitle,
@@ -21,6 +22,7 @@ import { resolveProviderFromPath } from "./zones/oauth/routes";
 
 const PLACEHOLDER_ORIGIN = "chrome-extension://placeholderextensionidaaaaaaaaaaaaa";
 const FIREFOX_ORIGIN = "moz-extension://11111111-2222-3333-4444-555555555555";
+const SAFARI_ORIGIN = "safari-web-extension://66666666-7777-8888-9999-000000000000";
 
 function makeEnv(overrides: Partial<Env> = {}): Env {
   return {
@@ -177,6 +179,70 @@ describe("isExtensionOriginAllowed - Firefox origins", () => {
     expect(res.status).toBe(200);
     // Without this header Firefox surfaces the response as a bare NetworkError.
     expect(res.headers.get("Access-Control-Allow-Origin")).toBe(FIREFOX_ORIGIN);
+  });
+});
+
+describe("isExtensionOriginAllowed - Safari origins", () => {
+  it("accepts safari-web-extension origins in the empty-allow-list dev fallback", () => {
+    const env = makeEnv();
+    expect(isExtensionOriginAllowed(SAFARI_ORIGIN, env)).toBe(true);
+    expect(isExtensionOriginAllowed(PLACEHOLDER_ORIGIN, env)).toBe(true);
+    expect(isExtensionOriginAllowed("https://evil.example", env)).toBe(false);
+  });
+
+  it("rejects Safari origins when a Chromium-only allow-list is pinned", () => {
+    const env = makeEnv({ ALLOWED_EXTENSION_ORIGINS: PLACEHOLDER_ORIGIN });
+    expect(isExtensionOriginAllowed(PLACEHOLDER_ORIGIN, env)).toBe(true);
+    expect(isExtensionOriginAllowed(SAFARI_ORIGIN, env)).toBe(false);
+  });
+
+  it("accepts any safari-web-extension uuid via the wildcard sentinel", () => {
+    const env = makeEnv({
+      ALLOWED_EXTENSION_ORIGINS: `${PLACEHOLDER_ORIGIN},${SAFARI_EXTENSION_ORIGIN_WILDCARD}`,
+    });
+    expect(isExtensionOriginAllowed(SAFARI_ORIGIN, env)).toBe(true);
+    expect(isExtensionOriginAllowed("safari-web-extension://another-random-uuid", env)).toBe(true);
+    expect(isExtensionOriginAllowed(PLACEHOLDER_ORIGIN, env)).toBe(true);
+    // The sentinel must not widen anything beyond the Safari scheme.
+    expect(isExtensionOriginAllowed("chrome-extension://some-other-id", env)).toBe(false);
+    expect(isExtensionOriginAllowed(FIREFOX_ORIGIN, env)).toBe(false);
+    expect(isExtensionOriginAllowed("https://evil.example", env)).toBe(false);
+  });
+
+  it("keeps STRICT_ORIGIN fail-closed for Safari too", () => {
+    const env = makeEnv({ STRICT_ORIGIN: "true", ALLOWED_EXTENSION_ORIGINS: "" });
+    expect(isExtensionOriginAllowed(SAFARI_ORIGIN, env)).toBe(false);
+  });
+
+  it("echoes CORS back to a wildcard-allowed Safari origin on token exchange", async () => {
+    const fetchMock = vi.fn(async () => {
+      return new Response(JSON.stringify({ access_token: "placeholder-access-token" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const env = makeEnv({
+      ALLOWED_EXTENSION_ORIGINS: `${PLACEHOLDER_ORIGIN},${SAFARI_EXTENSION_ORIGIN_WILDCARD}`,
+    });
+    const res = await worker.fetch(
+      new Request("https://proxy.example/token", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Origin: SAFARI_ORIGIN,
+        },
+        body: new URLSearchParams({
+          grant_type: "refresh_token",
+          refresh_token: "placeholder-refresh-token",
+        }).toString(),
+      }),
+      env,
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Access-Control-Allow-Origin")).toBe(SAFARI_ORIGIN);
   });
 });
 
@@ -563,6 +629,74 @@ describe("OAuth token proxy - upstream relay", () => {
     const body = (await res.json()) as { error: string; error_description: string };
     expect(body.error).toBe("invalid_request");
     expect(body.error_description).toMatch(/platform extension domain/i);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("accepts the fixed Safari callback redirect_uri (no identity API on Safari)", async () => {
+    const fetchMock = vi.fn(async () => {
+      return new Response(JSON.stringify({ access_token: "safari-atok", token_type: "bearer" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const res = await worker.fetch(
+      makeTokenRequest("/token", {
+        grant_type: "authorization_code",
+        code: "abc",
+        code_verifier: "xyz",
+        redirect_uri: "https://tracing.gnas.dev/oauth-callback",
+      }),
+      makeEnv(),
+    );
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { access_token: string };
+    expect(body.access_token).toBe("safari-atok");
+  });
+
+  it("accepts the localhost dev callback redirect_uri (dev Safari builds test against the local Worker)", async () => {
+    const fetchMock = vi.fn(async () => {
+      return new Response(
+        JSON.stringify({ access_token: "safari-dev-atok", token_type: "bearer" }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const res = await worker.fetch(
+      makeTokenRequest("/token", {
+        grant_type: "authorization_code",
+        code: "abc",
+        code_verifier: "xyz",
+        redirect_uri: "http://localhost:5176/oauth-callback",
+      }),
+      makeEnv(),
+    );
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { access_token: string };
+    expect(body.access_token).toBe("safari-dev-atok");
+  });
+
+  it("rejects a redirect_uri that merely resembles the Safari callback exactly", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const res = await worker.fetch(
+      makeTokenRequest("/token", {
+        grant_type: "authorization_code",
+        code: "abc",
+        code_verifier: "xyz",
+        // Not an exact match: the Safari allowlist entry is a single fixed
+        // page, not a suffix/prefix pattern.
+        redirect_uri: "https://tracing.gnas.dev/oauth-callback/evil",
+      }),
+      makeEnv(),
+    );
+
+    expect(res.status).toBe(400);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 

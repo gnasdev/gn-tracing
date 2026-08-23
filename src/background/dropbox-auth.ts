@@ -22,6 +22,7 @@ import {
 } from "../shared/oauth-pkce";
 import { resolveRuntimeExtensionRedirectUriForProvider } from "../shared/oauth-redirect-policy";
 import type { MessageResponse } from "../types/messages";
+import { launchWebAuthFlow } from "./safari-web-auth-flow";
 
 declare const __DROPBOX_CLIENT_ID__: string;
 declare const __DROPBOX_TOKEN_PROXY_URL__: string;
@@ -214,7 +215,7 @@ export class DropboxAuth {
       });
       const authUrl = `${DROPBOX_AUTH_ENDPOINT}?${authQuery.toString()}`;
 
-      const resultUrl = await chrome.identity.launchWebAuthFlow({
+      const resultUrl = await launchWebAuthFlow({
         url: authUrl,
         interactive: true,
       });

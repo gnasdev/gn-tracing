@@ -63,6 +63,22 @@ describe("WebRequestTable", () => {
     expect(table.pendingCount).toBe(0);
   });
 
+  it("keeps the browser-reported request origin as an initiator summary", () => {
+    const table = new WebRequestTable();
+    table.onBeforeRequest({
+      requestId: "origin-1",
+      url: "https://api.example.com/checkout",
+      method: "POST",
+      type: "xmlhttprequest",
+      timeStamp: 1_700_000_000_000,
+      frameId: 0,
+      originUrl: "https://shop.example.com/cart",
+    });
+
+    const entry = table.onCompleted({ requestId: "origin-1", statusCode: 500 });
+    expect(entry?.initiator).toEqual({ type: "script", url: "https://shop.example.com/cart" });
+  });
+
   it("produces an entry for a request that errored instead of completing", () => {
     const table = new WebRequestTable();
     table.onBeforeRequest({

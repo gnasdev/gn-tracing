@@ -233,6 +233,7 @@ interface CdpRemoteObject {
   value?: unknown;
   description?: string;
   className?: string;
+  objectId?: string;
   preview?: CdpObjectPreview;
 }
 
@@ -251,6 +252,11 @@ interface CdpPropertyPreview {
   value?: string;
   subtype?: string;
   valuePreview?: CdpObjectPreview;
+}
+
+interface CdpPropertyDescriptor {
+  name: string;
+  value?: CdpRemoteObject;
 }
 
 interface CdpEntryPreview {
@@ -300,6 +306,7 @@ const SOURCE_MAP_READ_CHUNK_BYTES = 1024 * 1024;
 const SOURCE_MAP_DIAGNOSTIC_LIMIT = 500;
 const SOURCE_MAP_RESOLVE_URL_PROPERTY = "__gnSourceMapResolveUrl";
 const MAX_PARSED_ERROR_STACK_FRAMES = 80;
+const MAX_CONSOLE_OBJECT_PROPERTIES = 12;
 const MINIMAL_REQUEST_HEADERS = new Set([
   "accept",
   "content-type",
@@ -340,6 +347,8 @@ export class CdpManager {
   #boundDetachHandler: (source: chrome.debugger.Debuggee, reason: string) => void;
   #sourceMapResolver = new SourceMapResolver();
   #sourceMapFetches = new Set<Promise<void>>();
+  #consoleCaptureQueue: Promise<void> = Promise.resolve();
+  #consoleCaptureFetches = new Set<Promise<void>>();
   #privacySettings: PrivacyRedactionSettings = getPrivacyProfileSettings("standard");
   #recordRedactionHits: (hits: RedactionHit[]) => void = () => {};
   #storageSnapshot: CdpStorageSnapshotCollector;
@@ -426,6 +435,8 @@ export class CdpManager {
     this.#sourceMapResourceUrls.clear();
     this.#sourceMapResolver.clear();
     this.#sourceMapFetches.clear();
+    this.#consoleCaptureQueue = Promise.resolve();
+    this.#consoleCaptureFetches.clear();
     this.#sourceMapDiagnostics = [];
     this.#pendingSourceMapAttempts.clear();
     this.#storageSnapshot.reset();
@@ -443,6 +454,10 @@ export class CdpManager {
   async detach(): Promise<void> {
     chrome.debugger.onEvent.removeListener(this.#boundEventHandler);
     chrome.debugger.onDetach.removeListener(this.#boundDetachHandler);
+
+    // Console object properties also require the debugger. Preserve event order
+    // by draining the serial capture queue before detaching the target.
+    await Promise.allSettled(Array.from(this.#consoleCaptureFetches));
 
     // Body fetches need the debugger attached. Wait for them, finalize pending
     // entries into storage, then detach — never detach-first (that drops bodies).
@@ -566,7 +581,7 @@ export class CdpManager {
         this.#onWebSocketClosed(source, params as CdpWebSocketClosedParams);
         break;
       case "Runtime.consoleAPICalled":
-        this.#onConsoleAPICalled(params as CdpConsoleAPICalledParams);
+        this.#onConsoleAPICalled(source, params as CdpConsoleAPICalledParams);
         break;
       case "Runtime.executionContextCreated":
         this.#onExecutionContextCreated(source, params as CdpExecutionContextCreatedParams);
@@ -1187,17 +1202,84 @@ export class CdpManager {
   // Console / Runtime handlers
   // ════════════════════════════════════════════
 
-  #onConsoleAPICalled(params: CdpConsoleAPICalledParams): void {
+  #onConsoleAPICalled(source: chrome.debugger.Debuggee, params: CdpConsoleAPICalledParams): void {
     if (!this.#captureSettings.captureConsole) return;
+
+    // CDP console events only contain an object handle for class instances.
+    // Serialize them in order so asynchronous property reads cannot reorder rows.
+    const capture = this.#consoleCaptureQueue
+      .catch(() => {})
+      .then(() => this.#captureConsoleEntry(source, params));
+    this.#consoleCaptureQueue = capture;
+    this.#consoleCaptureFetches.add(capture);
+    void capture.finally(() => this.#consoleCaptureFetches.delete(capture));
+  }
+
+  async #captureConsoleEntry(
+    source: chrome.debugger.Debuggee,
+    params: CdpConsoleAPICalledParams,
+  ): Promise<void> {
+    const level = this.#mapConsoleType(params.type);
     const entry: ConsoleEntry = {
       source: "console-api",
-      level: this.#mapConsoleType(params.type),
+      level,
       timestamp: this.#toEpochMs(params.timestamp),
-      args: (params.args || []).map((arg) => this.#serializeRemoteObject(arg)),
+      args: await Promise.all(
+        (params.args || []).map((arg) =>
+          level === "error"
+            ? this.#serializeRemoteObjectWithProperties(source, arg)
+            : Promise.resolve(this.#serializeRemoteObject(arg)),
+        ),
+      ),
       stackTrace: this.#serializeStackTrace(params.stackTrace),
     };
 
     this.#storage.addConsoleEntry(entry);
+  }
+
+  async #serializeRemoteObjectWithProperties(
+    source: chrome.debugger.Debuggee,
+    obj: CdpRemoteObject,
+  ): Promise<SerializedRemoteObject> {
+    const serialized = this.#serializeRemoteObject(obj);
+    if (obj.type !== "object" || !obj.objectId || serialized.preview?.properties?.length) {
+      return serialized;
+    }
+
+    try {
+      const response = (await this.#sendCommand(source, "Runtime.getProperties", {
+        objectId: obj.objectId,
+        ownProperties: false,
+        generatePreview: true,
+      })) as { result?: CdpPropertyDescriptor[] } | undefined;
+      const properties = (response?.result || [])
+        .filter((property) => property.name !== "__proto__" && property.value)
+        .slice(0, MAX_CONSOLE_OBJECT_PROPERTIES)
+        .map((property) => {
+          const value = this.#serializeRemoteObject(property.value as CdpRemoteObject);
+          return {
+            name: property.name,
+            type: value.type,
+            value: value.description ?? (value.value == null ? undefined : String(value.value)),
+            subtype: value.subtype,
+            valuePreview: value.preview,
+          };
+        });
+
+      if (properties.length) {
+        serialized.preview = {
+          type: "object",
+          subtype: obj.subtype,
+          description: obj.description || obj.className,
+          overflow: (response?.result?.length || 0) > properties.length,
+          properties,
+        };
+      }
+    } catch {
+      // Object handles can expire between Runtime.consoleAPICalled and this request.
+    }
+
+    return serialized;
   }
 
   #onExceptionThrown(params: CdpExceptionThrownParams): void {

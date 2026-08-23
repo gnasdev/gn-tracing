@@ -12,13 +12,53 @@
  *   Firefox identity.getRedirectURL() uses SHA-1 of the addon id as the
  *   allizom subdomain (NOT the raw email-style id). launchWebAuthFlow also
  *   accepts the mozoauth2 loopback form with that same hash (Firefox 86+).
+ * - Safari (macOS + iOS): no platform identity host at all — Safari has no
+ *   `identity` API (confirmed: `safari-web-extension-converter` flags the
+ *   `identity` manifest permission itself as unsupported). There is nothing
+ *   for `chrome.identity.launchWebAuthFlow`/`getRedirectURL()` to key off, so
+ *   Safari uses a `/oauth-callback` page on the player host instead
+ *   (SAFARI_OAUTH_CALLBACK_URL — same dev/prod split as the player itself:
+ *   `http://localhost:$PLAYER_LOCAL_PORT/oauth-callback` in development,
+ *   `https://tracing.gnas.dev/oauth-callback` in production) and
+ *   `src/background/safari-web-auth-flow.ts` drives the flow with
+ *   chrome.tabs.create + tabs.onUpdated rather than the identity API. Both
+ *   hosts are domain-ownership-compliant: tracing.gnas.dev is a domain this
+ *   project owns, and Google/Dropbox both explicitly exempt `http://localhost`
+ *   redirect URIs from the https requirement (same reason the Firefox
+ *   mozoauth2 loopback above works) — no reason for a dev build to exercise
+ *   the production callback and production OAuth Worker just to test locally.
  *
- * Custom domains (including the product homepage at tracing.gnas.dev) are for
- * consent-screen branding and privacy/terms pages — never as OAuth redirect
- * URIs for this extension.
+ * Other custom domains are for consent-screen branding and privacy/terms
+ * pages — never as OAuth redirect URIs for this extension.
  */
 
+import { getBrowserTarget } from "../platform/detect";
+import type { BrowserTarget } from "../platform/types";
+import { resolvePlayerHostUrl } from "./player-host";
 import { sha1Hex } from "./sha1";
+
+declare const __APP_ENV__: string;
+declare const __PLAYER_LOCAL_PORT__: string;
+declare const __PLAYER_HOST_URL__: string;
+
+/**
+ * Safari OAuth callback: `/oauth-callback` on the player host (see
+ * `player/public/oauth-callback/`), resolved with the exact same dev/prod
+ * split `resolveReplayOpenUrl`/`buildExternalPlayerUrl` already use. Must be
+ * registered as an Authorized redirect URI on the Google/Dropbox Web
+ * application OAuth clients (both the localhost:5176 dev value and the
+ * tracing.gnas.dev production value). The extension never lets this page
+ * actually finish loading in normal operation — `launchSafariWebAuthFlow`
+ * closes the tab as soon as its URL changes to this prefix, reading
+ * `code`/`state` off the URL the same way the other platforms'
+ * identity-redirect result is parsed.
+ */
+export const SAFARI_OAUTH_CALLBACK_URL = `${resolvePlayerHostUrl(
+  typeof __PLAYER_HOST_URL__ === "string" ? __PLAYER_HOST_URL__ : "",
+  typeof __APP_ENV__ === "string" ? __APP_ENV__ : "production",
+  Number.parseInt(typeof __PLAYER_LOCAL_PORT__ === "string" ? __PLAYER_LOCAL_PORT__ : "", 10) ||
+    5176,
+).replace(/\/$/, "")}/oauth-callback`;
 
 /** Hosts explicitly allowed as OAuth redirect_uri for Chromium identity. */
 export const EXTENSION_OAUTH_REDIRECT_HOST_SUFFIXES = [
@@ -275,10 +315,17 @@ function readRuntimeId(): string {
 
 /**
  * Canonical redirect for the running extension instance.
+ * Safari (macOS + iOS): fixed first-party callback page, no identity API.
  * Firefox: always mozoauth2 with SHA-1(addon id) — same as Firefox identity API.
  * Chromium: chrome.identity.getRedirectURL() (*.chromiumapp.org).
  */
-export function resolveRuntimeExtensionRedirectUri(): OAuthRedirectValidation {
+export function resolveRuntimeExtensionRedirectUri(
+  target: BrowserTarget = getBrowserTarget(),
+): OAuthRedirectValidation {
+  if (target === "safari" || target === "safari-ios") {
+    return { ok: true, redirectUri: SAFARI_OAUTH_CALLBACK_URL, hostname: "tracing.gnas.dev" };
+  }
+
   const runtimeId = readRuntimeId();
 
   // Firefox path first — do not use raw email-style id as mozoauth2 path.
@@ -321,9 +368,10 @@ export function resolveRuntimeExtensionRedirectUri(): OAuthRedirectValidation {
  */
 export function resolveRuntimeExtensionRedirectUriForProvider(
   provider: OAuthRedirectProvider,
+  target: BrowserTarget = getBrowserTarget(),
 ): OAuthRedirectValidation {
-  if (provider !== "dropbox") {
-    return resolveRuntimeExtensionRedirectUri();
+  if (provider !== "dropbox" || target === "safari" || target === "safari-ios") {
+    return resolveRuntimeExtensionRedirectUri(target);
   }
 
   const runtimeId = readRuntimeId();

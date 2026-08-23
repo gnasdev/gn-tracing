@@ -81,6 +81,16 @@ export type OnMessageListener = (
   sendResponse: (response?: unknown) => void,
 ) => unknown;
 
+/** Listener shape of `chrome.tabs.onUpdated`. */
+export type TabsUpdatedListener = (
+  tabId: number,
+  changeInfo: chrome.tabs.TabChangeInfo,
+  tab?: chrome.tabs.Tab,
+) => void;
+
+/** Listener shape of `chrome.tabs.onRemoved`. */
+export type TabsRemovedListener = (tabId: number, removeInfo?: chrome.tabs.TabRemoveInfo) => void;
+
 /** Listener shape of `chrome.debugger.onEvent`. */
 export type DebuggerEventListener = (
   source: chrome.debugger.Debuggee,
@@ -110,7 +120,10 @@ export interface ChromeMock {
     get: MockSpy;
     create: MockSpy;
     update: MockSpy;
+    remove: MockSpy;
     sendMessage: MockSpy;
+    onUpdated: MockEvent<TabsUpdatedListener>;
+    onRemoved: MockEvent<TabsRemovedListener>;
   };
   windows: {
     create: MockSpy;
@@ -398,9 +411,12 @@ export function createChromeMock(): ChromeMock {
     {
       query: createSpy(counter, spies, () => Promise.resolve([])),
       get: createSpy(counter, spies),
-      create: createSpy(counter, spies),
+      create: createSpy(counter, spies, () => Promise.resolve({ id: 1, windowId: 1 })),
       update: createSpy(counter, spies, () => Promise.resolve({ id: 1, windowId: 1 })),
+      remove: createSpy(counter, spies, () => Promise.resolve()),
       sendMessage: createSpy(counter, spies),
+      onUpdated: createEvent<TabsUpdatedListener>(counter, spies, events),
+      onRemoved: createEvent<TabsRemovedListener>(counter, spies, events),
     },
     "chrome.tabs",
   );

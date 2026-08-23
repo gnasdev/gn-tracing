@@ -17,7 +17,11 @@
 
 import { EXTENSION_CAPABILITIES } from "../schema";
 import type { InstantReplayArtifact, ScreenshotArtifact } from "../schema/annotation";
-import type { AttachableArtifactId, RecordingCapability } from "../schema/package";
+import type {
+  AttachableArtifactId,
+  EvidenceCoverage,
+  RecordingCapability,
+} from "../schema/package";
 import {
   buildRecordingPackage,
   buildZipArchive,
@@ -103,6 +107,8 @@ export interface SampleRecordingOptions {
   withInstantReplay?: boolean;
   /** Declared producer capabilities. Defaults to `EXTENSION_CAPABILITIES`. */
   capabilities?: RecordingCapability[];
+  /** Per-session surface coverage recorded by the producer. */
+  evidenceCoverage?: EvidenceCoverage;
 }
 
 export function buildSampleArtifacts(options: SampleRecordingOptions = {}) {
@@ -383,6 +389,7 @@ export async function buildSamplePackage(
   const built = await buildRecordingPackage({
     producer: "extension",
     capabilities: options.capabilities ?? EXTENSION_CAPABILITIES,
+    evidenceCoverage: options.evidenceCoverage,
     packagedAt: sample.metadata.timestamp,
     zipFilename: "gn-tracing-test.zip",
     duration: sample.metadata.duration,

@@ -67,3 +67,4 @@ playwright-report/
 # Generated release-router deployment configuration
 edge/player-router/wrangler.generated.toml
 edge/worker-router/wrangler.generated.toml
+semantic-review/

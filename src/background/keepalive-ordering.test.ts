@@ -76,3 +76,22 @@ describe("recording keepalive ordering", () => {
     expect(periodSeconds).toBeLessThan(30);
   });
 });
+
+describe("storage OAuth keepalive", () => {
+  it("keeps the background alive until provider connect settles", () => {
+    const start = swSource.indexOf("storageConnect: async (data) => {");
+    const end = swSource.indexOf("  storageDisconnect: async (data) => {", start);
+    const handler = swSource.slice(start, end);
+
+    const arm = handler.indexOf("withOAuthKeepalive(() => provider.connect())");
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    expect(arm).toBeGreaterThan(-1);
+    const helperStart = swSource.indexOf("async function withOAuthKeepalive");
+    const helperEnd = swSource.indexOf("function providerDisplayName", helperStart);
+    const helper = swSource.slice(helperStart, helperEnd);
+    expect(helperStart).toBeGreaterThan(-1);
+    expect(helper).toContain("finally {");
+    expect(helper).toContain("chrome.alarms.clear(OAUTH_KEEPALIVE_ALARM)");
+  });
+});

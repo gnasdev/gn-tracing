@@ -1,5 +1,6 @@
 /**
- * Build store zip from dist/<browser>/ for Chrome Web Store, Edge/Opera Add-ons, or AMO.
+ * Build store zip from dist/<browser>/ for Chrome Web Store, Edge/Opera Add-ons, AMO,
+ * or as the source zip for Apple's Safari Web Extension Packager / safari-web-extension-converter.
  *
  * Chrome Web Store rejects packages whose manifest includes a "key" field.
  * Local/unpacked builds keep "key" so the extension ID stays stable; the Store
@@ -11,6 +12,8 @@
  *   node scripts/package-store-zip.mjs --browser edge
  *   node scripts/package-store-zip.mjs --browser opera
  *   node scripts/package-store-zip.mjs --browser firefox
+ *   node scripts/package-store-zip.mjs --browser safari
+ *   node scripts/package-store-zip.mjs --browser safari-ios
  */
 
 import { execFileSync } from "node:child_process";
@@ -34,11 +37,12 @@ function getCliArgValue(flagName) {
   return undefined;
 }
 
+const SUPPORTED_BROWSERS = ["chrome", "edge", "opera", "firefox", "safari", "safari-ios"];
 const browser = String(getCliArgValue("--browser") || "chrome")
   .trim()
   .toLowerCase();
-if (!["chrome", "edge", "opera", "firefox"].includes(browser)) {
-  fail(`unsupported --browser ${browser} (use chrome, edge, opera, or firefox)`);
+if (!SUPPORTED_BROWSERS.includes(browser)) {
+  fail(`unsupported --browser ${browser} (use ${SUPPORTED_BROWSERS.join(", ")})`);
 }
 
 const distDir = path.join(root, "dist", browser);

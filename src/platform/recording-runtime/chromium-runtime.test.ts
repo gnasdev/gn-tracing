@@ -30,9 +30,21 @@ const {
   const order: string[] = [];
 
   class MockCollectorSet {
+    evidenceCoverage = {
+      schemaVersion: 1,
+      surfaces: {
+        "storage-snapshot": { source: "cdp", quality: "full" },
+        "dom-snapshot": { source: "cdp", quality: "full" },
+        "console-api": { source: "cdp", quality: "full" },
+      },
+    };
     attach = vi.fn(async () => {
       order.push("evidence.attach");
-      return { ok: true, capabilities: ["console", "network"], limitations: [] };
+      return {
+        ok: true,
+        capabilities: ["console", "network"],
+        limitations: [] as string[],
+      };
     });
     beginSession = vi.fn(async () => {
       order.push("evidence.beginSession");
@@ -184,6 +196,22 @@ describe("ChromiumRecordingRuntime.start", () => {
     expect(order).toContain("cdp.captureDomSnapshot(start)");
   });
 
+  it("fails before starting a session when Chrome cannot attach CDP", async () => {
+    const runtime = new ChromiumRecordingRuntime(fakeStorage());
+    const collectors = collectorSetInstances.at(-1);
+    collectors?.attach.mockResolvedValueOnce({
+      ok: false,
+      capabilities: [],
+      limitations: ["cdp could not start: Another debugger is already attached to the tab."],
+    });
+
+    const start = runtime.start(startInput());
+    await expect(start).rejects.toThrow(/Chrome could not start debugging this tab/);
+    await expect(start).rejects.toThrow(/Another debugger is already attached/);
+    expect(collectors?.beginSession).not.toHaveBeenCalled();
+    expect(mediaHostInstances.at(-1)?.hydrateActiveSession).not.toHaveBeenCalled();
+  });
+
   it("hydrates the active session last, once media and evidence are both live", async () => {
     const runtime = new ChromiumRecordingRuntime(fakeStorage());
     await runtime.start(startInput());
@@ -273,5 +301,22 @@ describe("ChromiumRecordingRuntime evidence bridging", () => {
       runtime.ingestEvidenceEntry("s-1", "console", { timestamp: 1 } as never),
     ).not.toThrow();
     await expect(runtime.reinjectEvidenceCapture(1, "s-1")).resolves.toBeUndefined();
+  });
+});
+
+describe("ChromiumRecordingRuntime finalized coverage", () => {
+  it("omits disabled storage and DOM surfaces from package coverage", async () => {
+    const runtime = new ChromiumRecordingRuntime(fakeStorage());
+    await runtime.start(startInput());
+
+    const result = await runtime.finalizeEvidence({
+      captureStorage: false,
+      captureDomSnapshots: false,
+      stopTime: 1,
+    });
+
+    expect(result.evidenceCoverage?.surfaces).toEqual({
+      "console-api": { source: "cdp", quality: "full" },
+    });
   });
 });

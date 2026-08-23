@@ -78,15 +78,16 @@ task typecheck      # Type-check root extension code
 task lint           # Run Biome lint checks for supported sources
 task format         # Format Biome-supported repository sources
 task check          # Run Biome checks plus docs hygiene validation
-task build:all      # Chrome + Edge + Opera + Firefox (development)
-task dist:all       # Chrome + Edge + Opera + Firefox (production)
+task build:all      # All four (Chrome + Edge + Opera + Firefox), plus macOS + iOS Safari (development)
+task dist:all       # All four (Chrome + Edge + Opera + Firefox), plus macOS + iOS Safari (production)
 task player:build   # Standalone player (dev)
 task player:dist    # Standalone player (production)
 task dev            # Full local stack (Chrome + Firefox default): extension watch + player (Vite) + Worker (:63972)
 task dev BROWSER=both      # Explicit Chrome + Firefox default
 
-task dev BROWSER=chrome    # One target (also: edge|opera|firefox, or task dev:<browser>)
-task dev BROWSER=all       # All four browser watchers + player + Worker (alias: task dev:all)
+task dev BROWSER=chrome    # One target (also: edge|opera|firefox|safari, or task dev:<browser>)
+task dev BROWSER=safari    # macOS Safari — also rebuilds "xcode/GN Tracing (macOS)" on every save (slower, needs the app already run once in Xcode; see Safari section below)
+task dev BROWSER=all       # All four browser watchers + macOS Safari + player + Worker (alias: task dev:all)
 task dev:all        # Same as BROWSER=all
 task worker:dev     # Local Worker only (also included in `task dev`)
 task worker:sync-dev-vars  # Sync worker/.dev.vars from root .env (run automatically by task dev / worker:dev)
@@ -318,12 +319,15 @@ task dev BROWSER=chrome
 task dev BROWSER=edge
 task dev BROWSER=opera
 task dev BROWSER=firefox
+task dev BROWSER=safari     # macOS Safari — see Safari dev loop note below
 BROWSER=firefox task dev    # env form also works
-task dev BROWSER=all        # all four watchers + reload + Player + Worker
+task dev BROWSER=all        # all four watchers + macOS Safari + reload + Player + Worker
 task dev:all                # alias for BROWSER=all
 ```
 
-`task watch` accepts one browser only: `chrome`, `edge`, `opera`, or `firefox`. `task dev` also accepts `both` and `all`; an unsupported value fails before a long-running process starts.
+`task watch` accepts one browser only: `chrome`, `edge`, `opera`, `firefox`, or `safari`. `task dev` also accepts `both` and `all`; an unsupported value fails before a long-running process starts.
+
+**Safari dev loop is slower than the others.** Safari has no "load unpacked" — the running app's extension bundle is a *copy* Xcode made of `dist/safari/`, not a live reference. `task watch BROWSER=safari` runs an incremental `xcodebuild build` on every save (via `scripts/safari/build-xcode.mjs --allow-signing`) before notifying the same self-reload mechanism every other target already uses (`chrome.runtime.reload()`, see `src/background/dev-reload.ts`), so reload takes seconds rather than being instant. It also requires the macOS app to already be built and run once from `xcode/GN Tracing (macOS)/GN Tracing.xcodeproj` with local signing configured (Signing & Capabilities → "Sign to Run Locally", or a Personal Team) — `task watch`/`task dev` only refresh the bundle on disk, they do not launch the app or enable the extension in Safari. iOS Safari has not joined this matrix yet (Simulator install/relaunch is a bigger step than an incremental macOS rebuild).
 
 The Player and Worker are per-repository rather than per-browser. `player:dev` and `worker:dev` reuse a process already serving their port, so a second `task dev` stack can share them.
 

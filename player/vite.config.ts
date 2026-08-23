@@ -104,6 +104,7 @@ function shouldRewriteToPlayer(urlPath: string): boolean {
     urlPath.startsWith("/app") ||
     urlPath.startsWith("/privacy") ||
     urlPath.startsWith("/terms") ||
+    urlPath.startsWith("/oauth-callback") ||
     urlPath === "/player.js" ||
     urlPath === "/player.css" ||
     urlPath === "/theme.css" ||
@@ -116,6 +117,36 @@ function shouldRewriteToPlayer(urlPath: string): boolean {
   const last = urlPath.split("/").pop() || "";
   if (last.includes(".")) return false;
   return true;
+}
+
+/**
+ * Directory-index resolution for the sub-page static routes, matching
+ * `public/_redirects` (production, Cloudflare Pages-only — has no effect in
+ * local Vite dev). Without this, `/privacy`, `/terms`, and `/oauth-callback`
+ * (no trailing slash, no `.html`) do not resolve to their
+ * `public/<name>/index.html` file locally: Vite's static server does not do
+ * directory-index fallback for clean URLs on its own, so the request falls
+ * through to Vite's SPA catch-all and the player app loads instead — for
+ * `/oauth-callback` specifically, the app then misreads the path as a
+ * recording id and shows "Invalid Recording Parameters" / "Failed to
+ * download file oauth-callback".
+ */
+const STATIC_SUBPAGES = ["privacy", "terms", "oauth-callback"];
+
+function staticSubpageMiddleware(): Connect.NextHandleFunction {
+  return (req, _res, next) => {
+    if (!req.url || req.method !== "GET") {
+      next();
+      return;
+    }
+    const query = req.url.includes("?") ? req.url.slice(req.url.indexOf("?")) : "";
+    const urlPath = req.url.split("?")[0] || "";
+    const trimmed = urlPath.replace(/\/+$/, "");
+    if (STATIC_SUBPAGES.includes(trimmed.slice(1))) {
+      req.url = `${trimmed}/index.html${query}`;
+    }
+    next();
+  };
 }
 
 function unsupportedLocalVersionMiddleware(): Connect.NextHandleFunction {
@@ -155,12 +186,14 @@ function driveProxyPlugin() {
   return {
     name: "gn-tracing-storage-proxy",
     configureServer(server: { middlewares: Connect.Server }) {
+      server.middlewares.use(staticSubpageMiddleware());
       server.middlewares.use(unsupportedLocalVersionMiddleware());
       server.middlewares.use(driveProxyMiddleware);
       server.middlewares.use(dropboxProxyMiddleware);
       server.middlewares.use(playerSpaFallbackMiddleware());
     },
     configurePreviewServer(server: { middlewares: Connect.Server }) {
+      server.middlewares.use(staticSubpageMiddleware());
       server.middlewares.use(unsupportedLocalVersionMiddleware());
       server.middlewares.use(driveProxyMiddleware);
       server.middlewares.use(dropboxProxyMiddleware);

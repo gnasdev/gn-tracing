@@ -176,6 +176,58 @@ describe("CdpManager network capture (shipped collector)", () => {
     });
   });
 
+  it("captures object properties for console arguments that only expose an objectId", async () => {
+    chromeMock().debugger.sendCommand.mockImplementation(async (...args: unknown[]) => {
+      const method = args[1] as string;
+      if (method === "Runtime.getProperties") {
+        return {
+          result: [
+            { name: "status", value: { type: "number", value: 500, description: "500" } },
+            { name: "message", value: { type: "string", value: "Request failed" } },
+          ],
+        };
+      }
+      return {};
+    });
+
+    emit("Runtime.consoleAPICalled", {
+      type: "error",
+      timestamp: 1_700_000_000_000,
+      args: [
+        {
+          type: "object",
+          className: "HttpErrorResponse",
+          description: "HttpErrorResponse",
+          objectId: "remote-http-error",
+        },
+      ],
+    });
+
+    await cdp.detach();
+
+    const artifacts = storage.finalizeCurrentSession();
+    const entries = JSON.parse(artifacts.consoleLogs || "[]") as Array<Record<string, unknown>>;
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.args).toMatchObject([
+      {
+        className: "HttpErrorResponse",
+        preview: {
+          properties: [
+            { name: "status", type: "number", value: "500" },
+            { name: "message", type: "string", value: "Request failed" },
+          ],
+        },
+      },
+    ]);
+    expect(
+      chromeMock().debugger.sendCommand.calls.some(
+        (call) =>
+          call.args[1] === "Runtime.getProperties" &&
+          (call.args[2] as { objectId?: string } | undefined)?.objectId === "remote-http-error",
+      ),
+    ).toBe(true);
+  });
+
   it("does not call getResponseBody when capture mode is off", async () => {
     cdp.setCaptureSettings({ captureResponseBodyMode: "off" });
     const requestId = "req-off";
@@ -281,6 +333,53 @@ describe("CdpManager network capture (shipped collector)", () => {
     expect(entries[0]?.responseBody).toMatchObject({
       body: `{"late":"${requestId}"}`,
     });
+  });
+
+  it("waits for console property capture before chromeMock().debugger.detach", async () => {
+    let releaseProperties: (() => void) | undefined;
+    const propertiesGate = new Promise<void>((resolve) => {
+      releaseProperties = resolve;
+    });
+    chromeMock().debugger.sendCommand.mockImplementation(async (...args: unknown[]) => {
+      if (args[1] === "Runtime.getProperties") {
+        await propertiesGate;
+        return {
+          result: [{ name: "message", value: { type: "string", value: "late error" } }],
+        };
+      }
+      return {};
+    });
+
+    const detachCountBefore = chromeMock().debugger.detach.callCount;
+    emit("Runtime.consoleAPICalled", {
+      type: "error",
+      timestamp: 1_700_000_000_000,
+      args: [
+        {
+          type: "object",
+          className: "Error",
+          description: "Error",
+          objectId: "late-console-error",
+        },
+      ],
+    });
+
+    const detachPromise = cdp.detach();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(chromeMock().debugger.detach.callCount).toBe(detachCountBefore);
+
+    releaseProperties?.();
+    await detachPromise;
+
+    expect(chromeMock().debugger.detach.callCount).toBe(detachCountBefore + 1);
+    const entries = JSON.parse(storage.finalizeCurrentSession().consoleLogs || "[]") as Array<{
+      args?: Array<{
+        preview?: { properties?: Array<{ value?: string }> };
+      }>;
+    }>;
+    expect(entries[0]?.args?.[0]?.preview?.properties?.[0]?.value).toBe("late error");
   });
 
   it("does not fetch body for binary image mime", async () => {

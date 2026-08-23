@@ -59,12 +59,12 @@ function loadEnvFile(filePath) {
 }
 
 /**
- * Sentinel accepted by the Worker for any `moz-extension://<uuid>` origin.
- * Firefox regenerates that uuid per profile/install, so it cannot be pinned the
- * way CHROME_EXTENSION_ID can. Kept in the derived dev allow-list so `task dev`
- * works when the Firefox build connects Google Drive / Dropbox.
+ * Firefox and Safari regenerate their extension UUIDs per profile/install, so
+ * neither origin can be pinned like CHROME_EXTENSION_ID. Keep both scheme
+ * wildcards in the derived dev allow-list so local OAuth works on all targets.
  */
 const FIREFOX_ORIGIN_WILDCARD = "moz-extension://*";
+const SAFARI_ORIGIN_WILDCARD = "safari-web-extension://*";
 
 function main() {
   if (!fs.existsSync(envPath)) {
@@ -89,13 +89,14 @@ function main() {
         .join(",");
 
   // This file only feeds the *local* `task worker:dev` Worker, so always admit
-  // the dev origin and moz-extension://* here even when WORKER_ALLOWED_EXTENSION_ORIGINS
-  // is set explicitly (that var is written with production in mind and easily
-  // omits the dev id — omitting it just breaks local OAuth with forbidden_origin,
-  // it does not widen anything the deployed Worker actually enforces).
+  // the dev origin plus dynamic Firefox/Safari origins even when
+  // WORKER_ALLOWED_EXTENSION_ORIGINS is set explicitly. That variable is
+  // production-oriented and may omit dev targets; doing so only breaks local
+  // OAuth with forbidden_origin and never widens the deployed Worker.
   const required = [
     devExtensionId ? `chrome-extension://${devExtensionId}` : "",
     FIREFOX_ORIGIN_WILDCARD,
+    SAFARI_ORIGIN_WILDCARD,
   ].filter(Boolean);
   const parts = base
     ? base

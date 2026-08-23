@@ -9,40 +9,60 @@
 import { describe, expect, it, vi } from "vitest";
 import type { RecordingCapability } from "../../../packages/replay-core/src/schema/package";
 import { CollectorSet } from "./collector-set";
+import type { EvidenceOffer } from "./surfaces";
 import type { EvidenceCollector } from "./types";
 
 function fakeCollector(
-  overrides: Partial<EvidenceCollector> & { id: string; provides?: RecordingCapability[] },
+  overrides: Partial<EvidenceCollector> & {
+    id: string;
+    provides?: RecordingCapability[];
+    offers?: EvidenceOffer[];
+  },
 ): EvidenceCollector {
   return {
     provides: [],
+    offers: [],
     attach: vi.fn(async () => ({ ok: true, capabilities: [], limitations: [] })),
     beginSession: vi.fn(async () => ({ limitations: [] })),
     detach: vi.fn(async () => ({ limitations: [] })),
-    reattach: vi.fn(async () => {}),
+    reattach: vi.fn(async () => ({ limitations: [] })),
     ...overrides,
   };
 }
 
-describe("CollectorSet overlap guard", () => {
-  it("constructs fine when no two collectors share a kind", () => {
-    expect(
-      () =>
-        new CollectorSet([
-          fakeCollector({ id: "a", provides: ["console"] }),
-          fakeCollector({ id: "b", provides: ["network"] }),
-        ]),
-    ).not.toThrow();
-  });
+describe("CollectorSet surface selection", () => {
+  it("allows overlapping capabilities and chooses the higher-fidelity surface owner", () => {
+    const set = new CollectorSet([
+      fakeCollector({
+        id: "in-page",
+        provides: ["network"],
+        offers: [
+          {
+            source: "in-page",
+            surface: "network-lifecycle",
+            quality: "partial",
+            capability: "network",
+          },
+        ],
+      }),
+      fakeCollector({
+        id: "web-request",
+        provides: ["network"],
+        offers: [
+          {
+            source: "web-request",
+            surface: "network-lifecycle",
+            quality: "full",
+            capability: "network",
+          },
+        ],
+      }),
+    ]);
 
-  it("throws when two collectors claim the same kind", () => {
-    expect(
-      () =>
-        new CollectorSet([
-          fakeCollector({ id: "a", provides: ["network"] }),
-          fakeCollector({ id: "b", provides: ["network"] }),
-        ]),
-    ).toThrow(/overlap.*"a".*"b".*"network"|overlap.*"network"/i);
+    expect(set.evidenceCoverage.surfaces["network-lifecycle"]).toEqual({
+      source: "web-request",
+      quality: "full",
+    });
   });
 });
 
@@ -219,5 +239,80 @@ describe("CollectorSet.beginSession, detach and reattach", () => {
 
     expect(a.reattach).toHaveBeenCalledWith(7, "s2");
     expect(b.reattach).toHaveBeenCalledWith(7, "s2");
+  });
+});
+
+describe("CollectorSet selected lifecycle", () => {
+  it("does not arm an unselected overlapping collector", async () => {
+    const inPageOffer: EvidenceOffer = {
+      source: "in-page",
+      surface: "network-lifecycle",
+      quality: "partial",
+      capability: "network",
+    };
+    const webRequestOffer: EvidenceOffer = {
+      source: "web-request",
+      surface: "network-lifecycle",
+      quality: "full",
+      capability: "network",
+    };
+    const inPage = fakeCollector({
+      id: "in-page",
+      offers: [inPageOffer],
+      provides: ["network"],
+    });
+    const webRequest = fakeCollector({
+      id: "web-request",
+      offers: [webRequestOffer],
+      provides: ["network"],
+    });
+    const set = new CollectorSet([inPage, webRequest]);
+
+    await set.attach({ tabId: 1, sessionId: "s1" });
+    await set.beginSession({ tabId: 1, sessionId: "s1" });
+
+    expect(inPage.attach).not.toHaveBeenCalled();
+    expect(inPage.beginSession).not.toHaveBeenCalled();
+    expect(webRequest.attach).toHaveBeenCalledWith({
+      tabId: 1,
+      sessionId: "s1",
+      selectedOffers: [webRequestOffer],
+    });
+    expect(webRequest.beginSession).toHaveBeenCalledWith({
+      tabId: 1,
+      sessionId: "s1",
+      selectedOffers: [webRequestOffer],
+    });
+  });
+});
+
+describe("CollectorSet reattach coverage", () => {
+  it("removes only the collector that fails to re-arm", async () => {
+    const inPageOffer: EvidenceOffer = {
+      source: "in-page",
+      surface: "console-api",
+      quality: "full",
+      capability: "console",
+    };
+    const webRequestOffer: EvidenceOffer = {
+      source: "web-request",
+      surface: "network-lifecycle",
+      quality: "full",
+      capability: "network",
+    };
+    const inPage = fakeCollector({
+      id: "in-page",
+      offers: [inPageOffer],
+      reattach: vi.fn(async () => ({ active: false, limitations: ["bridge unavailable"] })),
+    });
+    const webRequest = fakeCollector({ id: "web-request", offers: [webRequestOffer] });
+    const set = new CollectorSet([inPage, webRequest]);
+
+    await set.attach({ tabId: 1, sessionId: "s1" });
+    await set.reattach(1, "s1");
+
+    expect(set.evidenceCoverage.surfaces).toEqual({
+      "network-lifecycle": { source: "web-request", quality: "full" },
+    });
   });
 });

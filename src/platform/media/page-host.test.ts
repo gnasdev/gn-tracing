@@ -184,8 +184,8 @@ describe("ExtensionPageMediaHost display capture", () => {
     expect(tabFrameMessage()?.data).toEqual({
       tabId: RECORDED_TAB_ID,
       sessionId: SESSION_ID,
+      microphoneEnabled: true,
       microphoneDeviceId: "",
-      speakerDeviceId: "",
     });
     expect(firstFrameAt).toBe(1234);
     expect(host.capturedSurface).toEqual({

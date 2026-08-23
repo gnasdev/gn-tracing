@@ -38,7 +38,9 @@ import {
   type InPageCaptureKind,
   type InPageCaptureScope,
   installInPageCapture,
+  parseInPageStackTrace,
   serializeConsoleArg,
+  stripInPageCaptureFrames,
   toConsoleEntry,
 } from "./in-page-capture";
 
@@ -297,6 +299,17 @@ describe("in-page captured entries match player schema (R9.3)", () => {
     expect(consoleEntry.args).toHaveLength(2);
     expect(consoleEntry.args?.[0]).toMatchObject({ type: "string", value: "hi" });
     expect(consoleEntry.args?.[1]?.type).toBe("object");
+    expect(consoleEntry.stackTrace?.length).toBeGreaterThan(0);
+    expect(
+      stripInPageCaptureFrames([
+        {
+          functionName: "captureInPageStackTrace",
+          url: "https://shop.test/assets/app.js",
+          lineNumber: 1,
+          columnNumber: 1,
+        },
+      ]),
+    ).toHaveLength(1);
   });
 
   it("preserves the patched console method's pass-through behavior", () => {
@@ -323,6 +336,77 @@ describe("in-page captured entries match player schema (R9.3)", () => {
     const entry = toConsoleEntry("log", ["msg", 42]);
     expect(isConsoleEntry(entry)).toBe(true);
     expect(entry.message).toBe("msg 42");
+  });
+
+  it("parses Chromium and Firefox caller stacks into player-compatible frames", () => {
+    const chromium = parseInPageStackTrace(
+      "Error\n    at submitOrder (https://shop.test/assets/app.js:42:17)\n    at HTMLButtonElement.onclick (https://shop.test/assets/app.js:68:5)",
+    );
+    const firefox = parseInPageStackTrace(
+      "submitOrder@https://shop.test/assets/app.js:42:17\nonclick@https://shop.test/assets/app.js:68:5",
+    );
+
+    expect(chromium).toEqual([
+      {
+        functionName: "submitOrder",
+        url: "https://shop.test/assets/app.js",
+        lineNumber: 41,
+        columnNumber: 16,
+      },
+      {
+        functionName: "HTMLButtonElement.onclick",
+        url: "https://shop.test/assets/app.js",
+        lineNumber: 67,
+        columnNumber: 4,
+      },
+    ]);
+    expect(firefox).toEqual([
+      chromium?.[0],
+      {
+        functionName: "onclick",
+        url: "https://shop.test/assets/app.js",
+        lineNumber: 67,
+        columnNumber: 4,
+      },
+    ]);
+  });
+
+  it("removes recorder helper and extension wrapper frames while retaining app callers", () => {
+    const frames = stripInPageCaptureFrames([
+      {
+        functionName: "captureInPageStackTrace",
+        url: "chrome-extension://recorder/in-page.js",
+        lineNumber: 1,
+        columnNumber: 1,
+      },
+      {
+        functionName: "patched",
+        url: "moz-extension://recorder/in-page.js",
+        lineNumber: 2,
+        columnNumber: 1,
+      },
+      {
+        functionName: "onRejection",
+        url: "safari-web-extension://recorder/in-page.js",
+        lineNumber: 3,
+        columnNumber: 1,
+      },
+      {
+        functionName: "patched",
+        url: "https://shop.test/assets/app.js",
+        lineNumber: 42,
+        columnNumber: 17,
+      },
+    ]);
+
+    expect(frames).toEqual([
+      {
+        functionName: "patched",
+        url: "https://shop.test/assets/app.js",
+        lineNumber: 42,
+        columnNumber: 17,
+      },
+    ]);
   });
 
   it("serializeConsoleArg produces valid SerializedRemoteObject shapes", () => {

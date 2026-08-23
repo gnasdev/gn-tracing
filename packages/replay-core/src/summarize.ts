@@ -99,6 +99,7 @@ export interface AgentSummary {
   capture: {
     storageProvider: string | null;
     artifacts: string[];
+    evidenceCoverage?: PackageMetadata["evidenceCoverage"];
   };
   counts: {
     console: number;
@@ -196,6 +197,7 @@ export function buildAgentSummary(input: SummaryInput): AgentSummary {
     capture: {
       storageProvider: asString(metadata.storage?.provider) || null,
       artifacts: [...(input.availableArtifacts ?? [])].sort(),
+      ...(metadata.evidenceCoverage ? { evidenceCoverage: metadata.evidenceCoverage } : {}),
     },
     counts: {
       console: consoleViews.length,

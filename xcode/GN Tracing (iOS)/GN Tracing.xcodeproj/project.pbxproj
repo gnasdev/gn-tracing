@@ -1,0 +1,638 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		1D2A3D5F3037789B008382FA /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D2A3D5E3037789B008382FA /* AppDelegate.swift */; };
+		1D2A3D633037789B008382FA /* Main.html in Resources */ = {isa = PBXBuildFile; fileRef = 1D2A3D613037789B008382FA /* Main.html */; };
+		1D2A3D653037789B008382FA /* Icon.png in Resources */ = {isa = PBXBuildFile; fileRef = 1D2A3D643037789B008382FA /* Icon.png */; };
+		1D2A3D673037789B008382FA /* Style.css in Resources */ = {isa = PBXBuildFile; fileRef = 1D2A3D663037789B008382FA /* Style.css */; };
+		1D2A3D693037789B008382FA /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D2A3D683037789B008382FA /* SceneDelegate.swift */; };
+		1D2A3D6B3037789B008382FA /* ViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D2A3D6A3037789B008382FA /* ViewController.swift */; };
+		1D2A3D6E3037789B008382FA /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 1D2A3D6C3037789B008382FA /* LaunchScreen.storyboard */; };
+		1D2A3D713037789B008382FA /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 1D2A3D6F3037789B008382FA /* Main.storyboard */; };
+		1D2A3D793037789C008382FA /* GN Tracing Extension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 1D2A3D783037789C008382FA /* GN Tracing Extension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		1D2A3D7E3037789C008382FA /* SafariWebExtensionHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D2A3D7D3037789C008382FA /* SafariWebExtensionHandler.swift */; };
+		1D2A3D803037789C008382FA /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 1D2A3D723037789C008382FA /* Assets.xcassets */; };
+		1D2A3D953037789C008382FA /* background in Resources */ = {isa = PBXBuildFile; fileRef = 1D2A3D8B3037789C008382FA /* background */; };
+		1D2A3D963037789C008382FA /* offscreen in Resources */ = {isa = PBXBuildFile; fileRef = 1D2A3D8C3037789C008382FA /* offscreen */; };
+		1D2A3D973037789C008382FA /* popup in Resources */ = {isa = PBXBuildFile; fileRef = 1D2A3D8D3037789C008382FA /* popup */; };
+		1D2A3D983037789C008382FA /* content in Resources */ = {isa = PBXBuildFile; fileRef = 1D2A3D8E3037789C008382FA /* content */; };
+		1D2A3D993037789C008382FA /* shared in Resources */ = {isa = PBXBuildFile; fileRef = 1D2A3D8F3037789C008382FA /* shared */; };
+		1D2A3D9A3037789C008382FA /* annotate in Resources */ = {isa = PBXBuildFile; fileRef = 1D2A3D903037789C008382FA /* annotate */; };
+		1D2A3D9B3037789C008382FA /* microphone-permission in Resources */ = {isa = PBXBuildFile; fileRef = 1D2A3D913037789C008382FA /* microphone-permission */; };
+		1D2A3D9C3037789C008382FA /* icons in Resources */ = {isa = PBXBuildFile; fileRef = 1D2A3D923037789C008382FA /* icons */; };
+		1D2A3D9D3037789C008382FA /* manifest.json in Resources */ = {isa = PBXBuildFile; fileRef = 1D2A3D933037789C008382FA /* manifest.json */; };
+		1D2A3D9E3037789C008382FA /* manage-clouds in Resources */ = {isa = PBXBuildFile; fileRef = 1D2A3D943037789C008382FA /* manage-clouds */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		1D2A3D7A3037789C008382FA /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 1D2A3D533037789B008382FA /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 1D2A3D773037789C008382FA;
+			remoteInfo = "GN Tracing Extension";
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		1D2A3D863037789C008382FA /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				1D2A3D793037789C008382FA /* GN Tracing Extension.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		1D2A3D5B3037789B008382FA /* GN Tracing.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "GN Tracing.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		1D2A3D5E3037789B008382FA /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		1D2A3D623037789B008382FA /* Base */ = {isa = PBXFileReference; lastKnownFileType = text.html; name = Base; path = Base.lproj/Main.html; sourceTree = "<group>"; };
+		1D2A3D643037789B008382FA /* Icon.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = Icon.png; sourceTree = "<group>"; };
+		1D2A3D663037789B008382FA /* Style.css */ = {isa = PBXFileReference; lastKnownFileType = text.css; path = Style.css; sourceTree = "<group>"; };
+		1D2A3D683037789B008382FA /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
+		1D2A3D6A3037789B008382FA /* ViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewController.swift; sourceTree = "<group>"; };
+		1D2A3D6D3037789B008382FA /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
+		1D2A3D703037789B008382FA /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/Main.storyboard; sourceTree = "<group>"; };
+		1D2A3D723037789C008382FA /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		1D2A3D733037789C008382FA /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		1D2A3D783037789C008382FA /* GN Tracing Extension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = "GN Tracing Extension.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
+		1D2A3D7D3037789C008382FA /* SafariWebExtensionHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SafariWebExtensionHandler.swift; sourceTree = "<group>"; };
+		1D2A3D7F3037789C008382FA /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		1D2A3D8B3037789C008382FA /* background */ = {isa = PBXFileReference; lastKnownFileType = folder; name = background; path = "../../../dist/safari-ios/background"; sourceTree = "<group>"; };
+		1D2A3D8C3037789C008382FA /* offscreen */ = {isa = PBXFileReference; lastKnownFileType = folder; name = offscreen; path = "../../../dist/safari-ios/offscreen"; sourceTree = "<group>"; };
+		1D2A3D8D3037789C008382FA /* popup */ = {isa = PBXFileReference; lastKnownFileType = folder; name = popup; path = "../../../dist/safari-ios/popup"; sourceTree = "<group>"; };
+		1D2A3D8E3037789C008382FA /* content */ = {isa = PBXFileReference; lastKnownFileType = folder; name = content; path = "../../../dist/safari-ios/content"; sourceTree = "<group>"; };
+		1D2A3D8F3037789C008382FA /* shared */ = {isa = PBXFileReference; lastKnownFileType = folder; name = shared; path = "../../../dist/safari-ios/shared"; sourceTree = "<group>"; };
+		1D2A3D903037789C008382FA /* annotate */ = {isa = PBXFileReference; lastKnownFileType = folder; name = annotate; path = "../../../dist/safari-ios/annotate"; sourceTree = "<group>"; };
+		1D2A3D913037789C008382FA /* microphone-permission */ = {isa = PBXFileReference; lastKnownFileType = folder; name = "microphone-permission"; path = "../../../dist/safari-ios/microphone-permission"; sourceTree = "<group>"; };
+		1D2A3D923037789C008382FA /* icons */ = {isa = PBXFileReference; lastKnownFileType = folder; name = icons; path = "../../../dist/safari-ios/icons"; sourceTree = "<group>"; };
+		1D2A3D933037789C008382FA /* manifest.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; name = manifest.json; path = "../../../dist/safari-ios/manifest.json"; sourceTree = "<group>"; };
+		1D2A3D943037789C008382FA /* manage-clouds */ = {isa = PBXFileReference; lastKnownFileType = folder; name = "manage-clouds"; path = "../../../dist/safari-ios/manage-clouds"; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		1D2A3D583037789B008382FA /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		1D2A3D753037789C008382FA /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		1D2A3D523037789B008382FA = {
+			isa = PBXGroup;
+			children = (
+				1D2A3D5D3037789B008382FA /* GN Tracing */,
+				1D2A3D7C3037789C008382FA /* GN Tracing Extension */,
+				1D2A3D5C3037789B008382FA /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		1D2A3D5C3037789B008382FA /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				1D2A3D5B3037789B008382FA /* GN Tracing.app */,
+				1D2A3D783037789C008382FA /* GN Tracing Extension.appex */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		1D2A3D5D3037789B008382FA /* GN Tracing */ = {
+			isa = PBXGroup;
+			children = (
+				1D2A3D5E3037789B008382FA /* AppDelegate.swift */,
+				1D2A3D683037789B008382FA /* SceneDelegate.swift */,
+				1D2A3D6A3037789B008382FA /* ViewController.swift */,
+				1D2A3D6C3037789B008382FA /* LaunchScreen.storyboard */,
+				1D2A3D6F3037789B008382FA /* Main.storyboard */,
+				1D2A3D723037789C008382FA /* Assets.xcassets */,
+				1D2A3D733037789C008382FA /* Info.plist */,
+				1D2A3D603037789B008382FA /* Resources */,
+			);
+			path = "GN Tracing";
+			sourceTree = "<group>";
+		};
+		1D2A3D603037789B008382FA /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				1D2A3D613037789B008382FA /* Main.html */,
+				1D2A3D643037789B008382FA /* Icon.png */,
+				1D2A3D663037789B008382FA /* Style.css */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		1D2A3D7C3037789C008382FA /* GN Tracing Extension */ = {
+			isa = PBXGroup;
+			children = (
+				1D2A3D8A3037789C008382FA /* Resources */,
+				1D2A3D7D3037789C008382FA /* SafariWebExtensionHandler.swift */,
+				1D2A3D7F3037789C008382FA /* Info.plist */,
+			);
+			path = "GN Tracing Extension";
+			sourceTree = "<group>";
+		};
+		1D2A3D8A3037789C008382FA /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				1D2A3D8B3037789C008382FA /* background */,
+				1D2A3D8C3037789C008382FA /* offscreen */,
+				1D2A3D8D3037789C008382FA /* popup */,
+				1D2A3D8E3037789C008382FA /* content */,
+				1D2A3D8F3037789C008382FA /* shared */,
+				1D2A3D903037789C008382FA /* annotate */,
+				1D2A3D913037789C008382FA /* microphone-permission */,
+				1D2A3D923037789C008382FA /* icons */,
+				1D2A3D933037789C008382FA /* manifest.json */,
+				1D2A3D943037789C008382FA /* manage-clouds */,
+			);
+			name = Resources;
+			path = "GN Tracing Extension";
+			sourceTree = SOURCE_ROOT;
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		1D2A3D5A3037789B008382FA /* GN Tracing */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 1D2A3D873037789C008382FA /* Build configuration list for PBXNativeTarget "GN Tracing" */;
+			buildPhases = (
+				1D2A3D573037789B008382FA /* Sources */,
+				1D2A3D583037789B008382FA /* Frameworks */,
+				1D2A3D593037789B008382FA /* Resources */,
+				1D2A3D863037789C008382FA /* Embed Foundation Extensions */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				1D2A3D7B3037789C008382FA /* PBXTargetDependency */,
+			);
+			name = "GN Tracing";
+			packageProductDependencies = (
+			);
+			productName = "GN Tracing";
+			productReference = 1D2A3D5B3037789B008382FA /* GN Tracing.app */;
+			productType = "com.apple.product-type.application";
+		};
+		1D2A3D773037789C008382FA /* GN Tracing Extension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 1D2A3D833037789C008382FA /* Build configuration list for PBXNativeTarget "GN Tracing Extension" */;
+			buildPhases = (
+				1D2A3D743037789C008382FA /* Sources */,
+				1D2A3D753037789C008382FA /* Frameworks */,
+				1D2A3D763037789C008382FA /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = "GN Tracing Extension";
+			packageProductDependencies = (
+			);
+			productName = "GN Tracing Extension";
+			productReference = 1D2A3D783037789C008382FA /* GN Tracing Extension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		1D2A3D533037789B008382FA /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2600;
+				LastUpgradeCheck = 2600;
+				TargetAttributes = {
+					1D2A3D5A3037789B008382FA = {
+						CreatedOnToolsVersion = 26.0;
+					};
+					1D2A3D773037789C008382FA = {
+						CreatedOnToolsVersion = 26.0;
+					};
+				};
+			};
+			buildConfigurationList = 1D2A3D563037789B008382FA /* Build configuration list for PBXProject "GN Tracing" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 1D2A3D523037789B008382FA;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 1D2A3D5C3037789B008382FA /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				1D2A3D5A3037789B008382FA /* GN Tracing */,
+				1D2A3D773037789C008382FA /* GN Tracing Extension */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		1D2A3D593037789B008382FA /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				1D2A3D653037789B008382FA /* Icon.png in Resources */,
+				1D2A3D713037789B008382FA /* Main.storyboard in Resources */,
+				1D2A3D6E3037789B008382FA /* LaunchScreen.storyboard in Resources */,
+				1D2A3D633037789B008382FA /* Main.html in Resources */,
+				1D2A3D803037789C008382FA /* Assets.xcassets in Resources */,
+				1D2A3D673037789B008382FA /* Style.css in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		1D2A3D763037789C008382FA /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				1D2A3D993037789C008382FA /* shared in Resources */,
+				1D2A3D9C3037789C008382FA /* icons in Resources */,
+				1D2A3D973037789C008382FA /* popup in Resources */,
+				1D2A3D9A3037789C008382FA /* annotate in Resources */,
+				1D2A3D9D3037789C008382FA /* manifest.json in Resources */,
+				1D2A3D963037789C008382FA /* offscreen in Resources */,
+				1D2A3D983037789C008382FA /* content in Resources */,
+				1D2A3D9E3037789C008382FA /* manage-clouds in Resources */,
+				1D2A3D953037789C008382FA /* background in Resources */,
+				1D2A3D9B3037789C008382FA /* microphone-permission in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		1D2A3D573037789B008382FA /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				1D2A3D6B3037789B008382FA /* ViewController.swift in Sources */,
+				1D2A3D5F3037789B008382FA /* AppDelegate.swift in Sources */,
+				1D2A3D693037789B008382FA /* SceneDelegate.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		1D2A3D743037789C008382FA /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				1D2A3D7E3037789C008382FA /* SafariWebExtensionHandler.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		1D2A3D7B3037789C008382FA /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 1D2A3D773037789C008382FA /* GN Tracing Extension */;
+			targetProxy = 1D2A3D7A3037789C008382FA /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin PBXVariantGroup section */
+		1D2A3D613037789B008382FA /* Main.html */ = {
+			isa = PBXVariantGroup;
+			children = (
+				1D2A3D623037789B008382FA /* Base */,
+			);
+			name = Main.html;
+			sourceTree = "<group>";
+		};
+		1D2A3D6C3037789B008382FA /* LaunchScreen.storyboard */ = {
+			isa = PBXVariantGroup;
+			children = (
+				1D2A3D6D3037789B008382FA /* Base */,
+			);
+			name = LaunchScreen.storyboard;
+			sourceTree = "<group>";
+		};
+		1D2A3D6F3037789B008382FA /* Main.storyboard */ = {
+			isa = PBXVariantGroup;
+			children = (
+				1D2A3D703037789B008382FA /* Base */,
+			);
+			name = Main.storyboard;
+			sourceTree = "<group>";
+		};
+/* End PBXVariantGroup section */
+
+/* Begin XCBuildConfiguration section */
+		1D2A3D813037789C008382FA /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		1D2A3D823037789C008382FA /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		1D2A3D843037789C008382FA /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "GN Tracing Extension/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "GN Tracing Extension";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				OTHER_LDFLAGS = (
+					"-framework",
+					SafariServices,
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = dev.gnas.gntracing.Extension;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		1D2A3D853037789C008382FA /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "GN Tracing Extension/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "GN Tracing Extension";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				OTHER_LDFLAGS = (
+					"-framework",
+					SafariServices,
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = dev.gnas.gntracing.Extension;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		1D2A3D883037789C008382FA /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "GN Tracing/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "GN Tracing";
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
+				INFOPLIST_KEY_UIMainStoryboardFile = Main;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				OTHER_LDFLAGS = (
+					"-framework",
+					SafariServices,
+					"-framework",
+					WebKit,
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = dev.gnas.gntracing;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		1D2A3D893037789C008382FA /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "GN Tracing/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "GN Tracing";
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
+				INFOPLIST_KEY_UIMainStoryboardFile = Main;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				OTHER_LDFLAGS = (
+					"-framework",
+					SafariServices,
+					"-framework",
+					WebKit,
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = dev.gnas.gntracing;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		1D2A3D563037789B008382FA /* Build configuration list for PBXProject "GN Tracing" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				1D2A3D813037789C008382FA /* Debug */,
+				1D2A3D823037789C008382FA /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		1D2A3D833037789C008382FA /* Build configuration list for PBXNativeTarget "GN Tracing Extension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				1D2A3D843037789C008382FA /* Debug */,
+				1D2A3D853037789C008382FA /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		1D2A3D873037789C008382FA /* Build configuration list for PBXNativeTarget "GN Tracing" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				1D2A3D883037789C008382FA /* Debug */,
+				1D2A3D893037789C008382FA /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 1D2A3D533037789B008382FA /* Project object */;
+}

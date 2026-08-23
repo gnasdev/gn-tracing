@@ -13,7 +13,10 @@
  * payload fixtures.
  */
 
-import type { NetworkEntry } from "../../../../packages/replay-core/src/schema/capture";
+import type {
+  NetworkEntry,
+  NetworkInitiator,
+} from "../../../../packages/replay-core/src/schema/capture";
 import { toCdpResourceType } from "./resource-type";
 
 export interface WebRequestBeforeRequestDetails {
@@ -23,6 +26,8 @@ export interface WebRequestBeforeRequestDetails {
   type: string;
   timeStamp: number;
   frameId: number;
+  originUrl?: string;
+  documentUrl?: string;
 }
 
 export interface WebRequestSendHeadersDetails {
@@ -91,6 +96,7 @@ class PendingRequest {
   responseHeaders: Record<string, string> | null = null;
   servedFromCache = false;
   remoteIPAddress: string | null = null;
+  initiator: NetworkInitiator | null = null;
   error: string | null = null;
 
   toEntry(): NetworkEntry {
@@ -106,7 +112,7 @@ class PendingRequest {
       // already carries rather than being coerced into a meaning it is not.
       timestamp: this.startedAtMs / 1000,
       wallTime: this.startedAtMs / 1000,
-      initiator: null,
+      initiator: this.initiator,
       resourceType: this.resourceType,
       status: this.statusCode,
       statusText: this.statusText,
@@ -137,6 +143,10 @@ export class WebRequestTable {
     row.method = details.method;
     row.resourceType = toCdpResourceType(details.type);
     row.startedAtMs = details.timeStamp;
+    const originUrl = details.originUrl || details.documentUrl;
+    if (originUrl) {
+      row.initiator = { type: "script", url: originUrl };
+    }
     this.#pending.set(details.requestId, row);
   }
 

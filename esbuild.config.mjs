@@ -6,9 +6,11 @@
  * (`PLAYER_HOST_URL` / dev localhost Vite).
  */
 
+import { execFile } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import * as esbuild from "esbuild";
 import {
   isProductRouteVersion,
@@ -118,9 +120,15 @@ const devExtensionReloadGate = createDevExtensionReloadGate(scheduleDevExtension
 
 // The root build emits the unpacked MV3 extension only. Hosted player packaging
 // is owned entirely by `player/` (Vite).
+const ESBUILD_TARGET_BY_BROWSER = {
+  firefox: "firefox115",
+  safari: "safari15.4",
+  "safari-ios": "ios15.4",
+};
+
 const commonOptions = {
   bundle: true,
-  target: browserTarget === "firefox" ? "firefox115" : "chrome120",
+  target: ESBUILD_TARGET_BY_BROWSER[browserTarget] || "chrome120",
   sourcemap: !isProductionBuild,
   minify: false,
   plugins: watch ? [createDevExtensionReloadPlugin()] : [],
@@ -141,18 +149,14 @@ const commonOptions = {
 };
 
 function normalizeBrowserTarget(value) {
+  const supported = ["chrome", "edge", "opera", "firefox", "safari", "safari-ios"];
   const normalized = String(value || "chrome")
     .trim()
     .toLowerCase();
-  if (
-    normalized === "chrome" ||
-    normalized === "edge" ||
-    normalized === "opera" ||
-    normalized === "firefox"
-  ) {
+  if (supported.includes(normalized)) {
     return normalized;
   }
-  throw new Error(`Unsupported --browser value: ${value}. Use chrome, edge, opera, or firefox.`);
+  throw new Error(`Unsupported --browser value: ${value}. Use ${supported.join(", ")}.`);
 }
 
 /** Manifest `key` for Chromium-family packages (stable unpacked id). */
@@ -285,6 +289,12 @@ function validateChromeExtensionIdentity() {
     return;
   }
 
+  if (browserTarget === "safari" || browserTarget === "safari-ios") {
+    // Safari has no manifest-level key/extension-id concept: identity lives in
+    // the Xcode project's bundle ID instead, set up separately from this build.
+    return;
+  }
+
   const publicKey = resolveChromiumPublicKey();
 
   if (isProductionBuild && browserTarget === "chrome" && !hasConfigValue("CHROME_EXTENSION_ID")) {
@@ -402,8 +412,11 @@ function generateManifest(outputPath) {
 
   validateChromeExtensionIdentity();
 
-  const publicKey =
-    browserTarget === "firefox" ? chromeExtensionPublicKey : resolveChromiumPublicKey();
+  // Firefox and Safari have no Chromium crx-key/extension-id concept; publicKey
+  // is unused there (manifest.key gets deleted in applyBrowserManifestPatches).
+  const isChromiumFamily =
+    browserTarget !== "firefox" && browserTarget !== "safari" && browserTarget !== "safari-ios";
+  const publicKey = isChromiumFamily ? resolveChromiumPublicKey() : chromeExtensionPublicKey;
 
   const template = fs
     .readFileSync(templatePath, "utf-8")
@@ -423,7 +436,7 @@ function generateManifest(outputPath) {
   fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf-8");
   console.log(`✓ manifest.json generated (${browserTarget})`);
 
-  if (!isProductionBuild && browserTarget !== "firefox") {
+  if (!isProductionBuild && isChromiumFamily) {
     if (chromeExtensionPublicKeyDev) {
       const devId = getChromeExtensionId(publicKey);
       console.log(
@@ -442,9 +455,44 @@ function generateManifest(outputPath) {
 
 /**
  * Apply per-browser permission/identity differences on top of the shared template.
- * Official targets: chrome | edge | opera | firefox.
+ * Official targets: chrome | edge | opera | firefox | safari | safari-ios.
  */
 function applyBrowserManifestPatches(manifest) {
+  if (browserTarget === "safari" || browserTarget === "safari-ios") {
+    // Safari has no CDP either, so it shares Firefox's manifest shape: no
+    // Chromium-only permissions, non-persistent background scripts (MV3 event
+    // pages), and webRequest for network evidence. iOS and macOS Safari use the
+    // identical manifest — the Xcode App Extension wrapper is what differs
+    // between them, not this file.
+    delete manifest.minimum_chrome_version;
+    delete manifest.key;
+    delete manifest.oauth2;
+    // "identity" is chrome.identity.getAuthToken, which this build never calls
+    // (chromeIdentityGetAuthToken is false here) and `safari-web-extension-converter`
+    // flags it as an unsupported manifest key — confirmed by running the
+    // converter against this exact manifest.
+    const chromiumOnly = new Set(["tabCapture", "offscreen", "debugger", "identity"]);
+    manifest.permissions = (manifest.permissions || []).filter((p) => !chromiumOnly.has(p));
+    if (!manifest.permissions.includes("tabs")) {
+      manifest.permissions.push("tabs");
+    }
+    if (!manifest.permissions.includes("webRequest")) {
+      manifest.permissions.push("webRequest");
+    }
+    const backgroundEntry = manifest.background?.service_worker || "background/service-worker.js";
+    // No `type: "module"` here (unlike Firefox's patch below): confirmed via
+    // `xcrun safari-web-extension-converter` that Safari flags `type` as an
+    // unsupported background key and does not load a module-type background page.
+    manifest.background = {
+      scripts: [backgroundEntry],
+    };
+    manifest.browser_specific_settings = {
+      // Safari 15.4 is the first version with Manifest V3 support.
+      safari: { strict_min_version: "15.4" },
+    };
+    return;
+  }
+
   if (browserTarget === "firefox") {
     delete manifest.minimum_chrome_version;
     delete manifest.key;
@@ -559,6 +607,41 @@ function addTokenProxyHostPermission(manifest) {
 }
 
 let devExtensionReloadTimer = null;
+const execFileAsync = promisify(execFile);
+
+/**
+ * Safari has no "load unpacked" — the running app's extension bundle is a
+ * *copy* Xcode made of dist/safari/ at the last build, not a live reference.
+ * chrome.runtime.reload() (the same self-reload the dev-reload client already
+ * uses for every browser, see src/background/dev-reload.ts) only picks up
+ * fresh files if that copy was refreshed first, so an incremental
+ * `xcodebuild build` must run before notifying. This makes Safari's dev-reload
+ * loop meaningfully slower than Chrome/Firefox's (seconds, not instant) — that
+ * latency is inherent to the platform, not a bug in this script.
+ *
+ * `--allow-signing` is required here: the plain build-xcode.mjs default forces
+ * CODE_SIGNING_ALLOWED=NO, which would strip signing on every rebuild and could
+ * force re-approving "Allow Unsigned Extensions" in Safari each time. This
+ * reuses whatever signing style the developer already configured in Xcode
+ * (e.g. "Sign to Run Locally") instead.
+ */
+async function rebuildSafariXcodeWrapper() {
+  console.log("[dev:reload] Rebuilding Xcode wrapper (GN Tracing (macOS))...");
+  try {
+    await execFileAsync(
+      "node",
+      ["scripts/safari/build-xcode.mjs", "--scheme", "macos", "--allow-signing"],
+      { cwd: __dirname },
+    );
+    console.log("[dev:reload] Xcode wrapper rebuilt.");
+  } catch (error) {
+    console.warn(
+      "[dev:reload] Xcode wrapper rebuild failed — the running app still has the previous " +
+        `build. Fix the error and save again to retry:\n${error instanceof Error ? error.message : String(error)}`,
+    );
+    throw error;
+  }
+}
 
 function scheduleDevExtensionReload() {
   if (!devExtensionReloadUrl) {
@@ -567,6 +650,9 @@ function scheduleDevExtensionReload() {
   clearTimeout(devExtensionReloadTimer);
   devExtensionReloadTimer = setTimeout(async () => {
     try {
+      if (browserTarget === "safari") {
+        await rebuildSafariXcodeWrapper();
+      }
       const response = await fetch(`${devExtensionReloadUrl}/notify`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },

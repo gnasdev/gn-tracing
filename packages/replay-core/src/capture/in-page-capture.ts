@@ -22,7 +22,9 @@ import type {
   ConsoleEntry,
   CookieRecord,
   NetworkEntry,
+  NetworkInitiator,
   SerializedRemoteObject,
+  StackFrame,
   StorageKeyValue,
   StorageSnapshot,
   WebSocketEntry,
@@ -246,6 +248,86 @@ function serializeObjectArg(value: unknown): SerializedRemoteObject {
   };
 }
 
+const MAX_IN_PAGE_STACK_FRAMES = 80;
+
+/** Converts Chromium and Firefox/Safari Error.stack lines to replay stack frames. */
+export function parseInPageStackTrace(stack: string | undefined): StackFrame[] | undefined {
+  if (!stack) {
+    return undefined;
+  }
+
+  const frames: StackFrame[] = [];
+  for (const rawLine of stack.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    const chromium = line.match(/^at\s+(?:(.+?)\s+\()?(.+):(\d+):(\d+)\)?$/);
+    const firefox = chromium ? null : line.match(/^(.*?)@(.+):(\d+):(\d+)$/);
+    const match = chromium ?? firefox;
+    if (!match) {
+      continue;
+    }
+
+    const [, functionName, url, lineNumber, columnNumber] = match;
+    const parsedLine = Number(lineNumber);
+    const parsedColumn = Number(columnNumber);
+    if (!url || !Number.isFinite(parsedLine) || !Number.isFinite(parsedColumn)) {
+      continue;
+    }
+
+    frames.push({
+      functionName: functionName?.trim() || "(anonymous)",
+      url,
+      lineNumber: Math.max(0, parsedLine - 1),
+      columnNumber: Math.max(0, parsedColumn - 1),
+    });
+    if (frames.length >= MAX_IN_PAGE_STACK_FRAMES) {
+      break;
+    }
+  }
+
+  return frames.length ? frames : undefined;
+}
+
+const EXTENSION_URL_PREFIX = /^(?:chrome|moz|safari-web)-extension:/;
+
+export function stripInPageCaptureFrames(frames: StackFrame[]): StackFrame[] {
+  return frames.filter((frame) => !EXTENSION_URL_PREFIX.test(frame.url));
+}
+
+function captureInPageStackTrace(): StackFrame[] | undefined {
+  return parseInPageStackTrace(new Error().stack);
+}
+
+function captureCallerStackTrace(): StackFrame[] | undefined {
+  const frames = stripInPageCaptureFrames(captureInPageStackTrace() ?? []);
+  return frames?.length ? frames : undefined;
+}
+
+function createInPageInitiator(): NetworkInitiator | null {
+  const frames = captureCallerStackTrace();
+  const first = frames?.[0];
+  if (!first) {
+    return null;
+  }
+  return {
+    type: "script",
+    url: first.url,
+    lineNumber: first.lineNumber,
+    columnNumber: first.columnNumber,
+    stack: { callFrames: frames },
+  };
+}
+
+function stackTraceForError(value: unknown): StackFrame[] | undefined {
+  if (
+    value &&
+    typeof value === "object" &&
+    typeof (value as { stack?: unknown }).stack === "string"
+  ) {
+    return parseInPageStackTrace((value as { stack: string }).stack);
+  }
+  return captureCallerStackTrace();
+}
+
 function consoleArgsToMessage(args: unknown[]): string {
   return args
     .map((arg) => {
@@ -258,13 +340,18 @@ function consoleArgsToMessage(args: unknown[]): string {
     .join(" ");
 }
 
-export function toConsoleEntry(method: ConsoleMethod, args: unknown[]): ConsoleEntry {
+export function toConsoleEntry(
+  method: ConsoleMethod,
+  args: unknown[],
+  stackTrace?: StackFrame[],
+): ConsoleEntry {
   return {
     source: "console-api",
     level: CONSOLE_LEVEL_BY_METHOD[method] ?? method,
     timestamp: Date.now(),
     message: consoleArgsToMessage(args),
     args: args.map(serializeConsoleArg),
+    stackTrace,
   };
 }
 
@@ -304,7 +391,12 @@ function responseHeadersToRecord(headers: Headers | undefined): Record<string, s
   return record;
 }
 
-function emptyNetworkEntry(url: string, method: string, resourceType: string): NetworkEntry {
+function emptyNetworkEntry(
+  url: string,
+  method: string,
+  resourceType: string,
+  initiator: NetworkInitiator | null = null,
+): NetworkEntry {
   return {
     requestId: nextRequestId(resourceType),
     url,
@@ -313,7 +405,7 @@ function emptyNetworkEntry(url: string, method: string, resourceType: string): N
     postData: null,
     timestamp: 0,
     wallTime: Date.now() / 1000,
-    initiator: null,
+    initiator,
     resourceType,
     status: null,
     statusText: null,
@@ -500,6 +592,7 @@ function installUncaughtErrorCapture(
       timestamp: Date.now(),
       message: errorEvent.message || "Uncaught error",
       args: errorEvent.error === undefined ? [] : [serializeConsoleArg(errorEvent.error)],
+      stackTrace: stackTraceForError(errorEvent.error),
       url: errorEvent.filename,
       lineNumber: errorEvent.lineno,
       columnNumber: errorEvent.colno,
@@ -514,6 +607,7 @@ function installUncaughtErrorCapture(
       timestamp: Date.now(),
       message: `Unhandled promise rejection: ${describeRejection(reason)}`,
       args: reason === undefined ? [] : [serializeConsoleArg(reason)],
+      stackTrace: stackTraceForError(reason),
     });
   };
 
@@ -553,7 +647,7 @@ function installConsoleCapture(
     const originalFn = original as (...args: unknown[]) => unknown;
     target[method] = (...args: unknown[]): unknown => {
       try {
-        send("console", toConsoleEntry(method, args));
+        send("console", toConsoleEntry(method, args, captureCallerStackTrace()));
       } catch {
         // Never let capture failures break the page's own logging.
       }
@@ -606,7 +700,7 @@ function installFetchCapture(
   const patched: typeof fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = resolveRequestUrl(scope, input);
     const method = resolveRequestMethod(input, init);
-    const entry = emptyNetworkEntry(url, method, "fetch");
+    const entry = emptyNetworkEntry(url, method, "fetch", createInPageInitiator());
     entry.timestamp = monotonicNow(scope);
     entry.requestHeaders = headersToRecord(init?.headers);
     if (typeof init?.body === "string") {
@@ -696,7 +790,12 @@ function installXhrCapture(
     ...rest: unknown[]
   ): void {
     const urlString = typeof url === "string" ? url : url.toString();
-    const entry = emptyNetworkEntry(urlString, (method || "GET").toUpperCase(), "xhr");
+    const entry = emptyNetworkEntry(
+      urlString,
+      (method || "GET").toUpperCase(),
+      "xhr",
+      createInPageInitiator(),
+    );
     const pending: PendingNetworkCapture = { entry, settled: false };
     const state: CapturedXhrState = { pending };
     this[stateKey] = state;

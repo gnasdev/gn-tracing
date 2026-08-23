@@ -22,6 +22,7 @@ import {
   resolveRuntimeExtensionRedirectUri,
 } from "../shared/oauth-redirect-policy";
 import type { MessageResponse } from "../types/messages";
+import { launchWebAuthFlow } from "./safari-web-auth-flow";
 
 declare const __GOOGLE_CLIENT_ID__: string;
 declare const __GOOGLE_WEB_CLIENT_ID__: string;
@@ -359,7 +360,7 @@ class WebAuthFlowProvider implements TokenProvider {
 
       let resultUrl: string | undefined;
       try {
-        resultUrl = await chrome.identity.launchWebAuthFlow({
+        resultUrl = await launchWebAuthFlow({
           url: authUrl,
           interactive: true,
         });

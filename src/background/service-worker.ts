@@ -398,6 +398,9 @@ function notifyPopupStateUpdated(state: PopupState | null): void {
 }
 
 async function probeMediaCaptureState(): Promise<OffscreenCaptureState | null> {
+  if (recordingRuntime.mediaKind === "none") {
+    return null;
+  }
   try {
     if (recordingRuntime.mediaKind === "offscreen") {
       const contexts = await chrome.runtime.getContexts({
@@ -597,7 +600,7 @@ chrome.tabs.onUpdated.addListener((_tabId, changeInfo) => {
 });
 
 chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name !== "gn-tracing-keepalive") {
+  if (alarm.name !== "gn-tracing-keepalive" && alarm.name !== OAUTH_KEEPALIVE_ALARM) {
     return;
   }
   // The wake itself is the point: on Firefox the background is an event page
@@ -647,7 +650,7 @@ registerMessageListeners({
       return resolved;
     }
     const { provider } = resolved;
-    const result = await provider.connect();
+    const result = await withOAuthKeepalive(() => provider.connect());
     if (result.ok) {
       await refreshStorageProviderState(provider.id);
       await saveStateToStorage();
@@ -735,6 +738,22 @@ async function resolveStorageProviderFromMessage(
     requested = settings.activeStorageProvider;
   }
   return requireRegisteredStorageProvider(requested);
+}
+
+const OAUTH_KEEPALIVE_ALARM = "gn-tracing-oauth-keepalive";
+let pendingOAuthConnections = 0;
+
+async function withOAuthKeepalive<T>(operation: () => Promise<T>): Promise<T> {
+  pendingOAuthConnections += 1;
+  chrome.alarms.create(OAUTH_KEEPALIVE_ALARM, { periodInMinutes: 0.4 });
+  try {
+    return await operation();
+  } finally {
+    pendingOAuthConnections -= 1;
+    if (pendingOAuthConnections === 0) {
+      chrome.alarms.clear(OAUTH_KEEPALIVE_ALARM);
+    }
+  }
 }
 
 function providerDisplayName(providerId: StorageProviderId): string {
@@ -1466,6 +1485,7 @@ async function stopRecording(): Promise<MessageResponse> {
       storage: finalizedArtifacts.storageSnapshots,
       dom: finalizedArtifacts.domSnapshots,
       screenshotDataUrl,
+      evidenceCoverage: evidenceFinal.evidenceCoverage,
       duration: durationMs,
       url: tabUrl || "",
       startTime,
@@ -1773,14 +1793,14 @@ async function updateUploadSettingsFromMessage(
       : hasZipPassword
         ? (data.zipPassword as string)
         : existingSettings.zipPassword,
+    microphoneEnabled: normalizeBoolean(
+      data?.microphoneEnabled,
+      existingSettings.microphoneEnabled,
+    ),
     microphoneDeviceId:
       typeof data?.microphoneDeviceId === "string"
         ? data.microphoneDeviceId.trim()
         : existingSettings.microphoneDeviceId,
-    speakerDeviceId:
-      typeof data?.speakerDeviceId === "string"
-        ? data.speakerDeviceId.trim()
-        : existingSettings.speakerDeviceId,
     // Non-UI fixed profile for redaction rule membership + privacy.json.
     privacyProfile: "custom",
     redactSensitiveHeaders: normalizeBoolean(
@@ -2108,6 +2128,7 @@ async function runSessionUpload(sessionId: string, authToken: string): Promise<v
           dom: Boolean(artifacts.dom),
           screenshot: Boolean(artifacts.screenshotDataUrl),
         },
+        evidenceCoverage: artifacts.evidenceCoverage,
         duration: artifacts.duration,
         url: artifacts.url,
         startTime: artifacts.startTime,

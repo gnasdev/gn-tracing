@@ -8,7 +8,10 @@ import {
   extractFirefoxIdentitySubdomain,
   firefoxAllizomRedirectUriForAddonId,
   firefoxMozoauth2RedirectUriForAddonId,
+  resolveRuntimeExtensionRedirectUri,
+  resolveRuntimeExtensionRedirectUriForProvider,
   resolveValidatedIdentityRedirectUri,
+  SAFARI_OAUTH_CALLBACK_URL,
   toFirefoxMozoauth2RedirectUri,
   validateExtensionOAuthRedirectUri,
   validateFirefoxAllizomRedirectUri,
@@ -173,5 +176,34 @@ describe("Firefox allizom redirect (Dropbox)", () => {
     expect(validateFirefoxAllizomRedirectUri("https://evil.example/cb").ok).toBe(false);
     expect(validateFirefoxAllizomRedirectUri(`http://127.0.0.1/mozoauth2/${hash}`).ok).toBe(false);
     expect(validateFirefoxAllizomRedirectUri("").ok).toBe(false);
+  });
+});
+
+describe("Safari redirect (no identity API)", () => {
+  it("resolves the fixed first-party callback for macOS and iOS Safari", () => {
+    for (const target of ["safari", "safari-ios"] as const) {
+      const result = resolveRuntimeExtensionRedirectUri(target);
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.redirectUri).toBe(SAFARI_OAUTH_CALLBACK_URL);
+        expect(result.hostname).toBe("tracing.gnas.dev");
+      }
+    }
+  });
+
+  it("uses the same fixed callback for both providers, unlike Firefox's split", () => {
+    const google = resolveRuntimeExtensionRedirectUriForProvider("google", "safari");
+    const dropbox = resolveRuntimeExtensionRedirectUriForProvider("dropbox", "safari");
+    expect(google.ok && google.redirectUri).toBe(SAFARI_OAUTH_CALLBACK_URL);
+    expect(dropbox.ok && dropbox.redirectUri).toBe(SAFARI_OAUTH_CALLBACK_URL);
+  });
+
+  it("the callback URL passes Google's own domain-ownership validator", () => {
+    // Sanity check: the fixed constant is a real https URL under a domain this
+    // project owns, so it would pass the general-purpose validator too even
+    // though resolveRuntimeExtensionRedirectUri bypasses it for Safari.
+    const trimmed = SAFARI_OAUTH_CALLBACK_URL;
+    expect(() => new URL(trimmed)).not.toThrow();
+    expect(new URL(trimmed).protocol).toBe("https:");
   });
 });

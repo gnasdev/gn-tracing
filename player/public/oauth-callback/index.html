@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Connecting… · GN Tracing</title>
+  <meta name="robots" content="noindex">
+  <link rel="icon" type="image/svg+xml" href="/icons/icon.svg">
+  <link rel="icon" type="image/png" sizes="32x32" href="/icons/icon32.png">
+  <link rel="stylesheet" href="/theme.css">
+  <script src="/theme-init.js"></script>
+  <style>
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--surface-page, #0b0d10);
+      color: var(--text-primary, #e6e6e6);
+    }
+    .card {
+      max-width: 28rem;
+      padding: 2rem;
+      text-align: center;
+    }
+    .card img {
+      width: 40px;
+      height: 40px;
+      margin-bottom: 1rem;
+    }
+    h1 {
+      font-size: 1.1rem;
+      margin: 0 0 0.5rem;
+    }
+    p {
+      font-size: 0.9rem;
+      opacity: 0.75;
+      line-height: 1.5;
+    }
+  </style>
+</head>
+<body>
+  <!--
+    Safari OAuth callback (see src/shared/oauth-redirect-policy.ts
+    SAFARI_OAUTH_CALLBACK_URL and src/background/safari-web-auth-flow.ts).
+
+    In normal operation the extension's background script closes this tab as
+    soon as its URL changes to this page's prefix, before this HTML ever
+    finishes loading — this page is a fallback for when that does not happen
+    in time (e.g. the background script was suspended by Safari), not the
+    primary handoff mechanism. It intentionally does nothing but read the
+    query string and show a status message; there is no code here to send the
+    authorization code anywhere, because the extension already reads it
+    directly off the tab's URL.
+  -->
+  <div class="card">
+    <img src="/icons/icon.svg" alt="" aria-hidden="true">
+    <h1 id="status-title">Connecting GN Tracing…</h1>
+    <p id="status-body">You can close this tab and return to Safari.</p>
+  </div>
+  <script>
+    (() => {
+      var params = new URLSearchParams(window.location.search);
+      var titleEl = document.getElementById("status-title");
+      var bodyEl = document.getElementById("status-body");
+      if (params.get("error")) {
+        titleEl.textContent = "Connection failed";
+        bodyEl.textContent =
+          params.get("error_description") || params.get("error") || "An error occurred.";
+      } else if (params.get("code")) {
+        titleEl.textContent = "Connected";
+        bodyEl.textContent = "You can close this tab and return to Safari.";
+      }
+    })();
+  </script>
+</body>
+</html>

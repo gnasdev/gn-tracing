@@ -121,6 +121,47 @@ export type RecordingCapability =
   /** Keeps a rolling pre-bug buffer, so the bug need not be reproduced. */
   | "instant-replay";
 
+/** Transport or browser API that supplied a normalized evidence surface. */
+export type EvidenceSource =
+  | "cdp"
+  | "firefox-rdp"
+  | "webdriver-bidi"
+  | "webkit-inspector"
+  | "web-request"
+  | "in-page";
+
+/** Independently selectable units of evidence, finer-grained than artifacts. */
+export type EvidenceSurface =
+  | "console-api"
+  | "runtime-exception"
+  | "runtime-object-details"
+  | "network-lifecycle"
+  | "network-request-headers"
+  | "network-response-headers"
+  | "network-response-body"
+  | "network-initiator"
+  | "network-timing"
+  | "websocket-lifecycle"
+  | "websocket-frames"
+  | "storage-snapshot"
+  | "cookie-snapshot"
+  | "dom-snapshot"
+  | "source-map-resolution";
+
+/** Fidelity of the selected source for one evidence surface. */
+export type EvidenceQuality = "full" | "partial";
+
+export interface EvidenceSurfaceCoverage {
+  source: EvidenceSource;
+  quality: EvidenceQuality;
+}
+
+/** Per-session evidence ownership written to package metadata. */
+export interface EvidenceCoverage {
+  schemaVersion: 1;
+  surfaces: Partial<Record<EvidenceSurface, EvidenceSurfaceCoverage>>;
+}
+
 /** Everything the tab-capture extension can record. */
 export const EXTENSION_CAPABILITIES: RecordingCapability[] = [
   "video",
@@ -187,6 +228,33 @@ export const FIREFOX_EXTENSION_CAPABILITIES: RecordingCapability[] = [
   "instant-replay",
 ];
 
+/**
+ * macOS Safari extension producer: identical evidence model to Firefox
+ * (in-page console/websocket, webRequest network metadata, getDisplayMedia
+ * video) — Safari has no CDP either, so it follows the same in-page path.
+ */
+export const SAFARI_EXTENSION_CAPABILITIES: RecordingCapability[] = [
+  ...FIREFOX_EXTENSION_CAPABILITIES,
+];
+
+/**
+ * iOS/iPadOS Safari extension producer: no "video", no "screenshot" — iOS
+ * exposes no screen/tab capture API to extension JS at all (no
+ * getDisplayMedia, no ReplayKit bridge). Network is in-page (no webRequest
+ * collector on this path), same reasoning `SDK_CAPABILITIES` documents for
+ * why screenshot is absent rather than merely degraded.
+ */
+export const SAFARI_IOS_EXTENSION_CAPABILITIES: RecordingCapability[] = [
+  "console",
+  "network",
+  "websocket",
+  "user-events",
+  "storage",
+  "dom-snapshot",
+  "annotation",
+  "instant-replay",
+];
+
 export interface PackageMetadata {
   timestamp?: string;
   /** Recording duration in milliseconds. */
@@ -201,6 +269,8 @@ export interface PackageMetadata {
   producer?: RecordingProducer;
   /** Absent on older packages; treat that as `EXTENSION_CAPABILITIES`. */
   capabilities?: RecordingCapability[];
+  /** Selected evidence sources and their per-surface fidelity. */
+  evidenceCoverage?: EvidenceCoverage;
   storage?: {
     provider?: string;
     folderId?: string | null;

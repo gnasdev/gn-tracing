@@ -47,7 +47,7 @@ describe("dev extension reload coordinator", () => {
       fetch(`${origin}/notify`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ target: "safari" }),
+        body: JSON.stringify({ target: "internet-explorer" }),
       }).then((response) => response.status),
     ).resolves.toBe(400);
   });

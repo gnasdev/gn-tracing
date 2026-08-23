@@ -4,7 +4,10 @@ import { pathToFileURL } from "node:url";
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 63973;
 const SERVICE_NAME = "gn-tracing-dev-extension-reload";
-const RELOAD_TARGETS = new Set(["chrome", "edge", "opera", "firefox"]);
+// safari/safari-ios are recognized targets for consistency with
+// OFFICIAL_BROWSER_TARGETS, but nothing calls notify() for them yet: Safari
+// has no unpacked "load and hot-reload" path without the Xcode wrapper.
+const RELOAD_TARGETS = new Set(["chrome", "edge", "opera", "firefox", "safari", "safari-ios"]);
 const WAIT_TIMEOUT_MS = 25_000;
 
 function writeJson(response, statusCode, body) {

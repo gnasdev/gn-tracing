@@ -3,7 +3,11 @@
  */
 
 import { coerceEpochMs } from "../../packages/replay-core/src/time";
-import { getPrivacyProfileSettings, redactConsoleEntry } from "../shared/privacy-redaction";
+import {
+  getPrivacyProfileSettings,
+  redactConsoleEntry,
+  redactUrl,
+} from "../shared/privacy-redaction";
 import type { PrivacyRedactionSettings, UploadSettings } from "../types/messages";
 import type {
   CdpStackTrace,
@@ -342,7 +346,9 @@ export class StorageManager {
         this.#networkEntries.length > 0
           ? JSON.stringify({
               schemaVersion: 2,
-              entries: this.#networkEntries.map((entry) => this.#compactNetworkEntry(entry)),
+              entries: this.#networkEntries.map((entry) =>
+                this.#compactNetworkEntry(this.#redactNetworkEntry(entry)),
+              ),
             })
           : undefined,
       webSocketLogs:
@@ -523,6 +529,106 @@ export class StorageManager {
         frame.sourceSnippet = undefined;
       });
     });
+  }
+
+  #redactNetworkEntry(entry: NetworkEntry): NetworkEntry {
+    return {
+      ...entry,
+      url: this.#redactNetworkUrl(entry.url, "network.url") ?? entry.url,
+      initiator: entry.initiator ? this.#redactNetworkInitiator(entry.initiator) : null,
+      responseHeaders:
+        this.#redactNetworkLocationHeaders(entry.responseHeaders, "network.responseHeaders") ??
+        entry.responseHeaders,
+      responseHeadersExtra: this.#redactNetworkLocationHeaders(
+        entry.responseHeadersExtra,
+        "network.responseHeadersExtra",
+      ),
+      earlyHintsHeaders: this.#redactNetworkLocationHeaders(
+        entry.earlyHintsHeaders,
+        "network.earlyHintsHeaders",
+      ),
+      redirectChain: entry.redirectChain
+        ? entry.redirectChain.map((redirect) => ({
+            ...redirect,
+            url: this.#redactNetworkUrl(redirect.url, "network.redirect.url") ?? redirect.url,
+            headers:
+              this.#redactNetworkLocationHeaders(redirect.headers, "network.redirect.headers") ??
+              redirect.headers,
+          }))
+        : entry.redirectChain,
+    };
+  }
+
+  #redactNetworkInitiator(initiator: NetworkInitiator): NetworkInitiator {
+    return {
+      ...initiator,
+      url: this.#redactNetworkUrl(initiator.url, "network.initiator.url"),
+      originalSource: this.#redactNetworkUrl(
+        initiator.originalSource,
+        "network.initiator.originalSource",
+      ),
+      sourceMapStatus: this.#redactSourceMapStatus(initiator.sourceMapStatus),
+      stack: initiator.stack ? this.#redactCdpStackUrls(initiator.stack) : undefined,
+    };
+  }
+
+  #redactCdpStackUrls(stack: CdpStackTrace): CdpStackTrace {
+    return {
+      ...stack,
+      callFrames: stack.callFrames?.map((frame) => ({
+        ...frame,
+        url: this.#redactNetworkUrl(frame.url, "network.initiator.stack.url") ?? frame.url,
+        originalSource: this.#redactNetworkUrl(
+          frame.originalSource,
+          "network.initiator.stack.originalSource",
+        ),
+        sourceMapStatus: this.#redactSourceMapStatus(frame.sourceMapStatus),
+      })),
+      parent: stack.parent ? this.#redactCdpStackUrls(stack.parent) : undefined,
+    };
+  }
+
+  #redactNetworkUrl(url: string | undefined, field: string): string | undefined {
+    const redacted = redactUrl(url, this.#privacySettings, "url", field);
+    this.#recordRedactionHits(redacted.applied);
+    return redacted.value;
+  }
+
+  #redactNetworkLocationHeaders(
+    headers: Record<string, string> | null | undefined,
+    field: string,
+  ): Record<string, string> | null | undefined {
+    if (!headers) {
+      return headers;
+    }
+    return Object.fromEntries(
+      Object.entries(headers).map(([name, value]) => [
+        name,
+        /^(?:content-)?location$/i.test(name)
+          ? this.#redactNetworkLocationHeader(value, `${field}.${name}`)
+          : value,
+      ]),
+    );
+  }
+
+  #redactSourceMapStatus(
+    status: SourceMapFrameStatus | undefined,
+  ): SourceMapFrameStatus | undefined {
+    if (!status) {
+      return undefined;
+    }
+    return {
+      ...status,
+      sourceMapUrl: this.#redactNetworkUrl(status.sourceMapUrl, "network.initiator.sourceMapUrl"),
+    };
+  }
+  #redactNetworkLocationHeader(value: string, field: string): string {
+    if (!value.startsWith("/")) {
+      return this.#redactNetworkUrl(value, field) ?? value;
+    }
+    const base = "https://relative-location.invalid";
+    const redacted = this.#redactNetworkUrl(new URL(value, base).toString(), field);
+    return redacted ? redacted.slice(base.length) : value;
   }
 
   #compactNetworkEntry(entry: NetworkEntry): Record<string, unknown> {

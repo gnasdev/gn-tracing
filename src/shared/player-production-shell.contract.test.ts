@@ -95,7 +95,7 @@ describe("production player shell contract", () => {
   it("keeps standalone storage proxy requests within the current release prefix", () => {
     expect(playerJs).toContain("function getVersionScopedPlayerApiUrl(endpoint, fileId)");
     expect(playerJs).toContain(
-      "`${versionPrefix}/api/${endpoint}?id=${encodeURIComponent(fileId)}`",
+      `\`\${versionPrefix}/api/\${endpoint}?id=\${encodeURIComponent(fileId)}\``,
     );
   });
 
@@ -191,6 +191,11 @@ describe("production player shell contract", () => {
     expect(playerJs).toContain("renderStackTrace(entry.stackTrace, {");
     expect(playerJs).toContain("isVendorFrame: isNetworkVendorFrame,");
     expect(playerJs).not.toContain("function renderInitiatorStackFrames(stack)");
+  });
+
+  it("shows an initiator URL when a browser cannot provide a source location", () => {
+    expect(playerJs).toContain("const displayLocation = loc || initiator.url;");
+    expect(playerJs).toContain("escapeHtml(displayLocation)");
   });
 
   it("visually separates stack function names and source paths across player panels", () => {

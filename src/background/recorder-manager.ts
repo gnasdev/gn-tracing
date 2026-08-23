@@ -24,8 +24,8 @@ export class RecorderManager {
     tabId: number,
     sessionId: string,
     options: {
+      microphoneEnabled?: boolean;
       microphoneDeviceId?: string;
-      speakerDeviceId?: string;
     } = {},
   ): Promise<number | null> {
     const contexts = await chrome.runtime.getContexts({
@@ -57,8 +57,8 @@ export class RecorderManager {
       data: {
         streamId,
         sessionId,
+        microphoneEnabled: options.microphoneEnabled !== false,
         microphoneDeviceId: options.microphoneDeviceId ?? "",
-        speakerDeviceId: options.speakerDeviceId ?? "",
       },
     })) as { ok: boolean; data?: { firstFrameAt?: number | null } } | undefined;
 

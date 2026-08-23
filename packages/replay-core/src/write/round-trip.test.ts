@@ -93,6 +93,29 @@ describe("recording package round-trip", () => {
     );
   });
 
+  it("round-trips evidence coverage metadata", async () => {
+    const evidenceCoverage = {
+      schemaVersion: 1 as const,
+      surfaces: {
+        "console-api": { source: "in-page" as const, quality: "full" as const },
+        "network-lifecycle": { source: "web-request" as const, quality: "partial" as const },
+      },
+    };
+    const built = await buildRecordingPackage({
+      producer: "extension",
+      capabilities: EXTENSION_CAPABILITIES,
+      evidenceCoverage,
+      packagedAt: "2026-01-01T00:00:00.000Z",
+      zipFilename: "gn-tracing-coverage.zip",
+      artifacts: {},
+      modifiedAt: new Date(0),
+    });
+
+    expect(built.metadata.evidenceCoverage).toEqual(evidenceCoverage);
+    const pkg = await openRecordingPackageFromBytes(buildBytes(built.chunks));
+    expect(pkg.metadata.evidenceCoverage).toEqual(evidenceCoverage);
+  });
+
   it("round-trips a password-protected package and rejects the wrong password", async () => {
     const built = await buildRecordingPackage({
       producer: "extension",

@@ -109,8 +109,8 @@ export class ExtensionPageMediaHost implements MediaHost {
       data: {
         tabId,
         sessionId,
+        microphoneEnabled: options?.microphoneEnabled !== false,
         microphoneDeviceId: options?.microphoneDeviceId ?? "",
-        speakerDeviceId: options?.speakerDeviceId ?? "",
       },
     })) as
       | {
@@ -161,8 +161,8 @@ export class ExtensionPageMediaHost implements MediaHost {
         data: {
           sessionId,
           tabTitle,
+          microphoneEnabled: options?.microphoneEnabled !== false,
           microphoneDeviceId: options?.microphoneDeviceId ?? "",
-          speakerDeviceId: options?.speakerDeviceId ?? "",
         },
       })) as { ok?: boolean; error?: string } | undefined;
 

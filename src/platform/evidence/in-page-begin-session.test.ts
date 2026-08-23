@@ -109,3 +109,36 @@ describe("InPageEvidenceCollector.beginSession re-arm", () => {
     expect(armed.limitations[0]).toMatch(/console|In-page|inject|frame|Grant GN Tracing/i);
   });
 });
+
+describe("InPageEvidenceCollector selected surfaces", () => {
+  beforeEach(() => {
+    resetChromeMock(installChromeMock());
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("does not enable fetch/XHR patches when network was assigned elsewhere", async () => {
+    const executeScript = stubExecuteScript(async () => [{ frameId: 0 }]);
+    const sendMessage = vi.fn(async (_tabId: number, message: { type?: string }) =>
+      message.type === "VERIFY_REALM" ? { ok: true } : { ok: true },
+    );
+    vi.stubGlobal("chrome", {
+      scripting: { executeScript },
+      tabs: { sendMessage },
+    });
+
+    const collector = new InPageEvidenceCollector({ captureNetwork: true });
+    const selectedOffers = [
+      { source: "in-page" as const, surface: "console-api" as const, quality: "full" as const },
+    ];
+    await collector.attach({ tabId: 9, sessionId: "s1", selectedOffers });
+    await collector.beginSession({ tabId: 9, sessionId: "s1", selectedOffers });
+
+    const start = sendMessage.mock.calls
+      .map((call) => call[1] as { type?: string; captureNetwork?: boolean })
+      .find((message) => message.type === "START");
+    expect(start?.captureNetwork).toBe(false);
+  });
+});

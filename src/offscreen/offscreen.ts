@@ -9,11 +9,7 @@ import {
   buildRecordingPackage,
 } from "../../packages/replay-core/src/write";
 import { getScreenshotPackageStaging } from "../background/screenshot-package-staging-idb";
-import {
-  acquireMicrophoneStream,
-  acquireSpeakerStream,
-  mixCaptureAudio,
-} from "../media-pipeline/audio-capture";
+import { acquireMicrophoneStream, mixCaptureAudio } from "../media-pipeline/audio-capture";
 import type { CapturedSurface } from "../media-pipeline/capture-surface";
 import {
   acquireCaptureStream,
@@ -70,7 +66,6 @@ let activeChunks: Blob[] = [];
 let activeSessionId: string | null = null;
 let activeStream: MediaStream | null = null;
 let activeMicrophoneStream: MediaStream | null = null;
-let activeSpeakerStream: MediaStream | null = null;
 let activeAudioMixCleanup: (() => Promise<void>) | null = null;
 let activeMixedInputTracks: MediaStreamTrack[] = [];
 let playbackAudioContext: AudioContext | null = null;
@@ -142,6 +137,7 @@ interface ZipData {
   storage?: string;
   dom?: string;
   screenshotDataUrl?: string | null;
+  evidenceCoverage?: import("../../packages/replay-core/src/schema/package").EvidenceCoverage;
   duration: number;
   url: string;
   startTime: number | null;
@@ -227,8 +223,8 @@ chrome.runtime.onMessage.addListener((message: OffscreenIncomingMessage, _sender
         String(message.data?.sessionId || ""),
         String(message.data?.mode || ""),
         {
+          microphoneEnabled: message.data?.microphoneEnabled !== false,
           microphoneDeviceId: String(message.data?.microphoneDeviceId || ""),
-          speakerDeviceId: String(message.data?.speakerDeviceId || ""),
         },
       )
         .then((firstFrameAt) => sendResponse({ ok: true, data: { firstFrameAt } }))
@@ -238,8 +234,8 @@ chrome.runtime.onMessage.addListener((message: OffscreenIncomingMessage, _sender
     case "START_TAB_FRAME_CAPTURE":
       // Firefox preferred path: tabs.captureTab → canvas stream (no share picker).
       startTabFrameCapture(Number(message.data?.tabId), String(message.data?.sessionId || ""), {
+        microphoneEnabled: message.data?.microphoneEnabled !== false,
         microphoneDeviceId: String(message.data?.microphoneDeviceId || ""),
-        speakerDeviceId: String(message.data?.speakerDeviceId || ""),
       })
         .then((result) => sendResponse({ ok: true, data: result }))
         .catch((error: Error) => sendResponse({ ok: false, error: error.message }));
@@ -249,8 +245,8 @@ chrome.runtime.onMessage.addListener((message: OffscreenIncomingMessage, _sender
       // Firefox fallback only: getDisplayMedia when tab-frame capture is unavailable.
       armDisplayCapture({
         sessionId: String(message.data?.sessionId || ""),
+        microphoneEnabled: message.data?.microphoneEnabled !== false,
         microphoneDeviceId: String(message.data?.microphoneDeviceId || ""),
-        speakerDeviceId: String(message.data?.speakerDeviceId || ""),
         tabTitle: typeof message.data?.tabTitle === "string" ? message.data.tabTitle : "",
       });
       sendResponse({ ok: true });
@@ -343,13 +339,6 @@ async function stopActiveMediaStream(): Promise<void> {
     });
     activeMicrophoneStream = null;
   }
-  if (activeSpeakerStream) {
-    activeSpeakerStream.getTracks().forEach((track) => {
-      track.stop();
-    });
-    activeSpeakerStream = null;
-  }
-
   if (playbackSourceNode) {
     playbackSourceNode.disconnect();
     playbackSourceNode = null;
@@ -773,8 +762,8 @@ async function onArmButtonClick(options?: { auto?: boolean }): Promise<boolean> 
 async function adoptDisplayStreamFromPopup(input: {
   sessionId: string;
   tracks: MediaStreamTrack[];
+  microphoneEnabled?: boolean;
   microphoneDeviceId?: string;
-  speakerDeviceId?: string;
   source: MessageEventSource | null;
   origin: string;
 }): Promise<void> {
@@ -842,8 +831,8 @@ function wirePopupDisplayStreamAdoption(): void {
       type?: string;
       sessionId?: string;
       tracks?: MediaStreamTrack[];
+      microphoneEnabled?: boolean;
       microphoneDeviceId?: string;
-      speakerDeviceId?: string;
     } | null;
     if (!data || data.type !== ADOPT_DISPLAY_STREAM_MESSAGE) {
       return;
@@ -856,9 +845,9 @@ function wirePopupDisplayStreamAdoption(): void {
     void adoptDisplayStreamFromPopup({
       sessionId: String(data.sessionId || ""),
       tracks: Array.isArray(data.tracks) ? data.tracks : [],
+      microphoneEnabled: data.microphoneEnabled !== false,
       microphoneDeviceId:
         typeof data.microphoneDeviceId === "string" ? data.microphoneDeviceId : "",
-      speakerDeviceId: typeof data.speakerDeviceId === "string" ? data.speakerDeviceId : "",
       source: event.source,
       origin: event.origin,
     });
@@ -870,16 +859,16 @@ wirePopupDisplayStreamAdoption();
 function armDisplayCapture(input: {
   sessionId: string;
   tabTitle: string;
+  microphoneEnabled?: boolean;
   microphoneDeviceId?: string;
-  speakerDeviceId?: string;
 }): void {
   if (!input.sessionId) {
     return;
   }
   armedDisplayCapture = {
     sessionId: input.sessionId,
+    microphoneEnabled: input.microphoneEnabled,
     microphoneDeviceId: input.microphoneDeviceId,
-    speakerDeviceId: input.speakerDeviceId,
   };
 
   const { panel, button, cancelButton, target } = armPanelElements();
@@ -1001,8 +990,8 @@ async function startCapture(
 }
 
 type CaptureAudioOptions = {
+  microphoneEnabled?: boolean;
   microphoneDeviceId?: string;
-  speakerDeviceId?: string;
 };
 
 /**
@@ -1030,12 +1019,14 @@ async function startCaptureWithStream(
     source.connect(playbackAudioContext.destination);
   }
 
-  activeMicrophoneStream = await acquireMicrophoneStream(audioOptions.microphoneDeviceId ?? "");
-  activeSpeakerStream = await acquireSpeakerStream(audioOptions.speakerDeviceId ?? "");
-  const audioInputs = [
-    ...(activeMicrophoneStream ? [activeMicrophoneStream] : []),
-    ...(activeSpeakerStream ? [activeSpeakerStream] : []),
-  ];
+  activeMicrophoneStream = await acquireMicrophoneStream(
+    audioOptions.microphoneDeviceId ?? "",
+    audioOptions.microphoneEnabled !== false,
+  );
+  // inputStream carries the tab's own audio track when loopbackTabAudio is true
+  // (Chromium tabCapture); mixCaptureAudio only pulls audio from this array, so
+  // it must be included here or the recording ends up silent on tab audio.
+  const audioInputs = [inputStream, ...(activeMicrophoneStream ? [activeMicrophoneStream] : [])];
   const mixedAudio = mixCaptureAudio(inputStream, audioInputs);
   if (mixedAudio.audioContext) {
     activeAudioMixCleanup = mixedAudio.cleanup;
@@ -1705,6 +1696,7 @@ async function uploadRecordingPackage(data: StorageUploadData): Promise<{
     }
 
     const producerVersion = getProductVersionOrDefault();
+    const producerCapabilities = getProducerCapabilities();
 
     const metadataPreview: PackageMetadata = {
       timestamp: packagedAt,
@@ -1714,7 +1706,8 @@ async function uploadRecordingPackage(data: StorageUploadData): Promise<{
       extension: "gn-tracing",
       version: producerVersion,
       producer: "extension",
-      capabilities: getProducerCapabilities(),
+      capabilities: producerCapabilities,
+      evidenceCoverage: data.evidenceCoverage,
       storage: {
         provider: storageProvider,
         folderId: targetFolderId,
@@ -1750,7 +1743,8 @@ async function uploadRecordingPackage(data: StorageUploadData): Promise<{
 
     const built = await buildRecordingPackage({
       producer: "extension",
-      capabilities: getProducerCapabilities(),
+      capabilities: producerCapabilities,
+      evidenceCoverage: data.evidenceCoverage,
       packagedAt,
       zipFilename,
       version: producerVersion,

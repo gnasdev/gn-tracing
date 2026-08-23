@@ -1,12 +1,7 @@
-/**
- * Composite: run a browser's evidence collectors as one unit.
- *
- * Chromium's set holds one collector (CDP does everything). Firefox's set holds
- * two (in-page for console/websocket, `webRequest` for network) — this is the
- * seam that lets that composition work without either collector knowing the
- * other exists.
- */
+/** Capability-aware composite for a browser's evidence collectors. */
 
+import type { EvidenceCoverage } from "../../../packages/replay-core/src/schema/package";
+import { coverageFromEvidenceOffers, type EvidenceOffer, selectEvidenceOffers } from "./surfaces";
 import type {
   EvidenceAttachInput,
   EvidenceAttachResult,
@@ -18,73 +13,109 @@ import type {
 
 export class CollectorSet {
   readonly #collectors: readonly EvidenceCollector[];
+  #selectedOffers: readonly EvidenceOffer[];
+  #evidenceCoverage: EvidenceCoverage;
+  #activeCollectors = new Set<EvidenceCollector>();
+  #activeOffers = new Map<EvidenceCollector, readonly EvidenceOffer[]>();
+  #attached = false;
 
   constructor(collectors: readonly EvidenceCollector[]) {
-    assertNoOverlap(collectors);
     this.#collectors = collectors;
+    this.#selectedOffers = selectEvidenceOffers(
+      collectors.flatMap((collector) => collector.offers),
+    );
+    this.#evidenceCoverage = coverageFromEvidenceOffers(this.#selectedOffers);
   }
 
-  /**
-   * Prepare every collector in parallel and merge the results.
-   *
-   * One collector failing does not fail the others: Firefox's in-page capture
-   * being blocked by a strict page CSP must not also lose `webRequest` network
-   * evidence, and vice versa. A collector that failed contributes no
-   * capabilities and its own limitation instead of throwing.
-   *
-   * `ok` is true when **at least one** collector prepared successfully (best-
-   * effort evidence). The runtime throws only when every collector failed.
-   */
+  /** Deterministic owner for each surface before or after a successful attach. */
+  get selectedOffers(): readonly EvidenceOffer[] {
+    return this.#selectedOffers;
+  }
+
+  /** Coverage for collectors that successfully prepared in this session. */
+  get evidenceCoverage(): EvidenceCoverage {
+    return this.#evidenceCoverage;
+  }
+
   async attach(input: EvidenceAttachInput): Promise<EvidenceAttachResult> {
     const results = await Promise.all(
       this.#collectors.map(async (collector) => {
+        const selectedOffers = this.#selectedOffersFor(collector);
+        if (selectedOffers?.length === 0) {
+          return { collector, selectedOffers, result: null };
+        }
         try {
-          return await collector.attach(input);
+          return {
+            collector,
+            selectedOffers,
+            result: await collector.attach(this.#withSelectedOffers(input, selectedOffers)),
+          };
         } catch (error) {
           return {
-            ok: false,
-            capabilities: [],
-            limitations: [
-              `${collector.id} could not start: ${(error as Error)?.message || String(error)}`,
-            ],
+            collector,
+            selectedOffers,
+            result: {
+              ok: false,
+              capabilities: [],
+              limitations: [
+                `${collector.id} could not start: ${(error as Error)?.message || String(error)}`,
+              ],
+            },
           };
         }
       }),
     );
-
+    this.#attached = true;
+    this.#activeCollectors = new Set(
+      results.filter(({ result }) => result?.ok).map(({ collector }) => collector),
+    );
+    this.#activeOffers = new Map(
+      results
+        .filter(({ result }) => result?.ok)
+        .map(({ collector, selectedOffers }) => [collector, selectedOffers ?? collector.offers]),
+    );
+    this.#refreshCoverage();
     return {
-      ok: results.some((result) => result.ok),
-      capabilities: results.flatMap((result) => result.capabilities),
-      limitations: results.flatMap((result) => result.limitations),
+      ok: results.some(({ result }) => result?.ok),
+      capabilities: results.flatMap(({ result }) => result?.capabilities ?? []),
+      limitations: results.flatMap(({ result }) => result?.limitations ?? []),
     };
   }
 
-  /**
-   * Arm every collector for a committed session.
-   *
-   * Best-effort like `attach`: one collector throwing or returning limitations
-   * must not abort the others. After the user has already accepted screen share,
-   * failing the whole start solely because console re-arm failed would discard
-   * a live media session for nothing recoverable.
-   */
   async beginSession(input: EvidenceBeginSessionInput): Promise<EvidenceBeginSessionResult> {
+    const collectors = this.#attached ? [...this.#activeCollectors] : this.#collectors;
     const results = await Promise.all(
-      this.#collectors.map(async (collector) => {
+      collectors.map(async (collector) => {
+        const selectedOffers =
+          this.#activeOffers.get(collector) ?? this.#selectedOffersFor(collector);
         try {
-          return await collector.beginSession(input);
+          return {
+            collector,
+            result: await collector.beginSession(this.#withSelectedOffers(input, selectedOffers)),
+          };
         } catch (error) {
           return {
-            limitations: [
-              `${collector.id} could not arm: ${(error as Error)?.message || String(error)}`,
-            ],
+            collector,
+            result: {
+              active: false,
+              limitations: [
+                `${collector.id} could not arm: ${(error as Error)?.message || String(error)}`,
+              ],
+            },
           };
         }
       }),
     );
-    return { limitations: results.flatMap((result) => result.limitations) };
+    for (const { collector, result } of results) {
+      if (result.active === false) {
+        this.#activeCollectors.delete(collector);
+        this.#activeOffers.delete(collector);
+      }
+    }
+    this.#refreshCoverage();
+    return { limitations: results.flatMap(({ result }) => result.limitations) };
   }
 
-  /** Detach every collector, best-effort: one failing must not skip the rest. */
   async detach(): Promise<EvidenceDetachResult> {
     const results = await Promise.all(
       this.#collectors.map(async (collector) => {
@@ -102,28 +133,41 @@ export class CollectorSet {
     return { limitations: results.flatMap((result) => result.limitations) };
   }
 
-  /** Re-arm every collector after a navigation; no-op ones return immediately. */
   async reattach(tabId: number, sessionId: string): Promise<void> {
-    await Promise.all(this.#collectors.map((collector) => collector.reattach(tabId, sessionId)));
-  }
-}
-
-/**
- * Two collectors claiming the same evidence kind would silently double-report
- * or race on which one "wins" in storage. Failing fast at construction is
- * cheaper than debugging a duplicated console entry later.
- */
-function assertNoOverlap(collectors: readonly EvidenceCollector[]): void {
-  const owner = new Map<string, string>();
-  for (const collector of collectors) {
-    for (const kind of collector.provides) {
-      const existing = owner.get(kind);
-      if (existing) {
-        throw new Error(
-          `EvidenceCollector overlap: both "${existing}" and "${collector.id}" claim "${kind}"`,
-        );
+    const collectors = this.#attached ? [...this.#activeCollectors] : this.#collectors;
+    const results = await Promise.all(
+      collectors.map(async (collector) => ({
+        collector,
+        result: (await collector.reattach(tabId, sessionId)) ?? { limitations: [] },
+      })),
+    );
+    for (const { collector, result } of results) {
+      if (result.active === false) {
+        this.#activeCollectors.delete(collector);
+        this.#activeOffers.delete(collector);
       }
-      owner.set(kind, collector.id);
     }
+    this.#refreshCoverage();
+  }
+
+  #selectedOffersFor(collector: EvidenceCollector): readonly EvidenceOffer[] | undefined {
+    // Collectors without offers are legacy test doubles. Production collectors
+    // must declare offers so an empty selection means they are not activated.
+    if (collector.offers.length === 0) {
+      return undefined;
+    }
+    return this.#selectedOffers.filter((offer) => collector.offers.includes(offer));
+  }
+
+  #withSelectedOffers<T extends EvidenceAttachInput | EvidenceBeginSessionInput>(
+    input: T,
+    selectedOffers: readonly EvidenceOffer[] | undefined,
+  ): T {
+    return selectedOffers ? { ...input, selectedOffers } : input;
+  }
+
+  #refreshCoverage(): void {
+    this.#selectedOffers = selectEvidenceOffers([...this.#activeOffers.values()].flat());
+    this.#evidenceCoverage = coverageFromEvidenceOffers(this.#selectedOffers);
   }
 }

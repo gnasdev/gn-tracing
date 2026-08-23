@@ -15,10 +15,12 @@
 
 import type { RecordingCapability } from "../../../packages/replay-core/src/schema/package";
 import type { CdpManager } from "../../background/cdp-manager";
+import type { EvidenceOffer } from "./surfaces";
 import type {
   EvidenceAttachInput,
   EvidenceAttachResult,
   EvidenceBeginSessionInput,
+  EvidenceBeginSessionResult,
   EvidenceCollector,
   EvidenceDetachResult,
 } from "./types";
@@ -36,9 +38,33 @@ const CDP_CAPABILITIES: readonly RecordingCapability[] = [
   "cross-origin",
 ];
 
+const CDP_EVIDENCE_OFFERS: readonly EvidenceOffer[] = [
+  { source: "cdp", surface: "console-api", quality: "full", capability: "console" },
+  { source: "cdp", surface: "runtime-exception", quality: "full", capability: "console" },
+  { source: "cdp", surface: "runtime-object-details", quality: "full", capability: "console" },
+  { source: "cdp", surface: "network-lifecycle", quality: "full", capability: "network" },
+  { source: "cdp", surface: "network-request-headers", quality: "full", capability: "network" },
+  { source: "cdp", surface: "network-response-headers", quality: "full", capability: "network" },
+  {
+    source: "cdp",
+    surface: "network-response-body",
+    quality: "full",
+    capability: "network-bodies",
+  },
+  { source: "cdp", surface: "network-initiator", quality: "full", capability: "network" },
+  { source: "cdp", surface: "network-timing", quality: "full", capability: "network" },
+  { source: "cdp", surface: "websocket-lifecycle", quality: "full", capability: "websocket" },
+  { source: "cdp", surface: "websocket-frames", quality: "full", capability: "websocket" },
+  { source: "cdp", surface: "storage-snapshot", quality: "full", capability: "storage" },
+  { source: "cdp", surface: "cookie-snapshot", quality: "full", capability: "cookies" },
+  { source: "cdp", surface: "dom-snapshot", quality: "full", capability: "dom-snapshot" },
+  { source: "cdp", surface: "source-map-resolution", quality: "full", capability: "source-maps" },
+];
+
 export class CdpEvidenceCollector implements EvidenceCollector {
   readonly id = "cdp";
   readonly provides = CDP_CAPABILITIES;
+  readonly offers = CDP_EVIDENCE_OFFERS;
   readonly #cdp: CdpManager;
 
   constructor(cdp: CdpManager) {
@@ -65,7 +91,8 @@ export class CdpEvidenceCollector implements EvidenceCollector {
     return { limitations };
   }
 
-  async reattach(): Promise<void> {
+  async reattach(): Promise<EvidenceBeginSessionResult> {
     // CDP stays attached across navigations; nothing to re-arm.
+    return { limitations: [] };
   }
 }

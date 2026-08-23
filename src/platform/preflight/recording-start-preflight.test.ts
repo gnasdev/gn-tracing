@@ -1,6 +1,7 @@
 /**
- * Recording start preflight factory: Firefox prompts for host permission;
- * Chrome is a no-op.
+ * Recording start preflight factory: any non-CDP target (Firefox, Safari,
+ * Safari iOS) prompts for host permission since they all rely on in-page
+ * content-script injection; Chromium (CDP) is a no-op.
  */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -29,9 +30,12 @@ describe("createRecordingStartPreflight", () => {
     }
   });
 
-  it("firefox preflight requests host permission", async () => {
-    await createRecordingStartPreflight("firefox")();
-    expect(ensureRecordingHostPermission).toHaveBeenCalledTimes(1);
+  it("firefox and safari targets request host permission", async () => {
+    for (const target of ["firefox", "safari", "safari-ios"] as const) {
+      ensureRecordingHostPermission.mockClear();
+      await createRecordingStartPreflight(target)();
+      expect(ensureRecordingHostPermission).toHaveBeenCalledTimes(1);
+    }
   });
 
   it("firefox preflight swallows permission errors", async () => {

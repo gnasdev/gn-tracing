@@ -20,7 +20,8 @@
       "!player/public/player.js",
       "!icons/phosphor-icons.css",
       "!icons/Phosphor.woff2",
-      "!store-assets"
+      "!store-assets",
+      "!xcode"
     ]
   },
   "formatter": {

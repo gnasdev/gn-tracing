@@ -45,6 +45,8 @@ import type { StorageManager } from "../../background/storage-manager";
 import { ChromiumRecordingRuntime } from "./chromium-runtime";
 import { createRecordingRuntime } from "./create-recording-runtime";
 import { FirefoxRecordingRuntime } from "./firefox-runtime";
+import { SafariIosRecordingRuntime } from "./safari-ios-runtime";
+import { SafariRecordingRuntime } from "./safari-runtime";
 
 function fakeStorage(): StorageManager {
   return {
@@ -92,6 +94,22 @@ describe("createRecordingRuntime", () => {
     const runtime = createRecordingRuntime(fakeStorage(), "firefox");
     expect(runtime).toBeInstanceOf(FirefoxRecordingRuntime);
     expect(runtime.mediaKind).toBe("extension-page");
+    expect(CdpManager).not.toHaveBeenCalled();
+  });
+
+  it("safari target never constructs CdpManager", () => {
+    vi.mocked(CdpManager).mockClear();
+    const runtime = createRecordingRuntime(fakeStorage(), "safari");
+    expect(runtime).toBeInstanceOf(SafariRecordingRuntime);
+    expect(runtime.mediaKind).toBe("extension-page");
+    expect(CdpManager).not.toHaveBeenCalled();
+  });
+
+  it("safari-ios target never constructs CdpManager and has no media host", () => {
+    vi.mocked(CdpManager).mockClear();
+    const runtime = createRecordingRuntime(fakeStorage(), "safari-ios");
+    expect(runtime).toBeInstanceOf(SafariIosRecordingRuntime);
+    expect(runtime.mediaKind).toBe("none");
     expect(CdpManager).not.toHaveBeenCalled();
   });
 });

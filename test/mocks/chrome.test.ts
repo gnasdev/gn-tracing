@@ -186,9 +186,9 @@ describe("missing-namespace guard (Requirement 4.11)", () => {
     const chrome = createChromeMock();
 
     expect(() => {
-      // @ts-expect-error tabs.remove is intentionally not mocked
-      void chrome.tabs.remove;
-    }).toThrow(/chrome\.tabs\.remove/);
+      // @ts-expect-error tabs.captureVisibleTab is intentionally not mocked
+      void chrome.tabs.captureVisibleTab;
+    }).toThrow(/chrome\.tabs\.captureVisibleTab/);
   });
 
   it("does not throw for defined-but-undefined optional members", () => {

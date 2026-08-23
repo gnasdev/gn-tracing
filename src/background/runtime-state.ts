@@ -62,6 +62,7 @@ export interface SessionArtifacts {
   storage?: string;
   dom?: string;
   screenshotDataUrl?: string;
+  evidenceCoverage?: import("../../packages/replay-core/src/schema/package").EvidenceCoverage;
   duration: number;
   url: string;
   startTime: number | null;

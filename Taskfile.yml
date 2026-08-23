@@ -27,13 +27,31 @@ tasks:
     cmds:
       - node --experimental-strip-types esbuild.config.mjs --env development --browser firefox
 
+  build:safari:
+    desc: >-
+      Build the macOS Safari extension into dist/safari (development). This is the
+      plain JS/manifest bundle only; wrapping it into an Xcode project is a separate
+      step (see docs on the Safari port plan) not yet automated here.
+    cmds:
+      - node --experimental-strip-types esbuild.config.mjs --env development --browser safari
+
+  build:safari-ios:
+    desc: >-
+      Build the iOS/iPadOS Safari extension (reduced capture, no video) into
+      dist/safari-ios (development). Same manifest as build:safari; only the Xcode
+      App Extension wrapper differs, and that is not yet automated here.
+    cmds:
+      - node --experimental-strip-types esbuild.config.mjs --env development --browser safari-ios
+
   build:all:
-    desc: Build Chrome, Edge, Opera, and Firefox development packages.
+    desc: Build Chrome, Edge, Opera, Firefox, and Safari (macOS + iOS) development packages.
     cmds:
       - task: build
       - task: build:edge
       - task: build:opera
       - task: build:firefox
+      - task: build:safari
+      - task: build:safari-ios
 
   dist:
     desc: Build the Chrome extension into dist/chrome with the production environment.
@@ -55,23 +73,40 @@ tasks:
     cmds:
       - node --experimental-strip-types esbuild.config.mjs --env production --browser firefox
 
+  dist:safari:
+    desc: Build the macOS Safari extension into dist/safari (production).
+    cmds:
+      - node --experimental-strip-types esbuild.config.mjs --env production --browser safari
+
+  dist:safari-ios:
+    desc: Build the iOS/iPadOS Safari extension into dist/safari-ios (production).
+    cmds:
+      - node --experimental-strip-types esbuild.config.mjs --env production --browser safari-ios
+
   dist:all:
-    desc: Build Chrome, Edge, Opera, and Firefox production packages.
+    desc: Build Chrome, Edge, Opera, Firefox, and Safari (macOS + iOS) production packages.
     cmds:
       - task: dist
       - task: dist:edge
       - task: dist:opera
       - task: dist:firefox
+      - task: dist:safari
+      - task: dist:safari-ios
 
   watch:
     desc: >-
       Watch and rebuild extension sources for one browser target.
-      BROWSER=chrome|edge|opera|firefox (default chrome). CLI var or env BROWSER.
+      BROWSER=chrome|edge|opera|firefox|safari (default chrome). CLI var or env BROWSER.
+      safari also rebuilds "xcode/GN Tracing (macOS)" via xcodebuild on every
+      save before notifying reload — meaningfully slower than the other
+      targets (seconds, not instant); see build-xcode.mjs rebuild comment in
+      esbuild.config.mjs. Requires the app already built+run once in Xcode
+      with local signing configured (see DEVELOPER.md).
     vars:
       BROWSER: '{{.BROWSER | default (env "BROWSER") | default "chrome"}}'
     preconditions:
-      - sh: 'case "{{.BROWSER}}" in chrome|edge|opera|firefox) exit 0 ;; *) exit 1 ;; esac'
-        msg: 'BROWSER must be chrome, edge, opera, or firefox (got "{{.BROWSER}}").'
+      - sh: 'case "{{.BROWSER}}" in chrome|edge|opera|firefox|safari) exit 0 ;; *) exit 1 ;; esac'
+        msg: 'BROWSER must be chrome, edge, opera, firefox, or safari (got "{{.BROWSER}}").'
     cmds:
       - node --experimental-strip-types esbuild.config.mjs --watch --browser {{.BROWSER}}
 
@@ -102,6 +137,15 @@ tasks:
       - task: watch
         vars:
           BROWSER: firefox
+
+  watch:safari:
+    desc: >-
+      Watch and rebuild the macOS Safari extension sources, rebuilding the
+      Xcode wrapper via xcodebuild on every save (see task watch's desc).
+    cmds:
+      - task: watch
+        vars:
+          BROWSER: safari
 
   typecheck:
     desc: Run root TypeScript checks (production sources and test files).
@@ -413,14 +457,16 @@ tasks:
 
   release:zip:
     desc: >-
-      Zip dist/ (chrome/, edge/, opera/, firefox/) for a GitHub release.
-      Run task dist:all first so all browser packages are present.
+      Zip dist/ (chrome/, edge/, opera/, firefox/, safari/, safari-ios/) for a
+      GitHub release. Run task dist:all first so all browser packages are present.
+      safari/safari-ios here are the plain JS/manifest bundles only, not a signed
+      Xcode archive — Xcode packaging is a separate, not-yet-automated step.
     cmds:
       - |
         release_name="gn-tracing-extension-${GITHUB_REF_NAME:-local}"
         trap 'rm -rf "$release_name"' EXIT
         rm -rf "$release_name" "$release_name.zip"
-        for browser in chrome edge opera firefox; do
+        for browser in chrome edge opera firefox safari safari-ios; do
           if [ ! -d "dist/$browser" ]; then
             echo "Expected dist/$browser. Run task dist:all first." >&2
             exit 1
@@ -431,9 +477,10 @@ tasks:
 
   release:ci:
     desc: >-
-      Build production Chrome + Edge + Opera + Firefox packages and zip them.
-      Does not publish immutable Player or Worker artifacts; release services
-      are published through the versioned R2/router release tasks.
+      Build production Chrome + Edge + Opera + Firefox + Safari (macOS + iOS)
+      packages and zip them. Does not publish immutable Player or Worker
+      artifacts; release services are published through the versioned R2/router
+      release tasks. Safari packages here are unsigned JS bundles only.
     cmds:
       - npm run version:check
       - task: dist:all
@@ -467,6 +514,18 @@ tasks:
       - task: dist:firefox
       - node scripts/check-store-package.mjs --browser firefox
 
+  store:check:safari:
+    desc: Validate the production macOS Safari package (manifest/JS bundle shape only).
+    cmds:
+      - task: dist:safari
+      - node scripts/check-store-package.mjs --browser safari
+
+  store:check:safari-ios:
+    desc: Validate the production iOS Safari package (manifest/JS bundle shape only).
+    cmds:
+      - task: dist:safari-ios
+      - node scripts/check-store-package.mjs --browser safari-ios
+
   store:zip:
     desc: Build, validate, and zip the Chrome Web Store package (manifest.key stripped).
     cmds:
@@ -490,6 +549,51 @@ tasks:
     cmds:
       - task: store:check:firefox
       - node scripts/package-store-zip.mjs --browser firefox
+
+  store:zip:safari:
+    desc: >-
+      Build, validate, and zip the macOS Safari package source (feeds
+      safari-web-extension-converter / Xcode, not a direct store upload).
+    cmds:
+      - task: store:check:safari
+      - node scripts/package-store-zip.mjs --browser safari
+
+  store:zip:safari-ios:
+    desc: >-
+      Build, validate, and zip the iOS Safari package source (feeds Apple's
+      Safari Web Extension Packager / Xcode, not a direct store upload).
+    cmds:
+      - task: store:check:safari-ios
+      - node scripts/package-store-zip.mjs --browser safari-ios
+
+  xcode:build:safari:
+    desc: >-
+      Build the macOS Safari app wrapper from "xcode/GN Tracing (macOS)"
+      (unsigned local build — CODE_SIGNING_ALLOWED=NO). Checks dist/safari/
+      isn't out of sync with the checked-in Xcode project before building.
+    cmds:
+      - task: dist:safari
+      - node scripts/safari/build-xcode.mjs --scheme macos
+
+  xcode:build:safari-ios:
+    desc: >-
+      Build the iOS Safari app wrapper from "xcode/GN Tracing (iOS)" for the
+      Simulator (unsigned local build — CODE_SIGNING_ALLOWED=NO). Uses
+      dist/safari-ios/, a separate project from macOS — see build-xcode.mjs
+      header comment for why the two must never share one project.
+    cmds:
+      - task: dist:safari-ios
+      - node scripts/safari/build-xcode.mjs --scheme ios --destination "generic/platform=iOS Simulator"
+
+  xcode:notarize:safari:
+    desc: >-
+      Archive, Developer-ID sign, notarize, and staple the macOS Safari app
+      for direct (non-App-Store) distribution. Requires real Apple Developer
+      credentials (APPLE_TEAM_ID, APPLE_NOTARIZE_KEY_*) — see
+      scripts/safari/sign-and-notarize.mjs header comment. Fails fast with a
+      clear error when they are not set, before the slow archive step.
+    cmds:
+      - node scripts/safari/sign-and-notarize.mjs
 
   store:status:
     desc: Fetch the Chrome Web Store item status through the official API.
@@ -520,20 +624,23 @@ tasks:
 
   # Shared browser matrix for local full-stack dev. Keep in sync with
   # esbuild.config.mjs normalizeBrowserTarget and test/task-dev-browsers.test.ts.
-  # Targets: chrome | edge | opera | firefox | all
+  # Targets: chrome | edge | opera | firefox | safari | all
 
   dev:
     desc: >-
       Local full stack — extension watch and development-only extension reload for
-      Chrome + Firefox by default, standalone player (Vite :5176), and multi-issuer
-      Worker (wrangler :63972). BROWSER=chrome|edge|opera|firefox runs one target;
-      BROWSER=both is the default; BROWSER=all / `task dev:all` runs every target.
+      Chrome + Firefox + macOS Safari by default, standalone player (Vite :5176), and
+      multi-issuer Worker (wrangler :63972). BROWSER=chrome|edge|opera|firefox|safari runs one
+      target; BROWSER=both is the default; BROWSER=all / `task dev:all` runs every
+      target including Safari. Safari requires the macOS app already built+run once
+      in Xcode with local signing configured, and its reload loop is meaningfully
+      slower than the others (xcodebuild runs on every save — see task watch's desc).
     vars:
       BROWSER: '{{.BROWSER | default (env "BROWSER") | default "both"}}'
       DEV_EXTENSION_RELOAD_PORT: '{{.DEV_EXTENSION_RELOAD_PORT | default (env "DEV_EXTENSION_RELOAD_PORT") | default "63973"}}'
     preconditions:
-      - sh: 'case "{{.BROWSER}}" in chrome|edge|opera|firefox|both|all) exit 0 ;; *) exit 1 ;; esac'
-        msg: 'BROWSER must be chrome, edge, opera, firefox, both, or all (got "{{.BROWSER}}").'
+      - sh: 'case "{{.BROWSER}}" in chrome|edge|opera|firefox|safari|both|all) exit 0 ;; *) exit 1 ;; esac'
+        msg: 'BROWSER must be chrome, edge, opera, firefox, safari, both, or all (got "{{.BROWSER}}").'
     cmds:
       # Sync worker secrets before concurrent start so wrangler sees OAuth + feedback vars.
       - task: worker:sync-dev-vars
@@ -547,24 +654,26 @@ tasks:
           export DEV_EXTENSION_RELOAD_PORT="$reload_port"
           if [ "$browser" = "all" ]; then
             npx concurrently --kill-others-on-fail --kill-signal SIGKILL \
-              -n reload,ext:chrome,ext:edge,ext:opera,ext:firefox,player,worker \
-              -c white,blue,cyan,yellow,red,green,magenta \
+              -n reload,ext:chrome,ext:edge,ext:opera,ext:firefox,ext:safari,player,worker \
+              -c white,blue,cyan,yellow,red,gray,green,magenta \
               "node scripts/dev-extension-reload.mjs --port $reload_port" \
               'task watch BROWSER=chrome' \
               'task watch BROWSER=edge' \
               'task watch BROWSER=opera' \
               'task watch BROWSER=firefox' \
+              'task watch BROWSER=safari' \
               'task player:dev' \
               'task worker:dev'
             exit "$?"
           fi
           if [ "$browser" = "both" ]; then
             npx concurrently --kill-others-on-fail --kill-signal SIGKILL \
-              -n reload,ext:chrome,ext:firefox,player,worker \
-              -c white,blue,red,green,magenta \
+              -n reload,ext:chrome,ext:firefox,ext:safari,player,worker \
+              -c white,blue,red,gray,green,magenta \
               "node scripts/dev-extension-reload.mjs --port $reload_port" \
               'task watch BROWSER=chrome' \
               'task watch BROWSER=firefox' \
+              'task watch BROWSER=safari' \
               'task player:dev' \
               'task worker:dev'
             exit "$?"
@@ -605,12 +714,25 @@ tasks:
         vars:
           BROWSER: firefox
 
+  dev:safari:
+    desc: >-
+      Local full stack watching the macOS Safari extension build. Requires the
+      app already built+run once in Xcode with local signing configured (see
+      DEVELOPER.md); reload is meaningfully slower than other targets since
+      xcodebuild runs on every save.
+    cmds:
+      - task: dev
+        vars:
+          BROWSER: safari
+
   dev:all:
     desc: >-
-      Local full stack watching Chrome, Edge, Opera, and Firefox builds together,
-      plus the player, local Worker, and shared reload coordinator. Seven foreground
-      long-running processes — heavier than single-target `task dev`; use when a change
-      must be verified on every target. Alias for `task dev BROWSER=all`.
+      Local full stack watching Chrome, Edge, Opera, Firefox, and macOS Safari
+      builds together, plus the player, local Worker, and shared reload
+      coordinator. Eight foreground long-running processes — heavier than
+      single-target `task dev`; use when a change must be verified on every
+      target. Alias for `task dev BROWSER=all`. Safari requires the app
+      already built+run once in Xcode with local signing configured.
     cmds:
       - task: dev
         vars:

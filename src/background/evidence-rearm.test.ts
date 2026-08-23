@@ -153,10 +153,14 @@ describe("evidence capture re-arm after navigation", () => {
     expect(startBody).not.toMatch(/Promise\.all\(\s*\[/);
   });
 
-  it("full-record START disables page-script network capture", () => {
-    expect(inPageCollector).toContain("captureNetwork: false");
+  it("full-record START disables page-script network capture by default", () => {
+    // captureNetwork defaults to false (Chromium/Firefox/macOS Safari); iOS
+    // Safari is the only target that opts in via the constructor option,
+    // since it has no WebRequestNetworkCollector to own network instead.
+    expect(inPageCollector).toContain("options.captureNetwork ?? false");
+    expect(inPageCollector).toContain("captureNetwork: this.#networkSelected");
     expect(inPageCollector).not.toMatch(/responseBodyMode:\s*input/);
-    // provides is console+websocket only — no network-bodies capability claim.
+    // Base capability set is console+websocket only — no network-bodies claim.
     expect(inPageCollector).toMatch(
       /IN_PAGE_CAPABILITIES[^=]*=\s*\[?\s*"console",\s*"websocket"\s*\]/,
     );

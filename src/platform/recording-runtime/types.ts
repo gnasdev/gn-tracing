@@ -5,6 +5,7 @@
  * calls start / stopMedia / finalizeEvidence / discard — no mode switches.
  */
 
+import type { EvidenceCoverage } from "../../../packages/replay-core/src/schema/package";
 import type { UploadSettingsStore } from "../../background/settings-store";
 import type { PrivacyRedactionSettings } from "../../types/messages";
 import type {
@@ -47,6 +48,7 @@ export interface RecordingFinalizeResult {
     generatedAt: string;
     sourceMaps: SourceMapDiagnostic[];
   } | null;
+  evidenceCoverage: EvidenceCoverage;
   privacyLimitations: string[];
 }
 
