@@ -76,7 +76,15 @@ export function registerMessageListeners(handlers: MessageHandlers): void {
       return false;
     }
 
-    handleMessage(message, sender, handlers).then(sendResponse);
+    handleMessage(message, sender, handlers)
+      .then(sendResponse)
+      .catch((error: unknown) => {
+        // A rejected handler must still answer the popup, otherwise its
+        // sendMessage promise never settles and the UI sticks in a saving
+        // state forever.
+        const detail = error instanceof Error ? error.message : String(error);
+        sendResponse({ ok: false, error: detail || "Service worker error." });
+      });
     return true;
   });
 

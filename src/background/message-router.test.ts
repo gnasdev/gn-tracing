@@ -101,6 +101,17 @@ describe("registerMessageListeners", () => {
     expect(response).toMatchObject({ ok: false });
   });
 
+  it("answers ok:false when a handler rejects instead of leaving the popup hanging", async () => {
+    handlers.updateUploadSettingsFromMessage = vi.fn(async () => {
+      throw new Error("boom");
+    });
+    const response = await dispatch({
+      action: "UPDATE_SETTINGS",
+      data: { microphoneEnabled: false },
+    });
+    expect(response).toMatchObject({ ok: false, error: "boom" });
+  });
+
   it("routes STOP_RECORDING", async () => {
     await dispatch({ action: "STOP_RECORDING" });
     expect(handlers.stopRecording).toHaveBeenCalledOnce();
