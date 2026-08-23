@@ -187,7 +187,7 @@ export async function handoffDisplayStreamToMediaHost(
     timeoutMs?: number;
     messageBus?: HandoffMessageBus;
     microphoneDeviceId?: string;
-    speakerDeviceId?: string;
+    microphoneEnabled?: boolean;
   } = {},
 ): Promise<AdoptDisplayStreamResult> {
   const findView = options.findView ?? (() => findMediaHostView());
@@ -259,8 +259,8 @@ export async function handoffDisplayStreamToMediaHost(
           type: ADOPT_DISPLAY_STREAM_MESSAGE,
           sessionId,
           tracks,
+          microphoneEnabled: options.microphoneEnabled !== false,
           microphoneDeviceId: options.microphoneDeviceId ?? "",
-          speakerDeviceId: options.speakerDeviceId ?? "",
         },
         origin,
         tracks,

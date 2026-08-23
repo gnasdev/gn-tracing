@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { buildAudioSettingsUpdate, buildMicrophoneOptions } from "./audio-controls";
 
 describe("buildMicrophoneOptions", () => {
@@ -48,10 +48,10 @@ describe("buildMicrophoneOptions", () => {
 });
 
 describe("buildAudioSettingsUpdate", () => {
-  it("creates the partial settings payload for selected microphone and loopback inputs", () => {
-    expect(buildAudioSettingsUpdate("mic-2", "loopback-1")).toEqual({
+  it("creates the partial settings payload for the selected microphone", () => {
+    expect(buildAudioSettingsUpdate(false, "mic-2")).toEqual({
+      microphoneEnabled: false,
       microphoneDeviceId: "mic-2",
-      speakerDeviceId: "loopback-1",
     });
   });
 });

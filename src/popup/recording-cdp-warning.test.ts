@@ -13,7 +13,7 @@ describe("popup CDP debugger banner warning", () => {
       'class="recording-actions-row recording-actions-primary"',
     );
     const warning = popupHtml.indexOf('id="cdp-banner-warning"');
-    const audioSummary = popupHtml.indexOf('id="audio-settings-summary"');
+    const audioSummary = popupHtml.indexOf('id="audio-settings"');
 
     expect(primaryActions).toBeGreaterThanOrEqual(0);
     expect(warning).toBeGreaterThan(primaryActions);

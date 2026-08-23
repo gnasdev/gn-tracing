@@ -152,10 +152,10 @@ export interface UploadSettings {
   folderInput: string;
   folderId: string | null;
   zipPasswordConfigured: boolean;
+  /** Whether recordings include the selected microphone. */
+  microphoneEnabled: boolean;
   /** Selected audio input; empty means the browser's default microphone. */
   microphoneDeviceId: string;
-  /** Selected system/loopback audio input; empty means no system audio source. */
-  speakerDeviceId: string;
   /** Fixed non-UI value for redaction engine / privacy.json (always "custom" after migrate). */
   privacyProfile: PrivacyProfile;
   redactSensitiveHeaders: boolean;

@@ -7,51 +7,46 @@ const popupSource = readFileSync(resolve(__dirname, "./popup.ts"), "utf8");
 const popupCss = readFileSync(resolve(__dirname, "../../popup/popup.css"), "utf8");
 const themeCss = readFileSync(resolve(__dirname, "../../shared/theme.css"), "utf8");
 
-describe("popup audio device dialog layout", () => {
-  it("shows the selected sources below recording with a labeled device trigger", () => {
+describe("popup inline audio controls layout", () => {
+  it("shows editable audio controls below recording and before Instant Replay", () => {
     const recordingRow = popupHtml.indexOf(
       'class="recording-actions-row recording-actions-primary"',
     );
-    const audioSummary = popupHtml.indexOf('id="audio-settings-summary"');
-    const deviceButton = popupHtml.indexOf('id="audio-settings-btn"');
-    const audioDialog = popupHtml.indexOf('id="audio-settings-dialog"');
+    const audioSettings = popupHtml.indexOf('id="audio-settings"');
     const microphoneControl = popupHtml.indexOf('id="microphone-device-id-input"');
+    const instantReplayControls = popupHtml.indexOf('id="instant-replay-controls"');
 
     expect(recordingRow).toBeGreaterThanOrEqual(0);
-    expect(audioSummary).toBeGreaterThan(recordingRow);
-    expect(deviceButton).toBeGreaterThan(audioSummary);
-    expect(audioDialog).toBeGreaterThan(deviceButton);
-    expect(microphoneControl).toBeGreaterThan(audioDialog);
-    expect(popupHtml).toContain('id="audio-settings-microphone-summary"');
-    expect(popupHtml).toContain('id="audio-settings-speaker-summary"');
-    expect(popupHtml).toContain('id="speaker-device-id-input"');
+    expect(audioSettings).toBeGreaterThan(recordingRow);
+    expect(microphoneControl).toBeGreaterThan(audioSettings);
+    expect(instantReplayControls).toBeGreaterThan(microphoneControl);
+    expect(popupHtml).not.toContain('id="speaker-device-id-input"');
     expect(popupHtml).not.toContain('id="capture-speaker-audio-input"');
+    expect(popupHtml).not.toContain('id="audio-settings-dialog"');
+    expect(popupHtml).not.toContain('id="audio-settings-btn"');
     expect(popupHtml).toContain('data-i18n="audioSummary.label"');
-    expect(popupHtml).toContain('aria-controls="audio-settings-dialog"');
-    expect(popupHtml).toContain('aria-labelledby="audio-settings-dialog-title"');
   });
 
-  it("presents audio choices as a compact source console with clear device rows", () => {
-    const audioDialog = popupHtml.slice(popupHtml.indexOf('id="audio-settings-dialog"'));
+  it("presents audio choices as an inline console with clear device fields", () => {
+    const audioSettingsStart = popupHtml.indexOf('id="audio-settings"');
+    const audioSettings = popupHtml.slice(audioSettingsStart, audioSettingsStart + 5000);
 
-    expect(popupHtml).toContain('class="audio-source-console"');
-    expect(popupHtml).toContain('class="audio-source-console-row"');
-    expect(popupHtml).toContain('id="audio-settings-microphone-source"');
-    expect(popupHtml).toContain('id="audio-settings-speaker-source"');
-    expect(audioDialog).toContain('class="audio-source-picker"');
-    expect(audioDialog).toMatch(
-      /<section\s+id="audio-controls"\s+class="audio-source-picker"[^>]*\bhidden\b/,
+    expect(audioSettings).toContain('class="audio-settings-inline"');
+    expect(audioSettings).toContain('class="audio-source-picker"');
+    expect(audioSettings).toMatch(
+      /<section\s+id="audio-controls"\s+class="audio-source-picker"(?![^>]*\bhidden\b)/,
     );
-    expect(audioDialog).toContain('class="audio-source-field"');
-    expect(audioDialog).toContain('id="audio-settings-save-status"');
-    expect(audioDialog).toContain('data-i18n="audioSettings.systemAudioOptional"');
-    expect(popupCss).toContain(".audio-source-console {");
+    expect(audioSettings).toContain('id="microphone-enabled-toggle"');
+    expect(audioSettings).toContain('aria-pressed="true"');
+    expect(audioSettings).toContain('class="audio-source-field"');
+    expect(audioSettings).not.toContain('id="audio-settings-save-status"');
+    expect(popupCss).toContain(".audio-settings-inline {");
     expect(popupCss).toContain(".audio-source-picker {");
+    expect(popupSource).toContain("audioSettingsSection.hidden = true;");
+    expect(popupSource).not.toContain("audioSettingsSaveStatus");
     expect(popupSource).toContain(
-      'audioSettingsSpeakerSource.classList.toggle("is-included", Boolean(selectedSpeakerDeviceId));',
+      "microphoneDeviceIdInput.disabled = disabled || !microphoneEnabled;",
     );
-    expect(popupSource).toContain("audioSettingsSaveStatus.hidden = !audioSettingsSaveInFlight;");
-    expect(popupSource).toContain("audioControls.hidden = !audioInputPermissionGranted;");
   });
 
   it("renders settings as flat sections with icon-only save actions", () => {
@@ -111,12 +106,9 @@ describe("popup audio device dialog layout", () => {
     expect(settingsButton).not.toContain("instant-replay-settings-label");
   });
 
-  it("keeps microphone and system source rows independently readable", () => {
-    expect(popupHtml).toContain('id="audio-settings-microphone-source"');
-    expect(popupHtml).toContain('id="audio-settings-speaker-source"');
-    expect(popupHtml).toContain('class="audio-source-console-value"');
-    expect(popupHtml).toContain('data-i18n="audioSummary.microphone"');
-    expect(popupHtml).toContain('data-i18n="audioSummary.systemAudio"');
+  it("keeps the microphone field readable", () => {
+    expect(popupHtml).toContain('for="microphone-device-id-input"');
+    expect(popupHtml).toContain('data-i18n="fields.microphoneDeviceId.label"');
   });
 
   it("marks settings controls for compact custom rendering", () => {
@@ -138,47 +130,53 @@ describe("popup audio device dialog layout", () => {
     expect(couplingNote).toBeLessThan(storageSwitch);
   });
 
-  it("keeps microphone capture behind an explicit Devices-dialog grant action", () => {
+  it("persists the inline microphone toggle before opening its permission page", () => {
     const initPopupStart = popupSource.indexOf("async function initPopup()");
     const initPopup = popupSource.slice(initPopupStart, initPopupStart + 3000);
-    const audioDialog = popupHtml.slice(popupHtml.indexOf('id="audio-settings-dialog"'));
-    const audioDialogRegistration = popupSource.slice(
-      popupSource.indexOf('popupDialogEntries.set("audio"'),
-      popupSource.indexOf('popupDialogEntries.set("settings"'),
+    const audioSettingsStart = popupHtml.indexOf('id="audio-settings"');
+    const audioSettings = popupHtml.slice(audioSettingsStart, audioSettingsStart + 5000);
+    const toggleHandlerStart = popupSource.indexOf(
+      'microphoneEnabledToggle.addEventListener("click"',
     );
-    const grantHandlerStart = popupSource.indexOf(
-      'audioCapturePermissionBtn.addEventListener("click"',
+    const toggleHandler = popupSource.slice(toggleHandlerStart, toggleHandlerStart + 200);
+    const toggleFunctionStart = popupSource.indexOf("async function toggleMicrophoneRecording");
+    const toggleFunction = popupSource.slice(toggleFunctionStart, toggleFunctionStart + 600);
+    const permissionFunctionStart = popupSource.indexOf(
+      "async function openMicrophonePermissionPage",
     );
-    const grantHandler = popupSource.slice(grantHandlerStart, grantHandlerStart + 400);
-    const grantFunctionStart = popupSource.indexOf("async function grantMicrophoneAccess");
-    const grantFunction = popupSource.slice(grantFunctionStart, grantFunctionStart + 1000);
+    const permissionFunction = popupSource.slice(
+      permissionFunctionStart,
+      permissionFunctionStart + 600,
+    );
 
-    expect(initPopup).toContain("await refreshMicrophoneDevices();");
+    expect(initPopup).toContain("await refreshMicrophoneDevices({ showDiscoveryFailure: true });");
     expect(initPopup).not.toContain("requestAudioInputPermission");
-    expect(audioDialog).toContain('id="audio-capture-permission-btn"');
-    expect(audioDialog).toContain('id="audio-capture-permission-status"');
-    expect(audioDialog).not.toContain("macos-microphone-permission-guidance");
-    expect(audioDialog).not.toContain("macosPermissionGuidance");
-    expect(audioDialog).toContain('data-i18n="audioSettings.enableMicrophone"');
-    expect(audioDialogRegistration).toContain(
-      "void refreshMicrophoneDevices({ showDiscoveryFailure: true });",
+    expect(audioSettings).toContain('id="microphone-enabled-toggle"');
+    expect(audioSettings).toContain('aria-pressed="true"');
+    expect(popupHtml).not.toContain('id="audio-settings-dialog"');
+    expect(popupSource).not.toContain('popupDialogEntries.set("audio"');
+    expect(popupSource).not.toContain("setAudioSettingsOpen");
+    expect(toggleHandlerStart).toBeGreaterThan(-1);
+    expect(toggleHandler).toContain("toggleMicrophoneRecording()");
+    expect(toggleFunctionStart).toBeGreaterThan(-1);
+    expect(toggleFunction).toContain("await saveAudioSettings(microphoneEnabled)");
+    expect(toggleFunction).toContain(
+      "if (microphoneEnabled && !(await hasMicrophonePermission()))",
     );
-    expect(grantHandlerStart).toBeGreaterThan(-1);
-    expect(grantHandler).toContain("grantMicrophoneAccess()");
-    expect(grantFunctionStart).toBeGreaterThan(-1);
-    expect(grantFunction).toContain("resolveMicrophonePermissionPageUrl");
-    expect(grantFunction).toContain("chrome.tabs.create");
-    expect(grantFunction).not.toContain("REQUEST_MICROPHONE_PERMISSION");
-    expect(grantFunction).not.toContain("navigator.mediaDevices.getUserMedia");
+    expect(toggleFunction).toContain("await openMicrophonePermissionPage()");
+    expect(permissionFunctionStart).toBeGreaterThan(-1);
+    expect(permissionFunction).toContain("resolveMicrophonePermissionPageUrl");
+    expect(permissionFunction).toContain("chrome.tabs.create");
+    expect(permissionFunction).toContain('t("audioSettings.permissionPageOpenFailed")');
+    expect(permissionFunction).not.toContain("REQUEST_MICROPHONE_PERMISSION");
+    expect(permissionFunction).not.toContain("navigator.mediaDevices.getUserMedia");
+    expect(popupSource).not.toContain("audioCapturePermissionBtn");
     expect(popupSource).not.toContain("macosMicrophonePermissionGuidance");
     expect(popupSource).not.toContain("parseOsFromUserAgent");
     expect(popupSource).not.toContain("chrome.permissions.request");
   });
 
-  it("surfaces microphone permission and device discovery failures", () => {
-    expect(popupSource).toContain('showToast(t("audioSettings.microphonePermissionDenied")');
-    expect(popupSource).toContain('showToast(t("audioSettings.microphoneUnavailable")');
-    expect(popupSource).toContain('showToast(t("audioSettings.microphoneBusy")');
+  it("surfaces microphone device discovery failures", () => {
     expect(popupSource).toContain('showToast(t("audioSettings.deviceDiscoveryFailed")');
   });
 
@@ -202,7 +200,7 @@ describe("popup audio device dialog layout", () => {
   });
 
   it("captures selected audio device IDs before re-rendering the busy controls", () => {
-    const saveStart = popupSource.indexOf("async function saveAudioSettings()");
+    const saveStart = popupSource.indexOf("async function saveAudioSettings(");
     const saveEnd = popupSource.indexOf("function registerPopupDialogs", saveStart);
     const saveFunction = popupSource.slice(saveStart, saveEnd);
     const payloadSnapshot = saveFunction.indexOf(

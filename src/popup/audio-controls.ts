@@ -42,11 +42,11 @@ export function buildMicrophoneOptions(
 }
 
 export function buildAudioSettingsUpdate(
+  microphoneEnabled: boolean,
   microphoneDeviceId: string,
-  speakerDeviceId: string,
-): { microphoneDeviceId: string; speakerDeviceId: string } {
+): { microphoneEnabled: boolean; microphoneDeviceId: string } {
   return {
+    microphoneEnabled,
     microphoneDeviceId: microphoneDeviceId.trim(),
-    speakerDeviceId: speakerDeviceId.trim(),
   };
 }

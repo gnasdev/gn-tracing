@@ -85,49 +85,46 @@
           <span data-i18n="recording.cdpBannerWarning">Keep Chrome’s “debugging this tab” banner on. Closing it stops console, network, and storage capture.</span>
         </aside>
         <section
-          id="audio-settings-summary"
-          class="audio-source-console"
-          aria-labelledby="audio-source-console-title"
+          id="audio-settings"
+          class="audio-settings-inline"
+          aria-labelledby="audio-settings-title"
         >
-          <div class="audio-source-console-heading">
-            <span id="audio-source-console-title" class="audio-source-console-label" data-i18n="audioSummary.label">Audio</span>
-            <button
-              id="audio-settings-btn"
-              class="icon-btn audio-settings-trigger"
-              type="button"
-              aria-haspopup="dialog"
-              aria-expanded="false"
-              aria-controls="audio-settings-dialog"
-              aria-label="Open audio device settings"
-              title="Audio device settings"
-              data-i18n-aria="actions.audioSettingsAria"
-              data-i18n-title="actions.audioSettingsTitle"
-            >
-              <i class="ph ph-faders-horizontal" aria-hidden="true"></i>
-            </button>
+          <div class="audio-settings-inline-heading">
+            <span
+              id="audio-settings-title"
+              class="audio-settings-inline-label"
+              data-i18n="audioSummary.label"
+            >Audio</span>
           </div>
-          <div class="audio-source-console-list">
-            <div id="audio-settings-microphone-source" class="audio-source-console-row">
-              <span class="audio-source-console-icon" aria-hidden="true">
+          <button
+            id="microphone-enabled-toggle"
+            class="audio-microphone-toggle"
+            type="button"
+            aria-pressed="true"
+            data-i18n-aria="audioSettings.recordMicrophone"
+          >
+            <span>
+              <span class="audio-microphone-toggle-title" data-i18n="audioSettings.recordMicrophone">Record microphone</span>
+              <span class="audio-microphone-toggle-description" data-i18n="audioSettings.recordMicrophoneHint">Include your voice in new recordings.</span>
+            </span>
+            <span class="audio-microphone-toggle-control" aria-hidden="true"><span></span></span>
+          </button>
+          <section id="audio-controls" class="audio-source-picker">
+            <div class="audio-source-field">
+              <span class="audio-source-field-icon" aria-hidden="true">
                 <i class="ph ph-microphone"></i>
               </span>
-              <span class="audio-source-console-copy">
-                <span class="audio-source-console-source-label" data-i18n="audioSummary.microphone">Mic</span>
-                <span id="audio-settings-microphone-summary" class="audio-source-console-value" data-i18n="options.browserDefault">Browser default</span>
-              </span>
-              <span class="audio-source-console-status" aria-hidden="true"></span>
+              <div class="audio-source-field-content">
+                <label class="audio-source-field-label" for="microphone-device-id-input">
+                  <span class="audio-source-field-title" data-i18n="fields.microphoneDeviceId.label">Microphone</span>
+                  <span id="microphone-device-hint" class="audio-source-field-description" data-i18n="audioSettings.microphoneHint">Voice and local sound</span>
+                </label>
+                <select id="microphone-device-id-input" aria-describedby="microphone-device-hint">
+                  <option value="" data-i18n="options.browserDefault">Browser default</option>
+                </select>
+              </div>
             </div>
-            <div id="audio-settings-speaker-source" class="audio-source-console-row">
-              <span class="audio-source-console-icon" aria-hidden="true">
-                <i class="ph ph-speaker-high"></i>
-              </span>
-              <span class="audio-source-console-copy">
-                <span class="audio-source-console-source-label" data-i18n="audioSummary.systemAudio">System</span>
-                <span id="audio-settings-speaker-summary" class="audio-source-console-value" data-i18n="options.noSystemAudio">No system audio</span>
-              </span>
-              <span class="audio-source-console-status" aria-hidden="true"></span>
-            </div>
-          </div>
+          </section>
         </section>
         <div class="recording-actions-row recording-actions-secondary">
           <div class="instant-replay-section">
@@ -532,112 +529,6 @@
             (debugger banner) only on allowed domains. After a bug, click Instant Replay to annotate,
             then save to upload. Nothing leaves your browser until you save.
           </p>
-        </div>
-      </div>
-    </div>
-
-    <div
-      id="audio-settings-dialog"
-      class="popup-dialog-root hidden"
-      aria-hidden="true"
-    >
-      <button
-        type="button"
-        class="popup-dialog-backdrop"
-        data-popup-dialog-dismiss
-        tabindex="-1"
-        aria-label="Close"
-        data-i18n-aria="dialog.close"
-      ></button>
-      <div
-        id="audio-settings-panel"
-        class="popup-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="audio-settings-dialog-title"
-      >
-        <div class="popup-dialog-header">
-          <div class="section-title" id="audio-settings-dialog-title">
-            <i class="ph ph-faders-horizontal section-title-icon" aria-hidden="true"></i>
-            <span data-i18n="audioSettings.dialogTitle">Audio devices</span>
-          </div>
-          <button
-            type="button"
-            id="audio-settings-close-btn"
-            class="icon-btn popup-dialog-close"
-            aria-label="Close"
-            title="Close"
-            data-i18n-aria="dialog.close"
-            data-i18n-title="dialog.close"
-          >
-            <i class="ph ph-x" aria-hidden="true"></i>
-          </button>
-        </div>
-        <div class="popup-dialog-body audio-settings-body">
-          <p class="popup-dialog-lead" data-i18n="audioSettings.dialogLead">
-            Choose the microphone and tab audio to use for the next recording.
-          </p>
-          <section
-            id="audio-capture-permission"
-            class="audio-capture-permission"
-            aria-labelledby="audio-capture-permission-label"
-          >
-            <span class="audio-capture-permission-icon" aria-hidden="true">
-              <i class="ph ph-microphone"></i>
-            </span>
-            <div class="audio-capture-permission-copy">
-              <span id="audio-capture-permission-label" class="audio-control-label" data-i18n="audioSettings.microphoneAccess">Microphone access</span>
-              <p id="audio-capture-permission-status" class="audio-controls-hint" role="status" data-i18n="audioSettings.microphonePermissionRequired">
-                Enable microphone access to discover inputs. Your browser or macOS may ask for access next.
-              </p>
-            </div>
-            <button type="button" id="audio-capture-permission-btn" class="btn btn-secondary audio-capture-permission-btn">
-              <i class="ph ph-microphone" aria-hidden="true"></i>
-              <span data-i18n="audioSettings.enableMicrophone">Enable microphone</span>
-            </button>
-          </section>
-          <section
-            id="audio-controls"
-            class="audio-source-picker"
-            aria-labelledby="audio-source-picker-title"
-            hidden
-          >
-            <div class="audio-source-picker-heading">
-              <span id="audio-source-picker-title" class="audio-source-picker-label" data-i18n="audioSettings.inputs">Inputs</span>
-              <span id="audio-settings-save-status" class="audio-settings-save-status" role="status" aria-live="polite" hidden data-i18n="audioSettings.saving">Saving…</span>
-            </div>
-            <div class="audio-source-field">
-              <span class="audio-source-field-icon" aria-hidden="true">
-                <i class="ph ph-microphone"></i>
-              </span>
-              <div class="audio-source-field-content">
-                <label class="audio-source-field-label" for="microphone-device-id-input">
-                  <span class="audio-source-field-title" data-i18n="fields.microphoneDeviceId.label">Microphone</span>
-                  <span id="microphone-device-hint" class="audio-source-field-description" data-i18n="audioSettings.microphoneHint">Voice and local sound</span>
-                </label>
-                <select id="microphone-device-id-input" aria-describedby="microphone-device-hint">
-                  <option value="" data-i18n="options.browserDefault">Browser default</option>
-                </select>
-              </div>
-            </div>
-            <div class="audio-source-field">
-              <span class="audio-source-field-icon" aria-hidden="true">
-                <i class="ph ph-speaker-high"></i>
-              </span>
-              <div class="audio-source-field-content">
-                <label class="audio-source-field-label" for="speaker-device-id-input">
-                  <span class="audio-source-field-title-row">
-                    <span class="audio-source-field-title" data-i18n="fields.speakerDeviceId.label">System audio source (loopback)</span>
-                    <span class="audio-source-field-optional" data-i18n="audioSettings.systemAudioOptional">Optional</span>
-                  </span>
-                  <span id="speaker-device-hint" class="audio-source-field-description" data-i18n="hints.systemAudioSource">Choose a virtual loopback input such as BlackHole or Loopback to record system audio.</span>
-                </label>
-                <select id="speaker-device-id-input" aria-describedby="speaker-device-hint">
-                  <option value="" data-i18n="options.noSystemAudio">No system audio</option>
-                </select>
-              </div>
-            </div>
-          </section>
         </div>
       </div>
     </div>

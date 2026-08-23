@@ -4,7 +4,7 @@
 
 import { resolveManageCloudsPageUrl } from "../manage-clouds/page-model";
 import { resolveMicrophonePermissionPageUrl } from "../microphone-permission/page-model";
-import { isFirefoxTarget } from "../platform/detect";
+import { getFeatureFlags, isFirefoxTarget } from "../platform/detect";
 import { runRecordingStartPreflight } from "../platform/preflight/recording-start-preflight";
 import { buttonSpinnerHtml } from "../shared/button-loading";
 import { DEFAULT_DRAW_COLOR, DRAW_COLOR_PRESETS, normalizeDrawColor } from "../shared/drawing";
@@ -24,7 +24,6 @@ import {
   normalizeInstantReplayWindowSeconds,
 } from "../shared/instant-replay-window";
 import {
-  type AudioInputPermissionFailure,
   MICROPHONE_PERMISSION_RESULT_KEY,
   parseMicrophonePermissionResult,
 } from "../shared/microphone-permission";
@@ -306,11 +305,6 @@ const MIRRORED_DRIVE_CONNECTED_KEY = "gn_tracing_google_drive_connected";
 const MIRRORED_DROPBOX_CONNECTED_KEY = "gn_tracing_dropbox_connected";
 const UPLOAD_SETTINGS_KEY = "gn_tracing_upload_settings";
 
-for (const staleDialog of document.querySelectorAll<HTMLElement>("#audio-settings-dialog")) {
-  if (!staleDialog.querySelector("#speaker-device-id-input")) {
-    staleDialog.remove();
-  }
-}
 for (const legacyControl of document.querySelectorAll<HTMLInputElement>(
   "#capture-speaker-audio-input",
 )) {
@@ -318,36 +312,21 @@ for (const legacyControl of document.querySelectorAll<HTMLInputElement>(
 }
 
 const recordingActions = document.getElementById("recording-actions")!;
-const audioSettingsBtn = document.getElementById("audio-settings-btn") as HTMLButtonElement;
-const audioSettingsMicrophoneSummary = document.getElementById(
-  "audio-settings-microphone-summary",
-) as HTMLElement;
-const audioSettingsSpeakerSummary = document.getElementById(
-  "audio-settings-speaker-summary",
-) as HTMLElement;
+const microphoneEnabledToggle = document.getElementById(
+  "microphone-enabled-toggle",
+) as HTMLButtonElement;
 const microphoneDeviceIdInput = document.getElementById(
   "microphone-device-id-input",
 ) as HTMLSelectElement;
-const speakerDeviceIdInput = document.getElementById(
-  "speaker-device-id-input",
-) as HTMLSelectElement;
-const audioCapturePermissionBtn = document.getElementById(
-  "audio-capture-permission-btn",
-) as HTMLButtonElement;
-const audioCapturePermissionStatus = document.getElementById(
-  "audio-capture-permission-status",
-) as HTMLElement;
-const audioCapturePermission = document.getElementById("audio-capture-permission") as HTMLElement;
-const audioSettingsMicrophoneSource = document.getElementById(
-  "audio-settings-microphone-source",
-) as HTMLElement;
-const audioSettingsSpeakerSource = document.getElementById(
-  "audio-settings-speaker-source",
-) as HTMLElement;
-const audioSettingsSaveStatus = document.getElementById(
-  "audio-settings-save-status",
-) as HTMLElement;
-const audioControls = document.getElementById("audio-controls") as HTMLElement;
+const audioSourcePicker = document.getElementById("audio-controls") as HTMLElement;
+const audioSettingsSection = document.getElementById("audio-settings") as HTMLElement;
+// Microphone audio is only meaningful when it gets dubbed into a video
+// recording. iOS Safari has no video path at all (mediaKind "none"), so
+// showing audio device controls there would promise a feature this
+// recording can never use.
+if (!getFeatureFlags().video) {
+  audioSettingsSection.hidden = true;
+}
 const toggleBtn = document.getElementById("toggle-btn") as HTMLButtonElement;
 const removeRecordingBtn = document.getElementById("remove-recording-btn") as HTMLButtonElement;
 const screenshotBtn = document.getElementById("screenshot-btn") as HTMLButtonElement;
@@ -398,11 +377,6 @@ const uploadHistoryCloseBtn = document.getElementById(
 const uploadHistoryEntrySummary = document.getElementById("upload-history-entry-summary");
 const uploadHistoryDialogSummary = document.getElementById("upload-history-dialog-summary");
 const settingsDialog = document.getElementById("settings-dialog");
-const audioSettingsDialog = document.getElementById("audio-settings-dialog");
-const audioSettingsPanel = document.getElementById("audio-settings-panel");
-const audioSettingsCloseBtn = document.getElementById(
-  "audio-settings-close-btn",
-) as HTMLButtonElement | null;
 const settingsCloseBtn = document.getElementById("settings-close-btn") as HTMLButtonElement | null;
 const settingsFormRoot = document.getElementById("settings-form-root");
 const settingInfoPopover = document.getElementById("setting-info-popover");
@@ -425,7 +399,7 @@ let instantReplayWindowSaveInFlight = false;
 let instantReplayEnableSaveInFlight = false;
 let instantReplayCaptureInFlight = false;
 let instantReplayDomainSaveInFlight = false;
-type PopupDialogId = "feedback" | "instant-replay" | "upload-history" | "audio" | "settings";
+type PopupDialogId = "feedback" | "instant-replay" | "upload-history" | "settings";
 const popupDialogHost = new PopupDialogHost<PopupDialogId>();
 type PopupDialogEntry = {
   root: HTMLElement | null;
@@ -504,8 +478,6 @@ let activeTabRecordingCheckInFlight = false;
 let selectedDrawColor = DEFAULT_DRAW_COLOR;
 let drawColorUpdateInFlight = false;
 let audioSettingsSaveInFlight = false;
-let audioInputPermissionGranted = false;
-let audioInputPermissionRequestInFlight = false;
 let microphoneDevices: MicrophoneDeviceLike[] = [];
 
 type ToastVariant = "success" | "info" | "error";
@@ -999,23 +971,8 @@ function setUploadHistoryDialogOpen(open: boolean): void {
   setPopupDialogOpen("upload-history", open);
 }
 
-function setAudioSettingsOpen(open: boolean): void {
-  setPopupDialogOpen("audio", open);
-}
-
 function setSettingsDialogOpen(open: boolean): void {
   setPopupDialogOpen("settings", open);
-}
-
-function renderAudioInputPermissionState(): void {
-  const recordingActive = Boolean(latestPopupState?.recording?.isRecording);
-  audioControls.hidden = !audioInputPermissionGranted;
-  audioCapturePermissionBtn.hidden = audioInputPermissionGranted;
-  audioCapturePermissionBtn.disabled = recordingActive || audioInputPermissionRequestInFlight;
-  audioCapturePermissionStatus.textContent = audioInputPermissionGranted
-    ? t("audioSettings.microphonePermissionGranted")
-    : t("audioSettings.microphonePermissionRequired");
-  audioCapturePermission.classList.toggle("is-ready", audioInputPermissionGranted);
 }
 
 function renderAudioControls(
@@ -1025,6 +982,8 @@ function renderAudioControls(
     return;
   }
 
+  const microphoneEnabled = settings.microphoneEnabled !== false;
+  microphoneEnabledToggle.setAttribute("aria-pressed", String(microphoneEnabled));
   const selectedDeviceId = settings.microphoneDeviceId || "";
   const options = buildMicrophoneOptions(microphoneDevices, selectedDeviceId, {
     browserDefault: t("options.browserDefault"),
@@ -1039,54 +998,11 @@ function renderAudioControls(
     option.selected = optionData.value === selectedDeviceId;
     microphoneDeviceIdInput.append(option);
   }
-  const selectedSpeakerDeviceId = settings.speakerDeviceId || "";
-  const speakerOptions = buildMicrophoneOptions(microphoneDevices, selectedSpeakerDeviceId, {
-    browserDefault: t("options.noSystemAudio"),
-    microphone: t("fields.speakerDeviceId.label"),
-    unavailable: t("options.unavailable"),
-  });
-  speakerDeviceIdInput.replaceChildren();
-  for (const optionData of speakerOptions) {
-    const option = document.createElement("option");
-    option.value = optionData.value;
-    option.textContent = optionData.label;
-    option.selected = optionData.value === selectedSpeakerDeviceId;
-    speakerDeviceIdInput.append(option);
-  }
-  audioSettingsMicrophoneSummary.textContent =
-    microphoneDeviceIdInput.selectedOptions[0]?.textContent || t("options.browserDefault");
-  audioSettingsSpeakerSummary.textContent =
-    speakerDeviceIdInput.selectedOptions[0]?.textContent || t("options.noSystemAudio");
-  audioSettingsMicrophoneSource.classList.toggle("is-ready", audioInputPermissionGranted);
-  audioSettingsSpeakerSource.classList.toggle("is-included", Boolean(selectedSpeakerDeviceId));
-  audioSettingsSaveStatus.hidden = !audioSettingsSaveInFlight;
-  audioSettingsSaveStatus.textContent = audioSettingsSaveInFlight ? t("audioSettings.saving") : "";
-
   const recordingActive = Boolean(latestPopupState?.recording?.isRecording);
-  if (recordingActive && isPopupDialogOpen("audio")) {
-    setAudioSettingsOpen(false);
-  }
   const disabled = recordingActive || audioSettingsSaveInFlight;
-  audioSettingsBtn.disabled = disabled;
-  microphoneDeviceIdInput.disabled = disabled;
-  speakerDeviceIdInput.disabled = disabled;
-  renderAudioInputPermissionState();
-}
-
-function showAudioInputPermissionFailure(failure: AudioInputPermissionFailure): void {
-  switch (failure) {
-    case "denied":
-      showToast(t("audioSettings.microphonePermissionDenied"), 5200, { variant: "error" });
-      return;
-    case "unavailable":
-      showToast(t("audioSettings.microphoneUnavailable"), 5200, { variant: "error" });
-      return;
-    case "busy":
-      showToast(t("audioSettings.microphoneBusy"), 5200, { variant: "error" });
-      return;
-    default:
-      showToast(t("audioSettings.deviceDiscoveryFailed"), 5200, { variant: "error" });
-  }
+  microphoneEnabledToggle.disabled = disabled;
+  audioSourcePicker.hidden = !microphoneEnabled;
+  microphoneDeviceIdInput.disabled = disabled || !microphoneEnabled;
 }
 
 async function refreshMicrophoneDevices({
@@ -1132,14 +1048,16 @@ async function refreshMicrophoneDevices({
   );
 }
 
-async function saveAudioSettings(): Promise<void> {
+async function saveAudioSettings(
+  microphoneEnabled = microphoneEnabledToggle.getAttribute("aria-pressed") === "true",
+): Promise<boolean> {
   if (audioSettingsSaveInFlight || latestPopupState?.recording?.isRecording) {
-    return;
+    return false;
   }
 
   const audioSettingsUpdate = buildAudioSettingsUpdate(
+    microphoneEnabled,
     microphoneDeviceIdInput.value,
-    speakerDeviceIdInput.value,
   );
   audioSettingsSaveInFlight = true;
   renderAudioControls();
@@ -1153,8 +1071,7 @@ async function saveAudioSettings(): Promise<void> {
       showToast(result.error || t("messages.saveFailed"), 3200, {
         variant: "error",
       });
-      renderAudioControls();
-      return;
+      return false;
     }
 
     if (latestPopupState) {
@@ -1165,11 +1082,12 @@ async function saveAudioSettings(): Promise<void> {
     }
     renderAudioControls(result.settings);
     showToast(t("messages.settingsSaved"), 1400, { variant: "success" });
+    return true;
   } catch (error) {
     showToast((error as Error).message || t("messages.saveFailed"), 3200, {
       variant: "error",
     });
-    renderAudioControls();
+    return false;
   } finally {
     audioSettingsSaveInFlight = false;
     renderAudioControls();
@@ -1202,15 +1120,6 @@ function registerPopupDialogs(): void {
       renderPopupUploadHistory(currentUploadHistory, {
         animateLatestSuccess: false,
       });
-    },
-  });
-  popupDialogEntries.set("audio", {
-    root: audioSettingsDialog,
-    trigger: audioSettingsBtn,
-    focusOnOpen: microphoneDeviceIdInput,
-    onOpen: () => {
-      renderAudioInputPermissionState();
-      void refreshMicrophoneDevices({ showDiscoveryFailure: true });
     },
   });
   popupDialogEntries.set("settings", {
@@ -1659,8 +1568,8 @@ async function saveInstantReplayWindowSeconds(seconds: number): Promise<void> {
 
 type FirefoxShareFromPopup = {
   sessionId: string;
+  microphoneEnabled: boolean;
   microphoneDeviceId: string;
-  speakerDeviceId: string;
   streamPromise: Promise<MediaStream>;
 };
 
@@ -1801,8 +1710,8 @@ async function completeFirefoxPopupShare(
   await ensureRecordingHostPermission().catch(() => false);
 
   const handoff = await handoffDisplayStreamToMediaHost(stream, share.sessionId, {
+    microphoneEnabled: share.microphoneEnabled,
     microphoneDeviceId: share.microphoneDeviceId,
-    speakerDeviceId: share.speakerDeviceId,
   });
   if (!handoff.ok) {
     stream.getTracks().forEach((track) => {
@@ -2587,7 +2496,6 @@ async function refreshActiveTabRecordingAvailability(): Promise<void> {
 function updateRecordingUI(recording: RecordingStatus | null): void {
   const audioControlsDisabled = Boolean(recording?.isRecording) || audioSettingsSaveInFlight;
   microphoneDeviceIdInput.disabled = audioControlsDisabled;
-  speakerDeviceIdInput.disabled = audioControlsDisabled;
 
   if (recording?.isRecording) {
     updateInstantReplayControls({ recordingActive: true });
@@ -2789,8 +2697,8 @@ toggleBtn.addEventListener("click", async () => {
     const audioSettings = latestPopupState?.settings;
     firefoxShare = {
       sessionId: createRecordingSessionId(),
+      microphoneEnabled: audioSettings?.microphoneEnabled !== false,
       microphoneDeviceId: audioSettings?.microphoneDeviceId ?? "",
-      speakerDeviceId: audioSettings?.speakerDeviceId ?? "",
       // Do not await or hydrate settings here: getDisplayMedia must remain
       // in the original toolbar-popup click turn.
       streamPromise: beginDisplayMediaFromGesture(),
@@ -2882,7 +2790,6 @@ function wirePopupDialogDismiss(root: HTMLElement | null, close: () => void): vo
 wirePopupDialogDismiss(feedbackDialog, () => setFeedbackDialogOpen(false));
 wirePopupDialogDismiss(instantReplayDialog, () => setInstantReplaySettingsOpen(false));
 wirePopupDialogDismiss(uploadHistoryDialog, () => setUploadHistoryDialogOpen(false));
-wirePopupDialogDismiss(audioSettingsDialog, () => setAudioSettingsOpen(false));
 wirePopupDialogDismiss(settingsDialog, () => setSettingsDialogOpen(false));
 feedbackCloseBtn?.addEventListener("click", () => {
   setFeedbackDialogOpen(false);
@@ -2891,21 +2798,7 @@ settingsCloseBtn?.addEventListener("click", () => {
   setSettingsDialogOpen(false);
 });
 
-audioSettingsBtn.addEventListener("click", () => {
-  setAudioSettingsOpen(!isPopupDialogOpen("audio"));
-});
-
-audioSettingsCloseBtn?.addEventListener("click", () => {
-  setAudioSettingsOpen(false);
-});
-
-async function grantMicrophoneAccess(): Promise<void> {
-  if (audioInputPermissionRequestInFlight) {
-    return;
-  }
-
-  audioInputPermissionRequestInFlight = true;
-  renderAudioInputPermissionState();
+async function openMicrophonePermissionPage(): Promise<void> {
   try {
     await chrome.tabs.create({
       url: resolveMicrophonePermissionPageUrl((path) => chrome.runtime.getURL(path)),
@@ -2913,27 +2806,47 @@ async function grantMicrophoneAccess(): Promise<void> {
     });
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
-    showToast(detail || t("audioSettings.deviceDiscoveryFailed"), 5200, { variant: "error" });
-  } finally {
-    audioInputPermissionRequestInFlight = false;
-    renderAudioInputPermissionState();
+    showToast(detail || t("audioSettings.permissionPageOpenFailed"), 5200, { variant: "error" });
   }
 }
 
-audioCapturePermissionBtn.addEventListener("click", () => {
-  void grantMicrophoneAccess();
+async function hasMicrophonePermission(): Promise<boolean> {
+  try {
+    const status = await navigator.permissions.query({ name: "microphone" as PermissionName });
+    return status.state === "granted";
+  } catch {
+    // Some browsers reject Permissions queries for "microphone"; fall back to
+    // the result the permission page persisted after a successful grant.
+    try {
+      const stored = await chrome.storage.session.get(MICROPHONE_PERMISSION_RESULT_KEY);
+      const result = parseMicrophonePermissionResult(stored[MICROPHONE_PERMISSION_RESULT_KEY]);
+      return result?.ok === true;
+    } catch {
+      return false;
+    }
+  }
+}
+
+async function toggleMicrophoneRecording(): Promise<void> {
+  const microphoneEnabled = microphoneEnabledToggle.getAttribute("aria-pressed") !== "true";
+  if (!(await saveAudioSettings(microphoneEnabled))) {
+    return;
+  }
+  if (microphoneEnabled && !(await hasMicrophonePermission())) {
+    await openMicrophonePermissionPage();
+  }
+}
+
+microphoneEnabledToggle.addEventListener("click", () => {
+  void toggleMicrophoneRecording();
 });
 
 microphoneDeviceIdInput.addEventListener("change", () => {
   void saveAudioSettings();
 });
 
-speakerDeviceIdInput.addEventListener("change", () => {
-  void saveAudioSettings();
-});
-
 // Keep clicks inside dialog panels from reaching the backdrop.
-for (const panel of [feedbackPanel, instantReplayPanel, uploadHistoryPanel, audioSettingsPanel]) {
+for (const panel of [feedbackPanel, instantReplayPanel, uploadHistoryPanel]) {
   panel?.addEventListener("click", (event) => {
     event.stopPropagation();
   });
@@ -3549,7 +3462,6 @@ async function hydrateMicrophonePermissionResult(): Promise<void> {
       return;
     }
     if (result.ok) {
-      audioInputPermissionGranted = true;
       microphoneDevices = result.audioDevices;
       return;
     }
@@ -3612,7 +3524,7 @@ async function initPopup(): Promise<void> {
   } catch {
     // Ignore worker warmup errors.
   }
-  await refreshMicrophoneDevices();
+  await refreshMicrophoneDevices({ showDiscoveryFailure: true });
   isUploadHistoryAnimationReady = true;
 
   await refreshStorageStatus();

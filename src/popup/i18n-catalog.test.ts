@@ -18,28 +18,18 @@ describe("POPUP_TRANSLATIONS catalog", () => {
     expect(POPUP_TRANSLATIONS.vi["recording.cdpBannerWarning"]).toContain("Chrome");
   });
 
-  it("includes actionable microphone access failures", () => {
-    expect(POPUP_TRANSLATIONS.en["audioSettings.microphonePermissionDenied"]).toBeTruthy();
-    expect(POPUP_TRANSLATIONS.en["audioSettings.microphoneUnavailable"]).toBeTruthy();
-    expect(POPUP_TRANSLATIONS.en["audioSettings.microphoneBusy"]).toBeTruthy();
+  it("includes microphone toggle and discovery feedback strings", () => {
+    expect(POPUP_TRANSLATIONS.en["audioSettings.recordMicrophone"]).toBeTruthy();
+    expect(POPUP_TRANSLATIONS.en["audioSettings.recordMicrophoneHint"]).toBeTruthy();
     expect(POPUP_TRANSLATIONS.en["audioSettings.deviceDiscoveryFailed"]).toBeTruthy();
-    expect(POPUP_TRANSLATIONS.en["audioSettings.enableMicrophone"]).toBeTruthy();
-    expect(POPUP_TRANSLATIONS.en["audioSettings.microphonePermissionRequired"]).toMatch(/browser/i);
-    expect(POPUP_TRANSLATIONS.en["audioSettings.microphonePermissionGranted"]).toBeTruthy();
-    expect(POPUP_TRANSLATIONS.en["audioSettings.inputs"]).toBeTruthy();
+    expect(POPUP_TRANSLATIONS.en["audioSettings.permissionPageOpenFailed"]).toBeTruthy();
     expect(POPUP_TRANSLATIONS.en["audioSettings.microphoneHint"]).toBeTruthy();
-    expect(POPUP_TRANSLATIONS.en["audioSettings.systemAudioOptional"]).toBeTruthy();
     expect(POPUP_TRANSLATIONS.en["audioSettings.saving"]).toBeTruthy();
-    expect(POPUP_TRANSLATIONS.vi["audioSettings.microphonePermissionDenied"]).toBeTruthy();
-    expect(POPUP_TRANSLATIONS.vi["audioSettings.microphoneUnavailable"]).toBeTruthy();
-    expect(POPUP_TRANSLATIONS.vi["audioSettings.microphoneBusy"]).toBeTruthy();
+    expect(POPUP_TRANSLATIONS.vi["audioSettings.recordMicrophone"]).toBeTruthy();
+    expect(POPUP_TRANSLATIONS.vi["audioSettings.recordMicrophoneHint"]).toBeTruthy();
     expect(POPUP_TRANSLATIONS.vi["audioSettings.deviceDiscoveryFailed"]).toBeTruthy();
-    expect(POPUP_TRANSLATIONS.vi["audioSettings.enableMicrophone"]).toBeTruthy();
-    expect(POPUP_TRANSLATIONS.vi["audioSettings.microphonePermissionRequired"]).toBeTruthy();
-    expect(POPUP_TRANSLATIONS.vi["audioSettings.microphonePermissionGranted"]).toBeTruthy();
-    expect(POPUP_TRANSLATIONS.vi["audioSettings.inputs"]).toBeTruthy();
+    expect(POPUP_TRANSLATIONS.vi["audioSettings.permissionPageOpenFailed"]).toBeTruthy();
     expect(POPUP_TRANSLATIONS.vi["audioSettings.microphoneHint"]).toBeTruthy();
-    expect(POPUP_TRANSLATIONS.vi["audioSettings.systemAudioOptional"]).toBeTruthy();
     expect(POPUP_TRANSLATIONS.vi["audioSettings.saving"]).toBeTruthy();
   });
 
