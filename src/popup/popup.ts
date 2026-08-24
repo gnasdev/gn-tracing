@@ -4,7 +4,7 @@
 
 import { resolveManageCloudsPageUrl } from "../manage-clouds/page-model";
 import { resolveMicrophonePermissionPageUrl } from "../microphone-permission/page-model";
-import { getFeatureFlags, isFirefoxTarget } from "../platform/detect";
+import { getFeatureFlags, isFirefoxTarget, isSafariTarget } from "../platform/detect";
 import { runRecordingStartPreflight } from "../platform/preflight/recording-start-preflight";
 import { buttonSpinnerHtml } from "../shared/button-loading";
 import { DEFAULT_DRAW_COLOR, DRAW_COLOR_PRESETS, normalizeDrawColor } from "../shared/drawing";
@@ -1567,6 +1567,11 @@ async function saveInstantReplayWindowSeconds(seconds: number): Promise<void> {
   }
 }
 
+/**
+ * Named for the Firefox path this originated from; also used for Safari now
+ * (both engines have no chrome.tabCapture, so both need a getDisplayMedia
+ * gesture — see the isFirefoxTarget() || isSafariTarget() gate below).
+ */
 type FirefoxShareFromPopup = {
   sessionId: string;
   microphoneEnabled: boolean;
@@ -1577,11 +1582,13 @@ type FirefoxShareFromPopup = {
 /**
  * Start a full recording session.
  *
- * Firefox preferred path: the click handler already opened the OS share picker
- * via getDisplayMedia (same user gesture) — no intermediate "Choose what to share"
- * panel. This function waits for the stream, parks the media host only after the
- * picker is live, hands off tracks, then START_RECORDING with mediaPrearmed.
- * Fallback: normal START_RECORDING (media-host auto-arm, then tab-frame).
+ * Firefox/Safari preferred path: the click handler already opened the OS share
+ * picker via getDisplayMedia (same user gesture) — no intermediate "Choose what
+ * to share" panel, and no extra tab/window just to show that trigger. This
+ * function waits for the stream, parks the (invisible, 1x1) media host only
+ * after the picker is live, hands off tracks, then START_RECORDING with
+ * mediaPrearmed. Fallback (engine rejected/blocked the popup gesture, unproven
+ * on Safari): normal START_RECORDING (media-host auto-arm, then tab-frame).
  */
 async function startRecordingSession(options?: {
   /** Preflight already kicked off in the click turn (preserves Firefox gesture). */
@@ -2688,13 +2695,17 @@ toggleBtn.addEventListener("click", async () => {
   // Use last-known UI state so Stop clicks do not open share/permission UI.
   const looksLikeStart = !latestPopupState?.recording?.isRecording;
 
-  // Firefox Start: open the OS share picker in this same click (user gesture)
-  // before any await — no intermediate "Choose what to share" panel, and do
-  // not park offscreen.html first (that window is only for MediaRecorder after
-  // share succeeds). Host permission runs after the stream is live.
+  // Firefox/Safari Start: open the OS share picker in this same click (user
+  // gesture) before any await — no intermediate "Choose what to share" panel,
+  // no extra tab/window just to show that trigger, and do not park
+  // offscreen.html first (that window is only for MediaRecorder after share
+  // succeeds). Host permission runs after the stream is live. Safari's
+  // behavior here is unproven; completeFirefoxPopupShare falls back to the
+  // media-host auto-arm popup window (then tab-frame) if the engine rejects
+  // the popup gesture.
   let firefoxShare: FirefoxShareFromPopup | null = null;
   let preflightPromise: Promise<void> = Promise.resolve();
-  if (looksLikeStart && isFirefoxTarget()) {
+  if (looksLikeStart && (isFirefoxTarget() || isSafariTarget())) {
     const audioSettings = latestPopupState?.settings;
     firefoxShare = {
       sessionId: createRecordingSessionId(),

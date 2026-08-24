@@ -94,7 +94,7 @@ describe("popup pre-requests host permission without a grant-only tab", () => {
     expect(popupSource).toContain("runRecordingStartPreflight");
     const clickAt = popupSource.indexOf('toggleBtn.addEventListener("click"');
     expect(clickAt).toBeGreaterThan(-1);
-    const clickBody = popupSource.slice(clickAt, clickAt + 2400);
+    const clickBody = popupSource.slice(clickAt, clickAt + 2700);
     expect(clickBody).toContain("beginDisplayMediaFromGesture");
     expect(clickBody).toContain("startRecordingSession({");
     expect(clickBody).toContain("firefoxShare");

@@ -12,6 +12,7 @@ import {
   findMediaHostView,
   handoffDisplayStreamToMediaHost,
   isMediaHostViewUrl,
+  parkMediaHostWindowFromPopup,
 } from "./popup-display-capture";
 
 describe("buildDisplayMediaConstraints", () => {
@@ -136,6 +137,42 @@ describe("handoffDisplayStreamToMediaHost", () => {
     });
     expect(result.ok).toBe(false);
     expect(result.error).toMatch(/not open/i);
+  });
+});
+
+describe("parkMediaHostWindowFromPopup", () => {
+  it("uses chrome.windows.create as a real popup window, not DOM window.open", () => {
+    // window.open's "popup" feature string is not reliably honored by Firefox
+    // from inside a toolbar-action popup — it can silently open a tab instead.
+    // chrome.windows.create({type:"popup"}) is the privileged API and does not
+    // have that failure mode.
+    const createWindow = vi.fn();
+    parkMediaHostWindowFromPopup(
+      createWindow,
+      (path) => `moz-extension://id/${path}`,
+      "offscreen/offscreen.html",
+      () => false,
+    );
+    expect(createWindow).toHaveBeenCalledWith(
+      expect.objectContaining({
+        url: "moz-extension://id/offscreen/offscreen.html",
+        type: "popup",
+        width: 1,
+        height: 1,
+        focused: false,
+      }),
+    );
+  });
+
+  it("does not open a second host window when one is already open", () => {
+    const createWindow = vi.fn();
+    parkMediaHostWindowFromPopup(
+      createWindow,
+      (path) => `moz-extension://id/${path}`,
+      "offscreen/offscreen.html",
+      () => true,
+    );
+    expect(createWindow).not.toHaveBeenCalled();
   });
 });
 

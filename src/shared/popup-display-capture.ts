@@ -104,30 +104,44 @@ export function findMediaHostView(
   return null;
 }
 
-/** Named window so repeated Start clicks reuse one media host. */
-export const MEDIA_HOST_WINDOW_NAME = "gn-tracing-media-host";
-
 /**
  * Open (or reuse) the media-host page for track handoff / MediaRecorder.
  * Prefer calling this *after* the OS share picker is already up (or the stream
  * is live) so the user is not shown offscreen.html instead of the picker.
- * Window is tiny; packaging minimizes it once capture is armed.
+ *
+ * Uses chrome.windows.create (a "real" OS popup window), not DOM window.open:
+ * Firefox does not reliably honor window.open's "popup" feature string when
+ * called from inside a toolbar-action popup — it can silently open a browser
+ * tab instead, which is exactly the visible-tab behavior this exists to avoid.
+ * chrome.windows.create({type:"popup"}) does not hand back a Window reference
+ * (needed to postMessage-transfer the live tracks), so the caller still finds
+ * it afterwards via waitForMediaHostView()/getViews(), same as before.
  */
 export function parkMediaHostWindowFromPopup(
-  openWindow: (url: string, target: string, features: string) => Window | null = (
-    url,
-    target,
-    features,
-  ) => window.open(url, target, features),
+  createWindow: (createData: chrome.windows.CreateData) => void = (createData) => {
+    void chrome.windows.create(createData);
+  },
   getUrl: (path: string) => string = (path) => chrome.runtime.getURL(path),
   mediaPagePath = "offscreen/offscreen.html",
-): Window | null {
+  hasExistingView: () => boolean = () => findMediaHostView(undefined, mediaPagePath) !== null,
+): void {
+  // A previous session's host page may still be open (e.g. cleanup raced);
+  // window.open's named-target reuse doesn't apply to chrome.windows.create.
+  if (hasExistingView()) {
+    return;
+  }
   try {
-    const url = getUrl(mediaPagePath);
-    // Small unfocused-looking popup: MediaRecorder only; not a chooser UI.
-    return openWindow(url, MEDIA_HOST_WINDOW_NAME, "popup,width=1,height=1,left=0,top=0");
+    createWindow({
+      url: getUrl(mediaPagePath),
+      type: "popup",
+      width: 1,
+      height: 1,
+      left: 0,
+      top: 0,
+      focused: false,
+    });
   } catch {
-    return null;
+    // Best-effort; waitForMediaHostView() times out and the caller falls back.
   }
 }
 
