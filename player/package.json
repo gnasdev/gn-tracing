@@ -1,6 +1,6 @@
 {
   "name": "gn-tracing-player",
-  "version": "1.7.14",
+  "version": "1.7.15",
   "description": "Standalone GN Tracing replay player (production: public/player.js + gn-core)",
   "license": "GPL-3.0-or-later",
   "type": "module",
