@@ -1,18 +1,19 @@
-import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
+import http from "node:http";
 import os from "node:os";
 import path from "node:path";
-import { promisify } from "node:util";
+import { chromium } from "@playwright/test";
 import sharp from "sharp";
-
-const execFileAsync = promisify(execFile);
+import { buildReplayFixturePackage } from "./lib/build-replay-fixture.mjs";
 
 const rootDir = path.resolve(new URL("..", import.meta.url).pathname);
 const outDir = path.join(rootDir, "store-assets");
 const capturesDir = path.join(outDir, "captures");
 const screenshotsDir = path.join(outDir, "screenshots");
-const tempDir = path.join(outDir, ".tmp");
-const chromeBin = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+const extensionDir = path.join(rootDir, "dist", "chrome");
+const playerPublicDir = path.join(rootDir, "player", "public");
+
+const FIXTURE_REPLAY_ID = "gn-tracing-store-assets-fixture";
 
 const colors = {
   bg0: "#07111f",
@@ -34,7 +35,7 @@ const storeShots = [
     file: "01-popup-recording-controls.png",
     capture: "popup-recording.png",
     title: ["Record tab", "with context"],
-    copy: ["Actual popup recording state:", "timer, queue, stats, and Drive."],
+    copy: ["Actual popup recording state:", "live timer, audio, and stats."],
     badge: "Extension popup",
     screenshot: { x: 560, y: 72, w: 374, h: 650 },
   },
@@ -42,7 +43,7 @@ const storeShots = [
     file: "02-popup-privacy-and-drive-settings.png",
     capture: "popup-privacy.png",
     title: ["Privacy controls", "before upload"],
-    copy: ["Payload capture is opt-in.", "Sensitive headers are redacted."],
+    copy: ["Redaction is on by default —", "headers, params, and values masked."],
     badge: "Capture settings",
     screenshot: { x: 560, y: 72, w: 374, h: 650 },
   },
@@ -78,10 +79,6 @@ function esc(value) {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
-}
-
-function fileUrl(filePath) {
-  return `file://${filePath}`;
 }
 
 function text(x, y, value, size, fill = colors.white, weight = 700, extra = "") {
@@ -125,193 +122,396 @@ function svgRoot(width, height, body) {
   </svg>`;
 }
 
-function baseHtml(title, css, body, script = "") {
-  return `<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>${esc(title)}</title>
-  <style>${css}</style>
-</head>
-${body}
-${script ? `<script>${script}</script>` : ""}
-</html>`;
-}
+// ---------------------------------------------------------------------------
+// Capture stage: drives the real built extension (dist/chrome) in Playwright
+// Chromium, the same technique e2e/record-evidence.spec.ts uses. Screenshots
+// come from the real popup/player DOM and real (seeded) app state — never
+// from hand-authored HTML fixtures — so they cannot drift from the real UI
+// the way a hardcoded fixture script can.
+// ---------------------------------------------------------------------------
 
-function readBody(html) {
-  const match = html.match(/<body([^>]*)>([\s\S]*?)<\/body>/i);
-  if (!match) {
-    throw new Error("Unable to extract body from HTML file");
-  }
-  return `<body${match[1]}>${match[2].replace(/<script[\s\S]*?<\/script>/gi, "")}</body>`;
-}
-
-async function makePopupCapture(name, fixtureScript) {
-  const popupHtml = await fs.readFile(path.join(rootDir, "popup", "popup.html"), "utf8");
-  const popupCss = await fs.readFile(path.join(rootDir, "popup", "popup.css"), "utf8");
-  const body = readBody(popupHtml);
-  const css = `${popupCss}
-    body { width: 380px; min-height: 720px; background: #0b1425; }
-    #app { min-height: 720px; }
-  `;
-  const htmlPath = path.join(tempDir, `${name}.html`);
-  await fs.writeFile(htmlPath, baseHtml(name, css, body, fixtureScript), "utf8");
-  await captureChrome(htmlPath, path.join(capturesDir, `${name}.png`), 380, 720);
-}
-
-async function makePlayerCapture(name, mode) {
-  const playerHtml = await fs.readFile(
-    path.join(rootDir, "player", "public", "player.html"),
-    "utf8",
-  );
-  const playerCss = await fs.readFile(path.join(rootDir, "player", "public", "player.css"), "utf8");
-  const iconCss = await fs
-    .readFile(path.join(rootDir, "player", "public", "icons", "phosphor-icons.css"), "utf8")
-    .catch(() => "");
-  const body = readBody(playerHtml);
-  const script = mode === "intro" ? playerIntroScript() : playerReplayScript();
-  const htmlPath = path.join(tempDir, `${name}.html`);
-  await fs.writeFile(htmlPath, baseHtml(name, `${iconCss}\n${playerCss}`, body, script), "utf8");
-  await captureChrome(htmlPath, path.join(capturesDir, `${name}.png`), 1280, 800);
-}
-
-async function makeHistoryCapture() {
-  // History lives in the popup dialog now; capture that surface for store shots.
-  await makePopupCapture("history-page", historyScript());
-}
-
-async function captureChrome(htmlPath, outPath, width, height) {
-  const profileDir = await fs.mkdtemp(path.join(os.tmpdir(), "gn-tracing-store-assets-"));
+async function assertExtensionBuilt() {
   try {
-    await execFileAsync(
-      chromeBin,
-      [
-        "--headless=new",
-        "--disable-gpu",
-        "--disable-dev-shm-usage",
-        "--hide-scrollbars",
-        "--no-first-run",
-        "--allow-file-access-from-files",
-        `--user-data-dir=${profileDir}`,
-        `--window-size=${width},${height}`,
-        `--screenshot=${outPath}`,
-        fileUrl(htmlPath),
-      ],
-      { timeout: 20000 },
+    await fs.access(path.join(extensionDir, "manifest.json"));
+  } catch {
+    throw new Error(
+      `Built extension not found at ${path.relative(rootDir, extensionDir)}. Run: npm run build`,
     );
-  } finally {
-    await fs.rm(profileDir, { recursive: true, force: true });
   }
 }
 
-function popupRecordingScript() {
-  return `
-    document.getElementById('status-bar').classList.remove('hidden');
-    document.getElementById('timer').textContent = '02:18';
-    document.getElementById('toggle-btn').textContent = 'Stop Recording';
-    document.getElementById('toggle-btn').className = 'btn btn-stop';
-    document.getElementById('pause-resume-btn').classList.remove('hidden');
-    document.getElementById('stats').classList.remove('hidden');
-    document.getElementById('console-count').textContent = '18';
-    document.getElementById('network-count').textContent = '124';
-    document.getElementById('google-drive-status').textContent = 'Connected';
-    document.getElementById('google-drive-connect-btn').classList.add('hidden');
-    document.getElementById('google-drive-disconnect-btn').classList.remove('hidden');
-    document.getElementById('google-drive-folder-input').disabled = false;
-    document.getElementById('google-drive-folder-input').value = '/QA/Replays';
-    document.getElementById('google-drive-folder-hint').textContent = 'Uploads will be saved under QA/Replays.';
-    document.getElementById('capture-websocket-frames-input').checked = true;
-    document.getElementById('session-list').innerHTML = '<div class="session-item"><div class="session-item-header"><div class="session-item-title">Checkout regression capture</div><div class="session-item-badge phase-uploading">Recording</div></div><div class="session-item-meta">example-app.local/checkout · video, console, network, WebSocket</div></div>';
-    document.getElementById('popup-upload-history-list').innerHTML = '<div class="history-item"><div class="history-item-title">Checkout bug replay</div><div class="history-item-meta">Uploaded today · 02:41 · 124 requests</div><div class="history-item-actions"><button>Open</button><button>Copy link</button></div></div>';
-  `;
+async function launchExtensionContext(profileDir) {
+  return chromium.launchPersistentContext(profileDir, {
+    headless: false,
+    args: [
+      "--headless=new",
+      `--disable-extensions-except=${extensionDir}`,
+      `--load-extension=${extensionDir}`,
+    ],
+  });
 }
 
-function popupPrivacyScript() {
-  return `
-    document.getElementById('google-drive-status').textContent = 'Connected';
-    document.getElementById('google-drive-connect-btn').classList.add('hidden');
-    document.getElementById('google-drive-disconnect-btn').classList.remove('hidden');
-    document.getElementById('google-drive-folder-input').disabled = false;
-    document.getElementById('google-drive-folder-input').value = 'https://drive.google.com/drive/folders/QA-Replays';
-    document.getElementById('google-drive-folder-hint').textContent = 'Using folder: QA Replays.';
-    document.getElementById('capture-request-bodies-input').checked = false;
-    document.getElementById('capture-response-bodies-input').checked = false;
-    document.getElementById('capture-websocket-frames-input').checked = false;
-    document.getElementById('session-list').innerHTML = '<div class="session-empty">Connect Drive, choose privacy settings, then start recording.</div>';
-    document.getElementById('popup-upload-history-list').innerHTML = '<div class="history-item"><div class="history-item-title">Payment validation replay</div><div class="history-item-meta">Readable by link after upload · headers redacted</div><div class="history-item-actions"><button>Open</button><button>Copy link</button></div></div>';
-  `;
+async function waitForServiceWorker(context) {
+  const existing = context.serviceWorkers()[0];
+  if (existing) {
+    return existing;
+  }
+  return context.waitForEvent("serviceworker", { timeout: 20_000 });
 }
 
-function playerIntroScript() {
-  return `
-    document.getElementById('loading-state').classList.add('hidden');
-    document.getElementById('intro-state').classList.remove('hidden');
-  `;
+/** Reads the extension's real default popup state (installed fresh into a clean profile). */
+async function readBaseState(serviceWorker) {
+  const result = await serviceWorker.evaluate(() => chrome.storage.session.get("gn_tracing_state"));
+  return result.gn_tracing_state;
 }
 
-function playerReplayScript() {
-  return `
-    document.getElementById('loading-state').classList.add('hidden');
-    const player = document.getElementById('player-state');
-    player.classList.remove('hidden');
-    player.dataset.layoutMode = 'horizontal';
-    player.style.setProperty('--player-split-percent', '58');
-    document.getElementById('player-title').textContent = 'Checkout bug - 2026-05-12 10:18';
-    document.getElementById('recording-duration').textContent = '02:41';
-    document.getElementById('current-time').textContent = '01:04';
-    document.getElementById('total-duration').textContent = '02:41';
-    document.getElementById('played-bar').style.width = '40%';
-    document.getElementById('buffered-bar').style.width = '78%';
-    document.getElementById('progress-handle').style.left = '40%';
-    document.getElementById('video-player').outerHTML = '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:#f8fafc;color:#101827;font:700 28px -apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;"><div style="width:74%;height:62%;border-radius:14px;background:linear-gradient(#eef3fb,#f8fafc);box-shadow:inset 0 0 0 1px #d9e3f2;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;"><div style="width:52%;height:34px;border-radius:10px;background:#dfe7f3;"></div><div style="width:68%;height:14px;border-radius:8px;background:#c5d0df;"></div><div style="width:46%;height:46px;border-radius:10px;background:#4361ee;color:white;display:flex;align-items:center;justify-content:center;">Checkout</div></div></div>';
-    document.getElementById('console-entries').innerHTML = [
-      ['00:17', 'info', 'cart loaded in 321ms', 'src/cart.ts:48'],
-      ['00:31', 'warn', 'retrying /api/tax after timeout', 'src/api/tax.ts:73'],
-      ['01:04', 'error', 'payment validation failed: missing billing country', 'src/checkout.ts:141'],
-      ['01:12', 'log', 'checkout state synchronized', 'src/store.ts:27']
-    ].map(([time, level, message, source]) => '<div class="console-entry '+(level === 'error' ? 'error-entry active-entry' : '')+'"><span class="console-time">'+time+'</span><span class="console-level '+level+'">'+level.toUpperCase()+'</span><span class="console-message">'+message+'<span class="console-source-location">'+source+'</span></span></div>').join('');
-    document.getElementById('network-rows').innerHTML = [
-      ['GET','/assets/app.js','200','script','42 KB','success'],
-      ['POST','/api/checkout','422','fetch','2.8 KB','error'],
-      ['GET','/api/products','200','fetch','18 KB','success'],
-      ['WS','wss://events.example','open','websocket','24 msg','success'],
-      ['GET','/styles/main.css','200','stylesheet','9 KB','success']
-    ].map(([method, url, status, type, size, cls], index) => '<div class="network-row '+(index === 1 ? 'active' : '')+'"><button class="toggle-expand">›</button><span class="col-method">'+method+'</span><span class="col-url">'+url+'</span><span class="col-status '+cls+'">'+status+'</span><span class="col-type">'+type+'</span><span class="col-size">'+size+'</span></div>').join('');
-    document.getElementById('network-summary').textContent = '124 requests · 3 errors · 1 socket';
-  `;
+/** Writes narrative-overridden state back to the real storage key the popup reads on load. */
+async function seedState(serviceWorker, state) {
+  await serviceWorker.evaluate(
+    (value) => chrome.storage.session.set({ gn_tracing_state: value }),
+    state,
+  );
 }
 
-function historyScript() {
-  return `
-    const dialog = document.getElementById('upload-history-dialog');
-    if (dialog) {
-      dialog.classList.remove('hidden');
-      dialog.setAttribute('aria-hidden', 'false');
+/**
+ * Seeds real upload history into `chrome.storage.local` (the key the service
+ * worker's `getUploadHistory()` actually reads). Must run before the first
+ * popup opens: the popup's `GET_SETTINGS` reply carries the service worker's
+ * own in-memory cache of this list, which is loaded (and then cached) on its
+ * first read — seeding `chrome.storage.session` state alone is not enough,
+ * since that reply overwrites the session-state paint moments after load.
+ */
+async function seedUploadHistory(serviceWorker, entries) {
+  await serviceWorker.evaluate(
+    (value) => chrome.storage.local.set({ gn_tracing_upload_history: value }),
+    entries,
+  );
+}
+
+/**
+ * Mocks the popup's cloud-connection status check at the message boundary
+ * (`STORAGE_STATUS`) so the popup renders a "connected" cloud UI without a
+ * real OAuth token. Every other message passes through to the real service
+ * worker untouched.
+ */
+async function addConnectedStorageMock(page) {
+  await page.addInitScript(() => {
+    const original = chrome.runtime.sendMessage.bind(chrome.runtime);
+    chrome.runtime.sendMessage = (...args) => {
+      const message = args[0];
+      if (
+        message &&
+        (message.action === "STORAGE_STATUS" || message.action === "GOOGLE_DRIVE_STATUS")
+      ) {
+        const response = { ok: true, isConnected: true };
+        const callback = args[args.length - 1];
+        if (typeof callback === "function") {
+          callback(response);
+          return undefined;
+        }
+        return Promise.resolve(response);
+      }
+      return original(...args);
+    };
+  });
+}
+
+async function openPopup(context, extensionId, { mockConnectedStorage = false } = {}) {
+  const page = await context.newPage();
+  if (mockConnectedStorage) {
+    await addConnectedStorageMock(page);
+  }
+  await page.setViewportSize({ width: 380, height: 1000 });
+  await page.goto(`chrome-extension://${extensionId}/popup/popup.html`, {
+    waitUntil: "domcontentloaded",
+  });
+  await page.waitForSelector("#app", { state: "attached" });
+  // Let initPopup() finish its async bootstrap (storage reads, GET_SETTINGS,
+  // storage status refresh) before painting.
+  await page.waitForTimeout(400);
+  return page;
+}
+
+async function screenshotPopup(page, outPath) {
+  // Not fullPage: fullPage's scroll-and-stitch can fight the popup dialogs'
+  // own internal scroll position, so a plain viewport screenshot (after any
+  // scrollIntoViewIfNeeded calls) is what actually matches what's on screen.
+  const buffer = await page.screenshot();
+  await sharp(buffer).png({ compressionLevel: 9 }).toFile(outPath);
+}
+
+async function capturePopupRecording(context, extensionId, serviceWorker, baseState) {
+  const now = Date.now();
+  const elapsedMs = 138_000; // 02:18
+  await seedState(serviceWorker, {
+    ...baseState,
+    recording: {
+      phase: "recording",
+      sessionId: "store-assets-demo-session",
+      isRecording: true,
+      tabId: 1,
+      startTime: now - elapsedMs,
+      stopTime: null,
+      tabUrl: "https://shop.example.com/checkout",
+      elapsedMs,
+      elapsedUpdatedAt: now,
+      consoleLogCount: 18,
+      networkRequestCount: 124,
+    },
+    sessions: [
+      {
+        id: "store-assets-demo-session",
+        phase: "recorded",
+        startTime: now - elapsedMs,
+        stopTime: null,
+        elapsedMs,
+        tabUrl: "https://shop.example.com/checkout",
+        consoleLogCount: 18,
+        networkRequestCount: 124,
+        hasLocalSnapshot: true,
+        progress: 0,
+        uploadedBytes: 0,
+        totalBytes: 0,
+        message: "",
+        items: [],
+        recordingUrl: null,
+        recordingFolderId: null,
+        indexFileId: null,
+        error: null,
+      },
+    ],
+    storage: { provider: "google-drive", isConnected: true },
+    googleDrive: { isConnected: true },
+  });
+
+  const page = await openPopup(context, extensionId, { mockConnectedStorage: true });
+  await screenshotPopup(page, path.join(capturesDir, "popup-recording.png"));
+  await page.close();
+}
+
+async function capturePopupPrivacy(context, extensionId, serviceWorker, baseState) {
+  await seedState(serviceWorker, {
+    ...baseState,
+    storage: { provider: "google-drive", isConnected: true },
+    googleDrive: { isConnected: true },
+  });
+
+  const page = await openPopup(context, extensionId, { mockConnectedStorage: true });
+  await page.click("#settings-page-btn");
+  await page.waitForSelector("#settings-dialog:not(.hidden)");
+  // Redaction is on by default (see popup/popup.html), so no interaction is
+  // needed to demonstrate it — just scroll the real Privacy & Redaction
+  // section into view.
+  // scrollIntoViewIfNeeded only scrolls the minimum distance (the section
+  // heading ends up right at the viewport edge); align it to the top instead
+  // so the actual redaction toggles are comfortably in frame.
+  await page
+    .locator("#redact-sensitive-headers-input")
+    .evaluate((el) => el.scrollIntoView({ block: "start" }));
+  await page.waitForTimeout(200);
+
+  await screenshotPopup(page, path.join(capturesDir, "popup-privacy.png"));
+  await page.close();
+}
+
+async function capturePopupHistory(context, extensionId, serviceWorker, baseState) {
+  await seedState(serviceWorker, {
+    ...baseState,
+    storage: { provider: "google-drive", isConnected: true },
+    googleDrive: { isConnected: true },
+  });
+
+  const page = await openPopup(context, extensionId, { mockConnectedStorage: true });
+  await page.click("#upload-history-page-btn");
+  await page.waitForSelector("#upload-history-dialog:not(.hidden)");
+  // Move off the just-clicked button so no hover/focus ring is in the shot.
+  await page.mouse.move(40, 40);
+  await page.waitForTimeout(200);
+  await screenshotPopup(page, path.join(capturesDir, "history-page.png"));
+  await page.close();
+}
+
+/** Minimal static file server for `player/public`, mirroring the e2e loopback pattern. */
+function startStaticServer(rootPath) {
+  const contentTypes = {
+    ".html": "text/html; charset=utf-8",
+    ".js": "text/javascript; charset=utf-8",
+    ".css": "text/css; charset=utf-8",
+    ".json": "application/json; charset=utf-8",
+    ".svg": "image/svg+xml",
+    ".png": "image/png",
+    ".woff2": "font/woff2",
+  };
+  const server = http.createServer(async (req, res) => {
+    try {
+      const url = new URL(req.url, "http://127.0.0.1");
+      const relPath = url.pathname === "/" ? "/player.html" : url.pathname;
+      const filePath = path.join(rootPath, decodeURIComponent(relPath));
+      if (!filePath.startsWith(rootPath)) {
+        res.writeHead(403);
+        res.end();
+        return;
+      }
+      const body = await fs.readFile(filePath);
+      const ext = path.extname(filePath);
+      res.writeHead(200, { "content-type": contentTypes[ext] || "application/octet-stream" });
+      res.end(body);
+    } catch {
+      res.writeHead(404);
+      res.end("Not found");
     }
-    document.body.classList.add('popup-dialog-open');
-    const summary = document.getElementById('upload-history-dialog-summary');
-    if (summary) {
-      summary.textContent = '3 recent uploads · reopen replay links or copy for teammates.';
-    }
-    const list = document.getElementById('popup-upload-history-list');
-    if (list) {
-      list.innerHTML = [
-        ['Checkout bug replay', 'Today · 02:41 · 124 requests'],
-        ['WebSocket reconnect issue', 'Yesterday · 01:38 · 6 socket frames'],
-        ['Pricing page slow API', 'May 10 · 03:12 · 218 requests']
-      ].map(([title, meta]) => '<div class="history-item"><div class="history-item-title">'+title+'</div><div class="history-item-meta">'+meta+'</div><div class="history-item-actions"><button type="button">Open replay</button><button type="button">Copy link</button></div></div>').join('');
-    }
-  `;
+  });
+  return new Promise((resolve, reject) => {
+    server.on("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      resolve({ server, url: `http://127.0.0.1:${address.port}` });
+    });
+  });
+}
+
+async function capturePlayerIntro(browser) {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+  const { server, url } = await startStaticServer(playerPublicDir);
+  try {
+    await page.goto(`${url}/player.html`, { waitUntil: "load" });
+    await page.waitForSelector("#intro-state:not(.hidden)", { timeout: 10_000 });
+    const buffer = await page.screenshot();
+    await sharp(buffer)
+      .png({ compressionLevel: 9 })
+      .toFile(path.join(capturesDir, "player-intro.png"));
+  } finally {
+    await page.close();
+    await new Promise((resolve) => server.close(resolve));
+  }
+}
+
+async function capturePlayerReplay(browser, replayZip) {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+  const { server, url } = await startStaticServer(playerPublicDir);
+  try {
+    // Standalone player.html (no drive-adapter) fetches Drive downloads
+    // directly rather than through a same-origin `/api/drive` proxy.
+    await page.route("https://drive.usercontent.google.com/**", async (route) => {
+      const requestUrl = new URL(route.request().url());
+      if (requestUrl.searchParams.get("id") === FIXTURE_REPLAY_ID) {
+        await route.fulfill({ status: 200, contentType: "application/zip", body: replayZip });
+        return;
+      }
+      await route.continue();
+    });
+
+    await page.goto(`${url}/player.html?id=${FIXTURE_REPLAY_ID}`, { waitUntil: "load" });
+    await page.waitForSelector("#player-state:not(.hidden)", { timeout: 20_000 });
+    await page.click("#console-tab");
+
+    // Console/network entries reveal progressively up to the current playback
+    // position, so drag the real progress bar near the end (a real seek, not
+    // a direct `video.currentTime` write) to reveal the seeded entries.
+    const progressBox = await page.locator("#progress-wrapper").boundingBox();
+    const seekX = progressBox.x + progressBox.width * 0.85;
+    const seekY = progressBox.y + progressBox.height / 2;
+    await page.mouse.move(progressBox.x, seekY);
+    await page.mouse.down();
+    await page.mouse.move(seekX, seekY, { steps: 8 });
+    await page.mouse.up();
+    await page.waitForFunction(() => {
+      const video = document.querySelector("#video-player");
+      return Boolean(video) && !video.seeking;
+    });
+    await page.waitForTimeout(800);
+    // Move off the progress bar so its hover tooltip isn't in the shot.
+    await page.mouse.move(40, 40);
+
+    const buffer = await page.screenshot();
+    await sharp(buffer)
+      .png({ compressionLevel: 9 })
+      .toFile(path.join(capturesDir, "player-replay.png"));
+  } finally {
+    await page.close();
+    await new Promise((resolve) => server.close(resolve));
+  }
 }
 
 async function buildCaptures() {
-  await makePopupCapture("popup-recording", popupRecordingScript());
-  await makePopupCapture("popup-privacy", popupPrivacyScript());
-  await makePlayerCapture("player-intro", "intro");
-  await makePlayerCapture("player-replay", "replay");
-  await makeHistoryCapture();
+  await assertExtensionBuilt();
+
+  // A real (not ephemeral) profile directory: seeding storage.local requires
+  // restarting the extension so its service worker re-reads it fresh (see
+  // seedUploadHistory's doc comment), which means closing and reopening the
+  // browser against the same on-disk profile — same as a real restart.
+  const profileDir = await fs.mkdtemp(path.join(os.tmpdir(), "gn-tracing-store-assets-"));
+
+  const seedContext = await launchExtensionContext(profileDir);
+  const seedServiceWorker = await waitForServiceWorker(seedContext);
+
+  const now = Date.now();
+  await seedUploadHistory(seedServiceWorker, [
+    {
+      id: "hist-1",
+      uploadedAt: now - 2 * 60 * 60 * 1000,
+      pageUrl: "https://shop.example.com/checkout",
+      recordingUrl: "https://tracing.gnas.dev/gdrive/demo-checkout-bug",
+      recordingFolderId: "demo-folder-1",
+      targetFolderId: "demo-folder-1",
+      durationMs: 161_000,
+      provider: "google-drive",
+    },
+    {
+      id: "hist-2",
+      uploadedAt: now - 26 * 60 * 60 * 1000,
+      pageUrl: "https://app.example.com/settings/websockets",
+      recordingUrl: "https://tracing.gnas.dev/gdrive/demo-ws-reconnect",
+      recordingFolderId: "demo-folder-1",
+      targetFolderId: "demo-folder-1",
+      durationMs: 98_000,
+      provider: "google-drive",
+    },
+    {
+      id: "hist-3",
+      uploadedAt: now - 9 * 24 * 60 * 60 * 1000,
+      pageUrl: "https://shop.example.com/pricing",
+      recordingUrl: "https://tracing.gnas.dev/gdrive/demo-pricing-slow-api",
+      recordingFolderId: "demo-folder-1",
+      targetFolderId: "demo-folder-1",
+      durationMs: 192_000,
+      provider: "google-drive",
+    },
+  ]);
+
+  // Close and reopen against the same on-disk profile so the extension's
+  // next service worker starts fresh and reads the seeded history from
+  // scratch, instead of the first worker's already-cached (empty) read.
+  await seedContext.close();
+
+  const extensionContext = await launchExtensionContext(profileDir);
+  try {
+    const serviceWorker = await waitForServiceWorker(extensionContext);
+    const extensionId = new URL(serviceWorker.url()).host;
+    const baseState = await readBaseState(serviceWorker);
+
+    await capturePopupRecording(extensionContext, extensionId, serviceWorker, baseState);
+    await capturePopupPrivacy(extensionContext, extensionId, serviceWorker, baseState);
+    await capturePopupHistory(extensionContext, extensionId, serviceWorker, baseState);
+  } finally {
+    await extensionContext.close();
+    await fs.rm(profileDir, { recursive: true, force: true });
+  }
+
+  const browser = await chromium.launch();
+  try {
+    const replayZip = await buildReplayFixturePackage();
+    await capturePlayerIntro(browser);
+    await capturePlayerReplay(browser, replayZip);
+  } finally {
+    await browser.close();
+  }
 }
+
+// ---------------------------------------------------------------------------
+// Compose stage: unchanged from the previous pipeline. Frames each real
+// capture with the marketing background, badge, title, and copy.
+// ---------------------------------------------------------------------------
 
 async function renderStoreScreenshot(config) {
   const width = 1280;
@@ -401,7 +601,19 @@ async function writeReadme() {
 
 Generated by \`npm run store:assets\`.
 
-The screenshots in this folder are composed from real captures of the extension popup, upload history page, and player pages. The temporary HTML fixtures load the repository's actual page markup and CSS, then populate representative state before Chrome headless captures each page.
+The screenshots in this folder are real captures of the built extension
+(\`dist/chrome\`) and the hosted player, driven by Playwright Chromium — the
+same technique \`e2e/record-evidence.spec.ts\` uses. Popup screenshots open the
+real \`popup.html\` inside the loaded extension and seed real app state
+(\`chrome.storage.session\`) on top of the extension's own real defaults; the
+player-replay screenshot loads a real recording package built through the
+production package writer (\`packages/replay-core/src/write\`), served by
+mocking only the \`/api/drive\` download endpoint. No hand-authored HTML
+fixtures or DOM state scripts are involved, so these screenshots cannot drift
+from the real UI silently.
+
+Requires \`npm run build\` (produces \`dist/chrome\`) and
+\`npx playwright install chromium\` before running \`npm run store:assets\`.
 
 ## Upload Files
 
@@ -409,7 +621,7 @@ The screenshots in this folder are composed from real captures of the extension 
 - \`small-promo-440x280.png\` - Small promo tile.
 - \`marquee-promo-1400x560.png\` - Optional marquee promo tile.
 - \`screenshots/01-popup-recording-controls.png\`
-- \`screenshots/02-popup-privacy-and-drive-settings.png\`
+- \`screenshots/02-popup-privacy-and-drive-settings.png\` (filename historical; content is privacy + cloud storage settings)
 - \`screenshots/03-player-introduction-page.png\`
 - \`screenshots/04-player-replay-inspector.png\`
 - \`screenshots/05-upload-history-page.png\`
@@ -432,12 +644,10 @@ async function verifyImage(file, width, height) {
 async function main() {
   await fs.mkdir(outDir, { recursive: true });
   await fs.rm(path.join(outDir, "sources"), { recursive: true, force: true });
-  await fs.rm(tempDir, { recursive: true, force: true });
   await fs.rm(capturesDir, { recursive: true, force: true });
   await fs.rm(screenshotsDir, { recursive: true, force: true });
   await fs.mkdir(capturesDir, { recursive: true });
   await fs.mkdir(screenshotsDir, { recursive: true });
-  await fs.mkdir(tempDir, { recursive: true });
 
   await fs.copyFile(path.join(rootDir, "icons", "icon128.png"), path.join(outDir, "icon-128.png"));
   await buildCaptures();
@@ -447,7 +657,6 @@ async function main() {
   }
   await renderPromoAssets();
   await writeReadme();
-  await fs.rm(tempDir, { recursive: true, force: true });
 
   const rendered = [
     await verifyImage(path.join(outDir, "icon-128.png"), 128, 128),
