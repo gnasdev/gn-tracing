@@ -71,6 +71,7 @@ import {
 } from "./audio-controls";
 import { PopupDialogHost } from "./dialog-host";
 import { POPUP_TRANSLATIONS, type PopupLanguage } from "./i18n-catalog";
+import { attachVirtualScrollbar } from "./virtual-scrollbar";
 
 const TRANSLATIONS: Record<PopupLanguage, Record<string, string>> = {
   en: { ...SETTINGS_FORM_TRANSLATIONS.en, ...POPUP_TRANSLATIONS.en },
@@ -3625,6 +3626,13 @@ themePreferenceUi = attachThemePreferenceInputs({
 
 registerPopupDialogs();
 attachSectionInfoButtons();
+
+// Floating overlay thumb for the #app scroll surface; native bar is hidden
+// in popup.css because Chromium reserves layout width for it.
+const appScrollSurface = document.getElementById("app");
+if (appScrollSurface) {
+  attachVirtualScrollbar(appScrollSurface);
+}
 
 if (settingsFormRoot) {
   settingsForm = attachSettingsForm({

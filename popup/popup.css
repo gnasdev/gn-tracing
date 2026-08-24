@@ -42,6 +42,56 @@ body.popup-dialog-open #app {
   overflow: hidden;
 }
 
+/* ---------- Floating virtual scrollbar ---------- */
+/* Chromium has no overlay scrollbars, so the native bar would steal layout
+   width from the 380px popup. Hide it and let JS paint a floating thumb
+   instead (src/popup/virtual-scrollbar.ts). */
+#app {
+  scrollbar-width: none;
+}
+
+#app::-webkit-scrollbar {
+  display: none;
+}
+
+.gn-vscroll {
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  right: 2px;
+  width: 12px;
+  z-index: 60;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-fast, 120ms) var(--ease-standard, ease);
+  touch-action: none;
+}
+
+.gn-vscroll.is-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.gn-vscroll-thumb {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 5px;
+  margin-left: -2.5px;
+  border-radius: var(--radius-full);
+  background: var(--scrollbar-thumb);
+  transition:
+    background var(--dur-fast, 120ms) var(--ease-standard, ease),
+    width var(--dur-fast, 120ms) var(--ease-standard, ease);
+}
+
+.gn-vscroll:hover .gn-vscroll-thumb,
+.gn-vscroll.is-dragging .gn-vscroll-thumb {
+  width: 7px;
+  margin-left: -3.5px;
+  background: var(--scrollbar-thumb-hover);
+}
+
 /* ---------- Header ---------- */
 /* Popup reuses brand/action classes from theme but is not a full-page
    sticky bar. Brand + timer left; icon tools right. */
