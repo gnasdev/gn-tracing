@@ -2423,7 +2423,7 @@ function setButtonLabel(button: HTMLButtonElement, icon: string, label: string):
 
 function renderStopAndUploadLoading(recording: RecordingStatus | null): void {
   setButtonLabel(toggleBtn, getLoadingIcon(), t("actions.stopping"));
-  toggleBtn.className = "btn btn-success is-loading";
+  toggleBtn.className = "btn btn-start is-loading";
   toggleBtn.disabled = true;
   toggleBtn.setAttribute("aria-busy", "true");
   toggleBtn.setAttribute("title", t("actions.stoppingTitle"));
@@ -2507,7 +2507,7 @@ function updateRecordingUI(recording: RecordingStatus | null): void {
     }
 
     setButtonLabel(toggleBtn, getDoneRecordingIcon(), t("actions.done"));
-    toggleBtn.className = "btn btn-success";
+    toggleBtn.className = "btn btn-start";
     toggleBtn.removeAttribute("aria-busy");
     recordingActions.classList.add("is-recording");
     recordingActions.classList.remove("has-unavailable-reason");

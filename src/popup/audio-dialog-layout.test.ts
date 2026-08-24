@@ -180,7 +180,7 @@ describe("popup inline audio controls layout", () => {
     expect(popupSource).toContain('showToast(t("audioSettings.deviceDiscoveryFailed")');
   });
 
-  it("uses a success Done action and an icon-only accessible discard action", () => {
+  it("uses a primary Done action and an icon-only accessible discard action", () => {
     const discardButtonId = popupHtml.indexOf('id="remove-recording-btn"');
     const discardButtonStart = popupHtml.lastIndexOf("<button", discardButtonId);
     const discardButtonEnd = popupHtml.indexOf("</button>", discardButtonStart);
@@ -191,9 +191,9 @@ describe("popup inline audio controls layout", () => {
     expect(discardButton).toContain('<i class="ph ph-trash"');
     expect(discardButton).not.toContain('data-i18n="actions.discard"');
     expect(popupSource).toContain('t("actions.done")');
-    expect(popupSource).toContain('toggleBtn.className = "btn btn-success"');
+    expect(popupSource).toContain('toggleBtn.className = "btn btn-start"');
     expect(popupSource).toContain("Icons.check()");
-    expect(themeCss).toContain(".btn-success {");
+    expect(themeCss).toContain(".btn-start {");
     expect(popupCss).toMatch(
       /#remove-recording-btn \{[\s\S]*?width: 42px;[\s\S]*?padding-inline: 0;/,
     );
