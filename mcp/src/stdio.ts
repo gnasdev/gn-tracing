@@ -17,13 +17,21 @@ import {
   DEFAULT_PLAYER_ORIGIN,
   ReplayError,
 } from "../../packages/replay-core/src/index";
-import { handleMessage, parseJsonRpcLine, type ServerInfo } from "./protocol";
+import {
+  ERROR_CODES,
+  errorResponse,
+  handleMessage,
+  type JsonRpcResponse,
+  parseJsonRpcLine,
+  type ServerInfo,
+} from "./protocol";
 import { createRecordingStore, type RecordingLocator, type RecordingStore } from "./resolver";
 import { createToolRegistry, SERVER_INSTRUCTIONS } from "./tools";
+import { MCP_SERVER_VERSION } from "./version";
 
 export const SERVER_INFO: ServerInfo = {
   name: "gn-tracing",
-  version: "1.0.0",
+  version: MCP_SERVER_VERSION,
   instructions: SERVER_INSTRUCTIONS,
 };
 
@@ -127,7 +135,6 @@ export async function createFileSource(path: string): Promise<ByteRangeSource> {
 export interface StdioStreams {
   input: NodeJS.ReadableStream;
   output: NodeJS.WritableStream;
-  errorOutput?: NodeJS.WritableStream;
 }
 
 /**
@@ -142,7 +149,8 @@ export async function runStdioServer(store: RecordingStore, streams: StdioStream
   const decoder = new TextDecoder();
   let buffer = "";
 
-  const write = (response: unknown) => {
+  // Typed as a response rather than `unknown`: stdout carries protocol frames only.
+  const write = (response: JsonRpcResponse) => {
     streams.output.write(`${JSON.stringify(response)}\n`);
   };
 
@@ -159,11 +167,7 @@ export async function runStdioServer(store: RecordingStore, streams: StdioStream
       const parsed = parseJsonRpcLine(line);
       if (!parsed.ok) {
         if (line.trim()) {
-          write({
-            jsonrpc: "2.0",
-            id: null,
-            error: { code: -32700, message: "Could not parse JSON-RPC message." },
-          });
+          write(errorResponse(null, ERROR_CODES.parseError, "Could not parse JSON-RPC message."));
         }
         continue;
       }

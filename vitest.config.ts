@@ -52,13 +52,18 @@ export default defineConfig({
   },
   test: {
     ...sharedTestConfig,
-    // Scope this (root) context to extension sources, shared packages, and root
-    // test helpers only. Player-standalone and worker have their own configs and
-    // are run separately by `task test:all`; without this override the root run
-    // would execute every repo test under the wrong runtime.
+    // Scope this (root) context to extension sources, shared packages, the
+    // local MCP server, and root test helpers only. Player-standalone and
+    // worker have their own configs and are run separately by `task test:all`;
+    // without this override the root run would execute every repo test under
+    // the wrong runtime. `mcp/**` belongs here rather than in its own context:
+    // it is plain Node TypeScript with no browser globals and no dependencies
+    // of its own beyond `packages/replay-core`, so a separate runner and a
+    // second vitest install would buy nothing.
     include: [
       "src/**/*.{test,spec}.ts",
       "packages/**/*.{test,spec}.ts",
+      "mcp/**/*.{test,spec}.ts",
       "edge/**/*.{test,spec}.ts",
       "test/**/*.{test,spec}.ts",
     ],

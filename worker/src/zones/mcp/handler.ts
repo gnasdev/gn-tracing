@@ -18,22 +18,24 @@
  * general-purpose fetcher.
  */
 
-import { handleMessage } from "../../../../mcp/src/protocol";
+import {
+  dispatchMessages,
+  ERROR_CODES,
+  SUPPORTED_PROTOCOL_VERSIONS,
+} from "../../../../mcp/src/protocol";
 import { createToolRegistry, SERVER_INSTRUCTIONS } from "../../../../mcp/src/tools";
-import { isMcpEnabled } from "../../env";
-import { isDeclaredBodyTooLarge } from "../../http/body";
+import { MCP_SERVER_VERSION } from "../../../../mcp/src/version";
+import { type Env, isMcpEnabled } from "../../env";
+import { readJsonBody } from "../../http/body";
 import { mcpRateLimiter } from "../../middleware/rate-limit";
-import { MAX_REMOTE_ENTRY_BYTES, MAX_REMOTE_PACKAGE_BYTES, MAX_REQUEST_BODY_BYTES } from "./limits";
+import { MAX_BATCH_MESSAGES, MAX_REQUEST_BODY_BYTES } from "./limits";
 import { createRemoteRecordingStore } from "./remote-store";
 
-export interface McpEnv {
-  MCP_ENABLED?: string;
-  PLAYER_ORIGIN?: string;
-}
+export type McpEnv = Pick<Env, "MCP_ENABLED" | "PLAYER_ORIGIN">;
 
 export const MCP_SERVER_INFO = {
   name: "gn-tracing-remote",
-  version: "1.0.0",
+  version: MCP_SERVER_VERSION,
   instructions: SERVER_INSTRUCTIONS,
 };
 
@@ -69,46 +71,79 @@ function jsonRpcError(code: number, message: string, status = 200): Response {
 
 export async function handleMcpRequest(request: Request, env: McpEnv): Promise<Response> {
   if (!isMcpEnabled(env)) {
-    return jsonRpcError(-32601, "The remote MCP endpoint is disabled on this deployment.", 404);
+    return jsonRpcError(
+      ERROR_CODES.methodNotFound,
+      "The remote MCP endpoint is disabled on this deployment.",
+      404,
+    );
   }
 
-  if (isDeclaredBodyTooLarge(request, MAX_REQUEST_BODY_BYTES)) {
-    return jsonRpcError(-32600, "Request body is too large.", 413);
+  // A JSON content type is required, not just conventional: `text/plain` is
+  // CORS-simple, so without this any page could POST here from a visitor's
+  // browser with no preflight, spending that visitor's IP and rate-limit budget
+  // on requests they never made.
+  const essence = (request.headers.get("Content-Type") ?? "").split(";")[0]?.trim().toLowerCase();
+  if (essence !== "application/json" && !essence?.endsWith("+json")) {
+    return jsonRpcError(
+      ERROR_CODES.invalidRequest,
+      "Send a JSON-RPC message with Content-Type: application/json.",
+      415,
+    );
+  }
+
+  // MCP requires a 400 for an unsupported `MCP-Protocol-Version`. An absent
+  // header is legal — the spec tells the server to assume `2025-03-26` — so only
+  // a present-and-unknown value fails.
+  const protocolVersion = request.headers.get("MCP-Protocol-Version");
+  if (
+    protocolVersion != null &&
+    !(SUPPORTED_PROTOCOL_VERSIONS as readonly string[]).includes(protocolVersion.trim())
+  ) {
+    return jsonRpcError(
+      ERROR_CODES.invalidRequest,
+      `Unsupported MCP-Protocol-Version. This server speaks ${SUPPORTED_PROTOCOL_VERSIONS.join(", ")}.`,
+      400,
+    );
   }
 
   if (!(await mcpRateLimiter.consume(request)).allowed) {
     return jsonRpcError(
-      -32000,
+      ERROR_CODES.rateLimited,
       "Rate limit reached for this IP. Try again later, or run the local gn-tracing MCP server.",
       429,
     );
   }
 
-  let payload: unknown;
-  try {
-    payload = await request.json();
-  } catch {
-    return jsonRpcError(-32700, "Could not parse JSON-RPC message.", 400);
+  // Reads the body itself rather than trusting Content-Length: a chunked or
+  // header-less POST declares no length, so a header-only check would wave
+  // through an arbitrarily large body straight into JSON.parse.
+  const body = await readJsonBody(request, MAX_REQUEST_BODY_BYTES);
+  if (!body.ok) {
+    return body.reason === "too_large"
+      ? jsonRpcError(ERROR_CODES.invalidRequest, "Request body is too large.", 413)
+      : jsonRpcError(ERROR_CODES.parseError, "Could not parse JSON-RPC message.", 400);
+  }
+
+  const batched = Array.isArray(body.value);
+  const messages = batched ? (body.value as unknown[]) : [body.value];
+  if (messages.length > MAX_BATCH_MESSAGES) {
+    return jsonRpcError(
+      ERROR_CODES.invalidRequest,
+      `A batch may hold at most ${MAX_BATCH_MESSAGES} messages. Send them as separate requests.`,
+      413,
+    );
   }
 
   const store = createRemoteRecordingStore(env);
   const tools = createToolRegistry(store);
+  const responses = await dispatchMessages(messages.map(stripPassword), tools, MCP_SERVER_INFO);
 
-  // A batch is a JSON array of messages; notifications produce no response.
-  const messages = Array.isArray(payload) ? payload : [payload];
-  const responses = [];
-  for (const message of messages) {
-    const response = await handleMessage(stripPassword(message), tools, MCP_SERVER_INFO);
-    if (response) {
-      responses.push(response);
-    }
-  }
-
+  // A body of nothing but notifications yields no response at all.
   if (responses.length === 0) {
     return new Response(null, { status: 202, headers: mcpCorsHeaders() });
   }
 
-  return new Response(JSON.stringify(Array.isArray(payload) ? responses : responses[0]), {
+  return new Response(JSON.stringify(batched ? responses : responses[0]), {
     status: 200,
     headers: { "Content-Type": "application/json", ...mcpCorsHeaders() },
   });
@@ -132,11 +167,3 @@ function stripPassword(message: unknown): unknown {
   }
   return message;
 }
-
-// Env-shaped helper re-export for tests that imported isMcpEnabled from mcp-route.
-export {
-  createRemoteRecordingStore,
-  isMcpEnabled,
-  MAX_REMOTE_ENTRY_BYTES,
-  MAX_REMOTE_PACKAGE_BYTES,
-};

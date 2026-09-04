@@ -43,7 +43,7 @@ Player production không chạy từ Cloudflare Pages. `gn-tracing-player-router
 
 Một route có version chưa đăng ký trả `404 release_not_found`; nó không được rơi sang release mới nhất. Player response có `x-gn-player-release`; Worker response có `x-gn-worker-release`. Route không có version còn có `x-gn-release-alias: latest`.
 
-`task player:deploy` deploy Cloudflare Pages cũ. Không dùng lệnh đó để phát hành Player tại `tracing.gnas.dev`.
+Phát hành Player tại `tracing.gnas.dev` chỉ qua `task player:release:upload` rồi `task edge:player:deploy`. Không có task `player:deploy`; Cloudflare Pages hosting cũ đã bỏ.
 
 ## Chạy local
 

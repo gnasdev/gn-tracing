@@ -10,13 +10,14 @@ import {
   ReplayError,
 } from "../../../../packages/replay-core/src/index";
 import type { Env } from "../../env";
-import { MAX_REMOTE_PACKAGE_BYTES } from "./limits";
+import { MAX_REMOTE_ENTRY_BYTES, MAX_REMOTE_PACKAGE_BYTES } from "./limits";
 
 export function createRemoteRecordingStore(env: Pick<Env, "PLAYER_ORIGIN">) {
   const playerOrigin = (env.PLAYER_ORIGIN ?? "").trim() || DEFAULT_PLAYER_ORIGIN;
 
   return createRecordingStore({
     allowLocalFiles: false,
+    maxEntryBytes: MAX_REMOTE_ENTRY_BYTES,
     openSource: async (locator) => {
       if (locator.kind !== "remote") {
         throw new ReplayError(

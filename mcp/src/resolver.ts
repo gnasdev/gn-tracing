@@ -44,6 +44,13 @@ export interface RecordingStoreOptions {
   allowLocalFiles?: boolean;
   /** Most recordings kept open at once. */
   maxCached?: number;
+  /**
+   * Per-entry read ceiling, forwarded to {@link openRecordingPackage}. A
+   * transport with a small memory budget must set this: without it the reader's
+   * 32 MB default applies, and a single highly compressible artifact can inflate
+   * to that size inside a Worker isolate.
+   */
+  maxEntryBytes?: number;
 }
 
 export interface RecordingStore {
@@ -148,7 +155,10 @@ export function createRecordingStore(options: RecordingStoreOptions): RecordingS
     }
 
     const source = await options.openSource(locator, { password });
-    const pkg = await openRecordingPackage(source, { password });
+    const pkg = await openRecordingPackage(source, {
+      password,
+      ...(options.maxEntryBytes === undefined ? {} : { maxEntryBytes: options.maxEntryBytes }),
+    });
     const opened: OpenedRecording = {
       recordingId,
       locator,
@@ -184,6 +194,16 @@ export function createRecordingStore(options: RecordingStoreOptions): RecordingS
       }
       if (locator.kind === "local" && !options.allowLocalFiles) {
         throw new ReplayError("INVALID_SOURCE", "This server does not read local files.");
+      }
+      // A recording id normally comes from `open`, which validated the ref. It
+      // can also be typed straight into a follow-up call, so the allow-list is
+      // re-checked here rather than trusted — otherwise an unvalidated provider
+      // id reaches the download proxy and burns an upstream round-trip.
+      if (locator.kind === "remote" && !isSupportedRecordingRef(locator.ref)) {
+        throw new ReplayError(
+          "UNSUPPORTED_PROVIDER",
+          "That replay id is not one the download proxies accept.",
+        );
       }
       const cached = cache.get(recordingId);
       return openLocator(locator, callOptions.password ?? cached?.password);

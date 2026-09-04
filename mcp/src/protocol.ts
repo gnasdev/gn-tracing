@@ -24,6 +24,12 @@ export const ERROR_CODES = {
   methodNotFound: -32601,
   invalidParams: -32602,
   internalError: -32603,
+  /**
+   * Implementation-defined range (-32000 … -32099). Used for transport refusals
+   * that are neither a malformed request nor a tool failure — today only the
+   * remote endpoint's per-IP rate limit.
+   */
+  rateLimited: -32000,
 } as const;
 
 export type JsonRpcId = string | number | null;
@@ -130,6 +136,30 @@ export async function handleMessage(
     default:
       return errorResponse(id, ERROR_CODES.methodNotFound, `Unknown method: ${request.method}`);
   }
+}
+
+/**
+ * Handles a batch of already-parsed messages, dropping notification nulls.
+ *
+ * Both transports need exactly this loop — stdio over newline-delimited frames,
+ * the Worker over a JSON array — and both need it serial: the recording cache in
+ * `createRecordingStore` opens one package per id, so concurrent calls against a
+ * fresh id would each download the zip directory before any of them populated
+ * the cache.
+ */
+export async function dispatchMessages(
+  messages: unknown[],
+  tools: ToolRegistry,
+  serverInfo: ServerInfo,
+): Promise<JsonRpcResponse[]> {
+  const responses: JsonRpcResponse[] = [];
+  for (const message of messages) {
+    const response = await handleMessage(message, tools, serverInfo);
+    if (response) {
+      responses.push(response);
+    }
+  }
+  return responses;
 }
 
 function buildInitializeResult(

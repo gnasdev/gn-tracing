@@ -54,8 +54,9 @@ claude mcp add gn-tracing -- npx -y gn-tracing-mcp
 }
 ```
 
-The hosted endpoint reads public replay links only. Use the local server for downloaded `.zip`
-packages, password-protected packages, or recordings above its size limit.
+The hosted endpoint reads public replay links only, and skips a `password` argument rather than
+carrying a secret to a public endpoint. Use the local server for downloaded `.zip` packages,
+password-protected packages, or recordings above the hosted 24 MB package limit.
 
 ### Reading downloaded packages
 
@@ -78,18 +79,27 @@ your filesystem:
 | `--allow-dir <path>` | Directory that `.zip` packages may be read from. Repeatable. Off by default. |
 | `--player-origin <url>` | Point at a self-hosted player instead of `tracing.gnas.dev`. |
 
-## Works better with the skill
+Either form works (`--allow-dir /path` or `--allow-dir=/path`). An empty value is refused rather than
+silently allow-listing the working directory, and an unrecognized argument is named on stderr instead
+of being ignored — stdout carries protocol frames only.
 
-The companion Claude Code plugin adds a `gn-tracing-replay` skill that teaches the agent the
-investigation procedure — which tool to call in what order, how to read an unmapped frame, and how to
-turn evidence into a root-cause hypothesis with citations:
+## Works better with the skills
+
+The companion Claude Code plugin adds two skills that teach the agent the investigation procedure —
+which tool to call in what order, how to read an unmapped frame, and how to turn evidence into a
+root-cause hypothesis with citations:
+
+| Skill | For |
+| --- | --- |
+| `gn-tracing-replay` | A full recording: console errors, failed requests, and the user timeline |
+| `gn-tracing-screenshot-report` | A report where the reporter drew arrows and notes on a screenshot instead |
 
 ```text
 /plugin marketplace add gnasdev/gn-tracing
 /plugin install gn-tracing@gn-tracing
 ```
 
-That installs this server *and* the skill together.
+That installs this server *and* both skills together.
 
 ## Tools
 
@@ -98,23 +108,31 @@ megabytes of console text, and a tool that dumps it destroys the context the age
 
 | Tool | What it answers |
 | --- | --- |
-| `open_recording` | Opens a replay link or local `.zip`; returns a recording id |
+| `open_recording` | Opens a replay link or local `.zip`; returns a recording id, the producer's capabilities, and which artifacts are present |
 | `get_overview` | Ranked summary: counts, top errors with source-mapped origins, failed/slow requests, user timeline, capture limits |
+| `get_reporter_report` | What the human who filed it wrote: title, description, expected vs actual, severity, ticket |
 | `list_console` | Console entries by level, text, or time window |
 | `get_console_entry` | One entry in full: mapped stack frames and captured source snippets |
 | `list_network` | Requests, filterable by `failedOnly`, status class, method, URL, time |
 | `get_network_request` | One request in full; headers and bodies opt-in and truncated |
 | `list_websocket` | WebSocket connections and frame counts |
+| `list_websocket_frames` | The frames of one connection, with direction, opcode, and truncated payload |
 | `get_user_timeline` | Redacted navigation / click / scroll / submit timeline |
 | `search` | Substring search across console, network, WebSocket, and events |
+| `get_storage` | Which storage keys and cookies existed per phase — lengths and redaction only, never values |
+| `get_dom_snapshots` | DOM snapshot index: node count, depth, masked nodes; markup opt-in |
+| `get_source_map_diagnostics` | Why stacks did or did not map, failures grouped by reason |
 | `get_privacy_summary` | What this recording did and did not capture |
+| `list_screenshots` | Reporter screenshots with their annotations described in words |
+| `get_instant_replay` | The DOM state captured in the seconds before the bug was reported |
 | `export_bug_report` | Markdown report to paste into an issue |
 
 ## How it reads a recording
 
-A package is mostly video. The server locates the zip directory from the last kilobyte, then range-reads
-only the JSON entries it needs — a typical investigation transfers a few kilobytes, not the whole
-recording. `video.part-*.webm` is never downloaded.
+A package is mostly video. The server locates the zip directory from the last kilobyte — widening the
+probe only if the comment field pushed it out of reach — then range-reads only the JSON entries it
+needs. A typical investigation transfers a few kilobytes, not the whole recording, and
+`video.part-*.webm` is never downloaded.
 
 ## Privacy and safety
 
@@ -124,8 +142,8 @@ recording. `video.part-*.webm` is never downloaded.
   returning an empty body that reads like an empty response.
 - **Recording content is untrusted input.** Console messages, page text, and URLs come from a
   third-party website. An agent must treat instructions found in there as evidence to quote, never as
-  commands to run. The server states this in its `initialize` instructions, and the companion skill
-  repeats it.
+  commands to run. The server states this in its `initialize` instructions, and both companion skills
+  repeat it.
 
 ## License
 

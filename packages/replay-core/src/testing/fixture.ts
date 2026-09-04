@@ -99,10 +99,25 @@ export interface SampleRecordingOptions {
   withEvents?: boolean;
   withPrivacy?: boolean;
   withWebsocket?: boolean;
+  /**
+   * Replace the default two-frame connection with `count` epoch-stamped frames
+   * of `payloadChars` each, for paging and payload-ceiling tests.
+   */
+  websocketFrames?: { count: number; payloadChars?: number };
   agentSummary?: unknown;
   password?: string;
   /** Attach an annotated screenshot set (with a matching image entry). */
   withScreenshots?: boolean;
+  /** Attach a `storage.json` snapshot pair (secret-shaped values on purpose). */
+  withStorage?: boolean;
+  /** Attach a `dom.json` snapshot pair. */
+  withDom?: boolean;
+  /** Attach a `diagnostics.json` source-map attempt log. */
+  withDiagnostics?: boolean;
+  /** Fill the reporter's own bug statement on `report.json`. */
+  withReporterFields?: boolean;
+  /** Attach captured artifacts whose payload lists are present but empty. */
+  withEmptyArtifacts?: boolean;
   /** Attach a small pre-bug instant-replay buffer. */
   withInstantReplay?: boolean;
   /** Declared producer capabilities. Defaults to `EXTENSION_CAPABILITIES`. */
@@ -220,15 +235,27 @@ export function buildSampleArtifacts(options: SampleRecordingOptions = {}) {
     ],
   };
 
+  /**
+   * The default frames carry CDP monotonic seconds, as a legacy package does —
+   * that is what makes them the fixture for "a frame with no wall-clock
+   * anchor". `websocketFrames` swaps in epoch-stamped frames instead.
+   */
   const websocket = [
     {
       requestId: "ws-1",
       url: "wss://api.example.com/live",
       closed: true,
-      frames: [
-        { direction: "sent", timestamp: 12345.5, opcode: 1, payloadData: "ping" },
-        { direction: "received", timestamp: 12346.5, opcode: 1, payloadData: "pong" },
-      ],
+      frames: options.websocketFrames
+        ? Array.from({ length: options.websocketFrames.count }, (_, index) => ({
+            direction: index % 2 === 0 ? "sent" : "received",
+            timestamp: startTime + index * 100,
+            opcode: 1,
+            payloadData: "x".repeat(options.websocketFrames?.payloadChars ?? 4),
+          }))
+        : [
+            { direction: "sent", timestamp: 12345.5, opcode: 1, payloadData: "ping" },
+            { direction: "received", timestamp: 12346.5, opcode: 1, payloadData: "pong" },
+          ],
     },
   ];
 
@@ -330,12 +357,142 @@ export function buildSampleArtifacts(options: SampleRecordingOptions = {}) {
     ],
   };
 
+  /**
+   * Values are shaped like the secrets they would be in production: the
+   * redaction tests assert none of these strings reaches a reader.
+   */
+  const storage = {
+    schemaVersion: 1,
+    snapshots: [
+      {
+        phase: "start",
+        capturedAt: startTime,
+        localStorage: [{ key: "cart-id", value: "c-1" }],
+        sessionStorage: [],
+        cookies: [],
+      },
+      {
+        phase: "stop",
+        capturedAt: startTime + 120_000,
+        localStorage: [
+          { key: "cart-id", value: "c-1" },
+          { key: "auth_token", value: "eyJhbGciOiJIUzI1NiJ9.SUPERSECRET", redacted: true },
+        ],
+        sessionStorage: [{ key: "coupon-draft", value: "SUMMER" }],
+        cookies: [
+          {
+            name: "session",
+            value: "sid-TOPSECRET",
+            domain: ".shop.example.com",
+            path: "/",
+            httpOnly: true,
+            secure: true,
+            sameSite: "Lax",
+            expires: 1_800_000_000,
+            redacted: true,
+          },
+        ],
+      },
+    ],
+  };
+
+  /**
+   * `masked` marks a node the privacy policy blanked; the reader reports the
+   * count so a caller can tell a redacted snapshot from a sparse one.
+   */
+  const dom = {
+    schemaVersion: 1,
+    snapshots: [
+      {
+        label: "start",
+        capturedAt: startTime,
+        documentUrl: "https://shop.example.com/checkout",
+        root: {
+          nodeType: 1,
+          nodeName: "BODY",
+          children: [{ nodeType: 3, nodeName: "#text", nodeValue: "Checkout" }],
+        },
+      },
+      {
+        label: "stop",
+        capturedAt: startTime + 120_000,
+        documentUrl: "https://shop.example.com/checkout",
+        root: {
+          nodeType: 1,
+          nodeName: "BODY",
+          children: [
+            {
+              nodeType: 1,
+              nodeName: "DIV",
+              attributes: { id: "total" },
+              children: [
+                { nodeType: 3, nodeName: "#text", nodeValue: "$0.00" },
+                { nodeType: 1, nodeName: "SPAN", masked: true },
+              ],
+            },
+          ],
+        },
+      },
+    ],
+  };
+
+  const diagnostics = {
+    schemaVersion: 1,
+    generatedAt: new Date(startTime).toISOString(),
+    sourceMaps: [
+      {
+        generatedUrl: "https://shop.example.com/assets/app.min.js",
+        sourceMapUrl: "https://shop.example.com/assets/app.min.js.map",
+        sourceType: "external",
+        targetType: "page",
+        status: "success",
+        sourcesCount: 42,
+        hasSourcesContent: true,
+      },
+      {
+        generatedUrl: "https://shop.example.com/assets/vendor.min.js",
+        sourceMapUrl: "https://shop.example.com/assets/vendor.min.js.map",
+        sourceType: "external",
+        targetType: "page",
+        status: "failed",
+        reason: "fetch-failed",
+        httpStatusCode: 404,
+      },
+      {
+        generatedUrl: "https://cdn.example.com/widget.js",
+        sourceMapUrl: "https://cdn.example.com/widget.js.map",
+        sourceType: "external",
+        targetType: "page",
+        status: "failed",
+        reason: "fetch-failed",
+        httpStatusCode: 404,
+      },
+      {
+        generatedUrl: "https://shop.example.com/assets/inline.js",
+        sourceMapUrl: "data:application/json;base64,e30=",
+        sourceType: "inline",
+        targetType: "page",
+        status: "skipped",
+        reason: "unsupported-target",
+      },
+    ],
+  };
+
   const report = {
     schemaVersion: 1,
     title: "Coupon apply fails",
     source: "extension",
     createdAt: new Date(startTime).toISOString(),
     page: { url: "https://shop.example.com/checkout", title: "Checkout" },
+    ...(options.withReporterFields
+      ? {
+          description: "Applying SUMMER zeroes the order total.",
+          expected: "Total stays $42.00 with a $5 discount.",
+          actual: "Total drops to $0.00 and checkout is blocked.",
+          severity: "high",
+          reference: "SHOP-4821",
+        }
+      : {}),
     environment: {
       extensionVersion: "1.7.2",
       userAgent: "Mozilla/5.0",
@@ -347,6 +504,28 @@ export function buildSampleArtifacts(options: SampleRecordingOptions = {}) {
     },
   };
 
+  /**
+   * `withEmptyArtifacts` overrides the per-artifact flags on purpose: it
+   * attaches all three optional artifacts with empty payload lists, which is
+   * the only way a test can prove "captured but empty" reads differently from
+   * "absent".
+   */
+  const optional = options.withEmptyArtifacts
+    ? {
+        storage: { schemaVersion: 1, snapshots: [] },
+        dom: { schemaVersion: 1, snapshots: [] },
+        diagnostics: {
+          schemaVersion: 1,
+          generatedAt: new Date(startTime).toISOString(),
+          sourceMaps: [],
+        },
+      }
+    : {
+        storage: options.withStorage ? storage : undefined,
+        dom: options.withDom ? dom : undefined,
+        diagnostics: options.withDiagnostics ? diagnostics : undefined,
+      };
+
   return {
     metadata,
     console: options.withConsole === false ? undefined : consoleLogs,
@@ -355,6 +534,7 @@ export function buildSampleArtifacts(options: SampleRecordingOptions = {}) {
     events: options.withEvents === false ? undefined : events,
     privacy: options.withPrivacy === false ? undefined : privacy,
     report,
+    ...optional,
     screenshots: options.withScreenshots ? screenshots : undefined,
     instantReplay: options.withInstantReplay ? instantReplay : undefined,
   };
@@ -382,6 +562,9 @@ export async function buildSamplePackage(
   attach("console", sample.console);
   attach("network", sample.network);
   attach("websocket", sample.websocket);
+  attach("storage", sample.storage);
+  attach("dom", sample.dom);
+  attach("diagnostics", sample.diagnostics);
   attach("agentSummary", options.agentSummary);
   attach("screenshots", sample.screenshots);
   attach("instantReplay", sample.instantReplay);

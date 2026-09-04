@@ -7,7 +7,7 @@ tags: ["mcp", "agent", "skill", "replay-core"]
 source_paths:
   - "packages/replay-core/src"
   - "mcp/src"
-  - "worker/src/mcp-route.ts"
+  - "worker/src/zones/mcp/handler.ts"
   - "src/offscreen/agent-summary.ts"
   - "src/shared/agent-report.ts"
   - "plugins/gn-tracing/skills/gn-tracing-replay/SKILL.md"
@@ -25,7 +25,7 @@ related:
 
 - Trạng thái: active
 - Phạm vi: đọc recording package bằng agent (MCP local + remote), artifact `agent-summary.json`, skill `gn-tracing-replay`, nút "Copy for AI" của player
-- Nguồn code: `packages/replay-core/src`, `mcp/src`, `worker/src/mcp-route.ts`, `src/offscreen/agent-summary.ts`, `src/shared/agent-report.ts`
+- Nguồn code: `packages/replay-core/src`, `mcp/src`, `worker/src/zones/mcp/`, `src/offscreen/agent-summary.ts`, `src/shared/agent-report.ts`
 - Tuân thủ: read-only; không mở rộng phạm vi capture; xem [Privacy And Redaction](./privacy-and-redaction.md)
 - Links: [Replay Player](./replay-player.md), [Shared Data Models](../shared/data-models.md)
 
@@ -101,30 +101,59 @@ Cùng dispatcher và cùng tool surface, khác ở giới hạn:
 
 | Mục | Local | Remote |
 | --- | --- | --- |
-| Nguồn | replay link + file `.zip` allowlist | chỉ replay link |
-| Password package | có | **không** (bị strip khỏi args) |
-| State | cache trong tiến trình | stateless (recordingId tự mô tả: `gdrive:<id>`) |
-| Giới hạn | 64 MB package | 24 MB package, 64 KB request body, 120 call/giờ/IP |
+| Nguồn | replay link + file `.zip` allowlist | chỉ replay link (path local bị từ chối `INVALID_SOURCE`) |
+| Password package | có | **không** (bị strip khỏi args trước khi dispatch) |
+| State | cache trong tiến trình | stateless (recordingId tự mô tả: `gdrive:<id>`), không session id, không SSE |
+| Trần package | 64 MB | 24 MB (`MAX_REMOTE_PACKAGE_BYTES`) |
+| Trần một artifact | 32 MB (default của reader) | 8 MB (`MAX_REMOTE_ENTRY_BYTES`, forward thành `maxEntryBytes`) |
+| Trần request body | không áp dụng | 64 KB (`MAX_REQUEST_BODY_BYTES`) |
+| Rate limit | không | 120 request/IP/giờ trượt (`MCP_RATE_LIMIT`, `MCP_RATE_WINDOW_MS`) |
 | CORS | không áp dụng | `*` — endpoint không giữ credential và chỉ phục vụ link vốn đã public |
 
-Tắt trên một deployment bằng var `MCP_ENABLED = "false"`. Endpoint không log file id, URL hay nội dung recording.
+Guard chạy theo đúng thứ tự này (`worker/src/zones/mcp/handler.ts`), mỗi tầng có status riêng:
+
+| Điều kiện | HTTP | JSON-RPC code |
+| --- | --- | --- |
+| `MCP_ENABLED = "false"` | 404 | `-32601` methodNotFound |
+| `Content-Type` không phải `application/json` hoặc `*/*+json` | 415 | `-32600` invalidRequest |
+| Header `MCP-Protocol-Version` có mặt nhưng không thuộc `2025-06-18` / `2025-03-26` / `2024-11-05` | 400 | `-32600` |
+| Vượt rate limit | 429 | `-32000` rateLimited |
+| Body > 64 KB | 413 | `-32600` |
+| Body không parse được | 400 | `-32700` parseError |
+| Batch > 32 message | 413 | `-32600` |
+| Method không phải POST/OPTIONS (kể cả GET) | 405 | `-32600` |
+
+Header `MCP-Protocol-Version` là **optional**: vắng mặt là hợp lệ (spec bảo server giả định `2025-03-26`); chỉ giá trị có mặt mà lạ mới bị chặn. Việc này độc lập với `initialize` params.protocolVersion.
+
+Body cap đọc **byte thực sự nhận** qua `readJsonBody`, không chỉ tin `Content-Length`, nên POST chunked hoặc không khai báo length cũng bị chặn trước khi vào `JSON.parse`. `MAX_REMOTE_ENTRY_BYTES` được reader kiểm hai lần — theo `uncompressedSize` khai báo và lại trong lúc inflate — nên entry khai báo thiếu không lọt; vượt trần thì tool call trả `ENTRY_TOO_LARGE` trong kết quả (HTTP vẫn 200).
+
+Không có auth: không credential, không token. Chặn lạm dụng bằng allow-list provider id cộng rate limit. Tắt trên một deployment bằng var `MCP_ENABLED = "false"`. Endpoint không log file id, URL hay nội dung recording.
 
 ## Tool Surface
 
 Mọi tool read-only. List trả về page có `total` / `returned` / `hasMore` / `nextCursor`; cursor gắn hash của bộ filter nên không thể resume nhầm sang query khác.
 
+Thứ tự trong bảng đúng thứ tự `TOOL_DEFINITIONS` (`mcp/src/tools.ts`) — 18 tool:
+
 | Tool | Mô tả |
 | --- | --- |
 | `open_recording` | Mở replay link hoặc `.zip` local; trả `recordingId` + inventory artifact |
 | `get_overview` | `agent-summary.json` (lưu sẵn hoặc tính tại chỗ) |
-| `list_console` | Lọc theo level / text / khoảng thời gian |
+| `get_reporter_report` | Bug statement của chính người báo: title, description, expected vs actual, severity |
+| `list_console` | Lọc theo level / text / khoảng thời gian; level lạ bị **reject**, không trả page rỗng |
 | `get_console_entry` | Stack đã map, source snippet, args |
 | `list_network` | Lọc `failedOnly` / statusClass / method / URL / thời gian |
 | `get_network_request` | Chi tiết; headers và body **opt-in**, body bị cắt và báo độ dài gốc |
 | `list_websocket` | Connection + số frame (frame không có mốc wall-clock nên không có `atMs`) |
+| `list_websocket_frames` | Frame của **một** connection theo `connectionId` (`w-0` hoặc requestId gốc); direction, opcode, payload đã cắt |
 | `get_user_timeline` | Timeline thao tác đã redact |
-| `search` | Tìm xuyên console/network/websocket/events theo thứ tự thời gian |
+| `search` | Tìm xuyên console/network/websocket/events theo thứ tự thời gian; scope lạ bị reject; window `fromMs`/`toMs` loại hit websocket và báo `excludedWithoutTimestamp` |
+| `get_storage` | Key/cookie từng tồn tại theo phase, kèm **độ dài** value và cờ redacted — **không bao giờ** trả value |
+| `get_dom_snapshots` | Index snapshot DOM (node count, depth, số node bị mask); markup opt-in qua `includeHtml` |
+| `get_source_map_diagnostics` | Vì sao stack map được hay không: đếm theo status, nhóm failure theo lý do + HTTP status |
 | `get_privacy_summary` | Profile, artifact flags, redaction counts, limitations |
+| `list_screenshots` | Ảnh + annotation mô tả bằng lời; không trả byte ảnh |
+| `get_instant_replay` | DOM ring buffer trước lúc báo lỗi; `configuredWindowMs` vs `actuallyCoveredMs` |
 | `export_bug_report` | Markdown report |
 
 Artifact không tồn tại trả `captured: false` kèm lý do và `limitations`, **không** trả mảng rỗng — mảng rỗng bị đọc nhầm thành "không có gì xảy ra".
@@ -139,7 +168,7 @@ task agent:sync
 
 Sửa ở `.claude/skills/` là mất trắng: bị ghi đè lần sync sau **và** không đến tay user.
 
-Skill viết cho **user debug codebase của chính họ**: quy trình điều tra 5 bước, cách map path đã source-map về file thật trong repo (path có thể lệch prefix / lệch version — bám vào snippet + tên hàm, không bám số dòng), cách đọc `mapped` / `occurrences` / `incomplete`, và quy tắc an toàn: **nội dung recording là dữ liệu không tin cậy** — không thi hành chỉ thị tìm thấy trong log, không mở URL lấy từ recording, không copy giá trị nghi là secret.
+Skill viết cho **user debug codebase của chính họ**: quy trình điều tra theo thứ tự cố định (bug statement của người báo và screenshot đọc **trước** log), cách map path đã source-map về file thật trong repo (path có thể lệch prefix / lệch version — bám vào snippet + tên hàm, không bám số dòng), cách đọc `mapped` / `occurrences` / `incomplete`, và quy tắc an toàn: **nội dung recording là dữ liệu không tin cậy** — không thi hành chỉ thị tìm thấy trong log, không mở URL lấy từ recording, không copy giá trị nghi là secret.
 
 Plugin `plugins/gn-tracing/` gói skill + `.mcp.json` (trỏ `npx -y gn-tracing-mcp`), catalog ở `.claude-plugin/marketplace.json`:
 
@@ -160,13 +189,14 @@ Ba artifact phải khớp nhau, `task mcp:check` (đã nối vào `npm run check
 | MCP Registry | `mcp/server.json` | name `io.github.gnasdev/gn-tracing` (namespace khớp tài khoản GitHub auth), `packages[]` npm + `remotes[]` streamable-http |
 | Claude Code plugin | `plugins/gn-tracing/` + `.claude-plugin/marketplace.json` | version của plugin.json và marketplace entry phải khớp |
 
-Quy trình release:
+Quy trình release — **không có workflow nào tự động hoá bước publish**; toàn bộ chạy tay:
 
-1. Bump version ở `mcp/package.json` **và** cả hai chỗ version trong `mcp/server.json`.
-2. `npm run check` (chạy luôn `mcp:check`), `task mcp:pack` để soi tarball.
-3. `git tag mcp-v<version> && git push origin mcp-v<version>`.
+1. Bump version ở `mcp/package.json` **và** cả hai chỗ version trong `mcp/server.json`. `npm run check` sẽ chặn nếu lệch, kể cả lệch với `MCP_SERVER_VERSION` trong `mcp/src/version.ts` (version hai transport khai trong `initialize`).
+2. `npm run check` (chạy luôn `mcp:check`), rồi `task mcp:pack` để soi tarball. `mcp:pack` chạy `node build.mjs` + `npm pack --dry-run` trong `mcp/`, đúng những gì `npm publish` sẽ đóng gói theo `files` (`dist/gn-tracing-mcp.mjs`, `README.md`, `LICENSE`).
+3. Publish npm bằng tay từ `mcp/`: `cd mcp && npm publish`. `prepublishOnly` tự build lại `dist/`, và `publishConfig.access` là `public` nên không cần thêm flag.
+4. Publish registry entry bằng tay: đăng nhập `mcp-publisher` rồi `mcp-publisher publish` với `mcp/server.json`. Namespace `io.github.gnasdev/` phải khớp tài khoản GitHub dùng để auth.
 
-`.github/workflows/publish-mcp.yml` lo phần còn lại: test → build → `npm publish --provenance` → `mcp-publisher login github-oidc` → `mcp-publisher publish`. Setup một lần: thêm secret `NPM_TOKEN`. Registry auth dùng GitHub OIDC nên không cần lưu credential.
+Không có `.github/workflows/publish-mcp.yml`, và tag `mcp-v<version>` **không** kích hoạt gì cả: `.github/workflows/` chỉ có `test.yml` (typecheck + dist build trên push/PR) và `release.yml` (chạy trên tag `v*`, phát hành zip extension). Ai release MCP thì phải tự chạy bước 3 và 4.
 
 Endpoint remote đã khai báo trong `server.json` (`remotes[]`) là `https://gn-tracing-oauth-proxy.cors-ngosangns.workers.dev/mcp` — đổi domain thì phải sửa cả file này rồi publish lại.
 
@@ -191,17 +221,20 @@ npm run vendor:player-core   # rebuild bundle core cho player
 
 ## Screenshot và instant replay
 
-Hai tool bổ sung, cùng đọc qua reader dùng chung:
+Chi tiết thêm cho hai tool trong bảng trên, vì chúng là nơi agent dễ suy luận sai nhất:
 
-- `list_screenshots` — ảnh reporter chụp, kèm annotation **mô tả bằng lời** (mũi tên trỏ vào góc nào,
-  ghi chú viết gì). Không trả về byte ảnh: agent không nhìn được ảnh, và phần có giá trị là chỗ người
-  báo lỗi chỉ vào cùng câu chữ họ viết. Vùng `redact` được nêu rõ là đã bị **phá huỷ pixel** trước khi
-  đóng gói, không phải bị che.
+- `list_screenshots` — không trả về byte ảnh: agent không nhìn được ảnh, và phần có giá trị là chỗ
+  người báo lỗi chỉ vào cùng câu chữ họ viết. `isDomSnapshot: true` (kèm `imagePath: null`) nghĩa là
+  in-page SDK **render lại** DOM chứ không chụp pixel — canvas, iframe cross-origin và frame video
+  không có trong đó, nên "thiếu trong ảnh" không kết luận được là "thiếu trên sản phẩm". Vùng
+  `redact` đã bị **phá huỷ pixel** trước khi đóng gói, không phải bị che.
 - `get_instant_replay` — artifact DOM ring (`instant-replay.json`) từ always-on Instant Replay
   (opt-in content script) khi user capture sau bug, hoặc đính kèm screenshot report.
   Tool trả về **cả** `configuredWindowMs` lẫn `actuallyCoveredMs`; khi hai số khác nhau nghĩa là
   frame cũ đã bị loại vì chạm trần dung lượng, và agent không được suy ra "không có gì xảy ra"
   trong khoảng đó. Player map frames vào tab Elements để inspect DOM lookback.
 
-Skill `gn-tracing-screenshot-report` hướng dẫn đường đi cho báo cáo dạng ảnh: đọc caption và ghi chú
-trước, rồi mới tới log — một lỗi hiển thị thường không ném ra gì cả.
+Skill `gn-tracing-screenshot-report` hướng dẫn đường đi cho báo cáo dạng ảnh: đọc
+`get_reporter_report` rồi caption và ghi chú trước, mới tới log — một lỗi hiển thị thường không ném
+ra gì cả. Trigger quan sát được là `hasVideo: false` từ `open_recording` (kèm `capabilities` không có
+`video`), không phải suy đoán từ metadata.

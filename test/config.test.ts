@@ -47,6 +47,17 @@ const FORBIDDEN_REDECLARATION_TOKENS = [
   "globals:",
 ];
 
+// The root Context's include globs, asserted in two places below. Spelled once
+// so a legitimate change (a new source directory joining this Context) is a
+// one-line edit rather than a hunt for every copy.
+const ROOT_INCLUDE_GLOBS = [
+  "src/**/*.{test,spec}.ts",
+  "packages/**/*.{test,spec}.ts",
+  "mcp/**/*.{test,spec}.ts",
+  "edge/**/*.{test,spec}.ts",
+  "test/**/*.{test,spec}.ts",
+];
+
 function readConfigSource(relativePath: string): string {
   const url = new URL(relativePath, import.meta.url);
   return readFileSync(url, "utf8");
@@ -83,12 +94,7 @@ describe("Vitest config inheritance", () => {
     });
 
     it("inherits the canonical shared exclude globs and scopes include for the root Context", () => {
-      expect(rootTest?.include).toEqual([
-        "src/**/*.{test,spec}.ts",
-        "packages/**/*.{test,spec}.ts",
-        "edge/**/*.{test,spec}.ts",
-        "test/**/*.{test,spec}.ts",
-      ]);
+      expect(rootTest?.include).toEqual(ROOT_INCLUDE_GLOBS);
       expect(rootTest?.exclude).toEqual(["**/node_modules/**", "**/dist/**", "**/.wrangler/**"]);
     });
 
@@ -97,12 +103,7 @@ describe("Vitest config inheritance", () => {
       const extraKeys = Object.keys(rootTest ?? {}).filter((key) => !sharedKeys.includes(key));
       expect(extraKeys.sort()).toEqual(["environment", "setupFiles"]);
       expect(rootTest?.environment).toBe("node");
-      expect(rootTest?.include).toEqual([
-        "src/**/*.{test,spec}.ts",
-        "packages/**/*.{test,spec}.ts",
-        "edge/**/*.{test,spec}.ts",
-        "test/**/*.{test,spec}.ts",
-      ]);
+      expect(rootTest?.include).toEqual(ROOT_INCLUDE_GLOBS);
     });
   });
 

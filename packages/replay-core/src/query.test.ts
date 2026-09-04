@@ -15,10 +15,17 @@ import {
   listConsole,
   listNetwork,
   listUserEvents,
+  listWebSocketFrames,
   listWebSockets,
   MAX_BODY_CHARS,
+  MAX_DOM_HTML_CHARS,
+  MAX_FRAME_PAYLOAD_CHARS,
   paginate,
   type RecordingSession,
+  readDomSnapshots,
+  readReporterReport,
+  readSourceMapDiagnostics,
+  readStorage,
   searchRecording,
 } from "./query";
 import { buildSamplePackage } from "./testing/fixture";
@@ -166,6 +173,30 @@ describe("searchRecording", () => {
     expect([...times].sort((a, b) => a - b)).toEqual(times);
   });
 
+  it("drops hits with no wall-clock anchor when a time window is given", async () => {
+    const session = await openSampleSession();
+
+    const unwindowed = await searchRecording(session, "example.com");
+    const websocketHits = unwindowed.items.filter((hit) => hit.scope === "websocket");
+    expect(websocketHits.length).toBeGreaterThan(0);
+    expect(websocketHits.every((hit) => hit.atMs === null)).toBe(true);
+    expect(unwindowed.excludedWithoutTimestamp).toBe(0);
+
+    const windowed = await searchRecording(session, "example.com", { fromMs: 0, toMs: 120_000 });
+    expect(windowed.items.some((hit) => hit.scope === "websocket")).toBe(false);
+    expect(windowed.items.every((hit) => hit.atMs !== null)).toBe(true);
+    expect(windowed.excludedWithoutTimestamp).toBe(websocketHits.length);
+    expect(windowed.total).toBe(unwindowed.total - websocketHits.length);
+  });
+
+  it("narrows to the requested window", async () => {
+    const session = await openSampleSession();
+    const page = await searchRecording(session, "cart", { fromMs: 0, toMs: 10_000 });
+
+    expect(page.total).toBeGreaterThan(0);
+    expect(page.items.every((hit) => (hit.atMs ?? -1) <= 10_000)).toBe(true);
+  });
+
   it("rejects an empty query", async () => {
     const session = await openSampleSession();
     await expect(searchRecording(session, "  ")).rejects.toMatchObject({ code: "INVALID_SOURCE" });
@@ -227,5 +258,207 @@ describe("createRecordingSession", () => {
     const second = await session.consoleViews();
 
     expect(second).toBe(first);
+  });
+});
+
+describe("readStorage", () => {
+  it("distinguishes an absent artifact from a captured empty one", async () => {
+    expect(await readStorage(await openSampleSession())).toBeNull();
+    expect(await readStorage(await openSampleSession({ withEmptyArtifacts: true }))).toEqual({
+      snapshots: [],
+    });
+  });
+
+  it("reports key presence and never the value", async () => {
+    const session = await openSampleSession({ withStorage: true });
+    const report = await readStorage(session);
+    const stop = report?.snapshots.find((snapshot) => snapshot.phase === "stop");
+
+    expect(stop).toMatchObject({
+      localStorageCount: 2,
+      sessionStorageCount: 1,
+      cookieCount: 1,
+      atMs: 120_000,
+      keysTruncated: false,
+    });
+    expect(stop?.localStorage).toContainEqual({
+      key: "auth_token",
+      valueChars: 32,
+      redacted: true,
+    });
+    expect(stop?.cookies[0]).toMatchObject({
+      name: "session",
+      domain: ".shop.example.com",
+      path: "/",
+      httpOnly: true,
+      secure: true,
+      sameSite: "Lax",
+      redacted: true,
+    });
+
+    // The one guarantee the whole reader exists for: no captured value string
+    // may appear anywhere in the serialized result.
+    const serialized = JSON.stringify(report);
+    expect(serialized).not.toContain("SUPERSECRET");
+    expect(serialized).not.toContain("TOPSECRET");
+    expect(serialized).not.toContain("SUMMER");
+  });
+});
+
+describe("readDomSnapshots", () => {
+  it("distinguishes an absent artifact from a captured empty one", async () => {
+    expect(await readDomSnapshots(await openSampleSession())).toBeNull();
+    expect(await readDomSnapshots(await openSampleSession({ withEmptyArtifacts: true }))).toEqual({
+      snapshots: [],
+    });
+  });
+
+  it("indexes tree shape without returning the tree", async () => {
+    const session = await openSampleSession({ withDom: true });
+    const index = await readDomSnapshots(session);
+
+    expect(index?.snapshots.map((snapshot) => snapshot.label)).toEqual(["start", "stop"]);
+    expect(index?.snapshots[1]).toMatchObject({
+      index: 1,
+      documentUrl: "https://shop.example.com/checkout",
+      atMs: 120_000,
+      nodeCount: 4,
+      maxDepth: 3,
+      maskedNodeCount: 1,
+    });
+    expect(index?.snapshots[1].html).toBeUndefined();
+  });
+
+  it("filters by label and renders HTML only on request", async () => {
+    const session = await openSampleSession({ withDom: true });
+    const index = await readDomSnapshots(session, { label: "stop", includeHtml: true });
+
+    expect(index?.snapshots).toHaveLength(1);
+    expect(index?.snapshots[0].html?.text).toContain('id="total"');
+    expect(index?.snapshots[0].html?.truncated).toBe(false);
+  });
+
+  it("truncates rendered HTML at the documented ceiling", async () => {
+    const session = await openSampleSession({ withDom: true });
+    const raw = (await session.artifact<{
+      snapshots: Array<{ root: { children: unknown[] } }>;
+    }>("dom")) as { snapshots: Array<{ root: { children: unknown[] } }> };
+    // Grow the captured tree past the ceiling in place: the reader reads the
+    // memoized artifact, so this is the same object it will summarize.
+    raw.snapshots[1].root.children = Array.from({ length: 4000 }, () => ({
+      nodeType: 1,
+      nodeName: "P",
+      children: [{ nodeType: 3, nodeName: "#text", nodeValue: "padding text" }],
+    }));
+
+    const index = await readDomSnapshots(session, { label: "stop", includeHtml: true });
+    const html = index?.snapshots[0].html;
+
+    expect(html?.totalChars).toBeGreaterThan(MAX_DOM_HTML_CHARS);
+    expect(html?.truncated).toBe(true);
+    expect(html?.text.length).toBeLessThanOrEqual(MAX_DOM_HTML_CHARS + 1);
+  });
+});
+
+describe("readSourceMapDiagnostics", () => {
+  it("distinguishes an absent artifact from a captured empty one", async () => {
+    expect(await readSourceMapDiagnostics(await openSampleSession())).toBeNull();
+    expect(
+      await readSourceMapDiagnostics(await openSampleSession({ withEmptyArtifacts: true })),
+    ).toMatchObject({ total: 0, countByStatus: {}, failures: [] });
+  });
+
+  it("groups failures by status, reason, and HTTP status", async () => {
+    const session = await openSampleSession({ withDiagnostics: true });
+    const summary = await readSourceMapDiagnostics(session);
+
+    expect(summary).toMatchObject({
+      total: 4,
+      countByStatus: { success: 1, failed: 2, skipped: 1 },
+      failureGroupsTruncated: false,
+    });
+    expect(summary?.failures[0]).toMatchObject({
+      status: "failed",
+      reason: "fetch-failed",
+      httpStatusCode: 404,
+      count: 2,
+    });
+    expect(summary?.failures[0].exampleGeneratedUrl).toContain("vendor.min.js");
+    expect(summary?.failures.map((group) => group.status)).not.toContain("success");
+  });
+});
+
+describe("readReporterReport", () => {
+  it("returns the reporter's expected-versus-actual statement", async () => {
+    const session = await openSampleSession({ withReporterFields: true });
+
+    expect(await readReporterReport(session)).toMatchObject({
+      title: "Coupon apply fails",
+      expected: "Total stays $42.00 with a $5 discount.",
+      actual: "Total drops to $0.00 and checkout is blocked.",
+      severity: "high",
+      reference: "SHOP-4821",
+      pageUrl: "https://shop.example.com/checkout",
+      pageTitle: "Checkout",
+    });
+  });
+
+  it("nulls the optional fields a reporter left blank", async () => {
+    const report = await readReporterReport(await openSampleSession());
+
+    expect(report).toMatchObject({
+      title: "Coupon apply fails",
+      description: null,
+      expected: null,
+      actual: null,
+      severity: null,
+      reference: null,
+    });
+  });
+});
+
+describe("listWebSocketFrames", () => {
+  it("returns frame direction, opcode, and payload for a connection", async () => {
+    const session = await openSampleSession();
+    const page = await listWebSocketFrames(session, "w-0");
+
+    expect(page.total).toBe(2);
+    expect(page.items[0]).toMatchObject({ index: 0, direction: "sent", opcode: 1 });
+    expect(page.items[0].payload.text).toBe("ping");
+    // Monotonic-seconds timestamps carry no wall-clock anchor.
+    expect(page.items[0].atMs).toBeNull();
+  });
+
+  it("accepts the producer request id and rejects an unknown one", async () => {
+    const session = await openSampleSession();
+
+    expect((await listWebSocketFrames(session, "ws-1")).total).toBe(2);
+    await expect(listWebSocketFrames(session, "w-9")).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
+  });
+
+  it("pages frames and truncates each payload at the frame ceiling", async () => {
+    const session = await openSampleSession({
+      websocketFrames: { count: 5, payloadChars: MAX_FRAME_PAYLOAD_CHARS + 500 },
+    });
+    const first = await listWebSocketFrames(session, "w-0", { limit: 2 });
+
+    expect(first.total).toBe(5);
+    expect(first.items).toHaveLength(2);
+    expect(first.hasMore).toBe(true);
+    expect(first.items[0]).toMatchObject({ atMs: 0, direction: "sent" });
+    expect(first.items[1].atMs).toBe(100);
+
+    const payload = first.items[0].payload;
+    expect(payload.totalChars).toBe(MAX_FRAME_PAYLOAD_CHARS + 500);
+    expect(payload.truncated).toBe(true);
+    expect(payload.text.length).toBe(MAX_FRAME_PAYLOAD_CHARS + 1);
+
+    const second = await listWebSocketFrames(session, "w-0", {
+      limit: 2,
+      cursor: first.nextCursor,
+    });
+    expect(second.items[0].index).toBe(2);
   });
 });

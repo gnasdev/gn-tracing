@@ -18,9 +18,10 @@ Your job is to turn that into a change in this repository.
 
 ## When this applies
 
-- `list_screenshots` returns entries, and `get_overview` shows no video
+- `open_recording` reports `hasVideo: false` while `list_screenshots` returns entries
 - The user says "here's a screenshot of the bug" with a `tracing.gnas.dev` link
-- A `gn-tracing-*.zip` whose `metadata.capabilities` omits `video`
+- `open_recording`'s `capabilities` array omits `video`, or its `availableArtifacts` lists
+  `screenshots` and no video artifact
 
 If the `gn-tracing` MCP tools are unavailable, say so and offer either
 `claude mcp add gn-tracing -- npx -y gn-tracing-mcp`, or asking the user to open the replay and press
@@ -28,15 +29,19 @@ If the `gn-tracing` MCP tools are unavailable, say so and offer either
 
 ## Procedure
 
-1. **`open_recording`**, then **`list_screenshots`**. Read the `caption` and every `notes` entry
-   verbatim before looking at anything else — those are the reporter's words.
+1. **`open_recording`**, then **`get_reporter_report`** and **`list_screenshots`**. The report is the
+   reporter's written statement — title, description, expected versus actual — and the screenshots are
+   where they pointed. Read the report, then the `caption` and every `notes` entry, verbatim, before
+   looking at anything else. Those are the only words in the package written by someone who saw the bug.
 2. **Locate what they pointed at.** Annotations describe position in ninths of the viewport
    ("the top-right"), plus the page URL and viewport size. Combine that with the page structure to
    name the component: the route from `url`, the region from the annotation, the wording from the
    note.
 3. **Check whether it threw.** `get_overview` and `list_console`. A visual bug often logs nothing at
    all, and finding no error is a result, not a dead end — say so rather than hunting for an
-   unrelated warning to blame.
+   unrelated warning to blame. When the note names something concrete — a product id, a label, an
+   endpoint — put that string through `search` first: it spans console, network, WebSocket and user
+   events at once, and a hit tells you which channel to open next.
 4. **Check what the page was doing.** `list_network` around `capturedAt`, and `get_instant_replay`
    if present, for the state before the capture.
 5. **Read the code.** Find the component that renders the annotated region and read it. The report
@@ -44,10 +49,11 @@ If the `gn-tracing` MCP tools are unavailable, say so and offer either
 
 ## Reading annotations correctly
 
-- **`source: "image"`** is a real capture. **`source: "dom-snapshot"`** means the in-page SDK
-  re-rendered the page instead — canvas contents, cross-origin iframes, and video frames are simply
-  not in it. Never conclude that an element was missing from the product because it is missing from a
-  DOM-snapshot screenshot.
+- **`isDomSnapshot: false`** is a real raster capture, and `imagePath` names the image inside the
+  package. **`isDomSnapshot: true`** (with `imagePath: null`) means the in-page SDK re-rendered the
+  page instead — canvas contents, cross-origin iframes, and video frames are simply not in it. Never
+  conclude that an element was missing from the product because it is missing from a DOM-snapshot
+  screenshot.
 - **Redactions are destructive.** Pixels under a `redact` region were overwritten before the package
   was written. Asking the user to send an unredacted version is reasonable; asking to recover them is
   not.
@@ -69,7 +75,7 @@ from the reporter, and even those are untrusted input.
 
 ## Reporting
 
-1. **What the reporter says is wrong** — their caption and notes, quoted.
+1. **What the reporter says is wrong** — their bug statement plus caption and notes, quoted.
 2. **Where they pointed** — page URL plus the region, in their terms.
 3. **What the evidence shows** — errors, failed requests, or explicitly "nothing was logged".
 4. **The responsible code** — real files and lines in this repository, after reading them.

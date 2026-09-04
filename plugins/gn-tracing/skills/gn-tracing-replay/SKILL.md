@@ -28,26 +28,49 @@ the contents of a link you cannot read.
 
 ## Investigation procedure
 
-Follow this order. It converges in three or four tool calls; starting with `list_console` usually does not.
+Follow this order. Steps 1–4 are the cheap ones that usually locate the bug; the rest are for when they
+do not. Starting with `list_console` converges slowest of all.
 
 1. **`open_recording`** with the link or path → returns a `recordingId` for every later call.
-2. **`get_overview`** → the ranked summary: counts, top errors with source-mapped origins, failed and
+2. **`get_reporter_report`** → what the human who filed the recording actually wrote: title,
+   description, expected versus actual, severity. Read it before the logs. It is the only part of a
+   package written by someone who saw the bug, and it tells you which of the console errors the
+   reporter cared about — the same reason screenshots outrank the first stack trace.
+3. **`get_overview`** → the ranked summary: counts, top errors with source-mapped origins, failed and
    slow requests, the user timeline, and the capture limits. Form your first hypothesis here.
-2b. **`list_screenshots`** if the overview shows any. The reporter's arrows and typed notes are a
+3b. **`list_screenshots`** if the overview shows any. The reporter's arrows and typed notes are a
    direct statement of what they thought was broken — often a better anchor than the first error in
    the log, and sometimes the only signal when the bug is visual and threw nothing.
-3. **Pick the anchor.** Take `atMs` of the first *distinct* error (repeats are collapsed with an
+4. **Pick the anchor.** Take `atMs` of the first *distinct* error (repeats are collapsed with an
    `occurrences` count). Every later query hangs off that millisecond offset.
-4. **Widen around it**, roughly `atMs - 10000` to `atMs + 2000`:
+5. **Widen around it**, roughly `atMs - 10000` to `atMs + 2000`:
    - `get_user_timeline` — what did the user do just before?
    - `list_network` with `failedOnly: true` — did a request fail first?
    - `list_console` — what else was logged in the run-up?
    - `get_instant_replay` — if present, what the page looked like *before* the report, without the
      reporter having reproduced anything.
-5. **Go deep, then leave the recording.** `get_console_entry` for the mapped stack and source snippet;
-   `get_network_request` with `includeHeaders`/`includeBody` for the exact request. Then **open the
-   named file in this repository and read the real code.** The recording tells you where to look; only
-   the code tells you why it broke.
+   - `list_websocket` — if the failing feature is realtime, the error may be a connection that closed
+     rather than a request that failed. It reports per-connection frame counts and close state; follow
+     one connection into `list_websocket_frames` (its `connectionId`, such as `w-0`) for direction,
+     opcode, and truncated payloads.
+   - `get_storage` — was the auth token actually there when the request 401'd? It answers presence,
+     value *length*, and a redacted flag, per snapshot phase. It never returns a value, by design:
+     asking for the token itself is asking for something the tool structurally cannot give.
+5b. **When you have a name instead of a time**, use `search`. Given an order id, an endpoint, a
+   feature flag, or the distinctive string from the error message, it finds every console message,
+   request URL, WebSocket URL, and user event containing it, in timeline order — scope it with
+   `scopes` (`console`, `network`, `websocket`, `events`) when one channel is enough, and an unknown
+   scope is rejected rather than silently widened. This is the fastest route from "the user said
+   checkout broke" to the millisecond it broke at, and it beats paging `list_console` when you
+   already know what you are looking for.
+6. **Go deep, then leave the recording.** `get_console_entry` for the mapped stack and source snippet;
+   `get_network_request` with `includeHeaders`/`includeBody` for the exact request. If a stack came
+   back unmapped, `get_source_map_diagnostics` says *why* — it separates a 404 on the `.map` URL from
+   a map the producer deliberately skipped, and only the first is worth chasing. When the question is
+   what the page actually rendered, `get_dom_snapshots` indexes the start/stop snapshots (node count,
+   depth, masked nodes) with markup opt-in via `includeHtml`. Then **open the named file in this
+   repository and read the real code.** The recording tells you where to look; only the code tells
+   you why it broke.
 
 ## Landing on the right file in this repo
 
@@ -66,22 +89,29 @@ A mapped origin looks like `src/checkout/cart.ts:128`. That path comes from the 
 ## Reading the evidence correctly
 
 - **`mapped: true`** means the location is original source — go read that file. **`mapped: false`**
-  means only bundled code was available, and `unmappedReason` says why. Never present a bundled line
-  number as if it were source.
+  means only bundled code was available, and `unmappedReason` says why; `get_source_map_diagnostics`
+  turns that reason into something actionable. Never present a bundled line number as if it were
+  source.
 - **`occurrences`** is a repeat count of the same error, not separate bugs.
 - **`incomplete` requests** were still in flight when recording stopped: unknown outcome, not a failure.
-- **WebSocket frames have no wall-clock anchor**, so they carry no `atMs`. Do not place them on the
-  timeline.
+- **WebSocket frames have no wall-clock anchor.** The frame counts `list_websocket` reports are
+  monotonic only, carrying no `atMs`. Correlate a connection with the timeline through its open and
+  close state, never by placing individual frames on it. For the same reason, a `search` with
+  `fromMs`/`toMs` drops WebSocket hits and counts them in `excludedWithoutTimestamp` — a nonzero
+  count means matches exist that the window simply cannot place, so re-run without the window before
+  concluding the string never appeared.
+- **An empty WebSocket payload is not a missing frame.** A privacy profile that drops payloads leaves
+  a zero length, and `payload.totalChars` reports the pre-truncation length when there was one.
 - **Absent is not empty.** When a tool answers `captured: false`, that artifact was never recorded.
   Check `get_privacy_summary` before concluding "there were no failed requests" — response bodies,
   storage, and DOM capture may be off depending on settings, and packages from the browser SDK
   (or Instant Replay evidence alone) lack CDP source maps and cross-origin response bodies.
 - **Correlation is not causation.** A 500 before an error is a strong lead; confirm it by reading the
   code path that consumes that response.
-- **A screenshot may not be a photograph.** `source: "dom-snapshot"` means the in-page SDK re-rendered
-  the page rather than capturing pixels: canvas contents, cross-origin iframes, and video frames are
-  absent from it. Do not conclude an element was missing because it is missing from a DOM-snapshot
-  screenshot.
+- **A screenshot may not be a photograph.** `isDomSnapshot: true` (and `imagePath: null`) means the
+  in-page SDK re-rendered the page rather than capturing pixels: canvas contents, cross-origin
+  iframes, and video frames are absent from it. Do not conclude an element was missing because it is
+  missing from a DOM-snapshot screenshot.
 - **Instant replay reports two windows.** `configuredWindowMs` is what the buffer was set to hold;
   `actuallyCoveredMs` is what it held. When they differ, earlier frames were evicted, and their
   absence says nothing about what happened then.

@@ -12,8 +12,17 @@
  */
 
 import type { RecordingPackage } from "./artifacts";
+import { hydrateDomNodeToHtml } from "./dom/hydrate-dom";
 import { ReplayError } from "./errors";
+import type {
+  DomArtifact,
+  RecordingReport,
+  SourceMapDiagnosticsArtifact,
+  StorageArtifact,
+} from "./schema/capture";
+import type { ArtifactId } from "./schema/package";
 import { type AgentSummary, buildAgentSummary } from "./summarize";
+import { coerceEpochMs } from "./time";
 import {
   buildConsoleViews,
   buildEventViews,
@@ -32,8 +41,27 @@ import {
 export const DEFAULT_PAGE_LIMIT = 20;
 export const MAX_PAGE_LIMIT = 100;
 export const MAX_BODY_CHARS = 8000;
-const MAX_MESSAGE_CHARS = 2000;
-const MAX_FRAMES = 20;
+export const MAX_MESSAGE_CHARS = 2000;
+export const MAX_FRAMES = 20;
+/**
+ * Per-bucket ceiling on the storage key names returned per snapshot. The
+ * `*Count` fields stay exact, so a caller can always tell the list was cut.
+ */
+export const MAX_STORAGE_KEYS = 200;
+/**
+ * Ceiling on rendered DOM HTML. A whole document dwarfs every other artifact —
+ * a checkout page is easily 500 KB of markup — so this sits well above the
+ * response-body ceiling yet still far below "evicts the agent's context".
+ */
+export const MAX_DOM_HTML_CHARS = 20_000;
+/**
+ * Ceiling per WebSocket frame payload. Lower than {@link MAX_BODY_CHARS}
+ * because a page returns up to {@link MAX_PAGE_LIMIT} frames at once: a frame
+ * is one message, not a document, and 100 × 8000 chars is not a bounded reply.
+ */
+export const MAX_FRAME_PAYLOAD_CHARS = 2000;
+/** Ceiling on distinct source-map failure groups, largest count first. */
+export const MAX_DIAGNOSTIC_GROUPS = 20;
 
 export interface Page<T> {
   items: T[];
@@ -61,6 +89,11 @@ export interface RecordingSession {
   rawNetwork(): Promise<unknown[]>;
   rawWebsocket(): Promise<unknown[]>;
   privacy(): Promise<Record<string, unknown> | null>;
+  /**
+   * Memoized raw artifact read for artifacts that have no dedicated view.
+   * Returns null when the artifact is absent from the package.
+   */
+  artifact<T>(id: ArtifactId): Promise<T | null>;
 }
 
 export function createRecordingSession(pkg: RecordingPackage): RecordingSession {
@@ -90,6 +123,7 @@ export function createRecordingSession(pkg: RecordingPackage): RecordingSession 
     rawConsole,
     rawNetwork,
     rawWebsocket,
+    artifact: <T>(id: ArtifactId) => once(`raw:${id}`, async () => await pkg.readArtifact<T>(id)),
     consoleViews: () =>
       once("view:console", async () => buildConsoleViews(await rawConsole(), startTime)),
     networkViews: () =>
@@ -404,6 +438,361 @@ export async function listWebSockets(
   return paginate(await session.websocketViews(), request, ["websocket"]);
 }
 
+/** One localStorage/sessionStorage entry, without its value. */
+export interface StorageEntrySummary {
+  key: string;
+  /** Length of the captured value. The value itself is never returned. */
+  valueChars: number;
+  redacted: boolean;
+}
+
+/** One cookie, without its value. */
+export interface CookieSummary {
+  name: string;
+  domain: string;
+  path: string;
+  valueChars: number;
+  redacted: boolean;
+  httpOnly: boolean;
+  secure: boolean;
+  sameSite?: "Strict" | "Lax" | "None";
+  /** Epoch seconds, as the browser reports it. */
+  expires?: number;
+}
+
+export interface StorageSnapshotSummary {
+  /** `start` or `stop` on packages written by a shipped producer. */
+  phase: string;
+  capturedAt: number;
+  atMs: number | null;
+  /** Exact counts, unaffected by the {@link MAX_STORAGE_KEYS} list ceiling. */
+  localStorageCount: number;
+  sessionStorageCount: number;
+  cookieCount: number;
+  localStorage: StorageEntrySummary[];
+  sessionStorage: StorageEntrySummary[];
+  cookies: CookieSummary[];
+  /** True when any of the three lists was cut at {@link MAX_STORAGE_KEYS}. */
+  keysTruncated: boolean;
+}
+
+export interface StorageReport {
+  snapshots: StorageSnapshotSummary[];
+}
+
+/**
+ * Storage and cookie key presence at each snapshot phase.
+ *
+ * Returns null when `storage.json` is absent, and `{ snapshots: [] }` when the
+ * artifact was captured but holds nothing — "the producer could not read
+ * storage" and "storage was empty" are different facts.
+ *
+ * Values are deliberately unreachable: an auth token, a session id, and a
+ * feature flag all live in localStorage, and the question a bug actually turns
+ * on ("was the token there when the request 401'd?") is answered by the key
+ * name, its length, and the redaction flag. Returning the value would hand a
+ * live credential to whatever reads this. Same for cookie values.
+ */
+export async function readStorage(session: RecordingSession): Promise<StorageReport | null> {
+  const artifact = await session.artifact<StorageArtifact>("storage");
+  if (artifact === null) {
+    return null;
+  }
+
+  const snapshots = unwrapArtifactList(artifact, "snapshots").map((raw): StorageSnapshotSummary => {
+    const snapshot = (raw ?? {}) as Record<string, unknown>;
+    const local = asList(snapshot.localStorage);
+    const sessionStore = asList(snapshot.sessionStorage);
+    const cookies = asList(snapshot.cookies);
+    const capturedAt = numberOrUndefined(snapshot.capturedAt) ?? 0;
+
+    return {
+      phase: typeof snapshot.phase === "string" ? snapshot.phase : "unknown",
+      capturedAt,
+      atMs: toRelative(capturedAt, session.startTime),
+      localStorageCount: local.length,
+      sessionStorageCount: sessionStore.length,
+      cookieCount: cookies.length,
+      localStorage: local.slice(0, MAX_STORAGE_KEYS).map(toStorageEntrySummary),
+      sessionStorage: sessionStore.slice(0, MAX_STORAGE_KEYS).map(toStorageEntrySummary),
+      cookies: cookies.slice(0, MAX_STORAGE_KEYS).map(toCookieSummary),
+      keysTruncated:
+        local.length > MAX_STORAGE_KEYS ||
+        sessionStore.length > MAX_STORAGE_KEYS ||
+        cookies.length > MAX_STORAGE_KEYS,
+    };
+  });
+
+  return { snapshots };
+}
+
+export interface DomSnapshotSummary {
+  index: number;
+  /** `start` or `stop` on packages written by a shipped producer. */
+  label: string;
+  capturedAt: number;
+  atMs: number | null;
+  documentUrl: string;
+  nodeCount: number;
+  /** Depth of the deepest node, counting the root as 1. */
+  maxDepth: number;
+  /** Nodes the producer's privacy policy masked before serialization. */
+  maskedNodeCount: number;
+  /** Present only with `includeHtml`; capped at {@link MAX_DOM_HTML_CHARS}. */
+  html?: TextPayload;
+}
+
+export interface DomSnapshotIndex {
+  snapshots: DomSnapshotSummary[];
+}
+
+export interface DomSnapshotOptions {
+  /**
+   * Render each snapshot's tree to an HTML document, truncated at
+   * {@link MAX_DOM_HTML_CHARS}. Off by default: a real page's markup is larger
+   * than every other artifact in the package combined.
+   */
+  includeHtml?: boolean;
+  /** Restrict to one snapshot label, e.g. `stop`. */
+  label?: string;
+}
+
+/**
+ * Index over `dom.json`: shape and size of each snapshot, not the tree.
+ *
+ * Returns null when `dom.json` is absent, `{ snapshots: [] }` when it was
+ * captured but holds no snapshot.
+ */
+export async function readDomSnapshots(
+  session: RecordingSession,
+  options: DomSnapshotOptions = {},
+): Promise<DomSnapshotIndex | null> {
+  const artifact = await session.artifact<DomArtifact>("dom");
+  if (artifact === null) {
+    return null;
+  }
+
+  const label = options.label?.trim().toLowerCase();
+  const snapshots: DomSnapshotSummary[] = [];
+
+  unwrapArtifactList(artifact, "snapshots").forEach((raw, index) => {
+    const snapshot = (raw ?? {}) as Record<string, unknown>;
+    const snapshotLabel = typeof snapshot.label === "string" ? snapshot.label : "unknown";
+    if (label && snapshotLabel.toLowerCase() !== label) {
+      return;
+    }
+    const capturedAt = numberOrUndefined(snapshot.capturedAt) ?? 0;
+    const documentUrl = typeof snapshot.documentUrl === "string" ? snapshot.documentUrl : "";
+    const shape = measureDomTree(snapshot.root);
+
+    snapshots.push({
+      index,
+      label: snapshotLabel,
+      capturedAt,
+      atMs: toRelative(capturedAt, session.startTime),
+      documentUrl,
+      ...shape,
+      ...(options.includeHtml
+        ? {
+            html: toTextPayload(
+              hydrateDomNodeToHtml(snapshot.root, {
+                ...(documentUrl ? { baseHref: documentUrl } : {}),
+                title: snapshotLabel,
+              }),
+              MAX_DOM_HTML_CHARS,
+            ),
+          }
+        : {}),
+    });
+  });
+
+  return { snapshots };
+}
+
+export interface SourceMapFailureGroup {
+  status: string;
+  reason: string | null;
+  httpStatusCode: number | null;
+  count: number;
+  /** One generated script that hit this failure, to reproduce the fetch. */
+  exampleGeneratedUrl: string;
+}
+
+export interface SourceMapDiagnosticsSummary {
+  total: number;
+  countByStatus: Record<string, number>;
+  /**
+   * Non-`success` entries grouped by status + reason + HTTP status, largest
+   * group first, capped at {@link MAX_DIAGNOSTIC_GROUPS}.
+   */
+  failures: SourceMapFailureGroup[];
+  failureGroupsTruncated: boolean;
+}
+
+/**
+ * Why source-map resolution produced the frames it did.
+ *
+ * Without this, an unmapped stack trace is a dead end: the reader cannot tell a
+ * 404 on the `.map` URL from a source map the producer chose to skip. Returns
+ * null when `diagnostics.json` is absent; a zero `total` means the artifact was
+ * written with no attempts recorded.
+ */
+export async function readSourceMapDiagnostics(
+  session: RecordingSession,
+): Promise<SourceMapDiagnosticsSummary | null> {
+  const artifact = await session.artifact<SourceMapDiagnosticsArtifact>("diagnostics");
+  if (artifact === null) {
+    return null;
+  }
+
+  const entries = unwrapArtifactList(artifact, "sourceMaps");
+  const countByStatus: Record<string, number> = {};
+  const groups = new Map<string, SourceMapFailureGroup>();
+
+  for (const raw of entries) {
+    const entry = (raw ?? {}) as Record<string, unknown>;
+    const status = typeof entry.status === "string" ? entry.status : "unknown";
+    countByStatus[status] = (countByStatus[status] ?? 0) + 1;
+    if (status === "success") {
+      continue;
+    }
+
+    const reason = typeof entry.reason === "string" ? entry.reason : null;
+    const httpStatusCode = numberOrUndefined(entry.httpStatusCode) ?? null;
+    const key = `${status}\u0000${reason}\u0000${httpStatusCode}`;
+    const existing = groups.get(key);
+    if (existing) {
+      existing.count += 1;
+      continue;
+    }
+    groups.set(key, {
+      status,
+      reason,
+      httpStatusCode,
+      count: 1,
+      exampleGeneratedUrl:
+        typeof entry.generatedUrl === "string" ? truncate(entry.generatedUrl, 300) : "",
+    });
+  }
+
+  const failures = [...groups.values()].sort((a, b) => b.count - a.count);
+  return {
+    total: entries.length,
+    countByStatus,
+    failures: failures.slice(0, MAX_DIAGNOSTIC_GROUPS),
+    failureGroupsTruncated: failures.length > MAX_DIAGNOSTIC_GROUPS,
+  };
+}
+
+export interface ReporterReport {
+  title: string;
+  description: string | null;
+  expected: string | null;
+  actual: string | null;
+  severity: "low" | "medium" | "high" | "critical" | null;
+  /** Issue key, ticket URL, or whatever the reporter pasted. */
+  reference: string | null;
+  createdAt: string;
+  pageUrl: string;
+  pageTitle: string | null;
+}
+
+/**
+ * The reporter's own bug statement from `report.json`.
+ *
+ * The agent summary carries only the page title and environment, so the human's
+ * expected-versus-actual — the one field written by someone who saw the bug —
+ * never reaches a reader through the summary. Returns null when `report.json`
+ * is absent.
+ */
+export async function readReporterReport(
+  session: RecordingSession,
+): Promise<ReporterReport | null> {
+  const report = await session.artifact<RecordingReport>("report");
+  if (!report) {
+    return null;
+  }
+
+  const page = (report.page ?? {}) as { url?: string; title?: string };
+  return {
+    title: truncate(report.title ?? "", MAX_MESSAGE_CHARS),
+    description: optionalText(report.description),
+    expected: optionalText(report.expected),
+    actual: optionalText(report.actual),
+    severity: report.severity ?? null,
+    reference: optionalText(report.reference),
+    createdAt: typeof report.createdAt === "string" ? report.createdAt : "",
+    pageUrl: typeof page.url === "string" ? page.url : "",
+    pageTitle: optionalText(page.title),
+  };
+}
+
+export interface WebSocketFrameView {
+  /** Position within the connection's frame list. */
+  index: number;
+  direction: "sent" | "received" | "unknown";
+  /** RFC 6455 opcode: 1 text, 2 binary, 8 close, 9 ping, 10 pong. */
+  opcode: number;
+  /**
+   * Recording-relative milliseconds, or null when the captured timestamp is a
+   * monotonic value with no wall-clock anchor (legacy CDP packages).
+   */
+  atMs: number | null;
+  payload: TextPayload;
+}
+
+/**
+ * Frames of one WebSocket connection.
+ *
+ * `connectionId` accepts the view id from {@link listWebSockets} (`w-0`) or the
+ * producer's own `requestId`. Payloads are capped at
+ * {@link MAX_FRAME_PAYLOAD_CHARS}; a producer whose privacy profile drops
+ * WebSocket payloads leaves them empty, which `payload.totalChars: 0`
+ * reports rather than hiding.
+ */
+export async function listWebSocketFrames(
+  session: RecordingSession,
+  connectionId: string,
+  request: PageRequest = {},
+): Promise<Page<WebSocketFrameView>> {
+  const views = await session.websocketViews();
+  const raw = await session.rawWebsocket();
+  let index = views.findIndex((view) => view.id === connectionId);
+  if (index < 0) {
+    index = raw.findIndex(
+      (entry) => ((entry ?? {}) as Record<string, unknown>).requestId === connectionId,
+    );
+  }
+  if (index < 0) {
+    throw new ReplayError(
+      "NOT_FOUND",
+      `No WebSocket connection with id ${connectionId}.`,
+      "List connections first; ids look like `w-0`.",
+    );
+  }
+
+  const frames = asList((raw[index] as Record<string, unknown> | undefined)?.frames).map(
+    (item, frameIndex): WebSocketFrameView => {
+      const frame = (item ?? {}) as Record<string, unknown>;
+      const payload = typeof frame.payloadData === "string" ? frame.payloadData : "";
+      const direction = frame.direction;
+
+      return {
+        index: frameIndex,
+        direction: direction === "sent" || direction === "received" ? direction : "unknown",
+        opcode: numberOrUndefined(frame.opcode) ?? 0,
+        atMs: toRelative(
+          coerceEpochMs(numberOrUndefined(frame.timestamp) ?? null) ?? 0,
+          session.startTime,
+        ),
+        payload: toTextPayload(payload, MAX_FRAME_PAYLOAD_CHARS),
+      };
+    },
+  );
+
+  return paginate(frames, request, ["websocket-frames", connectionId]);
+}
+
 export type SearchScope = "console" | "network" | "websocket" | "events";
 
 export interface SearchHit {
@@ -416,13 +805,32 @@ export interface SearchHit {
 
 export interface SearchFilters extends PageRequest {
   scopes?: SearchScope[];
+  fromMs?: number;
+  toMs?: number;
 }
 
+export interface SearchPage extends Page<SearchHit> {
+  /**
+   * Hits dropped because a time window was given and the hit carries no
+   * wall-clock anchor. Always 0 without a window.
+   */
+  excludedWithoutTimestamp: number;
+}
+
+/**
+ * Free-text search across the recording, newest-anchored hits first.
+ *
+ * `fromMs`/`toMs` are recording-relative milliseconds. WebSocket hits have no
+ * wall-clock anchor (`atMs: null`), so a time window drops them rather than
+ * keeping matches that cannot be placed on the timeline. Silently keeping them
+ * would make "no network activity in this window" a lie; silently dropping them
+ * would hide a match, so the count lands in `excludedWithoutTimestamp`.
+ */
 export async function searchRecording(
   session: RecordingSession,
   query: string,
   filters: SearchFilters = {},
-): Promise<Page<SearchHit>> {
+): Promise<SearchPage> {
   const needle = query.trim().toLowerCase();
   if (!needle) {
     throw new ReplayError("INVALID_SOURCE", "Search needs a non-empty query.");
@@ -486,8 +894,24 @@ export async function searchRecording(
     }
   }
 
-  hits.sort((a, b) => (a.atMs ?? Number.POSITIVE_INFINITY) - (b.atMs ?? Number.POSITIVE_INFINITY));
-  return paginate(hits, filters, ["search", needle, scopes.join(",")]);
+  const windowed =
+    filters.fromMs === undefined && filters.toMs === undefined
+      ? hits
+      : hits.filter((hit) => withinRange(hit.atMs, filters.fromMs, filters.toMs));
+
+  windowed.sort(
+    (a, b) => (a.atMs ?? Number.POSITIVE_INFINITY) - (b.atMs ?? Number.POSITIVE_INFINITY),
+  );
+  return {
+    ...paginate(windowed, filters, [
+      "search",
+      needle,
+      scopes.join(","),
+      filters.fromMs,
+      filters.toMs,
+    ]),
+    excludedWithoutTimestamp: hits.length - windowed.length,
+  };
 }
 
 /**
@@ -561,12 +985,103 @@ function withinRange(atMs: number | null, fromMs?: number, toMs?: number): boole
   return true;
 }
 
-function toTextPayload(text: string): TextPayload {
+function toTextPayload(text: string, max = MAX_BODY_CHARS): TextPayload {
   return {
-    text: truncate(text, MAX_BODY_CHARS),
-    truncated: text.length > MAX_BODY_CHARS,
+    text: truncate(text, max),
+    truncated: text.length > max,
     totalChars: text.length,
   };
+}
+
+function asList(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function optionalText(value: unknown): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const trimmed = value.trim();
+  return trimmed ? truncate(trimmed, MAX_MESSAGE_CHARS) : null;
+}
+
+/**
+ * Epoch milliseconds to recording-relative milliseconds. Null when the value is
+ * not a usable wall-clock instant, so a caller never sees a bogus `0ms`.
+ */
+function toRelative(epochMs: number, startTime: number): number | null {
+  if (!Number.isFinite(epochMs) || epochMs <= 0 || !startTime) {
+    return null;
+  }
+  return Math.round(epochMs - startTime);
+}
+
+function toStorageEntrySummary(raw: unknown): StorageEntrySummary {
+  const entry = (raw ?? {}) as Record<string, unknown>;
+  return {
+    key: typeof entry.key === "string" ? truncate(entry.key, 300) : "",
+    valueChars: typeof entry.value === "string" ? entry.value.length : 0,
+    redacted: entry.redacted === true,
+  };
+}
+
+function toCookieSummary(raw: unknown): CookieSummary {
+  const cookie = (raw ?? {}) as Record<string, unknown>;
+  const sameSite = cookie.sameSite;
+  const expires = numberOrUndefined(cookie.expires);
+  return {
+    name: typeof cookie.name === "string" ? truncate(cookie.name, 300) : "",
+    domain: typeof cookie.domain === "string" ? cookie.domain : "",
+    path: typeof cookie.path === "string" ? cookie.path : "",
+    valueChars: typeof cookie.value === "string" ? cookie.value.length : 0,
+    redacted: cookie.redacted === true,
+    httpOnly: cookie.httpOnly === true,
+    secure: cookie.secure === true,
+    ...(sameSite === "Strict" || sameSite === "Lax" || sameSite === "None" ? { sameSite } : {}),
+    ...(expires === undefined ? {} : { expires }),
+  };
+}
+
+/**
+ * Node count, deepest nesting, and masked-node count of a serialized DOM tree.
+ *
+ * Iterative on purpose: a captured document nests deeper than a recursive walk
+ * can survive on some runtimes, and a stack overflow while summarizing a
+ * snapshot would take down the whole read.
+ */
+function measureDomTree(root: unknown): {
+  nodeCount: number;
+  maxDepth: number;
+  maskedNodeCount: number;
+} {
+  if (!root || typeof root !== "object") {
+    return { nodeCount: 0, maxDepth: 0, maskedNodeCount: 0 };
+  }
+
+  let nodeCount = 0;
+  let maxDepth = 0;
+  let maskedNodeCount = 0;
+  const stack: Array<{ node: Record<string, unknown>; depth: number }> = [
+    { node: root as Record<string, unknown>, depth: 1 },
+  ];
+
+  while (stack.length > 0) {
+    const { node, depth } = stack.pop() as { node: Record<string, unknown>; depth: number };
+    nodeCount += 1;
+    if (depth > maxDepth) {
+      maxDepth = depth;
+    }
+    if (node.masked === true) {
+      maskedNodeCount += 1;
+    }
+    for (const child of asList(node.children)) {
+      if (child && typeof child === "object") {
+        stack.push({ node: child as Record<string, unknown>, depth: depth + 1 });
+      }
+    }
+  }
+
+  return { nodeCount, maxDepth, maskedNodeCount };
 }
 
 function asHeaders(value: unknown): Record<string, string> | null {
