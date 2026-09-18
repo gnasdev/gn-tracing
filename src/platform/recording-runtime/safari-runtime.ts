@@ -97,7 +97,8 @@ export class SafariRecordingRuntime implements RecordingRuntime {
     if ((this.#media.capturedSurface?.displaySurface || "").toLowerCase() === "browser") {
       this.#attachLimitations.push(
         "Video is captured as periodic snapshots of the recorded tab " +
-          "(not continuous screen share), so fast motion may look stepped.",
+          "(not continuous screen share), so cadence is limited by how fast " +
+          "the browser can snapshot the tab and fast motion may still look stepped.",
       );
     }
 

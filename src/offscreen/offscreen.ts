@@ -2,6 +2,18 @@
  * Runs tab media capture and cloud storage upload work in an offscreen document.
  */
 
+import {
+  type AudioCodec,
+  BufferTarget,
+  canEncodeAudio,
+  canEncodeVideo,
+  MediaStreamAudioTrackSource,
+  Output,
+  type VideoCodec,
+  VideoSample,
+  VideoSampleSource,
+  WebMOutputFormat,
+} from "mediabunny";
 import type { Screenshot } from "../../packages/replay-core/src/schema/annotation";
 import type { PackageMetadata } from "../../packages/replay-core/src/schema/package";
 import {
@@ -12,7 +24,9 @@ import { getScreenshotPackageStaging } from "../background/screenshot-package-st
 import { acquireMicrophoneStream, mixCaptureAudio } from "../media-pipeline/audio-capture";
 import type { CapturedSurface } from "../media-pipeline/capture-surface";
 import {
+  AUDIO_BITRATE_BPS,
   acquireCaptureStream,
+  computeVideoBitrate,
   describeDisplayCaptureError,
   pickRecorderMimeType,
   type SessionRecordingSnapshot,
@@ -281,7 +295,7 @@ chrome.runtime.onMessage.addListener((message: OffscreenIncomingMessage, _sender
     case "GET_CAPTURE_STATE":
       sendResponse({
         ok: true,
-        isRecording: Boolean(recorder && recorder.state !== "inactive"),
+        isRecording: Boolean((recorder && recorder.state !== "inactive") || activeWebCodecsSession),
         activeSessionId,
         snapshotSessionIds: Array.from(sessionSnapshots.keys()),
       });
@@ -467,6 +481,14 @@ async function dataUrlToImageBitmap(dataUrl: string): Promise<ImageBitmap> {
   return createImageBitmap(blob);
 }
 
+/**
+ * Dispatch to the WebCodecs backend when this engine can encode video with it,
+ * else fall back to the canvas + MediaRecorder implementation below. WebCodecs
+ * does not raise the achievable fps here — `tabs.captureTab` is a screenshot
+ * API with round-trip latency, not a streaming source, so that stays the real
+ * ceiling regardless of encoder — it only removes the canvas-redraw and
+ * `captureStream` resampling overhead between a captured frame and the encoder.
+ */
 async function startTabFrameCapture(
   tabId: number,
   sessionId: string,
@@ -475,7 +497,7 @@ async function startTabFrameCapture(
   if (!sessionId || !Number.isFinite(tabId) || tabId <= 0) {
     throw new Error("Missing tab-frame capture session metadata.");
   }
-  if (recorder && recorder.state !== "inactive") {
+  if ((recorder && recorder.state !== "inactive") || activeWebCodecsSession) {
     throw new Error("A recording is already active.");
   }
 
@@ -484,6 +506,34 @@ async function startTabFrameCapture(
     throw new Error("tabs.captureTab is not available in this browser.");
   }
 
+  const codecs = await pickWebCodecsCodecs();
+  if (codecs) {
+    try {
+      return await startTabFrameCaptureWebCodecs(
+        tabId,
+        sessionId,
+        audioOptions,
+        captureTab,
+        codecs,
+      );
+    } catch (error) {
+      console.warn(
+        "[GN Tracing] WebCodecs tab-frame capture failed, falling back to MediaRecorder:",
+        error,
+      );
+    }
+  }
+
+  return startTabFrameCaptureCanvasRecorder(tabId, sessionId, audioOptions, captureTab);
+}
+
+/** Legacy fallback: snapshot the recorded tab on an interval into a canvas MediaStream. */
+async function startTabFrameCaptureCanvasRecorder(
+  tabId: number,
+  sessionId: string,
+  audioOptions: CaptureAudioOptions,
+  captureTab: NonNullable<ReturnType<typeof getCaptureTabApi>>,
+): Promise<{ firstFrameAt: number | null; surface: CapturedSurface }> {
   // Fail fast before arming MediaRecorder if the tab cannot be snapshotted.
   const firstDataUrl = await captureTab(tabId, {
     format: "jpeg",
@@ -567,6 +617,274 @@ async function startTabFrameCapture(
     stopTabFramePump();
     throw error;
   }
+}
+
+/** Safety ceiling for the WebCodecs tab-frame loop; real fps stays bounded by captureTab latency. */
+const TAB_FRAME_MAX_FPS = 30;
+const TAB_FRAME_MIN_TICK_MS = 1000 / TAB_FRAME_MAX_FPS;
+
+type WebCodecsCodecs = { video: VideoCodec; audio: AudioCodec | null };
+
+/** Cheap ability check with no side effects — safe to call speculatively before touching the tab. */
+async function pickWebCodecsCodecs(): Promise<WebCodecsCodecs | null> {
+  if (typeof VideoEncoder === "undefined") {
+    return null;
+  }
+  let video: VideoCodec | null = null;
+  for (const candidate of ["vp9", "vp8"] as const) {
+    if (await canEncodeVideo(candidate)) {
+      video = candidate;
+      break;
+    }
+  }
+  if (!video) {
+    return null;
+  }
+  const audio = (await canEncodeAudio("opus")) ? "opus" : null;
+  return { video, audio };
+}
+
+type WebCodecsTabFrameSession = {
+  sessionId: string;
+  output: Output;
+  target: BufferTarget;
+  videoSource: VideoSampleSource;
+  audioSource: MediaStreamAudioTrackSource | null;
+  micStream: MediaStream | null;
+  audioCleanup: () => Promise<void>;
+  mimeType: string;
+  requestStop: () => void;
+  loopDone: Promise<void>;
+};
+
+let activeWebCodecsSession: WebCodecsTabFrameSession | null = null;
+
+/**
+ * WebCodecs backend for the Firefox tab-frame fallback: encodes each captured
+ * bitmap directly (no canvas redraw, no captureStream resampling) and muxes
+ * with `mediabunny` into WebM. Audio reuses the existing mic + Web Audio mixing
+ * (`mixCaptureAudio`) but is fed to `MediaStreamAudioTrackSource`, which pulls
+ * and encodes it internally — no manual audio pipeline needed.
+ */
+async function startTabFrameCaptureWebCodecs(
+  tabId: number,
+  sessionId: string,
+  audioOptions: CaptureAudioOptions,
+  captureTab: NonNullable<ReturnType<typeof getCaptureTabApi>>,
+  codecs: WebCodecsCodecs,
+): Promise<{ firstFrameAt: number | null; surface: CapturedSurface }> {
+  const firstDataUrl = await captureTab(tabId, {
+    format: "jpeg",
+    quality: TAB_FRAME_JPEG_QUALITY,
+  });
+  if (!firstDataUrl) {
+    throw new Error("Could not capture a frame from the recorded tab.");
+  }
+  const firstBitmap = await dataUrlToImageBitmap(firstDataUrl);
+  const width = firstBitmap.width || 1280;
+  const height = firstBitmap.height || 720;
+
+  const micStream = await acquireMicrophoneStream(
+    audioOptions.microphoneDeviceId ?? "",
+    audioOptions.microphoneEnabled !== false,
+  );
+  const mixedAudio = mixCaptureAudio(new MediaStream(), micStream ? [micStream] : []);
+  const audioTrack = mixedAudio.stream.getAudioTracks()[0];
+
+  const cleanupOnFailure = async () => {
+    firstBitmap.close();
+    await mixedAudio.cleanup().catch(() => {});
+    micStream?.getTracks().forEach((track) => {
+      track.stop();
+    });
+  };
+
+  const target = new BufferTarget();
+  const output = new Output({ format: new WebMOutputFormat(), target });
+
+  const videoSource = new VideoSampleSource({
+    codec: codecs.video,
+    bitrate: computeVideoBitrate(width, height, TAB_FRAME_MAX_FPS),
+    // Firefox may report a different JPEG size if the tab's viewport changes
+    // mid-recording; letterbox rather than hard-fail like the encoder default.
+    sizeChangeBehavior: "contain",
+  });
+  output.addVideoTrack(videoSource);
+
+  let audioSource: MediaStreamAudioTrackSource | null = null;
+  if (audioTrack && codecs.audio) {
+    audioSource = new MediaStreamAudioTrackSource(audioTrack, {
+      codec: codecs.audio,
+      bitrate: AUDIO_BITRATE_BPS,
+    });
+    output.addAudioTrack(audioSource);
+  }
+
+  try {
+    await output.start();
+  } catch (error) {
+    await cleanupOnFailure();
+    throw error;
+  }
+
+  let stopRequested = false;
+  let resolveLoopDone: () => void = () => {};
+  const loopDone = new Promise<void>((resolve) => {
+    resolveLoopDone = resolve;
+  });
+
+  const session: WebCodecsTabFrameSession = {
+    sessionId,
+    output,
+    target,
+    videoSource,
+    audioSource,
+    micStream,
+    audioCleanup: mixedAudio.cleanup,
+    mimeType: "video/webm",
+    requestStop: () => {
+      stopRequested = true;
+    },
+    loopDone,
+  };
+
+  activeWebCodecsSession = session;
+  activeSessionId = sessionId;
+  emptyRecordingSessions.delete(sessionId);
+  finalizedSessionIds.delete(sessionId);
+
+  const captureStartedAt = Date.now();
+
+  try {
+    const firstSample = new VideoSample(firstBitmap, { timestamp: 0 });
+    firstBitmap.close();
+    await videoSource.add(firstSample);
+    firstSample.close();
+  } catch (error) {
+    activeWebCodecsSession = null;
+    await cleanupOnFailure();
+    throw error;
+  }
+
+  // Self-paced loop (no fixed setInterval): schedules the next captureTab()
+  // call only after the previous frame has been captured and handed to the
+  // encoder, capped at TAB_FRAME_MAX_FPS. Real cadence stays bounded by
+  // captureTab's own round-trip latency.
+  void (async () => {
+    try {
+      while (!stopRequested) {
+        const tickStartedAt = Date.now();
+        let dataUrl: string | null = null;
+        try {
+          dataUrl = await captureTab(tabId, {
+            format: "jpeg",
+            quality: TAB_FRAME_JPEG_QUALITY,
+          });
+        } catch {
+          // Tab may be restricted mid-session; keep the last good frame and retry.
+        }
+        if (stopRequested || !dataUrl) {
+          continue;
+        }
+        const bitmap = await dataUrlToImageBitmap(dataUrl);
+        if (stopRequested) {
+          bitmap.close();
+          break;
+        }
+        const timestamp = (Date.now() - captureStartedAt) / 1000;
+        const sample = new VideoSample(bitmap, { timestamp });
+        bitmap.close();
+        try {
+          await videoSource.add(sample);
+        } finally {
+          sample.close();
+        }
+
+        const waitMs = TAB_FRAME_MIN_TICK_MS - (Date.now() - tickStartedAt);
+        if (waitMs > 0) {
+          await new Promise((resolve) => setTimeout(resolve, waitMs));
+        }
+      }
+    } catch (error) {
+      console.error("[GN Tracing] WebCodecs tab-frame capture loop failed:", error);
+    } finally {
+      resolveLoopDone();
+    }
+  })();
+
+  return {
+    firstFrameAt: captureStartedAt,
+    surface: { displaySurface: "browser", label: "Recorded tab" },
+  };
+}
+
+async function stopWebCodecsTabFrameCapture(discard: boolean): Promise<void> {
+  const session = activeWebCodecsSession;
+  if (!session) {
+    return;
+  }
+  activeWebCodecsSession = null;
+
+  session.requestStop();
+  await session.loopDone;
+
+  session.audioSource?.close();
+  session.videoSource.close();
+
+  const completedSessionId = session.sessionId;
+  const cleanupAudio = async () => {
+    await session.audioCleanup().catch(() => {});
+    session.micStream?.getTracks().forEach((track) => {
+      track.stop();
+    });
+  };
+
+  if (finalizedSessionIds.has(completedSessionId)) {
+    await cleanupAudio();
+    return;
+  }
+  finalizedSessionIds.add(completedSessionId);
+
+  let blob: Blob | null = null;
+  try {
+    await session.output.finalize();
+    const buffer = session.target.buffer;
+    if (!discard && buffer && buffer.byteLength > 0) {
+      blob = new Blob([buffer], { type: session.mimeType });
+    }
+  } catch (error) {
+    console.error("[GN Tracing] WebCodecs mux finalize failed:", error);
+  }
+
+  if (!discard) {
+    if (blob) {
+      sessionSnapshots.set(completedSessionId, {
+        blob,
+        mimeType: session.mimeType,
+        createdAt: Date.now(),
+      });
+    } else {
+      emptyRecordingSessions.set(
+        completedSessionId,
+        "The browser produced no video data for this recording.",
+      );
+    }
+  }
+
+  chrome.runtime.sendMessage({
+    action: "RECORDING_COMPLETE",
+    data: {
+      sessionId: completedSessionId,
+      mimeType: session.mimeType,
+      size: blob?.size ?? 0,
+    },
+  });
+
+  if (activeSessionId === completedSessionId) {
+    activeSessionId = null;
+  }
+
+  await cleanupAudio();
 }
 
 /**
@@ -1007,7 +1325,7 @@ async function startCaptureWithStream(
     throw new Error("Missing capture session metadata.");
   }
 
-  if (recorder && recorder.state !== "inactive") {
+  if ((recorder && recorder.state !== "inactive") || activeWebCodecsSession) {
     throw new Error("A recording is already active.");
   }
 
@@ -1035,8 +1353,18 @@ async function startCaptureWithStream(
   const stream = mixedAudio.stream;
 
   const finalMimeType = pickRecorderMimeType(stream);
+  const videoSettings = stream.getVideoTracks()[0]?.getSettings();
+  const videoBitsPerSecond = computeVideoBitrate(
+    videoSettings?.width ?? 0,
+    videoSettings?.height ?? 0,
+    videoSettings?.frameRate ?? 0,
+  );
 
-  recorder = new MediaRecorder(stream, finalMimeType ? { mimeType: finalMimeType } : undefined);
+  recorder = new MediaRecorder(stream, {
+    ...(finalMimeType ? { mimeType: finalMimeType } : {}),
+    videoBitsPerSecond,
+    ...(stream.getAudioTracks().length > 0 ? { audioBitsPerSecond: AUDIO_BITRATE_BPS } : {}),
+  });
   activeStream = stream;
   activeSessionId = sessionId;
   activeChunks = [];
@@ -1160,6 +1488,10 @@ function finalizeRecordingSnapshot(reason: "stop-event" | "flush-timeout"): void
 }
 
 async function stopCapture(): Promise<void> {
+  if (activeWebCodecsSession) {
+    await stopWebCodecsTabFrameCapture(false);
+    return;
+  }
   if (!recorder || recorder.state === "inactive") {
     await stopActiveMediaStream();
     return;
@@ -1187,6 +1519,10 @@ async function stopCapture(): Promise<void> {
 }
 
 async function discardCapture(): Promise<void> {
+  if (activeWebCodecsSession) {
+    await stopWebCodecsTabFrameCapture(true);
+    return;
+  }
   shouldDiscardActiveCapture = true;
   if (!recorder || recorder.state === "inactive") {
     clearActiveCapture();

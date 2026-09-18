@@ -103,7 +103,7 @@ export async function acquireCaptureStream(
         displaySurface: "browser",
         width: { ideal: 1920, max: 1920 },
         height: { ideal: 1080, max: 1080 },
-        frameRate: { ideal: 30, max: 30 },
+        frameRate: { ideal: 60, max: 60 },
       },
       audio: false,
     } as DisplayMediaStreamOptions;
@@ -129,7 +129,7 @@ export async function acquireCaptureStream(
         chromeMediaSourceId: streamId,
         maxWidth: 1920,
         maxHeight: 1080,
-        maxFrameRate: 30,
+        maxFrameRate: 60,
       },
     } as MediaTrackConstraints,
   });
@@ -222,6 +222,30 @@ export async function waitForFirstFrame(stream: MediaStream): Promise<number | n
     video.srcObject = null;
     videoTrack.onunmute = null;
   }
+}
+
+/**
+ * Bits per pixel per frame used to size `videoBitsPerSecond`. Screen content
+ * (mostly static UI, not high-entropy natural video) compresses well, so this
+ * sits below typical natural-video presets (~0.1-0.2 bpp).
+ */
+const VIDEO_BITS_PER_PIXEL_PER_FRAME = 0.08;
+const MIN_VIDEO_BITRATE_BPS = 1_000_000;
+const MAX_VIDEO_BITRATE_BPS = 12_000_000;
+export const AUDIO_BITRATE_BPS = 128_000;
+
+/**
+ * Video bitrate scaled to actual resolution × fps instead of relying on the
+ * browser's undocumented MediaRecorder default, clamped to a sane range so a
+ * mis-reported track setting (0, NaN, missing) can't produce a pathological
+ * value.
+ */
+export function computeVideoBitrate(width: number, height: number, frameRate: number): number {
+  const safeWidth = width > 0 ? width : 1920;
+  const safeHeight = height > 0 ? height : 1080;
+  const safeFrameRate = frameRate > 0 ? frameRate : 30;
+  const raw = safeWidth * safeHeight * safeFrameRate * VIDEO_BITS_PER_PIXEL_PER_FRAME;
+  return Math.round(Math.min(MAX_VIDEO_BITRATE_BPS, Math.max(MIN_VIDEO_BITRATE_BPS, raw)));
 }
 
 /** Just enough of MediaStream to choose a container/codec pair. */

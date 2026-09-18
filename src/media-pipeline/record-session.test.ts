@@ -8,6 +8,7 @@
 
 import { describe, expect, it, vi } from "vitest";
 import {
+  computeVideoBitrate,
   describeDisplayCaptureError,
   pickRecorderMimeType,
   stopRecorderAndWaitForFlush,
@@ -194,5 +195,30 @@ describe("waitForFirstFrame", () => {
   it("returns null when the stream has no video track", async () => {
     const stream = { getVideoTracks: () => [] } as unknown as MediaStream;
     expect(await waitForFirstFrame(stream)).toBeNull();
+  });
+});
+
+describe("computeVideoBitrate", () => {
+  it("scales with resolution and fps", () => {
+    const sd30 = computeVideoBitrate(1280, 720, 30);
+    const hd30 = computeVideoBitrate(1920, 1080, 30);
+    const hd60 = computeVideoBitrate(1920, 1080, 60);
+    expect(hd30).toBeGreaterThan(sd30);
+    expect(hd60).toBeGreaterThan(hd30);
+  });
+
+  it("clamps to the minimum bitrate for tiny resolutions", () => {
+    expect(computeVideoBitrate(160, 120, 10)).toBe(1_000_000);
+  });
+
+  it("clamps to the maximum bitrate for very large resolution×fps", () => {
+    expect(computeVideoBitrate(3840, 2160, 60)).toBe(12_000_000);
+  });
+
+  it("falls back to 1920x1080@30 defaults for missing/invalid track settings", () => {
+    expect(computeVideoBitrate(0, 0, 0)).toBe(computeVideoBitrate(1920, 1080, 30));
+    expect(computeVideoBitrate(Number.NaN, Number.NaN, Number.NaN)).toBe(
+      computeVideoBitrate(1920, 1080, 30),
+    );
   });
 });
