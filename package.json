@@ -1,0 +1,13 @@
+{
+  "name": "gn-tracing-oss",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "build:mcp": "npm --prefix mcp run build"
+  },
+  "devDependencies": {
+    "vitest": "4.1.9",
+    "fast-check": "4.8.0"
+  }
+}
