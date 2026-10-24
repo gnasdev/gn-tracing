@@ -916,7 +916,7 @@ function installWebSocketCapture(
     };
 
     const originalWsSend = socket.send.bind(socket);
-    socket.send = (data: string | ArrayBufferLike | Blob | ArrayBufferView): void => {
+    socket.send = (data: Parameters<WebSocket["send"]>[0]): void => {
       entry.frames.push({
         direction: "sent",
         timestamp: Date.now(),

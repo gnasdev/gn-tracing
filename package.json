@@ -7,7 +7,7 @@
     "build:mcp": "npm --prefix mcp run build"
   },
   "devDependencies": {
-    "vitest": "4.1.9",
-    "fast-check": "4.8.0"
+    "vitest": "5.0.5",
+    "fast-check": "4.10.2"
   }
 }
