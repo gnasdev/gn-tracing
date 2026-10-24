@@ -30,6 +30,18 @@ npm install     # root dev deps (vitest)
 npm test
 ```
 
+## Tasks
+
+[Task](https://taskfile.dev) wraps the same commands:
+
+```bash
+task install     # npm ci for the root and mcp/
+task check       # typecheck + tests + MCP bundle, in one go
+task test        # vitest only
+task build       # mcp/dist/gn-tracing-mcp.mjs
+task dev         # rebuild the MCP bundle on every source change
+```
+
 ## License
 
 GPL-3.0-or-later. See [LICENSE](LICENSE).

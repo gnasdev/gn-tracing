@@ -1,0 +1,39 @@
+version: "3"
+
+tasks:
+  install:
+    desc: Install root (vitest) and mcp dependencies from the lockfiles.
+    cmds:
+      - npm ci
+      - npm ci --prefix mcp
+
+  build:
+    desc: Bundle the MCP server into mcp/dist/gn-tracing-mcp.mjs.
+    cmds:
+      - npm run build:mcp
+
+  test:
+    desc: Run the root Vitest suite once (mcp, replay-core, shared).
+    cmds:
+      - npm test
+
+  typecheck:
+    desc: Type-check mcp and packages/replay-core with mcp's TypeScript.
+    cmds:
+      - npm exec --prefix mcp -- tsc --noEmit -p mcp/tsconfig.json
+      - npm exec --prefix mcp -- tsc --noEmit -p packages/replay-core/tsconfig.json
+
+  check:
+    desc: Everything a change must pass in one go - typecheck, tests, and the MCP bundle.
+    cmds:
+      - task: typecheck
+      - task: test
+      - task: build
+
+  dev:
+    desc: Rebuild mcp/dist/gn-tracing-mcp.mjs on every source change (esbuild watch).
+    dir: mcp
+    cmds:
+      - >-
+        npm exec -- esbuild src/bin.ts --bundle --platform=node --target=node18
+        --format=esm --outfile=dist/gn-tracing-mcp.mjs --watch=forever
